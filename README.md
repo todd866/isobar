@@ -5,12 +5,12 @@ Watch pressure systems develop, scrub to a day and hour, then explore the rain,
 temperature, wind, surf or flying conditions underneath.
 
 **[Open Isobar in your browser](https://todd866.github.io/isobar/)** ·
-**[Mac download](docs/install.md)** · [Run your own website](docs/hosting.md)
+**[Download for Mac](https://github.com/todd866/isobar/releases/download/v1.9.0/Isobar-1.9.0-macOS-arm64.dmg)** · [Run your own website](docs/hosting.md)
 
-The first Mac installer is awaiting Apple notarization. It will be a
-self-contained download for **Apple silicon (M1 or newer), macOS 15+**:
-open the disk image, drag Isobar to Applications, then open it from there.
-The browser version is available now.
+Isobar 1.9.0 is a signed, Apple-notarized, self-contained download for
+**Apple silicon (M1 or newer), macOS 15+**. Open the disk image, drag Isobar
+to Applications, then open it from there. [Installation guide](docs/install.md).
+The browser version is also available.
 
 ## Start with the weather
 

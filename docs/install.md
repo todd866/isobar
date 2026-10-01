@@ -1,11 +1,12 @@
 # Isobar for Mac
 
-The first Mac download is awaiting Apple notarization.
-[Use Isobar in your browser](https://todd866.github.io/isobar/) now.
+**[Download Isobar 1.9.0 for Mac](https://github.com/todd866/isobar/releases/download/v1.9.0/Isobar-1.9.0-macOS-arm64.dmg)**
+
+Signed with Developer ID, Apple-notarized and stapled.
+[ZIP and SHA-256 checksums](https://github.com/todd866/isobar/releases/tag/v1.9.0)
+are available on the release page. [Use Isobar in your browser](https://todd866.github.io/isobar/).
 
 **Apple silicon (M1 or newer) · macOS 15 or later**
-
-Once the download is available:
 
 1. Open the downloaded Isobar disk image.
 2. Drag **Isobar** into **Applications**.
