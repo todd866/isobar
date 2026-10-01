@@ -26,11 +26,59 @@ function hourSeriesOf(manifest) {
   const places = manifest?.places || [];
   return (places.find((place) => place.name === 'Perth') || places[0])?.hours || manifest?.points?.hours || [];
 }
+// Map frames can precede the hourly series: hours drop anything older than one
+// hour, while the map keeps the latest model step at or before now. That index
+// is negative. A range input also rejects NaN and values that miss its step.
 function sliderValueFor(isoTime, hours) {
+  if (!hours?.length) return 0;
   const from = Date.parse(hours[0].time);
   const to = Date.parse(hours[hours.length - 1].time);
   const max = Math.max(1, hours.length - 1);
-  return (Date.parse(isoTime) - from) / Math.max(1, to - from) * max;
+  const stamp = Date.parse(isoTime);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || !Number.isFinite(stamp)) return 0;
+  const raw = (stamp - from) / Math.max(1, to - from) * max;
+  if (!Number.isFinite(raw)) return 0;
+  return Math.min(max, Math.max(0, raw));
+}
+function snappedRangeValue(raw, min, max, step) {
+  const lower = Number.isFinite(Number(min)) ? Number(min) : 0;
+  const upper = Number.isFinite(Number(max)) ? Number(max) : lower;
+  const hi = Math.max(lower, upper);
+  const quantum = step === undefined || step === null || step === '' || step === 'any' ? 1 : Number(step);
+  const stepSize = Number.isFinite(quantum) && quantum > 0 ? quantum : 1;
+  let value = Number(raw);
+  if (!Number.isFinite(value)) value = lower;
+  value = Math.min(hi, Math.max(lower, value));
+  let steps = Math.round((value - lower) / stepSize);
+  value = lower + steps * stepSize;
+  if (value > hi) value = lower + Math.floor((hi - lower) / stepSize) * stepSize;
+  if (value < lower) value = lower;
+  return value;
+}
+function assertRangeFill() {
+  assert(snappedRangeValue(-1, '0', '167', '1') === 0, 'a slider before the hourly series must clamp to 0');
+  assert(snappedRangeValue(4.2, '0', '167', '1') === 4, 'an hourly slider accepts only whole steps');
+  assert(Math.abs(snappedRangeValue(4.2, '0', '167', '0.001') - 4.2) < 1e-9, 'a movie slider keeps a thousandth');
+  assert(snappedRangeValue(Number.NaN, '0', '167', '1') === 0, 'a NaN slider must not be filled');
+  assert(snappedRangeValue(200, '0', '167', '1') === 167, 'a slider past the hourly series must clamp to max');
+  const hours = Array.from({ length: 168 }, (_, hour) => ({ time: new Date(Date.UTC(2026, 8, 26) + hour * 3600000).toISOString() }));
+  const early = new Date(Date.parse(hours[0].time) - 3600000).toISOString();
+  assert(sliderValueFor(early, hours) === 0, 'a map frame one hour before the series clamps to the first hour');
+  assert(sliderValueFor('not-a-time', hours) === 0, 'an unreadable map time clamps to the first hour');
+}
+// Playwright fill requires the assigned string to equal the property afterwards.
+// A range keeps "4.2", so filling the padded "4.200" is the malformed value.
+async function fillTime(locator, raw) {
+  const bounds = await locator.evaluate((input) => ({ min: input.min, max: input.max, step: input.step }));
+  const snapped = snappedRangeValue(raw, bounds.min, bounds.max, bounds.step);
+  const kept = await locator.evaluate((input, snapped) => {
+    const before = input.value;
+    input.value = String(snapped);
+    const kept = input.value;
+    input.value = before;
+    return kept;
+  }, snapped);
+  await locator.fill(kept);
 }
 function degreeText(value) {
   const rounded = Math.round(value * 10) / 10;
@@ -427,7 +475,7 @@ async function testAnimation(browser, baseURL) {
       throw new Error(`rapid ArrowRight presses did not accumulate three forecast hours: ${JSON.stringify(await page.locator('#time').evaluate((input) => ({ value: input.value, max: input.max })))} ${JSON.stringify(await page.locator('#map-video').evaluate((video) => ({ current: video.currentTime, duration: video.duration, paused: video.paused })) )}`);
     });
 
-    await page.locator('#time').fill('0');
+    await fillTime(page.locator('#time'), 0);
     await page.waitForFunction(({ hourFrom, movieFrom, movieTo, fps }) => {
       const input = document.querySelector('#time');
       const video = document.querySelector('#map-video');
@@ -540,7 +588,7 @@ async function testAnimation(browser, baseURL) {
     await resetRacePage.goto(baseURL, { waitUntil: 'domcontentloaded' }); await waitReady(resetRacePage);
     await resetRacePage.locator('#map-frame').focus(); await resetRacePage.keyboard.press('Enter');
     const raceSliderValue = 4.2;
-    await resetRacePage.locator('#time').fill(String(raceSliderValue));
+    await fillTime(resetRacePage.locator('#time'), raceSliderValue);
     await resetRacePage.waitForFunction(() => document.querySelector('#map-video')?.readyState >= 2 && document.querySelector('#play-toggle')?.textContent === 'Play', null, { timeout: 5000 });
     const raceState = await resetRacePage.locator('#map-video').evaluate((video) => ({ current: video.currentTime, duration: video.duration, rate: video.playbackRate }));
     const raceRaw = hourFrom + raceSliderValue / Number(await resetRacePage.locator('#time').getAttribute('max')) * (hourTo - hourFrom);
@@ -890,6 +938,7 @@ async function testStreamedPlayback(browser, baseURL) {
 }
 
 async function run() {
+  assertRangeFill();
   await prepareSite();
   const errors=[];
   const server = await startServer(); let browser;
@@ -933,9 +982,9 @@ async function run() {
       await page.goto(server.url, { waitUntil: 'domcontentloaded' }); await waitReady(page);
       await page.waitForLoadState('networkidle'); // This case has only the bounded PNG set.
       const before = requests.length;
-      await page.locator('#time').fill('1'); await page.waitForTimeout(250); assert(await visibleMap(page), 'prepared timeline navigation lost the map');
+      await fillTime(page.locator('#time'), 1); await page.waitForTimeout(250); assert(await visibleMap(page), 'prepared timeline navigation lost the map');
       assert(requests.length <= before + 1, 'timeline navigation exceeded prepared request bound');
-      await page.route('**/*', (route) => route.abort()); await page.locator('#time').fill('0'); await page.waitForTimeout(200); assert(await visibleMap(page), 'offline prepared navigation failed'); await page.unroute('**/*');
+      await page.route('**/*', (route) => route.abort()); await fillTime(page.locator('#time'), 0); await page.waitForTimeout(200); assert(await visibleMap(page), 'offline prepared navigation failed'); await page.unroute('**/*');
     } finally { await page.close(); }
     const retryPage = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     try {
@@ -951,7 +1000,7 @@ async function run() {
       const rainFrame = raceManifest.frames.find((frame) => typeof frame.maps?.rain === 'string');
       assert(rainFrame, 'race fixture has no frame with a rain map');
       const rainValue = sliderValueFor(rainFrame.time, hourSeriesOf(raceManifest));
-      await racePage.goto(server.url, { waitUntil: 'domcontentloaded' }); await waitReady(racePage); await racePage.locator('#time').fill(String(rainValue)); await racePage.waitForFunction(() => document.querySelector('#map-image')?.src.endsWith('-pressure.png')); await racePage.click('#layers-button'); await racePage.route('**/*-temperature.png', async (route) => { await new Promise((resolve) => setTimeout(resolve, 300)); await route.continue(); }); await racePage.route('**/*-rain.png', (route) => route.continue());
+      await racePage.goto(server.url, { waitUntil: 'domcontentloaded' }); await waitReady(racePage); await fillTime(racePage.locator('#time'), rainValue); await racePage.waitForFunction(() => document.querySelector('#map-image')?.src.endsWith('-pressure.png')); await racePage.click('#layers-button'); await racePage.route('**/*-temperature.png', async (route) => { await new Promise((resolve) => setTimeout(resolve, 300)); await route.continue(); }); await racePage.route('**/*-rain.png', (route) => route.continue());
       await racePage.waitForFunction(() => document.querySelector('#map-image')?.src.endsWith('-pressure.png'));
       await racePage.locator('[name="map-overlay"][value="temperature"]').check(); await racePage.locator('[name="map-overlay"][value="rain"]').check(); await racePage.waitForTimeout(500); assert((await racePage.locator('#map-title').textContent()).startsWith('Rain ·'), 'rapid overlay selection lost the last choice'); await racePage.waitForFunction(()=>document.querySelector('#map-image').src.endsWith('-rain.png')); await racePage.waitForTimeout(400); assert((await racePage.locator('#map-image').getAttribute('src')).endsWith('-rain.png'),'old layer replaced the latest choice');
     } finally { await racePage.close(); }
@@ -977,7 +1026,7 @@ async function run() {
       const missingHours = hourSeriesOf(manifest);
       await missingRainPage.goto(server.url, { waitUntil: 'domcontentloaded' });
       await waitReady(missingRainPage);
-      await missingRainPage.locator('#time').fill(String(sliderValueFor(manifest.frames[missingIndex].time, missingHours)));
+      await fillTime(missingRainPage.locator('#time'), sliderValueFor(manifest.frames[missingIndex].time, missingHours));
       const pressureBeforeLens = await missingRainPage.locator('#map-image').getAttribute('src');
       await missingRainPage.click('[data-layer="rain"]');
       assert(await missingRainPage.locator('#detail-panel').isVisible(), 'missing-rain detail chart did not open');
@@ -992,7 +1041,7 @@ async function run() {
       assert(await missingRainPage.locator('#map-image').getAttribute('src').then((src) => src.endsWith('-pressure.png')), 'missing-rain fallback is not the pressure asset');
       assert(await missingRainPage.getByText('24h rain unavailable').isVisible(), 'missing-rain status is not visible');
       assert(await missingRainPage.locator('#retry').isHidden(), 'missing-rain state incorrectly offers retry');
-      await missingRainPage.locator('#time').fill(String(sliderValueFor(manifest.frames[availableRainIndex].time, missingHours)));
+      await fillTime(missingRainPage.locator('#time'), sliderValueFor(manifest.frames[availableRainIndex].time, missingHours));
       await missingRainPage.waitForFunction(() => document.querySelector('#map-image')?.src.endsWith('-rain.png'));
       assert((await missingRainPage.locator('#map-title').textContent()).startsWith('Rain ·'), 'available rain frame did not restore rain map');
     } finally { await missingRainPage.close(); }

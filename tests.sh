@@ -19,10 +19,10 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-python3 -m unittest discover -s Tests -p test_check_store.py
-python3 -m unittest discover -s Tests -p test_check_bundle.py
-python3 -m unittest discover -s Tests -p test_package_release.py
-python3 -m unittest discover -s Tests -p test_public_weather.py
+python3 tools/run-python-tests.py Tests test_check_store.py
+python3 tools/run-python-tests.py Tests test_check_bundle.py
+python3 tools/run-python-tests.py Tests test_package_release.py
+python3 tools/run-python-tests.py Tests test_public_weather.py
 
 "$CC" -fobjc-arc -Wall -Wextra -Werror -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
     Sources/collector.m Tests/test_collector.m -framework Foundation -o "$WORK_DIR/collector_tests"

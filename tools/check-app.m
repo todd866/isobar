@@ -167,6 +167,7 @@ int main(int argc, const char **argv) {
         NSString *root = [NSString stringWithUTF8String:argv[1]], *output = [NSString stringWithUTF8String:argv[2]];
         [NSFileManager.defaultManager createDirectoryAtPath:output withIntermediateDirectories:YES attributes:nil error:nil];
         AcceptanceController *c = [AcceptanceController new];
+        [c useManualLiveClock];
         c.budget = NSMakeSize(1440, 900);
         [c replaceLocations:DefaultLocations()];
         const char *source = getenv("ISOBAR_CHECK_SOURCE");
@@ -177,6 +178,7 @@ int main(int argc, const char **argv) {
         [c reloadStoreAtPath:root];
         int failures = [c chartsReady] ? 0 : 1;
         EvolutionIntentController *intent = [EvolutionIntentController new];
+        [intent useManualLiveClock];
         intent.budget = NSMakeSize(1280,720);
         intent.popover = [ShownAcceptancePopover new];
         intent.popover.contentViewController = [NSViewController new];

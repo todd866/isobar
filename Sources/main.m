@@ -2051,6 +2051,11 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 - (NSString *)relativeForSequenceIndex:(NSInteger)index;
 - (NSDate *)selectedForecastDate;
 - (AviationNoticesView *)prepareAviationNotices:(BOOL)sigmet;
+// Harness clock. Manual playback does not schedule a wall timer; the test
+// advances display ticks and waits for the frames those ticks need.
+- (void)useManualLiveClock;
+- (void)useWallLiveClock;
+- (void)advanceLiveTicks:(NSUInteger)count;
 @end
 
 @implementation Controller {
@@ -2136,6 +2141,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     BOOL _forecastPaused;
     IsobarLiveSpeed _liveSpeed;
     NSTimeInterval _liveTickAt;
+    BOOL _manualLiveClock;
+    IsobarLiveClock *_liveClock;
     NSInteger _liveLabelMinute;
     NSUInteger _liveDisplayTicks;
     BOOL _motionResetToNow;
@@ -2662,6 +2669,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     NSSize previousSize = _live.pixelSize;
     CGFloat previousScale = _live.scale;
     if (!_live) _live = [IsobarLivePlayer new];
+    if (_manualLiveClock && _liveClock) _live.clock = _liveClock;
     _live.hoursPerSecond = IsobarLiveHoursPerSecond(_liveSpeed);
     _live.scale = scale;
     _live.pixelSize = pixelSize;
@@ -2721,20 +2729,57 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     [self timelineChart].mapDetails = [self mapDetailsAtTime:date];
 }
 
+- (void)useManualLiveClock {
+    _manualLiveClock = YES;
+    if (!_liveClock) _liveClock = [IsobarLiveClock manualClock];
+    if (!_live) _live = [IsobarLivePlayer new];
+    _live.clock = _liveClock;
+    [_liveTimer invalidate];
+    _liveTimer = nil;
+    _liveTickAt = [_liveClock now];
+}
+
+- (void)useWallLiveClock {
+    _manualLiveClock = NO;
+    _liveClock = nil;
+    if (_live) _live.clock = [IsobarLiveClock wallClock];
+    [_liveTimer invalidate];
+    _liveTimer = nil;
+    if (_live.playing || _live.holding || _live.seaming) [self startLiveTimer];
+}
+
+- (void)advanceLiveTicks:(NSUInteger)count {
+    if (!_live || !_manualLiveClock || !_liveClock) return;
+    for (NSUInteger i = 0; i < count; i++) {
+        [_liveClock advance:kIsobarLiveDisplayTick];
+        _liveTickAt = [_liveClock now];
+        if (_timelinePreviewing || _scrubHasFraction) continue;
+        [_live tick:kIsobarLiveDisplayTick];
+        [self applyLiveFrame];
+    }
+}
+
 - (void)startLiveTimer {
+    if (_manualLiveClock) {
+        [_liveTimer invalidate];
+        _liveTimer = nil;
+        _liveTickAt = [_live clockNow];
+        return;
+    }
     if (_liveTimer) return;
-    _liveTickAt = NSProcessInfo.processInfo.systemUptime;
+    _liveTickAt = [_live clockNow];
     __weak Controller *weak = self;
-    _liveTimer = [NSTimer timerWithTimeInterval:1.0 / 30.0 repeats:YES block:^(NSTimer *timer) {
+    _liveTimer = [NSTimer timerWithTimeInterval:kIsobarLiveDisplayTick repeats:YES block:^(NSTimer *timer) {
         Controller *strong = weak;
         if (!strong) { [timer invalidate]; return; }
         if (![strong mapIsVisible]) {
             [strong noteMapVisibility];
             return;
         }
-        NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+        NSTimeInterval now = [strong->_live clockNow];
         NSTimeInterval dt = now - strong->_liveTickAt;
         strong->_liveTickAt = now;
+        if (dt < 0) dt = 0;
         if (strong->_timelinePreviewing || strong->_scrubHasFraction) return;
         [strong->_live tick:dt];
         [strong applyLiveFrame];

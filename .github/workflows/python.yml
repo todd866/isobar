@@ -22,11 +22,18 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install test tools
+        timeout-minutes: 4
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          python3 -m pip install --disable-pip-version-check pytest pillow
+          # ffmpeg's recommends pull pocketsphinx-en-us (~27 MB) and stalled the
+          # first 1.9 run until the job was cancelled. The encoder is a dependency.
+          sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg
+          python3 -m pip install --disable-pip-version-check pytest pytest-timeout pillow
       - name: Run Python unit tests
-        run: python3 -m unittest discover -s Tests -p 'test_*.py'
+        timeout-minutes: 6
+        env:
+          ISOBAR_PYTEST_TIMEOUT: "90"
+        run: python3 tools/run-python-tests.py Tests 'test_*.py'
       - name: Run wall tests
-        run: python3 -m pytest wall -q
+        timeout-minutes: 6
+        run: python3 -m pytest wall -q --timeout=90 --timeout-method=signal

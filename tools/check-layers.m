@@ -136,6 +136,7 @@ int main(int argc, const char **argv) {
         [SeededDefaults removePersistentDomainForName:seedSuite];
         NSString *suite = [@"com.isobar.layer-test." stringByAppendingString:NSUUID.UUID.UUIDString];
         LayerController *c = [LayerController new];
+        [c useManualLiveClock];
         Check([[c valueForKey:@"barbs"] boolValue], @"new installation starts with quiet wind hints on the model map");
         c.testPreferences = [[NSUserDefaults alloc] initWithSuiteName:suite];
         TestLayerPopover *popover = [TestLayerPopover new];

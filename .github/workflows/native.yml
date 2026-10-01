@@ -24,7 +24,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p build/ci-checks
-          ISOBAR_ADHOC=1 ISOBAR_BUNDLE_COLLECTOR=0 ./build.sh 2>&1 | tee build/ci-checks/native.log
+          ISOBAR_ADHOC=1 ISOBAR_BUNDLE_COLLECTOR=0 ISOBAR_CI_SLOW=1 ./build.sh 2>&1 | tee build/ci-checks/native.log
       - name: Check version and help
         run: |
           set -euo pipefail

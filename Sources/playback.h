@@ -11,6 +11,20 @@ extern const NSUInteger kIsobarLiveCacheBudget; // bytes
 extern const NSTimeInterval kIsobarLiveFrameStep;
 NSTimeInterval IsobarLiveFrameSpacing(double renderSeconds, double hoursPerSecond);
 extern const NSTimeInterval kIsobarLiveSeamDuration; // real seconds, end of run back to now
+// One display step. The on-screen timer fires at this interval. A manual
+// clock advances by this step; it does not follow the machine.
+extern const NSTimeInterval kIsobarLiveDisplayTick;
+
+// Monotonic seconds. The wall clock is process uptime and ignores -advance:.
+// A manual clock stays put until the harness steps it, so a slow runner
+// cannot stretch or skip a frame.
+@interface IsobarLiveClock : NSObject
+@property (nonatomic, readonly) BOOL manual;
+- (NSTimeInterval)now;
+- (void)advance:(NSTimeInterval)seconds;
++ (instancetype)wallClock;
++ (instancetype)manualClock;
+@end
 
 typedef NS_ENUM(NSInteger, IsobarLiveSpeed) {
     IsobarLiveSpeedSlow = 0,   // 1 forecast hour per 5 real seconds
@@ -43,6 +57,9 @@ typedef double (^IsobarLiveModelIndex)(NSDate *date);
 @property (nonatomic) CGFloat scale;
 @property (nonatomic) NSSize pixelSize;
 @property (nonatomic) OwnLayerOptions layers;
+// Nil until first use, then a wall clock. Tests install a manual clock.
+@property (nonatomic, strong) IsobarLiveClock *clock;
+- (NSTimeInterval)clockNow;
 
 - (void)configureRun:(OwnRun *)run start:(NSDate *)start end:(NSDate *)end now:(NSDate *)now
           modelIndex:(IsobarLiveModelIndex)modelIndex;

@@ -4,6 +4,27 @@
 const NSUInteger kIsobarLiveCacheBudget = 300 * 1024 * 1024;
 const NSTimeInterval kIsobarLiveFrameStep = 90;
 const NSTimeInterval kIsobarLiveSeamDuration = 1.5;
+const NSTimeInterval kIsobarLiveDisplayTick = 1.0 / 30.0;
+
+@implementation IsobarLiveClock {
+    BOOL _manual;
+    NSTimeInterval _now;
+}
++ (instancetype)wallClock { return [self new]; }
++ (instancetype)manualClock {
+    IsobarLiveClock *clock = [self new];
+    clock->_manual = YES;
+    return clock;
+}
+- (BOOL)manual { return _manual; }
+- (NSTimeInterval)now {
+    return _manual ? _now : NSProcessInfo.processInfo.systemUptime;
+}
+- (void)advance:(NSTimeInterval)seconds {
+    if (!_manual || !(seconds > 0)) return;
+    _now += seconds;
+}
+@end
 static const CGFloat kChartW = 580;
 static const CGFloat kChartH = 444;
 
@@ -118,6 +139,7 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
     int _renderCount;
     BOOL _spacingLocked;
     dispatch_queue_t _queue;
+    IsobarLiveClock *_clock;
 }
 
 + (void)retireEncodedMovies {
@@ -167,6 +189,14 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
 }
 
 - (NSTimeInterval)frameSpacing { return _spacing > 0 ? _spacing : kIsobarLiveFrameStep; }
+- (IsobarLiveClock *)clock {
+    if (!_clock) _clock = [IsobarLiveClock wallClock];
+    return _clock;
+}
+- (void)setClock:(IsobarLiveClock *)clock { _clock = clock; }
+- (NSTimeInterval)clockNow {
+    return _clock ? [_clock now] : NSProcessInfo.processInfo.systemUptime;
+}
 - (double)stepHours { return [self frameSpacing] / 3600.0; }
 
 - (void)noteRenderSeconds:(double)seconds {
