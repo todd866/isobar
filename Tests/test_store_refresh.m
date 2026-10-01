@@ -568,6 +568,8 @@ static NSImage *SnapshotDisplayedMap(NSView *view) {
 // write both as movies for tools/measure-jank.py (run by tests.sh). Set
 // ISOBAR_QA_STORE to score a real archive instead of the fixture.
 static void RecordDisplayedPlayback(TestController *c, NSString *root) {
+    // Measure animated playback independently of the host's accessibility setting.
+    IsobarTestSetReduceMotion(NO);
     const char *qa = getenv("ISOBAR_QA_STORE");
     if (qa && qa[0]) [c reloadStoreAtPath:[NSString stringWithUTF8String:qa]];
     NSString *dir = getenv("ISOBAR_QA_DIR") ? [NSString stringWithUTF8String:getenv("ISOBAR_QA_DIR")] : @"build/qa";
@@ -618,6 +620,7 @@ static void RecordDisplayedPlayback(TestController *c, NSString *root) {
     [c popoverWillClose:[NSNotification notificationWithName:NSPopoverWillCloseNotification object:shown]];
     c.popover = original;
     if (qa && qa[0]) [c reloadStoreAtPath:root];
+    IsobarTestRestoreReduceMotion();
 }
 
 static void CheckLivePlayback(TestController *c, NSString *root, NSFileManager *fm) {
