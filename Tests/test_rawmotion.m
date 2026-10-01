@@ -233,8 +233,8 @@ int main(void) { @autoreleasepool {
             previous = current;
         }}
         check(movingFrames == 89, @"every in-between frame advances the raw pressure field");
-        check(state.maxLabelStep > 0 && state.maxLabelStep <= 2.001 && state.maxCentreStep <= 2.001,
-            @"moving annotations have bounded displacement");
+        check(state.maxLabelStep == 0 && state.maxCentreStep == 0,
+            @"labels and H/L marks stay still while the isobars move");
         check([start isEqual:Pixels(OwnRunRenderFraction(run, 0, @"", pressure, nil, 1))],
             @"motion state leaves static map pixels unchanged");
         IsobarScrubRenderer *scrub = [[IsobarScrubRenderer alloc] initWithRun:run layers:pressure scale:1];

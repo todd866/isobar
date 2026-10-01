@@ -71,8 +71,9 @@
     OwnRun *run = self.run;
     OwnLayerOptions layers = self.layers;
     CGFloat scale = self.scale;
-    BOOL resetState = self.needsStateReset || !self.hasScheduledIndex ||
-        fabs(index - self.scheduledIndex) > 0.5;
+    // One annotation memory per run and layer set: a hover that jumps across
+    // the timeline keeps every label that still sits on its line.
+    BOOL resetState = self.needsStateReset;
     self.needsStateReset = NO;
     self.hasScheduledIndex = YES;
     self.scheduledIndex = index;

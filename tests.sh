@@ -153,6 +153,15 @@ done
     -o "$WORK_DIR/store_refresh_tests"
 ISOBAR_FIXTURES="${0:A:h}/Tests/fixtures" \
     ISOBAR_COAST="${0:A:h}/Resources/ownchart-coast.bin" "$WORK_DIR/store_refresh_tests"
+# Score what the viewer sees: displayed autoplay and a hover sweep, recorded
+# offscreen by the store-refresh harness. A jumpy verdict fails the suite.
+for MOVIE in autoplay hover; do
+    JANK_ARGS=()
+    # A hover starts with one intended jump from now; judge numbers per forecast hour swept.
+    [[ $MOVIE == hover ]] && JANK_ARGS=(--skip 0.1 --forecast-hours "$(cat build/qa/hover.hours)")
+    python3 tools/measure-jank.py "build/qa/${MOVIE}.mov" --out "build/qa/${MOVIE}" "${JANK_ARGS[@]}" > "$WORK_DIR/jank-${MOVIE}.json"
+    python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); print("jank", sys.argv[2], s["verdict"], "numbers/min", s["number_events_per_minute"], "spikes", s["spikes"], "irregularity", s["update_gap_ms"]["irregularity"]); sys.exit(0 if s["verdict"] == "smooth" else 1)' "$WORK_DIR/jank-${MOVIE}.json" "$MOVIE"
+done
 
 # Exercise real menu actions and rendered layer pixels on every build. The
 # fixed clock keeps the checked-in archive useful after its forecast expires.

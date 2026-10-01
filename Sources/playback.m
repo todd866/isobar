@@ -29,9 +29,9 @@ static const CGFloat kChartW = 580;
 static const CGFloat kChartH = 444;
 
 double IsobarLiveHoursPerSecond(IsobarLiveSpeed speed) {
-    if (speed == IsobarLiveSpeedMedium) return 0.5;
+    if (speed == IsobarLiveSpeedMedium) return 0.2;
     if (speed == IsobarLiveSpeedFast) return 1;
-    return 0.2;
+    return 0.05;
 }
 
 static NSInteger OverlayStride(NSTimeInterval spacing) {
@@ -42,11 +42,11 @@ static NSInteger OverlayStride(NSTimeInterval spacing) {
 }
 
 NSTimeInterval IsobarLiveFrameSpacing(double renderSeconds, double hoursPerSecond) {
-    double speed = hoursPerSecond > 0 ? hoursPerSecond : 0.2;
-    // Near a pixel of isobar motion at the default speed, and few enough
-    // frames that playback stays inside the core budget. Never finer than
-    // 30 new frames a real second.
-    double pixelStep = speed * 3600.0 / 8.0;
+    double speed = hoursPerSecond > 0 ? hoursPerSecond : 0.05;
+    // Frames are blended by the playhead, so a new one is needed only every
+    // couple of pixels of isobar motion: about 90 forecast seconds. Never
+    // finer than 30 new frames a real second.
+    double pixelStep = kIsobarLiveFrameStep;
     double rateStep = speed * 3600.0 / 30.0;
     if (pixelStep < rateStep) pixelStep = rateStep;
     if (!(renderSeconds > 0) || !isfinite(renderSeconds)) return ceil(pixelStep - 1e-9);
@@ -122,6 +122,7 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
     NSInteger _stepCount;
     NSInteger _motionStep;
     OwnMotionState *_motion;
+    OwnMotionState *_seekMotion;
     NSMutableDictionary<NSNumber *, NSImage *> *_frames;
     NSMutableDictionary<NSNumber *, NSArray<NSValue *> *> *_labels;
     NSMutableDictionary<NSNumber *, NSArray<NSValue *> *> *_centres;
@@ -164,6 +165,7 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
     _scale = 1;
     _motionStep = -1;
     _motion = [OwnMotionState new];
+    _seekMotion = nil;
     _frames = [NSMutableDictionary dictionary];
     _labels = [NSMutableDictionary dictionary];
     _centres = [NSMutableDictionary dictionary];
@@ -222,6 +224,7 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
     _spacing = next;
     _generation++;
     _motion = [OwnMotionState new];
+    _seekMotion = nil;
     _motionStep = -1;
     [_frames removeAllObjects];
     [_labels removeAllObjects];
@@ -354,6 +357,7 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
 - (void)invalidateFrames {
     _generation++;
     _motion = [OwnMotionState new];
+    _seekMotion = nil;
     _motionStep = -1;
     [_frames removeAllObjects];
     [_labels removeAllObjects];
@@ -376,6 +380,7 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
     _seaming = NO;
     _seam = 0;
     _motion = [OwnMotionState new];
+    _seekMotion = nil;
     _motionStep = -1;
     [_pending removeAllObjects];
     NSInteger shown = [self stepForHours:_hours];
@@ -513,9 +518,11 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
     NSInteger next = MIN(_stepCount - 1, step + 1);
     _baseImage = _frames[@(step)];
     _nextImage = next == step ? nil : _frames[@(next)];
-    // Adjacent fine frames are about one pixel apart, so they are cut rather
-    // than blended. A blend draws every isobar twice. The loop seam is the fade.
-    _nextOpacity = 0;
+    // Adjacent fine frames are a fraction of a pixel apart at ambient speed,
+    // so blending by the playhead's position between them reads as sub-pixel
+    // motion rather than a cut every frame.
+    double into = [self stepHours] > 0 ? (_hours - step * [self stepHours]) / [self stepHours] : 0;
+    _nextOpacity = _nextImage ? (CGFloat)MIN(1, MAX(0, into)) : 0;
     if (_baseImage) [self rememberStep:@(step)];
     if (_nextImage) [self rememberStep:@(next)];
 }
@@ -557,8 +564,14 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
     OwnMotionState *motion = _motion;
     if (inSequence) _motionStep = step;
     else {
-        motion = [OwnMotionState new];
-        motion.immediateAnnotations = YES;
+        // Seeks (hover, scrub, the loop's now frame) share one memory of their
+        // own, so a hover keeps its numbers still instead of re-placing them
+        // on every step, and never disturbs the playing sequence's memory.
+        if (!_seekMotion) {
+            _seekMotion = [OwnMotionState new];
+            _seekMotion.immediateAnnotations = YES;
+        }
+        motion = _seekMotion;
     }
     CGFloat scale = [self renderScale];
     // Weather overlays stay a flat plate. The coast is static and is drawn at

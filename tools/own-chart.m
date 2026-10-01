@@ -1765,6 +1765,7 @@ typedef struct {
     int bare;     // map only, for the popover headings
     int plateOnly;
     int inkOnly;
+    int quiet;
     const char *legend;
     const StationRain *stations;
     int nStations;
@@ -1826,21 +1827,6 @@ typedef struct {
 }
 @end
 
-static void MotionMoveVector(double *x, double *y, double targetX, double targetY,
-    double maxStep, double *stepOut) {
-    double dx = targetX - *x, dy = targetY - *y;
-    double distance = hypot(dx, dy);
-    // Stay a hair inside the cap. Scaling onto it lands a ulp over once the
-    // point is stored and read back, and the glide check is inclusive.
-    double limit = maxStep > 0 ? maxStep * (1.0 - 1e-9) : 0;
-    if (distance > limit && distance > 0 && maxStep > 0) {
-        dx *= limit / distance;
-        dy *= limit / distance;
-    }
-    *x += dx; *y += dy;
-    if (stepOut) *stepOut = hypot(dx, dy);
-}
-
 static const double kMotionFade = 1.0 / 30.0;
 static const double kFragmentLength = 96;
 static const double kFragmentEdgeLength = 48;
@@ -1879,6 +1865,8 @@ static BOOL LineCanHoldLabel(const OwnLine *line) {
     return PolyLength(line) >= 72;
 }
 
+static const double kStickyCentre = 10;
+
 static int MotionUpdateCentres(OwnMotionState *state, const OwnExtremum *candidates, int nCandidates,
     OwnVec *visible, int cap) {
     if (!state) return 0;
@@ -1892,13 +1880,12 @@ static int MotionUpdateCentres(OwnMotionState *state, const OwnExtremum *candida
             double d = hypot(candidates[c].x - slot->x, candidates[c].y - slot->y);
             if (d < bestDistance) { bestDistance = d; best = c; }
         }
+        // A marker and its value stay still while the centre is within
+        // kStickyCentre points; a centre that has really moved fades out here
+        // and fades in at its new place.
+        if (best >= 0 && bestDistance > kStickyCentre) best = -1;
         if (best >= 0) {
             used[best] = YES;
-            double nx = slot->x, ny = slot->y;
-            MotionMoveVector(&nx, &ny, candidates[best].x, candidates[best].y, 1.1, NULL);
-            double moved = hypot(nx - slot->x, ny - slot->y);
-            if (moved > state->_maxCentreStep) state->_maxCentreStep = (CGFloat)moved;
-            slot->x = nx; slot->y = ny; slot->value = candidates[best].value;
             slot->missing = 0; slot->age++;
             double before = slot->alpha;
             double step = MotionFadeStep(state);
@@ -1918,8 +1905,10 @@ static int MotionUpdateCentres(OwnMotionState *state, const OwnExtremum *candida
         BOOL nearExisting = NO;
         for (int s = 0; s < 24; s++) {
             MotionCentreSlot *slot = &state->_motionCentres[s];
+            // A marker that is still fading out holds its neighbourhood: the
+            // new one appears only after the old has gone, never beside it.
             if (slot->active && slot->high == candidates[c].high &&
-                hypot(slot->x - candidates[c].x, slot->y - candidates[c].y) < 45) { nearExisting = YES; break; }
+                hypot(slot->x - candidates[c].x, slot->y - candidates[c].y) < 160) { nearExisting = YES; break; }
         }
         if (nearExisting) continue;
         int active = 0;
@@ -1949,10 +1938,13 @@ static BOOL NearMotionCentre(double x, double y, double halfW, const OwnVec *cen
     return NO;
 }
 
-// A label stays on its isobar and glides at most 2 px a frame. It remains
-// until the contour leaves the map, shrinks below the label length, or a
-// collision or an H/L marker forces it off. New and retiring labels fade
-// over about a second. The stroke gap is the label box, not a plate erase.
+// A label stays still. It keeps its exact position while its isobar passes
+// within kStickyLabel points of it; once the line has drifted further, the
+// label fades out where it is and a new one fades in on the line. It also
+// retires when the contour leaves the map, shrinks below the label length, or
+// a collision or an H/L marker forces it off. One label per isobar. The
+// stroke gap is the label box, not a plate erase.
+static const double kStickyLabel = 8;
 static int MotionEaseLabels(OwnMotionState *state, const OwnLabel *desired, int nDesired,
     const OwnLine *lines, int nLines, const OwnVec *centres, int nCentres, NSFont *font,
     OwnLabel *out, double *outAlpha, int cap) {
@@ -1990,11 +1982,9 @@ static int MotionEaseLabels(OwnMotionState *state, const OwnLabel *desired, int 
                     0, 0, kPanelW, kMapH, &px, &py, &arc, &tangent, &dist)) continue;
             if (dist < bestD) { bestD = dist; best = i; ax = px; ay = py; }
         }
+        if (best >= 0 && bestD > kStickyLabel) best = -1;
         if (best >= 0) {
-            double glide = 0;
-            double capStep = 2;
-            MotionMoveVector(&slot->x, &slot->y, ax, ay, capStep, &glide);
-            if (glide > state->_maxLabelStep) state->_maxLabelStep = (CGFloat)glide;
+            (void)ax; (void)ay;
             slot->missing = 0;
             slot->age++;
             slot->line = best;
@@ -2012,13 +2002,15 @@ static int MotionEaseLabels(OwnMotionState *state, const OwnLabel *desired, int 
         int onLine = 0;
         for (int s = 0; s < 128; s++) {
             MotionLabelSlot *slot = &state->_motionLabels[s];
-            if (!slot->active || !hold[s]) continue;
-            if (attached[s] == lineNo) onLine++;
+            if (!slot->active) continue;
+            // A retiring label still fading out also blocks its neighbourhood,
+            // so a replacement never appears beside it as a sliding number.
+            if (hold[s] && attached[s] == lineNo) onLine++;
             if (fabs(slot->level - desired[c].level) > 0.1) continue;
             double apart = 6.0 * fmax(half, LabelHalf(slot->level, (__bridge void *)font));
             if (hypot(slot->x - desired[c].x, slot->y - desired[c].y) < apart) taken = YES;
         }
-        if (onLine >= 2 || (onLine >= 1 && PolyLength(&lines[lineNo]) < 260)) taken = YES;
+        if (onLine >= 1) taken = YES;
         if (NearMotionCentre(desired[c].x, desired[c].y, half, centres, nCentres)) taken = YES;
         if (taken) continue;
         for (int s = 0; s < 128; s++) {
@@ -2520,6 +2512,8 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
             }
             nDrawn = OwnKeepSeparated(drawn, nDrawn, 4);
         }
+        // Quiet frames keep the label memory up to date but draw no numbers.
+        if (options.quiet) nDrawn = 0;
         nLabels = nDrawn;
         for (int L = 0; L < nDrawn && nAvoid < 160; L++)
             avoidPts[nAvoid++] = (OwnVec){drawn[L].x, drawn[L].y};
@@ -2577,7 +2571,8 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
         }
         NSFont *letterFont = [NSFont fontWithName:@"Helvetica-Bold" size:18] ?: [NSFont boldSystemFontOfSize:18];
         NSFont *valueFont = [NSFont fontWithName:@"Helvetica-Bold" size:11] ?: [NSFont boldSystemFontOfSize:11];
-        if (!options.motionState) {
+        if (options.quiet) {
+        } else if (!options.motionState) {
             for (int e = 0; e < nExt; e++) {
                 NSColor *halo = HaloColour(view, centers[e].x, centers[e].y, landMask,
                     cube->nLon, cube->nLat, sea, land);
@@ -2930,6 +2925,7 @@ double OwnChartMapAspect(void) { return (double)kPanelW / (double)kMapH; }
     options.bare = layers.bare;
     options.plateOnly = layers.plateOnly;
     options.inkOnly = layers.inkOnly;
+    options.quiet = layers.quiet;
     // The app draws one key in the chrome. A panel does not carry a legend box.
     StationRain stack[48];
     int nStations = 0;
@@ -2977,6 +2973,7 @@ double OwnChartMapAspect(void) { return (double)kPanelW / (double)kMapH; }
     options.bare = layers.bare;
     options.plateOnly = layers.plateOnly;
     options.inkOnly = layers.inkOnly;
+    options.quiet = layers.quiet;
     options.motionState = state;
     StationRain stack[48];
     int nStations = 0;

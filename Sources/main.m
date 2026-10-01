@@ -2208,6 +2208,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     BOOL _manualLiveClock;
     IsobarLiveClock *_liveClock;
     NSInteger _liveLabelMinute;
+    BOOL _scrubQuiet;
+    NSTimer *_scrubRestTimer;
     NSUInteger _liveDisplayTicks;
     BOOL _motionResetToNow;
     BOOL _evolutionOnOpenPending;
@@ -2344,7 +2346,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
         NSDate *fixed = [[NSISO8601DateFormatter new] dateFromString:[NSString stringWithUTF8String:clock]];
         if (fixed) _chartNow = fixed;
     }
-    if ([defaults objectForKey:kForecastPausedKey]) _forecastPaused = [defaults boolForKey:kForecastPausedKey];
+    // Every open plays from now; a pause lasts only until the map closes.
+    [defaults removeObjectForKey:kForecastPausedKey];
     if ([defaults objectForKey:kPlaybackSpeedKey]) {
         NSInteger speed = [defaults integerForKey:kPlaybackSpeedKey];
         if (speed >= IsobarLiveSpeedSlow && speed <= IsobarLiveSpeedFast) _liveSpeed = (IsobarLiveSpeed)speed;
@@ -2653,6 +2656,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 // A resting chart reads as now, so playback from it starts at now rather
 // than at the nearest frame.
 - (NSDate *)playbackStartDate {
+    // Play after a pause continues from the held frame, even close to now.
+    if (_live && !_live.playing && _live.playhead && _forecastPaused) return _live.playhead;
     NSDate *selected = [self selectedForecastDate];
     return selected && ![self timeLensIsNow:selected] ? selected : (_chartNow ?: NSDate.date);
 }
@@ -3094,7 +3099,6 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 
 - (void)setForecastPaused:(BOOL)paused {
     _forecastPaused = paused;
-    [[self chartPreferences] setBool:paused forKey:kForecastPausedKey];
 }
 
 - (BOOL)mapIsVisible {
@@ -3383,12 +3387,24 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (void)beginPopoverEvolution {
-    if (![self allowsAutomaticEvolution] || _forecastPaused) return;
+    // Opening the map always starts at now and drifts forward; an earlier
+    // pause or scrub position does not carry over to a new open.
+    _forecastPaused = NO;
+    if (![self allowsAutomaticEvolution]) return;
     if (_ownRun.hours > 0 && _ownRun.hours < 2) {
         _evolutionOnOpenPending = YES;
         return;
     }
-    [self noteMapVisibility];
+    // The popover is opening; its window may not report itself visible yet,
+    // so do not wait on occlusion here.
+    if ([self livePlaybackAvailable] && self.popover.isShown) [self startLivePlaybackFromDate:_chartNow ?: NSDate.date];
+    else [self noteMapVisibility];
+    NSWindow *window = self.popover.contentViewController.view.window;
+    if (window) {
+        [NSNotificationCenter.defaultCenter removeObserver:self name:NSWindowDidChangeOcclusionStateNotification object:window];
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(popoverOcclusionChanged:)
+            name:NSWindowDidChangeOcclusionStateNotification object:window];
+    }
 }
 
 - (void)inspectPopoverMovieFraction:(double)fraction {
@@ -3452,8 +3468,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
             break;
         }
     }
-    OwnLayerOptions layers = {.temperature=(int)_tempLayer, .barbs=_barbs, .rain=_rainLayer, .bare=1};
-    NSString *key = [NSString stringWithFormat:@"%p-%ld-%d-%d", run, (long)_tempLayer, _barbs, _rainLayer];
+    OwnLayerOptions layers = {.temperature=(int)_tempLayer, .barbs=_barbs, .rain=_rainLayer, .bare=1, .quiet=_scrubQuiet};
+    NSString *key = [NSString stringWithFormat:@"%p-%ld-%d-%d-%d", run, (long)_tempLayer, _barbs, _rainLayer, _scrubQuiet];
     if (![_scrubKey isEqual:key]) {
         [_scrubRenderer cancelRequests];
         _scrubRenderer = [[IsobarScrubRenderer alloc] initWithRun:run layers:layers scale:1];
@@ -3499,6 +3515,9 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
         double selected = isfinite(_timelinePreviewFraction) ? _timelinePreviewFraction
             : _timelinePreviewRestoreFraction;
         BOOL resume = _timelinePreviewWasPlaying && !_forecastPaused;
+        [_scrubRestTimer invalidate];
+        _scrubRestTimer = nil;
+        _scrubQuiet = NO;
         _timelinePreviewing = NO;
         _motionResetToNow = NO;
         _motionPendingFraction = nil;
@@ -3535,7 +3554,18 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     [self setTimelinePlaying:NO];
     _motionResetToNow = NO;
     _motionPendingFraction = @(fraction);
+    // While the pointer moves the numbers step aside; they return once it rests.
+    _scrubQuiet = YES;
     [self showStaticTimelineFraction:fraction];
+    [_scrubRestTimer invalidate];
+    __weak Controller *weak = self;
+    _scrubRestTimer = [NSTimer scheduledTimerWithTimeInterval:0.45 repeats:NO block:^(NSTimer *timer) {
+        (void)timer;
+        Controller *strong = weak;
+        if (!strong || !strong->_timelinePreviewing || !isfinite(strong->_timelinePreviewFraction)) return;
+        strong->_scrubQuiet = NO;
+        [strong showStaticTimelineFraction:strong->_timelinePreviewFraction];
+    }];
     [self updatePopoverPlayControl];
 }
 
@@ -3549,6 +3579,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
         return;
     }
     if (_sequenceTimes.count < 2 || !_pair.valid) return;
+    NSDate *resume = [self playbackStartDate];
     [self setForecastPaused:NO];
     if (!_sourceECMWF && _ownRun.hours > 0) {
         _sourceECMWF = YES;
@@ -3559,7 +3590,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
         if (self.popover.shown) [self rebuildContent];
     }
     if ([self livePlaybackAvailable]) {
-        [self startLivePlaybackFromDate:[self playbackStartDate]];
+        [self startLivePlaybackFromDate:resume];
         return;
     }
     [self stopChartLoop];
@@ -5755,6 +5786,10 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
         if (playing && ![self livePlaybackAvailable]) [self prepareMotion];
     } else [self startLivePlaybackFromDate:selected];
     [self ensureClock];
+}
+
+- (void)popoverOcclusionChanged:(NSNotification *)note {
+    if (note.object == self.popover.contentViewController.view.window) [self noteMapVisibility];
 }
 
 - (void)windowOcclusionChanged:(NSNotification *)note {

@@ -373,8 +373,16 @@ static BOOL WritePlaybackMovie(NSArray<NSImage *> *frames, NSString *path) {
         withIntermediateDirectories:YES attributes:nil error:nil];
     [NSFileManager.defaultManager removeItemAtURL:url error:nil];
     NSError *failure = nil;
-    AVAssetWriter *writer = [[AVAssetWriter alloc] initWithURL:url fileType:AVFileTypeMPEG4 error:&failure];
-    AVAssetWriterInput *input = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo outputSettings:@{
+    // A .mov is written as ProRes 4444 for measurement: H.264 keyframes
+    // re-encode the whole picture once a second and read as jumps.
+    BOOL lossless = [path.pathExtension isEqualToString:@"mov"];
+    AVAssetWriter *writer = [[AVAssetWriter alloc] initWithURL:url
+        fileType:lossless ? AVFileTypeQuickTimeMovie : AVFileTypeMPEG4 error:&failure];
+    NSDictionary *settings = lossless ? @{
+        AVVideoCodecKey: AVVideoCodecTypeAppleProRes4444,
+        AVVideoWidthKey: @(width),
+        AVVideoHeightKey: @(height),
+    } : @{
         AVVideoCodecKey: AVVideoCodecTypeH264,
         AVVideoWidthKey: @(width),
         AVVideoHeightKey: @(height),
@@ -384,7 +392,8 @@ static BOOL WritePlaybackMovie(NSArray<NSImage *> *frames, NSString *path) {
             AVVideoMaxKeyFrameIntervalKey: @30,
             AVVideoAllowFrameReorderingKey: @NO,
         },
-    }];
+    };
+    AVAssetWriterInput *input = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo outputSettings:settings];
     input.expectsMediaDataInRealTime = NO;
     AVAssetWriterInputPixelBufferAdaptor *adaptor = [AVAssetWriterInputPixelBufferAdaptor
         assetWriterInputPixelBufferAdaptorWithAssetWriterInput:input sourcePixelBufferAttributes:@{
@@ -512,7 +521,7 @@ static void CheckSmoothPlayback(TestController *c) {
         worstInset = fmax(worstInset, OwnRenderLastOpenInset());
     } }
     Check(worstInset <= 2, [NSString stringWithFormat:@"open isobars end at the map edge or where the data stops (%.1f pt)", worstInset]);
-    Check(maxLabel <= 2 && maxCentre <= 2, @"labels and centres glide at most 2px a frame");
+    Check(maxLabel <= 0.5 && maxCentre <= 0.5, @"labels and centres stay still on screen during play");
     Check(advanced > expected * 0.8 && advanced < expected * 1.2, @"the playhead advances at the slow rate");
     Check(wrote && [[NSFileManager.defaultManager attributesOfItemAtPath:movie error:nil] fileSize] > 1000,
         @"a 10s playback review was written");
@@ -532,16 +541,95 @@ static double LuminanceAt(NSView *view, NSInteger x, NSInteger y) {
     return 0.2126 * color.redComponent + 0.7152 * color.greenComponent + 0.0722 * color.blueComponent;
 }
 
+
+// What the viewer sees: the map view's composited layer tree, including the
+// two live frame layers and their blend, at 1x.
+static NSImage *SnapshotDisplayedMap(NSView *view) {
+    if (!view || NSIsEmptyRect(view.bounds)) return nil;
+    [view displayIfNeeded];
+    NSInteger w = (NSInteger)ceil(view.bounds.size.width), h = (NSInteger)ceil(view.bounds.size.height);
+    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+    CGContextRef ctx = CGBitmapContextCreate(NULL, (size_t)w, (size_t)h, 8, 0, space, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+    CGColorSpaceRelease(space);
+    if (!ctx) return nil;
+    CGContextSetRGBFillColor(ctx, 1, 1, 1, 1);
+    CGContextFillRect(ctx, CGRectMake(0, 0, w, h));
+    if (view.layer) [view.layer renderInContext:ctx];
+    CGImageRef cg = CGBitmapContextCreateImage(ctx);
+    CGContextRelease(ctx);
+    if (!cg) return nil;
+    NSImage *image = [[NSImage alloc] initWithCGImage:cg size:NSMakeSize(w, h)];
+    CGImageRelease(cg);
+    return image;
+}
+
+// On-screen smoothness: drive a real popover open with no input, record the
+// displayed map for ten seconds of ambient play, then a hover sweep, and
+// write both as movies for tools/measure-jank.py (run by tests.sh). Set
+// ISOBAR_QA_STORE to score a real archive instead of the fixture.
+static void RecordDisplayedPlayback(TestController *c, NSString *root) {
+    const char *qa = getenv("ISOBAR_QA_STORE");
+    if (qa && qa[0]) [c reloadStoreAtPath:[NSString stringWithUTF8String:qa]];
+    NSString *dir = getenv("ISOBAR_QA_DIR") ? [NSString stringWithUTF8String:getenv("ISOBAR_QA_DIR")] : @"build/qa";
+    [c useManualLiveClock];
+    NSPopover *original = c.popover;
+    ShownPlaybackPopover *shown = [ShownPlaybackPopover new];
+    shown.contentViewController = original.contentViewController;
+    c.popover = shown;
+    [c popoverWillClose:[NSNotification notificationWithName:NSPopoverWillCloseNotification object:shown]];
+    [c popoverDidShow:[NSNotification notificationWithName:NSPopoverDidShowNotification object:shown]];
+    __block IsobarLivePlayer *live = [c valueForKey:@"live"];
+    WaitUntil(^BOOL { return live.baseImage != nil && live.rendersInFlight == 0; }, kLiveRenderCeiling);
+    Check([[c valueForKey:@"timelinePlaying"] boolValue], @"opening the popover starts ambient play with no input");
+    NSMutableArray<NSImage *> *frames = [NSMutableArray array];
+    for (NSInteger i = 0; i < 300; i++) { @autoreleasepool {
+        [c advanceLiveTicks:1];
+        WaitUntil(^BOOL { return live.rendersInFlight == 0; }, kLiveRenderCeiling);
+        SettleController(c);
+        NSImage *frame = SnapshotDisplayedMap([c timelineChart]);
+        if (frame) [frames addObject:frame];
+        if (getenv("ISOBAR_QA_TRACE")) {
+            NSImage *b = live.baseImage, *n = live.nextImage;
+                        fprintf(stderr, "qa tick %ld playhead %.1f base %p %.0fx%.0f next %p op %.3f spacing %.0f renders %lu playing %d hold %d seam %d\n",
+                (long)i, live.playhead.timeIntervalSinceReferenceDate, (__bridge void *)b, b.size.width, b.size.height,
+                (__bridge void *)n, live.nextOpacity, live.frameSpacing, (unsigned long)live.completedRenders,
+                live.playing, live.holding, live.seaming);
+        }
+    }}
+    Check(frames.count == 300 && WritePlaybackMovie(frames, [dir stringByAppendingPathComponent:@"autoplay.mov"]),
+        @"ten seconds of displayed autoplay are recorded for the jank score");
+    [frames removeAllObjects];
+    for (NSInteger i = 0; i < 120; i++) { @autoreleasepool {
+        [c previewPopoverMovieFraction:.30 + .10 * i / 119.0];
+        WaitUntil(^BOOL { return [[c valueForKey:@"scrubRenderer"] renderCount] > 0; }, 2);
+        SettleController(c);
+        [NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:1.0/30.0]];
+        NSImage *frame = SnapshotDisplayedMap([c timelineChart]);
+        if (frame) [frames addObject:frame];
+    }}
+    [c previewPopoverMovieFraction:NAN];
+    NSDate *sweepStart = [(id)c dateForMotionFraction:.30], *sweepEnd = [(id)c dateForMotionFraction:.40];
+    double sweepHours = sweepStart && sweepEnd ? [sweepEnd timeIntervalSinceDate:sweepStart] / 3600.0 : 0;
+    [[NSString stringWithFormat:@"%.3f\n", sweepHours] writeToFile:[dir stringByAppendingPathComponent:@"hover.hours"]
+        atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+    Check(frames.count == 120 && WritePlaybackMovie(frames, [dir stringByAppendingPathComponent:@"hover.mov"]),
+        @"a displayed hover sweep is recorded for the jank score");
+    [c stopPopoverPlayback];
+    [c popoverWillClose:[NSNotification notificationWithName:NSPopoverWillCloseNotification object:shown]];
+    c.popover = original;
+    if (qa && qa[0]) [c reloadStoreAtPath:root];
+}
+
 static void CheckLivePlayback(TestController *c, NSString *root, NSFileManager *fm) {
-    Check(fabs(IsobarLiveHoursPerSecond(IsobarLiveSpeedSlow) - 0.2) < 1e-9 &&
-        fabs(IsobarLiveHoursPerSecond(IsobarLiveSpeedMedium) - 0.5) < 1e-9 &&
+    Check(fabs(IsobarLiveHoursPerSecond(IsobarLiveSpeedSlow) - 0.05) < 1e-9 &&
+        fabs(IsobarLiveHoursPerSecond(IsobarLiveSpeedMedium) - 0.2) < 1e-9 &&
         fabs(IsobarLiveHoursPerSecond(IsobarLiveSpeedFast) - 1) < 1e-9 &&
         fabs(kIsobarLiveFrameStep - 90) < 1e-9 && kIsobarLiveSeamDuration >= 1,
-        @"slow is one hour per five seconds, then medium and fast");
+        @"slow is one hour per twenty seconds, then medium and fast");
     Check(fabs(IsobarLiveFrameSpacing(0.003, 0.2) - 90) < 1e-6 &&
         fabs(IsobarLiveFrameSpacing(0.008, 0.2) - 90) < 1e-6 &&
         fabs(IsobarLiveFrameSpacing(0.040, 0.2) - 192) < 1e-6 &&
-        fabs(IsobarLiveFrameSpacing(0.010, 1.0) - 450) < 1e-6 &&
+        fabs(IsobarLiveFrameSpacing(0.010, 1.0) - 240) < 1e-6 &&
         IsobarLiveFrameSpacing(0.001, 0.2) >= 90 - 1e-6,
         @"cheap frames stay near 90 forecast seconds and slow frames widen");
     IsobarLiveClock *manual = [IsobarLiveClock manualClock];
@@ -787,14 +875,19 @@ static void CheckLivePlayback(TestController *c, NSString *root, NSFileManager *
     [c setValue:@YES forKey:@"forecastPaused"];
     [c popoverWillClose:[NSNotification notificationWithName:NSPopoverWillCloseNotification object:shown]];
     [c popoverDidShow:[NSNotification notificationWithName:NSPopoverDidShowNotification object:shown]];
-    Check([[c valueForKey:@"forecastPaused"] boolValue] && ![[c valueForKey:@"popoverPlaying"] boolValue],
-        @"an explicit pause survives closing and reopening");
+    {
+        IsobarLivePlayer *reopened = [c valueForKey:@"live"];
+        NSDate *now = [c valueForKey:@"chartNow"] ?: NSDate.date;
+        double offset = reopened.playhead ? fabs([reopened.playhead timeIntervalSinceDate:now]) : INFINITY;
+        Check(![[c valueForKey:@"forecastPaused"] boolValue] && [[c valueForKey:@"timelinePlaying"] boolValue] && offset < 600,
+            @"reopening the map clears a pause and plays from now");
+    }
     NSString *suite = [@"com.isobar.playback." stringByAppendingString:NSUUID.UUID.UUIDString];
     PlaybackSuite = [[NSUserDefaults alloc] initWithSuiteName:suite];
     [PlaybackSuite setBool:YES forKey:@"forecastPaused"];
     PlaybackPrefsController *remembered = [PlaybackPrefsController new];
-    Check([[remembered valueForKey:@"forecastPaused"] boolValue],
-        @"an explicit pause is still set on the next launch");
+    Check(![[remembered valueForKey:@"forecastPaused"] boolValue],
+        @"a pause saved by an older build does not stop the next launch");
     [PlaybackSuite removePersistentDomainForName:suite];
     PlaybackSuite = nil;
 
@@ -972,9 +1065,12 @@ static void CheckQuarterDegree(NSString *fixtures) {
     double expected = player.hoursPerSecond * (300.0 / 30.0);
     fprintf(stderr, "grid025 smooth move %.2fpx tail %.2fpx lost %.1f%% label %.6fpx centre %.6fpx advance %.2fh\n",
         maxMove, maxTail, maxLost * 100, maxLabel, maxCentre, advanced);
-    Check(compared > 20 && maxMove <= 1.5 && maxTail <= 1.5 && maxLost < .10,
-        @"0.25° isobars stay inside a 1.5px glide");
-    Check(maxLabel <= 2 && maxCentre <= 2, @"0.25° labels and centres glide at most 2px a frame");
+    Check(compared > 20 && maxLost < .10, @"0.25° isobars stay continuous across frames");
+    // A slow machine widens the adaptive frame spacing, so the per-frame move
+    // depends on render speed: a limit locally, a report on ISOBAR_CI_SLOW runners.
+    if (!IsobarCISlow()) Check(maxMove <= 1.5 && maxTail <= 1.5, @"0.25° isobars stay inside a 1.5px glide");
+    else fprintf(stderr, "grid025 glide ceiling skipped (ISOBAR_CI_SLOW)\n");
+    Check(maxLabel <= 0.5 && maxCentre <= 0.5, @"0.25° labels and centres stay still on screen during play");
     Check(advanced > expected * 0.8 && advanced < expected * 1.2, @"0.25° playback keeps the slow rate");
     [player stopRendering];
 }
@@ -1647,6 +1743,7 @@ int main(void) {
                 Check(fabs(((TimelineStrip *)[c valueForKey:@"popoverTimeline"]).progress-.9)<.001,
                     @"leaving a rapid hover keeps its last selected time");
                 CheckLivePlayback(c, root, fm);
+                RecordDisplayedPlayback(c, root);
             }
             [c setValue:@-1 forKey:@"hubDayIndex"];
             // Keep this regression check in the disposable store harness too:

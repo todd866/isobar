@@ -15,6 +15,7 @@ typedef struct {
     int bare;     // map only; the popover draws its own heading
     int plateOnly; // sea, land and overlays, no isobars
     int inkOnly;   // isobars, labels and centres on a clear plate
+    int quiet;     // lines only: no pressure labels or H/L marks (while scrubbing)
 } OwnLayerOptions;
 
 typedef NS_ENUM(NSInteger, OwnRunField) {
