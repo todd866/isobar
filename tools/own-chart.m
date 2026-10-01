@@ -7,11 +7,14 @@
 #ifndef ISOBAR_APP
 #import <ImageIO/ImageIO.h>
 #endif
+#import <Accelerate/Accelerate.h>
 #import <math.h>
+#import <os/lock.h>
 #import <pthread.h>
 #import <stdlib.h>
 #import <string.h>
 #import <sys/stat.h>
+#import <time.h>
 
 static const int kPanelW = 580;
 static const int kTitleH = 26;
@@ -30,6 +33,29 @@ static const double kRainMm = 1.0;
 static const double kHatchWidth = 0.55;
 static const int kHatchSpacing = 16;
 static const double kHatchAlpha = 0.40;
+
+static _Thread_local OwnRenderProfile gRenderProfile;
+static _Thread_local double gProfileMark;
+static _Thread_local double gChaikinMs;
+
+static double ProfileNow(void) {
+    return (double)clock_gettime_nsec_np(CLOCK_UPTIME_RAW) * 1e-6;
+}
+
+static void ProfileReset(void) {
+    gRenderProfile = (OwnRenderProfile){0};
+    gChaikinMs = 0;
+    gProfileMark = ProfileNow();
+}
+
+static double ProfileLap(void) {
+    double now = ProfileNow();
+    double delta = now - gProfileMark;
+    gProfileMark = now;
+    return delta;
+}
+
+OwnRenderProfile OwnRenderProfileLast(void) { return gRenderProfile; }
 
 // Published runs are immutable between collector publications. Keep a few
 // parsed runs alive so a refresh that only changed the pointer does not decode
@@ -94,6 +120,11 @@ typedef struct {
     float *data;
     NSTimeInterval fetched;
     char httpDate[64];
+    // Per model hour, three linear fields packed as gaussian, mild, wide.
+    // The land correction is not linear, so it is applied after the lerp.
+    double **smooth;
+    double *landWeight;
+    os_unfair_lock smoothLock;
 } Cube;
 
 static void AdoptCubeGrid(const Cube *cube) {
@@ -107,6 +138,11 @@ static void AdoptCubeGrid(const Cube *cube) {
 }
 
 static void CubeFree(Cube *cube) {
+    if (cube->smooth) {
+        for (int h = 0; h < cube->nHours; h++) free(cube->smooth[h]);
+        free(cube->smooth);
+    }
+    free(cube->landWeight);
     free(cube->times);
     free(cube->data);
     *cube = (Cube){0};
@@ -206,6 +242,29 @@ static float DecodeF16(uint16_t bits) {
         value = ldexpf(1.0f + (float)fraction / 1024.0f, exponent - 15);
     }
     return sign ? -value : value;
+}
+
+static float *ReadF16Stack(NSString *path, int nTimes, int nPoints, NSString **error) {
+    NSData *file = [NSData dataWithContentsOfFile:path];
+    size_t count = (size_t)nTimes * (size_t)nPoints;
+    size_t need = count * sizeof(uint16_t);
+    if (file.length != need) {
+        if (error) *error = [NSString stringWithFormat:@"%@ is %lu bytes, expected %lu",
+            path.lastPathComponent, (unsigned long)file.length, (unsigned long)need];
+        return NULL;
+    }
+    const uint8_t *bytes = file.bytes;
+    float *out = malloc(count * sizeof(float));
+    if (!out) {
+        if (error) *error = @"not enough memory for an ECMWF field";
+        return NULL;
+    }
+    for (size_t i = 0; i < count; i++) {
+        uint16_t bits = (uint16_t)bytes[i * 2] | ((uint16_t)bytes[i * 2 + 1] << 8);
+        out[i] = bits == 0xf800 ? NAN : DecodeF16(bits);
+        if (isinf(out[i])) out[i] = NAN;
+    }
+    return out;
 }
 
 static float *ReadF16(NSString *path, int nPoints, NSString **error) {
@@ -315,8 +374,15 @@ static BOOL LoadRunDirectory(NSString *dir, Cube *cube, NSDictionary **manifestO
         return NO;
     }
     NSString *dtype = [grid[@"dtype"] isKindOfClass:NSString.class] ? grid[@"dtype"] : nil;
-    if (dtype.length && ![dtype isEqual:@"float32"]) {
-        if (error) *error = @"ECMWF grid is not float32";
+    BOOL half = [dtype isEqual:@"float16"];
+    if (dtype.length && ![dtype isEqual:@"float32"] && !half) {
+        if (error) *error = @"ECMWF grid is not float32 or float16";
+        return NO;
+    }
+    NSString *endian = [grid[@"endian"] isKindOfClass:NSString.class] ? grid[@"endian"] : nil;
+    unsigned short endianProbe = 1;
+    if (![endian isEqual:@"little"] || *((unsigned char *)&endianProbe) != 1) {
+        if (error) *error = @"ECMWF grid is not little-endian";
         return NO;
     }
     int nLon = [grid[@"nx"] intValue];
@@ -324,19 +390,27 @@ static BOOL LoadRunDirectory(NSString *dir, Cube *cube, NSDictionary **manifestO
     double step = [grid[@"step"] doubleValue];
     double west = [grid[@"west"] doubleValue];
     double north = [grid[@"north"] doubleValue];
-    if (nLon < 2 || nLat < 2 || !(step > 0)) {
-        if (error) *error = @"ECMWF grid dimensions are unusable";
+    size_t nPoints = (size_t)nLon * (size_t)nLat;
+    if (nLon < 2 || nLat < 2 || nLon > 1000 || nLat > 1000 || nPoints > 250000 || !(step > 0)) {
+        if (error) *error = @"ECMWF grid dimensions are unsafe";
+        return NO;
+    }
+    if (times.count < 1 || times.count > 10000) {
+        if (error) *error = @"ECMWF grid is too large";
         return NO;
     }
     int nTimes = (int)times.count;
-    int nPoints = nLon * nLat;
+    if ((size_t)VarCount * nPoints * (size_t)nTimes * sizeof(float) > 256u * 1024u * 1024u) {
+        if (error) *error = @"ECMWF grid is too large";
+        return NO;
+    }
     cube->nLon = nLon;
     cube->nLat = nLat;
     cube->west = west;
     cube->north = north;
     cube->step = step;
     cube->nHours = nTimes;
-    cube->nPoints = nPoints;
+    cube->nPoints = (int)nPoints;
     AdoptCubeGrid(cube);
     cube->times = calloc((size_t)nTimes, sizeof(int64_t));
     cube->data = calloc((size_t)VarCount * (size_t)nPoints * (size_t)nTimes, sizeof(float));
@@ -362,7 +436,9 @@ static BOOL LoadRunDirectory(NSString *dir, Cube *cube, NSDictionary **manifestO
         NSArray *pair = files[var];
         NSString *name = VariableFile(manifest, pair[0], pair[1], error);
         if (!name) return NO;
-        float *stack = ReadF32([dir stringByAppendingPathComponent:name], nTimes, nPoints, error);
+        NSString *path = [dir stringByAppendingPathComponent:name];
+        float *stack = half ? ReadF16Stack(path, nTimes, (int)nPoints, error)
+            : ReadF32(path, nTimes, (int)nPoints, error);
         if (!stack) return NO;
         StoreField(cube, var.intValue, nTimes, stack);
         free(stack);
@@ -370,12 +446,14 @@ static BOOL LoadRunDirectory(NSString *dir, Cube *cube, NSDictionary **manifestO
     NSString *uName = VariableFile(manifest, @"u10", @"u10.f32", error);
     NSString *vName = VariableFile(manifest, @"v10", @"v10.f32", error);
     if (!uName || !vName) return NO;
-    float *u = ReadF32([dir stringByAppendingPathComponent:uName], nTimes, nPoints, error);
-    float *v = ReadF32([dir stringByAppendingPathComponent:vName], nTimes, nPoints, error);
+    NSString *uPath = [dir stringByAppendingPathComponent:uName];
+    NSString *vPath = [dir stringByAppendingPathComponent:vName];
+    float *u = half ? ReadF16Stack(uPath, nTimes, (int)nPoints, error) : ReadF32(uPath, nTimes, (int)nPoints, error);
+    float *v = half ? ReadF16Stack(vPath, nTimes, (int)nPoints, error) : ReadF32(vPath, nTimes, (int)nPoints, error);
     if (!u || !v) { free(u); free(v); return NO; }
     for (int hour = 0; hour < nTimes; hour++) {
-        for (int point = 0; point < nPoints; point++) {
-            float ue = u[(size_t)hour * (size_t)nPoints + (size_t)point];
+        for (size_t point = 0; point < nPoints; point++) {
+            float ue = u[(size_t)hour * (size_t)nPoints + point];
             float vn = v[(size_t)hour * (size_t)nPoints + (size_t)point];
             float speed = NAN, direction = NAN;
             if (isfinite(ue) && isfinite(vn)) {
@@ -392,8 +470,8 @@ static BOOL LoadRunDirectory(NSString *dir, Cube *cube, NSDictionary **manifestO
     free(v);
     // A reset accumulation is not a rainfall total.
     for (int hour = 0; hour < nTimes; hour++) {
-        for (int point = 0; point < nPoints; point++) {
-            size_t index = ((size_t)VarRain * (size_t)nPoints + (size_t)point) * (size_t)nTimes + (size_t)hour;
+        for (size_t point = 0; point < nPoints; point++) {
+            size_t index = ((size_t)VarRain * nPoints + point) * (size_t)nTimes + (size_t)hour;
             float value = cube->data[index];
             if (isfinite(value) && value < 0) cube->data[index] = NAN;
         }
@@ -642,6 +720,133 @@ static double *ScalarField(const Cube *cube, int var, double hour) {
     return field;
 }
 
+static void BlurField(const double *src, double *dst, int nLon, int nLat, double sigma);
+static void BlurFiniteField(const double *src, double *dst, int nLon, int nLat, double sigma);
+static void MixLandMSLP(double *field, const double *mild, const double *wide,
+    const double *terrain, const uint8_t *land, int n, uint8_t *roughOut);
+
+// One model hour's linear pieces: short Gaussian, then the mild and wide
+// blurs the land correction mixes. The mix itself runs after interpolation.
+static void EnsureSmoothedHour(Cube *cube, int hour, const uint8_t *land) {
+    if (!cube || hour < 0 || hour >= cube->nHours) return;
+    os_unfair_lock_lock(&cube->smoothLock);
+    if (!cube->smooth) cube->smooth = calloc((size_t)cube->nHours, sizeof(double *));
+    BOOL ready = cube->smooth && cube->smooth[hour];
+    BOOL needWeight = land && !cube->landWeight;
+    os_unfair_lock_unlock(&cube->smoothLock);
+    if (needWeight) {
+        int n = cube->nPoints;
+        double *mask = malloc((size_t)n * sizeof(double));
+        double *weight = malloc((size_t)n * sizeof(double));
+        if (mask && weight) {
+            for (int i = 0; i < n; i++) mask[i] = land[i] ? 1.0 : 0.0;
+            BlurField(mask, weight, cube->nLon, cube->nLat, 2.0);
+        }
+        free(mask);
+        os_unfair_lock_lock(&cube->smoothLock);
+        if (weight && !cube->landWeight) cube->landWeight = weight;
+        else free(weight);
+        os_unfair_lock_unlock(&cube->smoothLock);
+    }
+    if (ready) return;
+    double began = ProfileNow();
+    int n = cube->nPoints;
+    double *field = ScalarField(cube, VarMSLP, hour);
+    double *mild = field ? malloc((size_t)n * sizeof(double)) : NULL;
+    double *wide = field ? malloc((size_t)n * sizeof(double)) : NULL;
+    double *pack = field && mild && wide ? malloc((size_t)n * 3 * sizeof(double)) : NULL;
+    if (pack) {
+        OwnGaussianSmooth(field, cube->nLon, cube->nLat, 1.25);
+        BlurFiniteField(field, mild, cube->nLon, cube->nLat, 2.0);
+        BlurFiniteField(field, wide, cube->nLon, cube->nLat, 8.0);
+        memcpy(pack, field, (size_t)n * sizeof(double));
+        memcpy(pack + n, mild, (size_t)n * sizeof(double));
+        memcpy(pack + 2 * n, wide, (size_t)n * sizeof(double));
+    }
+    free(field);
+    free(mild);
+    free(wide);
+    os_unfair_lock_lock(&cube->smoothLock);
+    if (pack && cube->smooth && !cube->smooth[hour]) cube->smooth[hour] = pack;
+    else free(pack);
+    os_unfair_lock_unlock(&cube->smoothLock);
+    gRenderProfile.smoothMs += ProfileNow() - began;
+}
+
+static void LerpPacked(const double *a, const double *b, double t, double *dst, int n) {
+    if (!b || t <= 1e-8) { memcpy(dst, a, (size_t)n * sizeof(double)); return; }
+    double u = 1.0 - t;
+    vDSP_vsmulD(a, 1, &u, dst, 1, (vDSP_Length)n);
+    vDSP_vsmaD(b, 1, &t, dst, 1, dst, 1, (vDSP_Length)n);
+}
+
+// Caller frees the field and the rough mask.
+static double *SmoothedMSLP(Cube *cube, double hour, const uint8_t *land, uint8_t **roughOut) {
+    if (roughOut) *roughOut = NULL;
+    if (!cube || !isfinite(hour) || hour < 0 || hour > cube->nHours - 1) return NULL;
+    int lo = (int)floor(hour);
+    int hi = lo < cube->nHours - 1 ? lo + 1 : lo;
+    double t = hour - lo;
+    if (t < 0) t = 0;
+    EnsureSmoothedHour(cube, lo, land);
+    if (hi != lo) EnsureSmoothedHour(cube, hi, land);
+    os_unfair_lock_lock(&cube->smoothLock);
+    double *a = cube->smooth ? cube->smooth[lo] : NULL;
+    double *b = cube->smooth ? cube->smooth[hi] : NULL;
+    double *terrain = cube->landWeight;
+    os_unfair_lock_unlock(&cube->smoothLock);
+    if (!a) return NULL;
+    int n = cube->nPoints;
+    double *out = malloc((size_t)n * sizeof(double));
+    double *mild = malloc((size_t)n * sizeof(double));
+    double *wide = malloc((size_t)n * sizeof(double));
+    uint8_t *rough = calloc((size_t)n, 1);
+    if (!out || !mild || !wide || !rough) {
+        free(out); free(mild); free(wide); free(rough);
+        return NULL;
+    }
+    double began = ProfileNow();
+    LerpPacked(a, b, t, out, n);
+    LerpPacked(a + n, b ? b + n : NULL, t, mild, n);
+    LerpPacked(a + 2 * n, b ? b + 2 * n : NULL, t, wide, n);
+    MixLandMSLP(out, mild, wide, terrain, land, n, rough);
+    gRenderProfile.fieldMs += ProfileNow() - began;
+    free(mild);
+    free(wide);
+    if (roughOut) *roughOut = rough;
+    else free(rough);
+    return out;
+}
+
+// Contours only need the cells that can cross the drawn window. A one-cell
+// margin keeps a line that clips the frame the same shape it had on the full grid.
+static double *ContourWindow(const double *field, int nLon, int nLat,
+    int *outW, int *outH, double *originX, double *originY) {
+    if (!field || nLon < 2 || nLat < 2) return NULL;
+    double step = GStep();
+    if (!(step > 0)) return NULL;
+    int i0 = (int)floor((kViewWest - GWest()) / step) - 1;
+    int i1 = (int)ceil((kViewEast - GWest()) / step) + 1;
+    int j0 = (int)floor((GNorth() - kViewNorth) / step) - 1;
+    int j1 = (int)ceil((GNorth() - kViewSouth) / step) + 1;
+    if (i0 < 0) i0 = 0;
+    if (j0 < 0) j0 = 0;
+    if (i1 > nLon - 1) i1 = nLon - 1;
+    if (j1 > nLat - 1) j1 = nLat - 1;
+    int w = i1 - i0 + 1, h = j1 - j0 + 1;
+    if (w < 2 || h < 2) return NULL;
+    double *box = malloc((size_t)w * (size_t)h * sizeof(double));
+    if (!box) return NULL;
+    for (int j = 0; j < h; j++)
+        memcpy(box + (size_t)j * (size_t)w, field + (size_t)(j0 + j) * (size_t)nLon + (size_t)i0,
+            (size_t)w * sizeof(double));
+    *outW = w;
+    *outH = h;
+    *originX = GWest() + i0 * step;
+    *originY = GNorth() - j0 * step;
+    return box;
+}
+
 // rain24 is already the 24 h ending at this frame, in millimetres.
 static double *RainField(const Cube *cube, double hour) {
     return ScalarField(cube, VarRain, hour);
@@ -763,41 +968,31 @@ static void BlurField(const double *src, double *dst, int nLon, int nLat, double
         sum += w;
     }
     for (int i = 0; i <= rad * 2; i++) kernel[i] /= sum;
+    int flen = rad * 2 + 1;
     double *tmp = malloc((size_t)n * sizeof(double));
-    if (!tmp) { memcpy(dst, src, (size_t)n * sizeof(double)); return; }
+    int span = (nLon > nLat ? nLon : nLat) + flen;
+    double *pad = malloc((size_t)span * sizeof(double));
+    if (!tmp || !pad) { free(tmp); free(pad); memcpy(dst, src, (size_t)n * sizeof(double)); return; }
     for (int j = 0; j < nLat; j++) {
-        for (int i = 0; i < nLon; i++) {
-            double acc = 0;
-            for (int di = -rad; di <= rad; di++) {
-                int ii = i + di;
-                if (ii < 0) ii = 0;
-                if (ii >= nLon) ii = nLon - 1;
-                acc += kernel[di + rad] * src[j * nLon + ii];
-            }
-            tmp[j * nLon + i] = acc;
+        for (int i = -rad; i < nLon + rad; i++) {
+            int ii = i;
+            if (ii < 0) ii = 0;
+            if (ii >= nLon) ii = nLon - 1;
+            pad[i + rad] = src[j * nLon + ii];
         }
+        vDSP_convD(pad, 1, kernel, 1, tmp + j * nLon, 1, (vDSP_Length)nLon, (vDSP_Length)flen);
     }
     for (int i = 0; i < nLon; i++) {
-        for (int j = 0; j < nLat; j++) {
-            double acc = 0;
-            for (int dj = -rad; dj <= rad; dj++) {
-                int jj = j + dj;
-                if (jj < 0) jj = 0;
-                if (jj >= nLat) jj = nLat - 1;
-                acc += kernel[dj + rad] * tmp[jj * nLon + i];
-            }
-            dst[j * nLon + i] = acc;
+        for (int j = -rad; j < nLat + rad; j++) {
+            int jj = j;
+            if (jj < 0) jj = 0;
+            if (jj >= nLat) jj = nLat - 1;
+            pad[j + rad] = tmp[jj * nLon + i];
         }
+        vDSP_convD(pad, 1, kernel, 1, dst + i, (vDSP_Stride)nLon, (vDSP_Length)nLat, (vDSP_Length)flen);
     }
     free(tmp);
-}
-
-static void SmoothLandMSLPMotion(double *field, const uint8_t *land, int nLon, int nLat, uint8_t *roughOut);
-
-// Static and moving charts must use the same pressure field. Otherwise the
-// contour jumps at the transition between a still frame and the movie.
-static void SmoothLandMSLP(double *field, const uint8_t *land, int nLon, int nLat, uint8_t *roughOut) {
-    SmoothLandMSLPMotion(field, land, nLon, nLat, roughOut);
+    free(pad);
 }
 
 // Normalize around missing cells without filling those cells or spreading
@@ -824,24 +1019,13 @@ static void BlurFiniteField(const double *src, double *dst, int nLon, int nLat, 
 
 // MSL pressure reduction over high ground produces small bends and false
 // closed contours. Preserve the analysed ocean field and blend toward a
-// synoptic-scale land field, feathered across the coast. This is spatial
-// smoothing only; every displayed time is still rendered from its own grid.
-static void SmoothLandMSLPMotion(double *field, const uint8_t *land, int nLon, int nLat, uint8_t *roughOut) {
-    int n = nLon * nLat;
-    double *mild = malloc((size_t)n * sizeof(double));
-    double *wide = malloc((size_t)n * sizeof(double));
-    double *landW = malloc((size_t)n * sizeof(double));
-    double *weight = malloc((size_t)n * sizeof(double));
-    if (!mild || !wide || !landW || !weight) {
-        free(mild); free(wide); free(landW); free(weight);
-        return;
-    }
-    for (int i = 0; i < n; i++) landW[i] = land && land[i] ? 1.0 : 0.0;
-    BlurFiniteField(field, mild, nLon, nLat, 2.0);
-    BlurFiniteField(field, wide, nLon, nLat, 8.0);
-    BlurField(landW, weight, nLon, nLat, 2.0);
+// synoptic-scale land field, feathered across the coast. The blurs are
+// linear; this mix is not, so playback applies it after interpolating.
+static void MixLandMSLP(double *field, const double *mild, const double *wide,
+    const double *terrainW, const uint8_t *land, int n, uint8_t *roughOut) {
+    if (!field || !mild || !wide || n < 1) return;
     for (int i = 0; i < n; i++) {
-        double terrain = weight[i];
+        double terrain = terrainW ? terrainW[i] : 0;
         if (terrain < 0) terrain = 0;
         if (terrain > 1) terrain = 1;
         double delta = fabs(field[i] - wide[i]);
@@ -856,7 +1040,6 @@ static void SmoothLandMSLPMotion(double *field, const uint8_t *land, int nLon, i
         double base = field[i] * (1.0 - 0.75 * terrain) + mild[i] * (0.75 * terrain);
         field[i] = base * (1.0 - wideBlend) + wide[i] * wideBlend;
     }
-    free(mild); free(wide); free(landW); free(weight);
 }
 
 // A closed ring smaller than about 3° is MSL-reduction noise, not a cyclone.
@@ -1016,7 +1199,8 @@ static int ThinLabels(OwnLabel *labels, int nLabels, const OwnLine *lines,
         BOOL close = NO;
         for (int k = 0; k < nKeep && !close; k++) {
             OwnLabel other = labels[keep[k]];
-            if (hypot(lab.x - other.x, lab.y - other.y) < minPx) { close = YES; break; }
+            double apart = fmax(minPx, 6.0 * fmax(lab.halfW, other.halfW));
+            if (hypot(lab.x - other.x, lab.y - other.y) < apart) { close = YES; break; }
             if (OwnLabelsOverlap(lab, other, 8)) { close = YES; break; }
             if (fabs(lab.level - other.level) < 0.5 && order[a].geo) {
                 double olat = 0, olon = 0;
@@ -1031,7 +1215,8 @@ static int ThinLabels(OwnLabel *labels, int nLabels, const OwnLine *lines,
             }
         }
         for (int c = 0; c < nCenters && !close; c++) {
-            if (hypot(lab.x - centers[c].x, lab.y - centers[c].y) < centrePx) close = YES;
+            if (hypot(lab.x - centers[c].x, lab.y - centers[c].y) < fmax(centrePx, 6.0 * lab.halfW))
+                close = YES;
         }
         if (!close) keep[nKeep++] = order[a].index;
     }
@@ -1044,24 +1229,61 @@ static int ThinLabels(OwnLabel *labels, int nLabels, const OwnLine *lines,
     return nKeep;
 }
 
-// Densify once, then remove the grid-scale zigzags without changing the
-// underlying pressure field or the broad shape of a trough.
+// Two Chaikin cuts after the contour is projected. Grid corners become a
+// curve; endpoints of an open isobar stay put.
 static OwnVec *RefineLine(const OwnVec *in, int count, int closed, int *outCount) {
-    if (count < 2) return NULL;
-    int cap1 = closed ? count * 2 : count * 2 - 1;
+    if (count < 2 || (closed && count < 3)) return NULL;
+    double began = ProfileNow();
+    int cap1 = count * 2;
     OwnVec *mid = malloc((size_t)cap1 * sizeof(OwnVec));
-    int n1 = mid ? OwnDensify(in, count, closed, mid, cap1) : -1;
-    if (n1 < 2) { free(mid); return NULL; }
-    OwnSmoothLine(mid, n1, closed, 2);
-    *outCount = n1;
-    return mid;
+    int n1 = mid ? OwnChaikin(in, count, closed, mid, cap1) : -1;
+    if (n1 < 2) { free(mid); gChaikinMs += ProfileNow() - began; return NULL; }
+    int cap2 = n1 * 2;
+    OwnVec *out = malloc((size_t)cap2 * sizeof(OwnVec));
+    int n2 = out ? OwnChaikin(mid, n1, closed, out, cap2) : -1;
+    free(mid);
+    if (n2 < 2) { free(out); gChaikinMs += ProfileNow() - began; return NULL; }
+    *outCount = n2;
+    gChaikinMs += ProfileNow() - began;
+    return out;
+}
+
+static NSString *PressureText(int hPa) {
+    static NSString *text[1601];
+    if (hPa < 0 || hPa > 1600) return [NSString stringWithFormat:@"%d", hPa];
+    if (!text[hPa]) text[hPa] = [NSString stringWithFormat:@"%d", hPa];
+    return text[hPa];
 }
 
 static double LabelHalf(double level, void *context) {
     NSFont *font = (__bridge NSFont *)context;
-    NSString *text = [NSString stringWithFormat:@"%.0f", level];
+    int key = (int)llround(level);
+    static double cache[1601];
+    static const void *fontSeen;
+    if (fontSeen != (__bridge const void *)font) {
+        memset(cache, 0, sizeof cache);
+        fontSeen = (__bridge const void *)font;
+    }
+    if (key >= 0 && key <= 1600 && cache[key] > 0) return cache[key];
+    NSString *text = PressureText(key);
     NSSize size = [text sizeWithAttributes:@{NSFontAttributeName: font}];
-    return size.width * 0.5 + 1.5;
+    double half = size.width * 0.5;
+    if (key >= 0 && key <= 1600) cache[key] = half > 0 ? half : 0.01;
+    return half;
+}
+
+static double LabelHalfHeight(NSFont *font) {
+    NSSize size = [@"1020" sizeWithAttributes:@{NSFontAttributeName: font ?: [NSFont systemFontOfSize:15]}];
+    return size.height > 2 ? size.height * 0.5 : 8;
+}
+
+static void StrokeRun(CGContextRef ctx, const OwnVec *pts, int a, int b, int closed) {
+    if (b - a < 2) return;
+    CGContextBeginPath(ctx);
+    CGContextMoveToPoint(ctx, pts[a].x, pts[a].y);
+    for (int i = a + 1; i < b; i++) CGContextAddLineToPoint(ctx, pts[i].x, pts[i].y);
+    if (closed) CGContextClosePath(ctx);
+    CGContextStrokePath(ctx);
 }
 
 static void StrokeLine(CGContextRef ctx, const OwnVec *pts, int count, int closed,
@@ -1070,23 +1292,111 @@ static void StrokeLine(CGContextRef ctx, const OwnVec *pts, int count, int close
     if (count < 2) return;
     CGContextSetLineWidth(ctx, width);
     CGContextSetRGBStrokeColor(ctx, red, green, blue, alpha);
-    CGContextBeginPath(ctx);
-    BOOL drawing = NO;
-    for (int i = 0; i < count; i++) {
-        BOOL blocked = NO;
-        for (int a = 0; a < nAvoid; a++) {
-            if (hypot(pts[i].x - avoid[a].x, pts[i].y - avoid[a].y) < avoidRadius) { blocked = YES; break; }
+    int start = -1;
+    for (int i = 0; i <= count; i++) {
+        BOOL blocked = i == count;
+        if (!blocked) {
+            for (int a = 0; a < nAvoid; a++) {
+                if (hypot(pts[i].x - avoid[a].x, pts[i].y - avoid[a].y) < avoidRadius) { blocked = YES; break; }
+            }
         }
-        if (blocked) { drawing = NO; continue; }
-        if (!drawing) {
-            CGContextMoveToPoint(ctx, pts[i].x, pts[i].y);
-            drawing = YES;
-        } else {
-            CGContextAddLineToPoint(ctx, pts[i].x, pts[i].y);
+        if (!blocked) {
+            if (start < 0) start = i;
+            continue;
+        }
+        if (start >= 0 && i - start >= 2) {
+            double len = 0;
+            for (int k = start + 1; k < i; k++)
+                len += hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y);
+            BOOL whole = start == 0 && i == count;
+            // A centre or a label can split a line. The stub left beside the
+            // hole is not an isobar.
+            if (whole || len >= 28.0)
+                StrokeRun(ctx, pts, start, i, whole && closed && nAvoid == 0);
+        }
+        start = -1;
+    }
+}
+
+static double InkCover(double x, double y, const OwnLabel *labels, const double *labelAlpha, int nLabels,
+    const OwnVec *centres, const double *centreAlpha, int nCentres) {
+    double cover = 0;
+    for (int i = 0; i < nLabels; i++) {
+        if (!labels || !labelAlpha || labelAlpha[i] <= 0) continue;
+        double hw = labels[i].halfW + 2.5, hh = labels[i].halfH + 2.5;
+        if (fabs(x - labels[i].x) <= hw && fabs(y - labels[i].y) <= hh)
+            cover = fmax(cover, labelAlpha[i]);
+    }
+    for (int i = 0; i < nCentres; i++) {
+        if (!centres || !centreAlpha || centreAlpha[i] <= 0) continue;
+        if (hypot(x - centres[i].x, y - centres[i].y) < 11)
+            cover = fmax(cover, centreAlpha[i]);
+    }
+    return cover > 1 ? 1 : cover;
+}
+
+static void EraseRun(CGContextRef ctx, const OwnVec *run, int nRun, double alpha) {
+    if (!run || nRun < 2 || alpha < 0.02) return;
+    CGContextSetRGBStrokeColor(ctx, 0, 0, 0, alpha > 1 ? 1 : alpha);
+    CGContextBeginPath(ctx);
+    CGContextMoveToPoint(ctx, run[0].x, run[0].y);
+    for (int i = 1; i < nRun; i++) CGContextAddLineToPoint(ctx, run[i].x, run[i].y);
+    CGContextStrokePath(ctx);
+}
+
+// One continuous stroke, then a destination-out pass under each fading label
+// or centre. The hole opens with the glyph instead of popping, and the ink
+// stays a single curve so it does not step between short caps.
+static void StrokeFadedContour(CGContextRef ctx, const OwnVec *pts, int count, int closed,
+    const OwnLabel *labels, const double *labelAlpha, int nLabels,
+    const OwnVec *centres, const double *centreAlpha, int nCentres,
+    double width, double red, double green, double blue, double lineAlpha) {
+    if (!pts || count < 2 || lineAlpha < 0.02) return;
+    StrokeLine(ctx, pts, count, closed, NULL, 0, 0, width, red, green, blue, lineAlpha);
+    BOOL any = NO;
+    for (int i = 0; i < nLabels && !any; i++) any = labelAlpha && labelAlpha[i] > 0.02;
+    for (int i = 0; i < nCentres && !any; i++) any = centreAlpha && centreAlpha[i] > 0.02;
+    if (!any) return;
+    int edges = closed ? count : count - 1;
+    int cap = edges * 2 + 8;
+    OwnVec *run = malloc((size_t)cap * sizeof(OwnVec));
+    if (!run) return;
+    int nRun = 0;
+    double runAlpha = -1;
+    CGContextSaveGState(ctx);
+    CGContextSetBlendMode(ctx, kCGBlendModeDestinationOut);
+    CGContextSetLineWidth(ctx, width + 2.0);
+    CGContextSetLineCap(ctx, kCGLineCapRound);
+    for (int e = 0; e < edges; e++) {
+        OwnVec a = pts[e], b = pts[(e + 1) % count];
+        double len = hypot(b.x - a.x, b.y - a.y);
+        int parts = (int)ceil(len / 6.0);
+        if (parts < 1) parts = 1;
+        for (int p = 0; p < parts; p++) {
+            double t0 = (double)p / parts, t1 = (double)(p + 1) / parts;
+            double mx = a.x + (b.x - a.x) * (t0 + t1) * 0.5;
+            double my = a.y + (b.y - a.y) * (t0 + t1) * 0.5;
+            double alpha = InkCover(mx, my, labels, labelAlpha, nLabels, centres, centreAlpha, nCentres);
+            OwnVec p0 = {a.x + (b.x - a.x) * t0, a.y + (b.y - a.y) * t0};
+            OwnVec p1 = {a.x + (b.x - a.x) * t1, a.y + (b.y - a.y) * t1};
+            if (nRun > 0 && fabs(alpha - runAlpha) > 0.03) {
+                EraseRun(ctx, run, nRun, runAlpha);
+                nRun = 0;
+            }
+            if (nRun + 2 > cap) {
+                int next = cap * 2;
+                OwnVec *grown = realloc(run, (size_t)next * sizeof(OwnVec));
+                if (!grown) { CGContextRestoreGState(ctx); free(run); return; }
+                run = grown;
+                cap = next;
+            }
+            if (nRun == 0) { run[nRun++] = p0; runAlpha = alpha; }
+            run[nRun++] = p1;
         }
     }
-    if (closed && drawing && nAvoid == 0) CGContextClosePath(ctx);
-    CGContextStrokePath(ctx);
+    EraseRun(ctx, run, nRun, runAlpha);
+    CGContextRestoreGState(ctx);
+    free(run);
 }
 
 static void DrawText(CGContextRef ctx, NSString *text, NSFont *font, NSColor *color,
@@ -1098,6 +1408,58 @@ static void DrawText(CGContextRef ctx, NSString *text, NSFont *font, NSColor *co
     CGContextTranslateCTM(ctx, x, y);
     CGContextRotateCTM(ctx, angle);
     [text drawAtPoint:NSMakePoint(-size.width / 2.0, -size.height / 2.0) withAttributes:attrs];
+    CGContextRestoreGState(ctx);
+}
+
+// Glyph stroke in the fill under the label, then the ink. The same treatment
+// is used for stills and for movie frames.
+static void DrawHaloText(CGContextRef ctx, NSString *text, NSFont *font, NSColor *ink, NSColor *halo,
+    double x, double y, double angle) {
+    if (!text.length || !font) return;
+    NSDictionary *stroke = @{
+        NSFontAttributeName: font,
+        NSForegroundColorAttributeName: halo ?: ink,
+        NSStrokeColorAttributeName: halo ?: ink,
+        NSStrokeWidthAttributeName: @(24.0),
+    };
+    NSDictionary *fill = @{NSFontAttributeName: font, NSForegroundColorAttributeName: ink};
+    NSSize size = [text sizeWithAttributes:fill];
+    CGContextSaveGState(ctx);
+    CGContextTranslateCTM(ctx, x, y);
+    CGContextRotateCTM(ctx, angle);
+    NSPoint origin = NSMakePoint(-size.width / 2.0, -size.height / 2.0);
+    [text drawAtPoint:origin withAttributes:stroke];
+    [text drawAtPoint:origin withAttributes:fill];
+    CGContextRestoreGState(ctx);
+}
+
+static NSColor *HaloColour(OwnView view, double x, double yUp, const uint8_t *land, int nLon, int nLat,
+    MSLPColour sea, MSLPColour landColour) {
+    MSLPColour rgb = sea;
+    double lat = 0, lon = 0;
+    if (land && PixelUnproject(view, x, kMapH - yUp, &lat, &lon) && GStep() > 0) {
+        int i = (int)llround((lon - GWest()) / GStep());
+        int j = (int)llround((GNorth() - lat) / GStep());
+        if (i >= 0 && j >= 0 && i < nLon && j < nLat && land[(size_t)j * (size_t)nLon + (size_t)i])
+            rgb = landColour;
+    }
+    return [NSColor colorWithSRGBRed:rgb.red green:rgb.green blue:rgb.blue alpha:1];
+}
+
+static NSString *PressureText(int hPa);
+
+static void DrawCentreMark(CGContextRef ctx, double x, double y, BOOL high, double value,
+    NSFont *letterFont, NSFont *valueFont, NSColor *ink, NSColor *halo) {
+    CGContextSaveGState(ctx);
+    CGContextSetStrokeColorWithColor(ctx, ink.CGColor);
+    CGContextSetLineWidth(ctx, 1.15);
+    CGContextMoveToPoint(ctx, x - 4.2, y - 4.2);
+    CGContextAddLineToPoint(ctx, x + 4.2, y + 4.2);
+    CGContextMoveToPoint(ctx, x - 4.2, y + 4.2);
+    CGContextAddLineToPoint(ctx, x + 4.2, y - 4.2);
+    CGContextStrokePath(ctx);
+    DrawHaloText(ctx, high ? @"H" : @"L", letterFont, ink, halo, x, y + 14, 0);
+    DrawHaloText(ctx, PressureText((int)llround(value)), valueFont, ink, halo, x, y - 16, 0);
     CGContextRestoreGState(ctx);
 }
 
@@ -1401,6 +1763,8 @@ typedef struct {
     int rain;
     int observed; // Now frame only: station dots, and no model hatch
     int bare;     // map only, for the popover headings
+    int plateOnly;
+    int inkOnly;
     const char *legend;
     const StationRain *stations;
     int nStations;
@@ -1419,16 +1783,30 @@ typedef struct {
     int age, missing;
 } MotionCentreSlot;
 
+typedef struct {
+    BOOL active;
+    double level, x, y, alpha;
+    OwnVec *pts;
+    int count, closed;
+} MotionLineSlot;
+
 @interface OwnMotionState () {
 @public
     MotionLabelSlot _motionLabels[128];
     MotionCentreSlot _motionCentres[24];
+    MotionLineSlot _motionLines[96];
+    CGFloat _maxAlphaStep;
+    NSInteger _labelSetChanges;
     OwnExtremum _cachedExtrema[48];
+    double _cachedProminence[48];
     int _cachedExtremaCount;
     double _cachedExtremaHour;
     const void *_cachedExtremaCube;
     int _cachedExtremaNLon, _cachedExtremaNLat;
     BOOL _hasCachedExtrema;
+    OwnExtremum _heldCentres[12];
+    int _heldGrace[12];
+    int _nHeldCentres;
     NSInteger _motionFrame;
     CGFloat _maxLabelStep, _maxCentreStep;
 }
@@ -1437,111 +1815,292 @@ typedef struct {
 @implementation OwnMotionState
 - (CGFloat)maxLabelStep { return _maxLabelStep; }
 - (CGFloat)maxCentreStep { return _maxCentreStep; }
+- (CGFloat)maxAnnotationAlphaStep { return _maxAlphaStep; }
+- (NSInteger)labelSetChanges { return _labelSetChanges; }
+- (NSInteger)copyLabelPoints:(CGPoint *)points max:(NSInteger)max {
+    NSInteger count = 0;
+    if (!points || max < 1) return 0;
+    for (int s = 0; s < 128 && count < max; s++) {
+        if (!_motionLabels[s].active || _motionLabels[s].alpha < 0.4) continue;
+        points[count++] = CGPointMake(_motionLabels[s].x, _motionLabels[s].y);
+    }
+    return count;
+}
+- (void)dealloc {
+    for (int s = 0; s < 96; s++) free(_motionLines[s].pts);
+}
+- (NSInteger)copyCentrePoints:(CGPoint *)points max:(NSInteger)max {
+    NSInteger count = 0;
+    if (!points || max < 1) return 0;
+    for (int s = 0; s < 24 && count < max; s++) {
+        if (!_motionCentres[s].active || _motionCentres[s].alpha <= 0.4) continue;
+        points[count++] = CGPointMake(_motionCentres[s].x, _motionCentres[s].y);
+    }
+    return count;
+}
 @end
 
 static void MotionMoveVector(double *x, double *y, double targetX, double targetY,
     double maxStep, double *stepOut) {
     double dx = targetX - *x, dy = targetY - *y;
     double distance = hypot(dx, dy);
-    if (distance > maxStep && distance > 0) { dx *= maxStep / distance; dy *= maxStep / distance; }
+    // Stay a hair inside the cap. Scaling onto it lands a ulp over once the
+    // point is stored and read back, and the glide check is inclusive.
+    double limit = maxStep > 0 ? maxStep * (1.0 - 1e-9) : 0;
+    if (distance > limit && distance > 0 && maxStep > 0) {
+        dx *= limit / distance;
+        dy *= limit / distance;
+    }
     *x += dx; *y += dy;
     if (stepOut) *stepOut = hypot(dx, dy);
 }
 
-static double MotionContourAlpha(const OwnLine *line) {
-    if (!line || !line->closed || line->count < 3) return 1.0;
-    double minX = INFINITY, maxX = -INFINITY, minY = INFINITY, maxY = -INFINITY;
-    for (int i = 0; i < line->count; i++) {
-        minX = fmin(minX, line->pts[i].x); maxX = fmax(maxX, line->pts[i].x);
-        minY = fmin(minY, line->pts[i].y); maxY = fmax(maxY, line->pts[i].y);
-    }
-    double span = fmax(maxX - minX, maxY - minY);
-    double a = (span - 10.0) / 28.0;
-    if (a < 0) a = 0;
-    if (a > 1) a = 1;
-    return a * a * (3.0 - 2.0 * a);
+static const double kMotionFade = 1.0 / 30.0;
+static const double kFragmentLength = 96;
+static const double kFragmentEdgeLength = 48;
+static const double kFragmentEdge = 2;
+
+static double MotionFadeStep(OwnMotionState *state) {
+    if (!state) return 1;
+    if (state.immediateAnnotations || state->_motionFrame <= 1) return 1;
+    return kMotionFade;
 }
 
-static int MotionUpdateLabels(OwnMotionState *state, const OwnLabel *candidates, int nCandidates,
-    const OwnLine *lines, int nLines, const OwnVec *centres, int nCentres, BOOL allowSeeds) {
-    if (!state) return 0;
-    for (int s = 0; s < 128; s++) {
-        MotionLabelSlot *slot = &state->_motionLabels[s];
+static void MotionNoteAlpha(OwnMotionState *state, double before, double after) {
+    if (!state || state->_motionFrame <= 1) return;
+    double jump = fabs(after - before);
+    if (jump > state->_maxAlphaStep) state->_maxAlphaStep = (CGFloat)jump;
+}
+
+static BOOL MotionFragment(const OwnLine *line) {
+    return OwnIsOpenFragment(line, kFragmentLength, kFragmentEdgeLength, 0, 0, kPanelW, kMapH, kFragmentEdge);
+}
+
+static BOOL LineCanHoldLabel(const OwnLine *line) {
+    if (!line || !line->pts || line->count < 2) return NO;
+    if (MotionFragment(line)) return NO;
+    if (line->closed) {
+        double loX = INFINITY, hiX = -INFINITY, loY = INFINITY, hiY = -INFINITY;
+        for (int p = 0; p < line->count; p++) {
+            OwnVec q = line->pts[p];
+            if (q.x < loX) loX = q.x;
+            if (q.x > hiX) hiX = q.x;
+            if (q.y < loY) loY = q.y;
+            if (q.y > hiY) hiY = q.y;
+        }
+        if (fmax(hiX - loX, hiY - loY) < 28) return NO;
+    }
+    return PolyLength(line) >= 72;
+}
+
+static OwnVec *CopyVecs(const OwnVec *pts, int count) {
+    if (!pts || count < 1) return NULL;
+    OwnVec *out = malloc((size_t)count * sizeof(OwnVec));
+    if (out) memcpy(out, pts, (size_t)count * sizeof(OwnVec));
+    return out;
+}
+
+static double SegClosest(OwnVec a, OwnVec b, OwnVec p, OwnVec *at) {
+    double dx = b.x - a.x, dy = b.y - a.y;
+    double len2 = dx * dx + dy * dy;
+    double t = 0;
+    if (len2 > 1e-8) {
+        t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+        if (t < 0) t = 0;
+        else if (t > 1) t = 1;
+    }
+    at->x = a.x + dx * t;
+    at->y = a.y + dy * t;
+    return hypot(p.x - at->x, p.y - at->y);
+}
+
+// Nearest point of `p` on the polyline. `hint` is a segment index from the
+// previous sample; the search stays there unless the line has jumped.
+static OwnVec PolyClosest(const OwnVec *pts, int count, int closed, OwnVec p, int *hint, double *dist) {
+    int segs = closed ? count : count - 1;
+    OwnVec bestAt = pts[0];
+    double best = 1e12;
+    int bestSeg = 0;
+    if (segs < 1) {
+        best = hypot(p.x - pts[0].x, p.y - pts[0].y);
+        bestAt = pts[0];
+    } else {
+        int origin = hint ? *hint : 0;
+        int small = segs < 48;
+        for (int n = 0; n < (small ? 1 : 2) && best > 16; n++) {
+            int from, to, stride;
+            if (n == 0 && !small) { from = origin - 10; to = origin + 22; stride = 1; }
+            else { from = 0; to = segs; stride = segs > 80 ? 4 : 1; }
+            for (int i = from; i < to; i += stride) {
+                int seg = i;
+                if (closed) { seg %= segs; if (seg < 0) seg += segs; }
+                else if (seg < 0 || seg >= segs) continue;
+                OwnVec at;
+                double d = SegClosest(pts[seg], pts[(seg + 1) % count], p, &at);
+                if (d < best) { best = d; bestAt = at; bestSeg = seg; }
+            }
+        }
+        if (!small) {
+            for (int i = bestSeg - 4; i < bestSeg + 5; i++) {
+                int seg = i;
+                if (closed) { seg %= segs; if (seg < 0) seg += segs; }
+                else if (seg < 0 || seg >= segs) continue;
+                OwnVec at;
+                double d = SegClosest(pts[seg], pts[(seg + 1) % count], p, &at);
+                if (d < best) { best = d; bestAt = at; bestSeg = seg; }
+            }
+        }
+    }
+    if (hint) *hint = bestSeg;
+    if (dist) *dist = best;
+    return bestAt;
+}
+
+static double MeanLineDistance(const OwnLine *line, const OwnVec *prev, int prevCount, int closed) {
+    if (!line || !line->pts || line->count < 2 || !prev || prevCount < 2) return 1e9;
+    double sum = 0;
+    int hint = 0;
+    for (int s = 0; s < 8; s++) {
+        int idx = (int)((long)s * (line->count - 1) / 7);
+        double d = 0;
+        PolyClosest(prev, prevCount, closed, line->pts[idx], &hint, &d);
+        sum += d;
+    }
+    return sum / 8.0;
+}
+
+// Keep last frame's vertices and walk them toward the new extraction. A
+// marching-squares kink can jump a grid cell; the drawn stroke cannot,
+// because every vertex moves at most `cap` from where it was.
+static void EaseLineFrom(OwnLine *line, const OwnVec *prev, int prevCount) {
+    if (!line || !line->pts || line->count < 2 || !prev || prevCount < 2) return;
+    OwnVec *drawn = malloc((size_t)prevCount * sizeof(OwnVec));
+    if (!drawn) return;
+    memcpy(drawn, prev, (size_t)prevCount * sizeof(OwnVec));
+    int hint = 0;
+    for (int i = 0; i < prevCount; i++) {
+        double dist = 0;
+        OwnVec q = PolyClosest(line->pts, line->count, line->closed, drawn[i], &hint, &dist);
+        double cap = 1.25;
+        if (dist <= cap) { drawn[i] = q; continue; }
+        double s = cap / dist;
+        drawn[i].x += (q.x - drawn[i].x) * s;
+        drawn[i].y += (q.y - drawn[i].y) * s;
+    }
+    free(line->pts);
+    line->pts = drawn;
+    line->count = prevCount;
+}
+
+static void StoreLineGeom(MotionLineSlot *slot, const OwnLine *line) {
+    if (!slot || !line) return;
+    OwnVec *copy = CopyVecs(line->pts, line->count);
+    if (!copy) return;
+    free(slot->pts);
+    slot->pts = copy;
+    slot->count = line->count;
+    slot->closed = line->closed;
+}
+
+// Open fragments fade instead of popping. A line that is already on the
+// chart fades out when it becomes a fragment; a fragment that grows into
+// an isobar fades in. A new long contour is drawn at full ink.
+static void MotionContourAlphas(OwnMotionState *state, OwnLine *lines, int nLines,
+    double *alphas) {
+    enum { kSlots = 96, kReach = 48 };
+    for (int i = 0; i < nLines; i++) alphas[i] = 1;
+    if (!state || !lines || nLines < 1) return;
+    for (int i = 0; i < nLines; i++) alphas[i] = 0;
+    char *lineTaken = calloc((size_t)nLines, 1);
+    typedef struct { int line, slot; double d; } Pair;
+    Pair *pairs = calloc((size_t)nLines * kSlots, sizeof(Pair));
+    int nPairs = 0;
+    if (!lineTaken || !pairs) {
+        free(lineTaken);
+        free(pairs);
+        for (int i = 0; i < nLines; i++) alphas[i] = MotionFragment(&lines[i]) ? 0 : 1;
+        return;
+    }
+    for (int i = 0; i < nLines; i++) {
+        const OwnLine *line = &lines[i];
+        if (!line->pts || line->count < 2) continue;
+        OwnVec mid = line->pts[line->count / 2];
+        for (int s = 0; s < kSlots; s++) {
+            MotionLineSlot *slot = &state->_motionLines[s];
+            if (!slot->active) continue;
+            if (fabs(slot->level - line->level) > 0.1) continue;
+            double d = (slot->pts && slot->count >= 2)
+                ? MeanLineDistance(line, slot->pts, slot->count, slot->closed)
+                : hypot(slot->x - mid.x, slot->y - mid.y);
+            if (d > (slot->pts ? 48.0 : kReach)) continue;
+            pairs[nPairs++] = (Pair){i, s, d};
+        }
+    }
+    for (int i = 1; i < nPairs; i++) {
+        Pair key = pairs[i];
+        int j = i;
+        while (j > 0 && pairs[j - 1].d > key.d) { pairs[j] = pairs[j - 1]; j--; }
+        pairs[j] = key;
+    }
+    char used[kSlots] = {0};
+    for (int p = 0; p < nPairs; p++) {
+        if (used[pairs[p].slot] || lineTaken[pairs[p].line]) continue;
+        used[pairs[p].slot] = 1;
+        lineTaken[pairs[p].line] = 1;
+        const OwnLine *line = &lines[pairs[p].line];
+        MotionLineSlot *slot = &state->_motionLines[pairs[p].slot];
+        if (slot->pts && slot->count >= 2)
+            EaseLineFrom((OwnLine *)line, slot->pts, slot->count);
+        StoreLineGeom(slot, line);
+        OwnVec mid = line->pts[line->count / 2];
+        BOOL keep = !MotionFragment(line);
+        double before = slot->alpha;
+        double target = keep ? 1 : 0;
+        if (slot->alpha < target) slot->alpha = MIN(target, slot->alpha + kMotionFade);
+        else slot->alpha = MAX(target, slot->alpha - kMotionFade);
+        MotionNoteAlpha(state, before, slot->alpha);
+        slot->x = mid.x;
+        slot->y = mid.y;
+        slot->level = line->level;
+        alphas[pairs[p].line] = slot->alpha;
+    }
+    for (int i = 0; i < nLines; i++) {
+        if (lineTaken[i] || !lines[i].pts || lines[i].count < 2) continue;
+        BOOL keep = !MotionFragment(&lines[i]);
+        // A split isobar is new to the matcher but still beside its parent.
+        // Ease it off that stroke so the piece does not pop into place.
+        double nearD = 48;
+        MotionLineSlot *near = NULL;
+        for (int s = 0; s < kSlots; s++) {
+            MotionLineSlot *slot = &state->_motionLines[s];
+            if (!slot->pts || slot->count < 2 || fabs(slot->level - lines[i].level) > 0.1) continue;
+            double d = MeanLineDistance(&lines[i], slot->pts, slot->count, slot->closed);
+            if (d < nearD) { nearD = d; near = slot; }
+        }
+        if (near && keep) EaseLineFrom(&lines[i], near->pts, near->count);
+        OwnVec mid = lines[i].pts[lines[i].count / 2];
+        int slotIndex = -1;
+        for (int s = 0; s < kSlots; s++) if (!state->_motionLines[s].active) { slotIndex = s; break; }
+        if (slotIndex >= 0) {
+            MotionLineSlot *slot = &state->_motionLines[slotIndex];
+            free(slot->pts);
+            *slot = (MotionLineSlot){YES, lines[i].level, mid.x, mid.y, keep ? 1 : 0, NULL, 0, 0};
+            StoreLineGeom(slot, &lines[i]);
+            used[slotIndex] = 1;
+        }
+        alphas[i] = keep ? 1 : 0;
+    }
+    for (int s = 0; s < kSlots; s++) {
+        if (used[s]) continue;
+        MotionLineSlot *slot = &state->_motionLines[s];
         if (!slot->active) continue;
-        int best = -1; double bestDistance = 14.0; OwnLabel tracked = {0};
-        // Existing labels follow the nearest point on the current contour,
-        // rather than jumping to whichever newly placed label won a sort.
-        for (int li = 0; li < nLines; li++) {
-            if (fabs(lines[li].level - slot->level) > 0.1 || lines[li].count < 2) continue;
-            int last = lines[li].closed ? lines[li].count : lines[li].count - 1;
-            for (int p = 0; p < last; p++) {
-                OwnVec a = lines[li].pts[p], b = lines[li].pts[(p + 1) % lines[li].count];
-                double vx = b.x - a.x, vy = b.y - a.y;
-                double denom = vx * vx + vy * vy;
-                double t = denom > 0 ? ((slot->x - a.x) * vx + (slot->y - a.y) * vy) / denom : 0;
-                if (t < 0) t = 0; if (t > 1) t = 1;
-                double px = a.x + t * vx, py = a.y + t * vy;
-                double d = hypot(px - slot->x, py - slot->y);
-                if (d < bestDistance) {
-                    bestDistance = d; best = li;
-                    tracked = (OwnLabel){px, py, OwnReadableAngle(atan2(vy, vx)), 0, 0, 0, 0, lines[li].level, li};
-                }
-            }
-        }
-        if (best >= 0) {
-            double step = 0;
-            MotionMoveVector(&slot->x, &slot->y, tracked.x, tracked.y, 2.0, &step);
-            if (step > state->_maxLabelStep) state->_maxLabelStep = step;
-            // Horizontal pressure labels are calmer and remain legible as a
-            // contour bends through successive frames.
-            slot->angle = 0;
-            slot->missing = 0;
-            slot->age++;
-        } else {
-            slot->missing++;
-            slot->alpha -= 0.1;
-            if (slot->alpha <= 0) slot->active = NO;
-        }
+        free(slot->pts);
+        slot->pts = NULL;
+        slot->count = 0;
+        slot->active = NO;
     }
-    for (int s = 0; s < 128; s++) {
-        MotionLabelSlot *slot = &state->_motionLabels[s];
-        if (!slot->active || slot->missing) continue;
-        double target = 1;
-        for (int c = 0; c < nCentres; c++)
-            target = fmin(target, fmax(0, fmin(1, (hypot(slot->x-centres[c].x, slot->y-centres[c].y)-35)/20)));
-        for (int t = 0; t < 128; t++) {
-            MotionLabelSlot *older = &state->_motionLabels[t];
-            if (!older->active || t == s || older->age < slot->age ||
-                (older->age == slot->age && t > s)) continue;
-            double minimum = fabs(older->level-slot->level) < .1 ? 70 : 38;
-            target = fmin(target, fmax(0, fmin(1, (hypot(slot->x-older->x,slot->y-older->y)-minimum)/20)));
-        }
-        slot->alpha += (target - slot->alpha) * .18;
-    }
-    if (allowSeeds) {
-        for (int c = 0; c < nCandidates && c < 80; c++) {
-            BOOL close = NO;
-            int active = 0;
-            for (int s = 0; s < 128; s++) if (state->_motionLabels[s].active) active++;
-            if (active >= 20) break;
-            for (int s = 0; s < 128; s++) {
-                MotionLabelSlot *slot = &state->_motionLabels[s];
-                if (slot->active && hypot(slot->x - candidates[c].x, slot->y - candidates[c].y) < 80) { close = YES; break; }
-            }
-            if (close) continue;
-            for (int s = 0; s < 128; s++) {
-                MotionLabelSlot *slot = &state->_motionLabels[s];
-                if (!slot->active) {
-                    *slot = (MotionLabelSlot){YES, candidates[c].level, candidates[c].x,
-                        candidates[c].y, 0, state.immediateAnnotations ? 1 : 0.25, 1, 0};
-                    break;
-                }
-            }
-        }
-    }
-    int active = 0;
-    for (int s = 0; s < 128; s++) if (state->_motionLabels[s].active) active++;
-    return active;
+    free(lineTaken);
+    free(pairs);
 }
 
 static int MotionUpdateCentres(OwnMotionState *state, const OwnExtremum *candidates, int nCandidates,
@@ -1551,7 +2110,7 @@ static int MotionUpdateCentres(OwnMotionState *state, const OwnExtremum *candida
     for (int s = 0; s < 24; s++) {
         MotionCentreSlot *slot = &state->_motionCentres[s];
         if (!slot->active) continue;
-        int best = -1; double bestDistance = 70.0;
+        int best = -1; double bestDistance = 120.0;
         for (int c = 0; c < nCandidates && c < 48; c++) {
             if (used[c] || candidates[c].high != slot->high) continue;
             double d = hypot(candidates[c].x - slot->x, candidates[c].y - slot->y);
@@ -1560,13 +2119,21 @@ static int MotionUpdateCentres(OwnMotionState *state, const OwnExtremum *candida
         if (best >= 0) {
             used[best] = YES;
             double nx = slot->x, ny = slot->y;
-            MotionMoveVector(&nx, &ny, candidates[best].x, candidates[best].y, 2.0, NULL);
-            double step = hypot(nx - slot->x, ny - slot->y);
-            if (step > state->_maxCentreStep) state->_maxCentreStep = step;
+            MotionMoveVector(&nx, &ny, candidates[best].x, candidates[best].y, 1.1, NULL);
+            double moved = hypot(nx - slot->x, ny - slot->y);
+            if (moved > state->_maxCentreStep) state->_maxCentreStep = (CGFloat)moved;
             slot->x = nx; slot->y = ny; slot->value = candidates[best].value;
-            slot->missing = 0; slot->age++; slot->alpha += (1.0 - slot->alpha) * 0.25;
+            slot->missing = 0; slot->age++;
+            double before = slot->alpha;
+            double step = MotionFadeStep(state);
+            slot->alpha = MIN(1, slot->alpha + step);
+            MotionNoteAlpha(state, before, slot->alpha);
         } else {
-            slot->missing++; slot->alpha -= 0.1;
+            double before = slot->alpha;
+            double step = MotionFadeStep(state);
+            slot->alpha = MAX(0, slot->alpha - step);
+            MotionNoteAlpha(state, before, slot->alpha);
+            slot->missing++;
             if (slot->alpha <= 0) slot->active = NO;
         }
     }
@@ -1581,44 +2148,178 @@ static int MotionUpdateCentres(OwnMotionState *state, const OwnExtremum *candida
         if (nearExisting) continue;
         int active = 0;
         for (int s = 0; s < 24; s++) if (state->_motionCentres[s].active) active++;
-        if (active >= 6) break;
+        if (active >= 8) break;
+        double step = MotionFadeStep(state);
         for (int s = 0; s < 24; s++) if (!state->_motionCentres[s].active) {
             state->_motionCentres[s] = (MotionCentreSlot){YES, candidates[c].high, candidates[c].value,
-                candidates[c].x, candidates[c].y, state.immediateAnnotations ? 1 : 0,
-                state.immediateAnnotations ? 3 : 1, 0};
+                candidates[c].x, candidates[c].y, MIN(1, step), 1, 0};
+            MotionNoteAlpha(state, 0, MIN(1, step));
             break;
         }
     }
     int count = 0;
     for (int s = 0; s < 24 && count < cap; s++) {
         MotionCentreSlot *slot = &state->_motionCentres[s];
-        if (slot->active && slot->age >= 3 && slot->alpha > 0) visible[count++] = (OwnVec){slot->x, slot->y};
+        if (slot->active && slot->alpha > 0.15) visible[count++] = (OwnVec){slot->x, slot->y};
     }
     return count;
 }
 
-// A centre has to be the extreme of a 4° disk, then stand out from an 8–11° ring.
-// Immediate-neighbour relief on a 0.25° grid promotes a one-cell bump over the
-// broad Bight high, whose peak is only a few hundredths above the next cell.
-static double RingAnomaly(const double *field, int nLon, int nLat, double longitude, double latitude) {
-    double centre = SampleBilinear(field, nLon, nLat, longitude, latitude);
-    if (!isfinite(centre)) return 0;
-    double sum = 0;
-    int n = 0;
-    const double radii[] = {8.0, 11.0};
-    for (int r = 0; r < 2; r++) {
-        for (int k = 0; k < 12; k++) {
-            double ang = k * (M_PI / 6.0);
-            double lat = latitude + radii[r] * sin(ang);
-            double lon = longitude + radii[r] * cos(ang);
-            double value = SampleBilinear(field, nLon, nLat, lon, lat);
-            if (!isfinite(value)) continue;
-            sum += value;
-            n++;
+// A label stays on its isobar and glides at most 2 px a frame. It remains
+// until the contour leaves the map, shrinks below the label length, or a
+// collision forces it off. New and retiring labels fade over about a second;
+// the knockout uses the same alpha.
+static int MotionEaseLabels(OwnMotionState *state, const OwnLabel *desired, int nDesired,
+    const OwnLine *lines, int nLines, NSFont *font,
+    OwnLabel *out, double *outAlpha, int cap) {
+    if (!state || !lines || !out || !outAlpha || cap <= 0 || !font) return 0;
+    if (nDesired < 0 || !desired) nDesired = 0;
+    double step = MotionFadeStep(state);
+    double halfH = LabelHalfHeight(font);
+    int attached[128];
+    char hold[128];
+    for (int s = 0; s < 128; s++) { attached[s] = -1; hold[s] = 0; }
+
+    typedef struct { double level, x, y; } Mark;
+    Mark before[128];
+    int nBefore = 0;
+    if (state->_motionFrame > 1) {
+        for (int s = 0; s < 128; s++) {
+            MotionLabelSlot *slot = &state->_motionLabels[s];
+            if (!slot->active || slot->alpha < 0.5 || nBefore >= 128) continue;
+            before[nBefore++] = (Mark){slot->level, slot->x, slot->y};
         }
     }
-    if (n < 12) return 0;
-    return centre - sum / n;
+
+    for (int s = 0; s < 128; s++) {
+        MotionLabelSlot *slot = &state->_motionLabels[s];
+        if (!slot->active) continue;
+        int best = -1;
+        double bestD = 24;
+        double ax = slot->x, ay = slot->y;
+        for (int i = 0; i < nLines; i++) {
+            if (fabs(lines[i].level - slot->level) > 0.1) continue;
+            if (!LineCanHoldLabel(&lines[i])) continue;
+            double px, py, arc, tangent, dist = 1e9;
+            if (!OwnContourAnchor(slot->x, slot->y, &lines[i], 24, 0,
+                    0, 0, kPanelW, kMapH, &px, &py, &arc, &tangent, &dist)) continue;
+            if (dist < bestD) { bestD = dist; best = i; ax = px; ay = py; }
+        }
+        if (best >= 0) {
+            double glide = 0;
+            double capStep = 1.1;
+            MotionMoveVector(&slot->x, &slot->y, ax, ay, capStep, &glide);
+            if (glide > state->_maxLabelStep) state->_maxLabelStep = (CGFloat)glide;
+            slot->missing = 0;
+            slot->age++;
+            attached[s] = best;
+            hold[s] = 1;
+        }
+    }
+
+    for (int c = 0; c < nDesired && c < 80; c++) {
+        int lineNo = desired[c].line;
+        if (lineNo < 0 || lineNo >= nLines || !LineCanHoldLabel(&lines[lineNo])) continue;
+        double half = desired[c].halfW > 0 ? desired[c].halfW : LabelHalf(desired[c].level, (__bridge void *)font);
+        BOOL taken = NO;
+        int onLine = 0;
+        for (int s = 0; s < 128; s++) {
+            MotionLabelSlot *slot = &state->_motionLabels[s];
+            if (!slot->active || !hold[s]) continue;
+            if (attached[s] == lineNo) onLine++;
+            if (fabs(slot->level - desired[c].level) > 0.1) continue;
+            double apart = 6.0 * fmax(half, LabelHalf(slot->level, (__bridge void *)font));
+            if (hypot(slot->x - desired[c].x, slot->y - desired[c].y) < apart) taken = YES;
+        }
+        if (onLine >= 2 || (onLine >= 1 && PolyLength(&lines[lineNo]) < 260)) taken = YES;
+        if (taken) continue;
+        for (int s = 0; s < 128; s++) {
+            if (state->_motionLabels[s].active) continue;
+            state->_motionLabels[s] = (MotionLabelSlot){YES, desired[c].level,
+                desired[c].x, desired[c].y, 0, 0, 1, 0};
+            attached[s] = lineNo;
+            hold[s] = 1;
+            break;
+        }
+    }
+
+    for (int a = 0; a < 128; a++) {
+        if (!hold[a]) continue;
+        MotionLabelSlot *sa = &state->_motionLabels[a];
+        double halfA = LabelHalf(sa->level, (__bridge void *)font);
+        OwnLabel la = {sa->x, sa->y, 0, halfA, halfH, 0, halfA + 2.5, sa->level, attached[a]};
+        for (int b = a + 1; b < 128; b++) {
+            if (!hold[b]) continue;
+            MotionLabelSlot *sb = &state->_motionLabels[b];
+            double halfB = LabelHalf(sb->level, (__bridge void *)font);
+            OwnLabel lb = {sb->x, sb->y, 0, halfB, halfH, 0, halfB + 2.5, sb->level, attached[b]};
+            double apart = 6.0 * fmax(halfA, halfB);
+            BOOL crowd = hypot(sa->x - sb->x, sa->y - sb->y) < apart || OwnLabelsOverlap(la, lb, 4);
+            if (!crowd) continue;
+            int drop = sa->age >= sb->age ? b : a;
+            BOOL ringA = attached[a] >= 0 && attached[a] < nLines && lines[attached[a]].closed;
+            BOOL ringB = attached[b] >= 0 && attached[b] < nLines && lines[attached[b]].closed;
+            int onA = 0, onB = 0;
+            for (int t = 0; t < 128; t++) {
+                if (!hold[t]) continue;
+                if (attached[t] == attached[a]) onA++;
+                if (attached[t] == attached[b]) onB++;
+            }
+            if (ringA && onA == 1 && !(ringB && onB == 1)) drop = b;
+            else if (ringB && onB == 1 && !(ringA && onA == 1)) drop = a;
+            hold[drop] = 0;
+            if (drop == a) break;
+        }
+    }
+
+    for (int s = 0; s < 128; s++) {
+        MotionLabelSlot *slot = &state->_motionLabels[s];
+        if (!slot->active) continue;
+        double beforeAlpha = slot->alpha;
+        double target = hold[s] ? 1 : 0;
+        if (slot->alpha < target) slot->alpha = MIN(target, slot->alpha + step);
+        else slot->alpha = MAX(target, slot->alpha - step);
+        MotionNoteAlpha(state, beforeAlpha, slot->alpha);
+        if (slot->alpha <= 0 && target <= 0) slot->active = NO;
+    }
+
+    if (state->_motionFrame > 1) {
+        Mark after[128];
+        int nAfter = 0;
+        for (int s = 0; s < 128; s++) {
+            MotionLabelSlot *slot = &state->_motionLabels[s];
+            if (!slot->active || slot->alpha < 0.5 || nAfter >= 128) continue;
+            after[nAfter++] = (Mark){slot->level, slot->x, slot->y};
+        }
+        char usedB[128] = {0}, usedA[128] = {0};
+        for (int a = 0; a < nAfter; a++) {
+            int best = -1;
+            double bestD = 24;
+            for (int b = 0; b < nBefore; b++) {
+                if (usedB[b] || fabs(before[b].level - after[a].level) > 0.1) continue;
+                double d = hypot(before[b].x - after[a].x, before[b].y - after[a].y);
+                if (d < bestD) { bestD = d; best = b; }
+            }
+            if (best >= 0) { usedB[best] = 1; usedA[a] = 1; }
+        }
+        int missed = 0;
+        for (int a = 0; a < nAfter; a++) if (!usedA[a]) missed++;
+        for (int b = 0; b < nBefore; b++) if (!usedB[b]) missed++;
+        if (missed) state->_labelSetChanges++;
+    }
+
+    int n = 0;
+    for (int s = 0; s < 128 && n < cap; s++) {
+        MotionLabelSlot *slot = &state->_motionLabels[s];
+        if (!slot->active || slot->alpha < 0.02) continue;
+        double half = LabelHalf(slot->level, (__bridge void *)font);
+        int line = attached[s];
+        out[n] = (OwnLabel){slot->x, slot->y, 0, half, halfH, 0, half + 2.5, slot->level,
+            line >= 0 ? line : -1};
+        outAlpha[n] = slot->alpha;
+        n++;
+    }
+    return n;
 }
 
 static BOOL MaskNear(const uint8_t *mask, int nLon, int nLat, double lon, double lat, int rad) {
@@ -1637,8 +2338,12 @@ static BOOL MaskNear(const uint8_t *mask, int nLon, int nLat, double lon, double
     return NO;
 }
 
-static int SynopticCentres(const double *field, int nLon, int nLat,
-    const uint8_t *land, const uint8_t *rough, OwnExtremum *out, int cap) {
+// Local extrema of the smoothed field, with ring prominence (centre minus
+// the mean about 400 km out). Settlement — prominence, enclosure, merge,
+// hysteresis — is OwnSettleCentres.
+static int SynopticCandidates(const double *field, int nLon, int nLat,
+    const uint8_t *land, const uint8_t *rough,
+    OwnExtremum *out, double *prominence, int cap) {
     if (!field || !out || cap <= 0) return 0;
     double step = GStep();
     int rad = (int)llround(4.0 / step);
@@ -1696,8 +2401,8 @@ static int SynopticCentres(const double *field, int nLon, int nLat,
             double quickMean = quickSum / quickSeen;
             // Leave a tiny rounding margin; the exact scan below remains the
             // authority for every candidate that might pass.
-            if (localLow && z >= quickMean - .8 + 1e-8) localLow = NO;
-            if (localHigh && z <= quickMean + .8 - 1e-8) localHigh = NO;
+            if (localLow && z >= quickMean - 0.8 + 1e-8) localLow = NO;
+            if (localHigh && z <= quickMean + 0.8 - 1e-8) localHigh = NO;
             if (!localLow && !localHigh) continue;
             BOOL low = YES, high = YES;
             double sum = 0;
@@ -1728,80 +2433,39 @@ static int SynopticCentres(const double *field, int nLon, int nLat,
             cands[n++] = (Cand){z, 0, lon, lat, kind};
         }
     }
-    int nLow = 0;
-    for (int a = 0; a < n; a++) {
-        if (cands[a].high) continue;
-        Cand tmp = cands[nLow];
-        cands[nLow++] = cands[a];
-        cands[a] = tmp;
-    }
-    for (int pass = 0; pass < 2; pass++) {
-        int begin = pass == 0 ? 0 : nLow;
-        int end = pass == 0 ? nLow : n;
-        int descending = pass;
-        for (int a = begin + 1; a < end; a++) {
-            Cand key = cands[a];
-            int b = a;
-            while (b > begin && (descending ? cands[b - 1].value < key.value : cands[b - 1].value > key.value)) {
-                cands[b] = cands[b - 1];
-                b--;
-            }
-            cands[b] = key;
-        }
-    }
-    Cand kept[48];
-    int nKept = 0;
-    for (int a = 0; a < n && nKept < 48; a++) {
-        BOOL near = NO;
-        for (int b = 0; b < nKept; b++) {
-            if (cands[a].high != kept[b].high) continue;
-            if (hypot(cands[a].lon - kept[b].lon, cands[a].lat - kept[b].lat) < 5.5) { near = YES; break; }
-        }
-        if (!near) kept[nKept++] = cands[a];
-    }
-    free(cands);
     free(rowSums);
     free(rowCounts);
-    for (int a = 0; a < nKept; a++) {
-        kept[a].score = RingAnomaly(field, nLon, nLat, kept[a].lon, kept[a].lat);
-        if (kept[a].high != (kept[a].score > 0)) kept[a].score = 0;
+    for (int a = 0; a < n; a++) {
+        cands[a].score = OwnRingProminence(field, nLon, nLat, GWest(), GNorth(), step, -step,
+            cands[a].lon, cands[a].lat, 4.0);
+        BOOL rightSign = cands[a].high ? cands[a].score > 0.3 : cands[a].score < -0.3;
+        if (!rightSign) cands[a].score = 0;
+        // A spike over high terrain is not a centre. A deep synoptic centre
+        // can still sit on land.
+        if (cands[a].score != 0 && MaskNear(rough, nLon, nLat, cands[a].lon, cands[a].lat, 2)
+            && fabs(cands[a].score) < 4.0)
+            cands[a].score = 0;
     }
-    for (int a = 1; a < nKept; a++) {
-        Cand key = kept[a];
+    (void)land;
+    for (int a = 1; a < n; a++) {
+        Cand key = cands[a];
         int b = a;
-        while (b > 0 && fabs(kept[b - 1].score) < fabs(key.score)) {
-            kept[b] = kept[b - 1];
+        while (b > 0 && fabs(cands[b - 1].score) < fabs(key.score)) {
+            cands[b] = cands[b - 1];
             b--;
         }
-        kept[b] = key;
+        cands[b] = key;
     }
     int written = 0;
-    for (int a = 0; a < nKept && written < cap; a++) {
-        if (fabs(kept[a].score) < 2.2) continue;
-        // A 1019 high in the equatorial trough and a 1026 col are local extrema,
-        // but they are not the closed centres a Bureau MSLP chart marks. Keep a
-        // weak one only when it stands well clear of the ring around it.
-        if (kept[a].high) {
-            if (kept[a].value < 1024.0 && fabs(kept[a].score) < 6.0) continue;
-        } else if (kept[a].value > 1020.0 && fabs(kept[a].score) < 6.0) {
-            continue;
-        }
-        // Spikes over high terrain are not centres. A synoptic low at or below
-        // 1016 hPa, or a high at or above 1030, can sit on smooth land — the
-        // Western Australian lows do — and still be marked.
-        if (MaskNear(rough, nLon, nLat, kept[a].lon, kept[a].lat, 3) && fabs(kept[a].score) < 5.5)
-            continue;
-        if (MaskNear(land, nLon, nLat, kept[a].lon, kept[a].lat, 0) && fabs(kept[a].score) < 3.2) {
-            BOOL synoptic = kept[a].high ? kept[a].value >= 1030.0 : kept[a].value <= 1016.0;
-            if (!synoptic) continue;
-        }
+    for (int a = 0; a < n && written < cap; a++) {
+        if (cands[a].score == 0) continue;
         double ox = 0, oy = 0;
-        int i = (int)llround((kept[a].lon - GWest()) / step);
-        int j = (int)llround((GNorth() - kept[a].lat) / step);
+        int i = (int)llround((cands[a].lon - GWest()) / step);
+        int j = (int)llround((GNorth() - cands[a].lat) / step);
         if (i > 0 && i < nLon - 1 && j > 0 && j < nLat - 1) {
             double zm = field[j * nLon + (i - 1)];
             double zp = field[j * nLon + (i + 1)];
-            double denom = zm - 2.0 * kept[a].value + zp;
+            double denom = zm - 2.0 * cands[a].value + zp;
             if (isfinite(denom) && fabs(denom) > 1e-6) {
                 ox = 0.5 * (zm - zp) / denom;
                 if (ox > 0.75) ox = 0.75;
@@ -1809,36 +2473,40 @@ static int SynopticCentres(const double *field, int nLon, int nLat,
             }
             zm = field[(j - 1) * nLon + i];
             zp = field[(j + 1) * nLon + i];
-            denom = zm - 2.0 * kept[a].value + zp;
+            denom = zm - 2.0 * cands[a].value + zp;
             if (isfinite(denom) && fabs(denom) > 1e-6) {
                 oy = 0.5 * (zm - zp) / denom;
                 if (oy > 0.75) oy = 0.75;
                 if (oy < -0.75) oy = -0.75;
             }
         }
-        out[written++] = (OwnExtremum){
-            GWest() + (i + ox) * step,
-            GNorth() - (j + oy) * step,
-            kept[a].value,
-            kept[a].high,
-        };
+        double lon = GWest() + (i + ox) * step;
+        double lat = GNorth() - (j + oy) * step;
+        double score = OwnRingProminence(field, nLon, nLat, GWest(), GNorth(), step, -step, lon, lat, 4.0);
+        if (cands[a].high ? score < 0.3 : score > -0.3) continue;
+        out[written] = (OwnExtremum){lon, lat, cands[a].value, cands[a].high};
+        if (prominence) prominence[written] = score;
+        written++;
     }
+    free(cands);
     return written;
 }
 
 static void RenderPanel(CGContextRef ctx, double originX, double originY, const Cube *cube, double hour,
     NSString *title, OwnCoast coast, const uint8_t *landMask, const RingSpan *spans, PanelOptions options) {
     AdoptCubeGrid(cube);
+    ProfileReset();
     CGContextSaveGState(ctx);
     CGContextTranslateCTM(ctx, originX, originY);
     NSGraphicsContext *graphics = [NSGraphicsContext graphicsContextWithCGContext:ctx flipped:NO];
     [NSGraphicsContext saveGraphicsState];
     [NSGraphicsContext setCurrentContext:graphics];
 
-    MSLPColour sea = MSLPColourSea();
-    MSLPColour land = MSLPColourLand();
-    MSLPColour ink = MSLPColourInk();
-    MSLPColour titleColour = MSLPColourTitle();
+    OwnRGB seaRGB = OwnChartSea(), landRGB = OwnChartLand(), inkRGB = OwnChartInk(), titleRGB = OwnChartTitle();
+    MSLPColour sea = {seaRGB.r, seaRGB.g, seaRGB.b};
+    MSLPColour land = {landRGB.r, landRGB.g, landRGB.b};
+    MSLPColour ink = {inkRGB.r, inkRGB.g, inkRGB.b};
+    MSLPColour titleColour = {titleRGB.r, titleRGB.g, titleRGB.b};
     if (!options.bare) {
         CGContextSetRGBFillColor(ctx, titleColour.red, titleColour.green, titleColour.blue, 1);
         CGContextFillRect(ctx, CGRectMake(0, kMapH, kPanelW, kTitleH));
@@ -1858,11 +2526,11 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
 
     CGContextSaveGState(ctx);
     CGContextClipToRect(ctx, CGRectMake(0, 0, kPanelW, kMapH));
-    CGContextSetRGBFillColor(ctx, sea.red, sea.green, sea.blue, 1);
-    CGContextFillRect(ctx, CGRectMake(0, 0, kPanelW, kMapH));
-
     OwnView view = OwnViewMake(OwnAustraliaLambert(), kViewWest, kViewEast, kViewSouth, kViewNorth,
         0, 0, kPanelW, kMapH);
+    if (!options.inkOnly) {
+    CGContextSetRGBFillColor(ctx, sea.red, sea.green, sea.blue, 1);
+    CGContextFillRect(ctx, CGRectMake(0, 0, kPanelW, kMapH));
 
     CGContextBeginPath(ctx);
     for (int r = 0; r < coast.rings; r++) {
@@ -1880,21 +2548,17 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
     }
     CGContextSetRGBFillColor(ctx, land.red, land.green, land.blue, 1);
     CGContextEOFillPath(ctx);
-
-    double *mslp = ScalarField(cube, VarMSLP, hour);
-    uint8_t *rough = NULL;
-    if (mslp && landMask) {
-        if (options.motionState) {
-            rough = calloc((size_t)cube->nPoints, 1);
-            SmoothLandMSLPMotion(mslp, landMask, cube->nLon, cube->nLat, rough);
-        } else {
-            rough = calloc((size_t)cube->nPoints, 1);
-            if (rough) SmoothLandMSLP(mslp, landMask, cube->nLon, cube->nLat, rough);
-        }
     }
+    gRenderProfile.plateMs += ProfileLap();
+
+    uint8_t *rough = NULL;
+    // Smoothing is cached per model hour. A fractional frame lerps the two
+    // smoothed hours, which matches smoothing the interpolated field.
+    double *mslp = options.plateOnly ? NULL : SmoothedMSLP((Cube *)cube, hour, landMask, &rough);
+    ProfileLap();
     double *temp = NULL;
-    if (options.temperature == 1) temp = ScalarField(cube, VarT850, hour);
-    else if (options.temperature == 2) temp = ScalarField(cube, VarT2M, hour);
+    if (!options.inkOnly && options.temperature == 1) temp = ScalarField(cube, VarT850, hour);
+    else if (!options.inkOnly && options.temperature == 2) temp = ScalarField(cube, VarT2M, hour);
     if (temp) {
         CGImageRef shade = TemperatureImage(temp, view, kPanelW, kMapH, 0.50);
         if (shade) {
@@ -1903,10 +2567,11 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
         }
     }
 
+    if (!options.inkOnly) {
     CGContextBeginPath(ctx);
     // Greyer and thinner than the isobars, so a coast does not read as a pressure line.
-    CGContextSetLineWidth(ctx, 0.65);
-    CGContextSetRGBStrokeColor(ctx, 0.55, 0.53, 0.49, 0.95);
+    CGContextSetLineWidth(ctx, 0.7);
+    CGContextSetRGBStrokeColor(ctx, 0.55, 0.50, 0.44, 0.85);
     for (int r = 0; r < coast.rings; r++) {
         int start = coast.ringStart[r];
         int n = coast.ringCount[r];
@@ -1921,10 +2586,12 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
         if (moved) CGContextClosePath(ctx);
     }
     CGContextStrokePath(ctx);
+    }
+    gRenderProfile.plateMs += ProfileLap();
 
     OwnVec avoidPts[160];
     int nAvoid = 0;
-    if (options.rain && !options.observed) {
+    if (!options.inkOnly && options.rain && !options.observed) {
         double *rain = RainField(cube, hour);
         if (rain) DrawHatch(ctx, rain, view, kPanelW, kMapH, kRainMm, options.motionState != nil);
         free(rain);
@@ -1934,58 +2601,48 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
     int nCenters = 0;
     OwnExtremum extrema[48];
     OwnExtremum motionExtrema[48];
+    OwnExtremum candidates[48];
+    double candProm[48];
+    int nCand = 0;
     int nExt = 0;
     if (mslp) {
-        OwnMotionState *state=options.motionState;
-        // Centres evolve on a synoptic timescale. Reuse their candidates for
-        // nearby frames; the tracked markers ease toward each new position.
+        OwnMotionState *state = options.motionState;
+        // Candidate scan is the costly part. Nearby frames share it; which
+        // of those candidates are marked still depends on the previous frame.
         if (state && state->_hasCachedExtrema && state->_cachedExtremaCube == cube &&
             state->_cachedExtremaNLon == cube->nLon && state->_cachedExtremaNLat == cube->nLat &&
-            fabs(hour-state->_cachedExtremaHour)<0.5) {
-            nExt=state->_cachedExtremaCount;
-            memcpy(extrema,state->_cachedExtrema,(size_t)nExt*sizeof(OwnExtremum));
+            fabs(hour - state->_cachedExtremaHour) < 0.5) {
+            nCand = state->_cachedExtremaCount;
+            memcpy(candidates, state->_cachedExtrema, (size_t)nCand * sizeof(OwnExtremum));
+            memcpy(candProm, state->_cachedProminence, (size_t)nCand * sizeof(double));
         } else {
-            nExt = SynopticCentres(mslp, cube->nLon, cube->nLat, landMask,
-                rough, extrema, 6);
+            nCand = SynopticCandidates(mslp, cube->nLon, cube->nLat, landMask,
+                rough, candidates, candProm, 48);
             if (state) {
-                state->_cachedExtremaCount=nExt;
-                memcpy(state->_cachedExtrema,extrema,(size_t)nExt*sizeof(OwnExtremum));
-                state->_cachedExtremaHour=hour;
-                state->_cachedExtremaCube=cube;
-                state->_cachedExtremaNLon=cube->nLon;
-                state->_cachedExtremaNLat=cube->nLat;
-                state->_hasCachedExtrema=YES;
+                state->_cachedExtremaCount = nCand;
+                memcpy(state->_cachedExtrema, candidates, (size_t)nCand * sizeof(OwnExtremum));
+                memcpy(state->_cachedProminence, candProm, (size_t)nCand * sizeof(double));
+                state->_cachedExtremaHour = hour;
+                state->_cachedExtremaCube = cube;
+                state->_cachedExtremaNLon = cube->nLon;
+                state->_cachedExtremaNLat = cube->nLat;
+                state->_hasCachedExtrema = YES;
             }
         }
-        int drawn = 0;
-        for (int e = 0; e < nExt; e++) {
-            double sampled = SampleBilinear(mslp, cube->nLon, cube->nLat, extrema[e].x, extrema[e].y);
-            if (isfinite(sampled)) extrema[e].value = sampled;
-            double x, y;
-            if (!OwnViewProject(view, extrema[e].y, extrema[e].x, &x, &y)) continue;
-            double yUp = kMapH - y;
-            if (x < 18 || x > kPanelW - 18 || yUp < 18 || yUp > kMapH - 18) continue;
-            extrema[drawn] = extrema[e];
-            if (drawn < 48) {
-                centers[drawn] = (OwnVec){x, yUp};
-                motionExtrema[drawn] = extrema[e];
-                motionExtrema[drawn].x = x;
-                motionExtrema[drawn].y = yUp;
-            }
-            drawn++;
-        }
-        nExt = drawn;
-        nCenters = drawn;
-        if (options.motionState) {
-            nCenters = MotionUpdateCentres(options.motionState, motionExtrema, nExt, centers, 48);
-        }
+        gRenderProfile.centreMs += ProfileLap();
     }
 
     // Temperature uses colour alone; linework is reserved for pressure.
 
     if (mslp) {
+        int winW = 0, winH = 0;
+        double originX = GWest(), originY = GNorth();
+        double *window = ContourWindow(mslp, cube->nLon, cube->nLat, &winW, &winH, &originX, &originY);
+        const double *contoured = window ? window : mslp;
+        int cLon = window ? winW : cube->nLon;
+        int cLat = window ? winH : cube->nLat;
         double lo = 0, hi = 0;
-        FieldRange(mslp, cube->nPoints, &lo, &hi);
+        FieldRange(contoured, cLon * cLat, &lo, &hi);
         double levels[56];
         int nLevels = options.motionState ? 0 : OwnInteriorLevels(lo, hi, 4, levels, 56);
         if (options.motionState) {
@@ -1994,131 +2651,255 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
             for (double level = 880; level <= 1080.001; level += 4)
                 if (level >= lo && level <= hi) levels[nLevels++] = level;
         }
-        OwnLineSet raw = OwnContours(mslp, cube->nLon, cube->nLat, GWest(), GNorth(),
+        OwnLineSet raw = OwnContours(contoured, cLon, cLat, originX, originY,
             GStep(), -GStep(), levels, nLevels);
-        if (!options.motionState) DropSmallClosed(&raw, 3.0);
+        free(window);
+        OwnPruneContours(&raw, 1.2, 0.45, 0.85);
+        OwnSimplifyContours(&raw, 0.6);
+        DropSmallClosed(&raw, 3.0);
+        gRenderProfile.contourMs += ProfileLap();
+        int enclosed[48] = {0};
+        if (nCand > 48) nCand = 48;
+        OwnMarkEnclosedCentres(candidates, nCand, raw.lines, raw.count, 6.0,
+            kViewWest, kViewSouth, kViewEast, kViewNorth, enclosed);
+        OwnExtremum previous[12];
+        int nPrev = 0;
+        if (options.motionState && options.motionState->_nHeldCentres > 0) {
+            nPrev = options.motionState->_nHeldCentres;
+            if (nPrev > 12) nPrev = 12;
+            memcpy(previous, options.motionState->_heldCentres, (size_t)nPrev * sizeof(OwnExtremum));
+        }
+        // The two southern highs on the plate sit about 110 px apart at 2×,
+        // 730–800 km. Same-type centres inside 860 km collapse.
+        if (options.motionState) {
+            int nHold = options.motionState->_nHeldCentres;
+            if (nHold > 12) nHold = 12;
+            for (int h = 0; h < nHold && nCand < 48; h++) {
+                OwnExtremum held = options.motionState->_heldCentres[h];
+                BOOL near = NO;
+                for (int c = 0; c < nCand && !near; c++) {
+                    if (candidates[c].high != held.high) continue;
+                    if (hypot(candidates[c].x - held.x, candidates[c].y - held.y) < 2.5) near = YES;
+                }
+                if (near) continue;
+                candidates[nCand] = held;
+                candProm[nCand] = OwnRingProminence(mslp, cube->nLon, cube->nLat,
+                    GWest(), GNorth(), GStep(), -GStep(), held.x, held.y, 4.0);
+                nCand++;
+            }
+        }
+        // Unenclosed centres need a full isobar of relief. Hysteresis still
+        // lowers that bar for a centre already on the chart.
+        nExt = OwnSettleCentres(candidates, candProm, enclosed, nCand,
+            kOwnIsobarInterval, 0.5, 860.0, 500.0, 1, nPrev ? previous : NULL, nPrev, extrema, 8);
+        if (options.motionState) {
+            // A centre settle drops is remembered for one more frame, so the
+            // lower bar still applies if it returns. It is not drawn from here.
+            OwnExtremum nextHeld[12];
+            int nextGrace[12];
+            int nNext = 0;
+            for (int e = 0; e < nExt && nNext < 12; e++) {
+                nextHeld[nNext] = extrema[e];
+                nextGrace[nNext++] = 0;
+            }
+            for (int p = 0; p < nPrev && nNext < 12; p++) {
+                BOOL matched = NO;
+                for (int e = 0; e < nNext && !matched; e++) {
+                    if (nextHeld[e].high != previous[p].high) continue;
+                    double mid = (nextHeld[e].y + previous[p].y) * 0.5 * M_PI / 180.0;
+                    double dx = (nextHeld[e].x - previous[p].x) * 111.32 * cos(mid);
+                    double dy = (nextHeld[e].y - previous[p].y) * 110.57;
+                    if (hypot(dx, dy) <= 500.0) matched = YES;
+                }
+                if (matched) continue;
+                int grace = options.motionState->_heldGrace[p] + 1;
+                if (grace >= 2) continue;
+                nextHeld[nNext] = previous[p];
+                nextGrace[nNext++] = grace;
+            }
+            options.motionState->_nHeldCentres = nNext;
+            memcpy(options.motionState->_heldCentres, nextHeld, (size_t)nNext * sizeof(OwnExtremum));
+            memcpy(options.motionState->_heldGrace, nextGrace, (size_t)nNext * sizeof(int));
+        }
+        OwnDropStrayRings(&raw, extrema, nExt, 8.0);
+        {
+            int drawn = 0;
+            for (int e = 0; e < nExt; e++) {
+                double sampled = SampleBilinear(mslp, cube->nLon, cube->nLat, extrema[e].x, extrema[e].y);
+                if (isfinite(sampled)) extrema[e].value = sampled;
+                double x, y;
+                if (!OwnViewProject(view, extrema[e].y, extrema[e].x, &x, &y)) continue;
+                double yUp = kMapH - y;
+                if (x < 18 || x > kPanelW - 18 || yUp < 18 || yUp > kMapH - 18) continue;
+                extrema[drawn] = extrema[e];
+                centers[drawn] = (OwnVec){x, yUp};
+                motionExtrema[drawn] = extrema[e];
+                motionExtrema[drawn].x = x;
+                motionExtrema[drawn].y = yUp;
+                drawn++;
+            }
+            nExt = drawn;
+            nCenters = drawn;
+            if (options.motionState)
+                nCenters = MotionUpdateCentres(options.motionState, motionExtrema, nExt, centers, 48);
+        }
+        gRenderProfile.centreMs += ProfileLap();
         OwnLineSet lines = ProjectContours(raw, view, kMapH);
+        double projected = ProfileLap();
+        gRenderProfile.chaikinMs += gChaikinMs;
+        if (projected > gChaikinMs) gRenderProfile.contourMs += projected - gChaikinMs;
+        gChaikinMs = 0;
         OwnLineSetFree(raw);
+        OwnPruneContours(&lines, 32, 500, 16);
+        double *lineAlpha = NULL;
+        if (options.motionState && lines.count > 0) {
+            lineAlpha = calloc((size_t)lines.count, sizeof(double));
+            if (lineAlpha) MotionContourAlphas(options.motionState, lines.lines, lines.count, lineAlpha);
+        }
 
         NSFont *labelFont = [NSFont fontWithName:@"Helvetica-Bold" size:15] ?: [NSFont boldSystemFontOfSize:15];
+        double labelHalfH = LabelHalfHeight(labelFont);
         OwnLabel labels[80];
-        int nLabels = OwnPlaceLabels(lines.lines, lines.count, LabelHalf, (__bridge void *)labelFont, 8, 6,
-            16, 16, kPanelW - 16, kMapH - 16, labels, 80);
-        OwnLabel motionSeeds[80];
-        int nMotionSeeds = 0;
+        int nLabels = OwnPlaceLabels(lines.lines, lines.count, LabelHalf, (__bridge void *)labelFont, labelHalfH, 6,
+            0, 0, kPanelW, kMapH, labels, 80);
+        nLabels = ThinLabels(labels, nLabels, lines.lines, view, kMapH, coast, spans,
+            centers, nCenters, 6.0, 46, 48);
+        nLabels = OwnCoverLabels(lines.lines, lines.count, LabelHalf, (__bridge void *)labelFont, labelHalfH, 6,
+            0, 0, kPanelW, kMapH, 72, 260, labels, nLabels, 80);
+        nLabels = OwnClearCentreLabels(labels, nLabels, lines.lines, lines.count, centers, nCenters,
+            0, 0, kPanelW, kMapH);
+        nLabels = OwnCoverClosedRings(lines.lines, lines.count, LabelHalf, (__bridge void *)labelFont,
+            labelHalfH, 0, 0, kPanelW, kMapH, 28, centers, nCenters, labels, nLabels, 80);
+        OwnLabel drawn[80];
+        double drawnAlpha[80];
+        int nDrawn = 0;
         if (options.motionState) {
-            // Candidate placement is deliberately sparse. Existing tracks
-            // follow their contour segment every frame; only this seed pass
-            // is allowed to introduce a new annotation.
-            memcpy(motionSeeds, labels, (size_t)nLabels * sizeof(OwnLabel));
-            nMotionSeeds = ThinLabels(motionSeeds, nLabels, lines.lines, view, kMapH, coast, spans,
-                centers, nCenters, 8.0, 80, 55);
+            nDrawn = MotionEaseLabels(options.motionState, labels, nLabels, lines.lines, lines.count,
+                labelFont, drawn, drawnAlpha, 80);
         } else {
-            nLabels = ThinLabels(labels, nLabels, lines.lines, view, kMapH, coast, spans,
-                centers, nCenters, 6.0, 46, 48);
+            for (int L = 0; L < nLabels && nDrawn < 80; L++) {
+                drawn[nDrawn] = labels[L];
+                drawn[nDrawn].angle = 0;
+                drawnAlpha[nDrawn] = 1;
+                nDrawn++;
+            }
+            nDrawn = OwnKeepSeparated(drawn, nDrawn, 4);
         }
-        int visibleMotionLabels = options.motionState ? MotionUpdateLabels(options.motionState, motionSeeds, nMotionSeeds,
-            lines.lines, lines.count, centers, nCenters, options.motionState->_motionFrame == 1 ||
-                (options.motionState->_motionFrame % 30) == 0) : 0;
-        for (int L = 0; L < nLabels && nAvoid < 160; L++)
-            avoidPts[nAvoid++] = (OwnVec){labels[L].x, labels[L].y};
+        nLabels = nDrawn;
+        for (int L = 0; L < nDrawn && nAvoid < 160; L++)
+            avoidPts[nAvoid++] = (OwnVec){drawn[L].x, drawn[L].y};
+        gRenderProfile.labelMs += ProfileLap();
 
+        NSColor *inkColor = [NSColor colorWithSRGBRed:ink.red green:ink.green blue:ink.blue alpha:1];
+        OwnVec centrePts[24];
+        double centreAlpha[24];
+        int nFadeCentres = 0;
+        if (options.motionState) {
+            for (int s = 0; s < 24 && nFadeCentres < 24; s++) {
+                MotionCentreSlot *slot = &options.motionState->_motionCentres[s];
+                if (!slot->active || slot->alpha < 0.02) continue;
+                centrePts[nFadeCentres] = (OwnVec){slot->x, slot->y};
+                centreAlpha[nFadeCentres] = slot->alpha;
+                nFadeCentres++;
+            }
+        }
         for (int i = 0; i < lines.count; i++) {
+            double width = OwnIsobarWidth(lines.lines[i].level);
+            if (options.motionState) {
+                double alpha = lineAlpha ? lineAlpha[i] : (MotionFragment(&lines.lines[i]) ? 0 : 1);
+                if (alpha < 0.02) continue;
+                StrokeFadedContour(ctx, lines.lines[i].pts, lines.lines[i].count, lines.lines[i].closed,
+                    drawn, drawnAlpha, nDrawn, centrePts, centreAlpha, nFadeCentres,
+                    width, ink.red, ink.green, ink.blue, alpha);
+                continue;
+            }
             OwnLabel mine[8];
             int mineCount = 0;
-            for (int L = 0; L < nLabels && mineCount < 8; L++) {
-                if (labels[L].line == i) mine[mineCount++] = labels[L];
+            for (int L = 0; L < nDrawn && mineCount < 8; L++) {
+                if (drawn[L].line == i) mine[mineCount++] = drawn[L];
             }
-            if (options.motionState) {
-                // Motion frames keep every contour continuous. Label tracking
-                // is visual annotation only; it never cuts a line underneath.
+            if (mineCount == 0) {
                 StrokeLine(ctx, lines.lines[i].pts, lines.lines[i].count, lines.lines[i].closed,
-                    NULL, 0, 0, 1.55, ink.red, ink.green, ink.blue, MotionContourAlpha(&lines.lines[i]));
-            } else if (mineCount == 0) {
-                StrokeLine(ctx, lines.lines[i].pts, lines.lines[i].count, lines.lines[i].closed,
-                    centers, nCenters, 18, 1.55, ink.red, ink.green, ink.blue, 1);
+                    centers, nCenters, 11, width, ink.red, ink.green, ink.blue, 1);
             } else {
-                OwnLineSet parts = OwnCutGaps(lines.lines[i].pts, lines.lines[i].count, lines.lines[i].closed, mine, mineCount);
+                // The gap list is the list drawn just below. A hole is never left bare.
+                OwnLineSet parts = OwnCutGaps(lines.lines[i].pts, lines.lines[i].count,
+                    lines.lines[i].closed, mine, mineCount);
                 for (int p = 0; p < parts.count; p++) {
+                    if (PolyLength(&parts.lines[p]) < 22) continue;
                     StrokeLine(ctx, parts.lines[p].pts, parts.lines[p].count, 0,
-                        centers, nCenters, 18, 1.55, ink.red, ink.green, ink.blue, 1);
+                        centers, nCenters, 11, width, ink.red, ink.green, ink.blue, 1);
                 }
                 OwnLineSetFree(parts);
             }
         }
-        NSColor *inkColor = [NSColor colorWithSRGBRed:ink.red green:ink.green blue:ink.blue alpha:1];
-        for (int L = 0; L < nLabels && !options.motionState; L++) {
-            NSString *text = [NSString stringWithFormat:@"%.0f", labels[L].level];
-            DrawText(ctx, text, labelFont, inkColor, labels[L].x, labels[L].y, labels[L].angle);
-        }
-        if (options.motionState) {
-            for (int s = 0; s < 128; s++) {
-                MotionLabelSlot *slot = &options.motionState->_motionLabels[s];
-                if (!slot->active || slot->alpha <= 0) continue;
-                NSString *text = [NSString stringWithFormat:@"%.0f", slot->level];
-                NSColor *plate = [NSColor colorWithWhite:0.96 alpha:0.24 * slot->alpha];
-                NSSize size = [text sizeWithAttributes:@{NSFontAttributeName: labelFont}];
-                CGContextSaveGState(ctx);
-                CGContextTranslateCTM(ctx, slot->x, slot->y);
-                CGContextRotateCTM(ctx, slot->angle);
-                CGContextSetFillColorWithColor(ctx, plate.CGColor);
-                CGRect plateRect = CGRectMake(-size.width * 0.5 - 2,
-                    -size.height * 0.5 - 1, size.width + 4, size.height + 2);
-                CGPathRef platePath = CGPathCreateWithRoundedRect(plateRect, 2.0, 2.0, NULL);
-                CGContextAddPath(ctx, platePath);
-                CGContextFillPath(ctx);
-                CGPathRelease(platePath);
-                CGContextRestoreGState(ctx);
-                NSColor *motionInk = [NSColor colorWithSRGBRed:ink.red green:ink.green blue:ink.blue alpha:slot->alpha];
-                DrawText(ctx, text, labelFont, motionInk, slot->x, slot->y, slot->angle);
-            }
-            (void)visibleMotionLabels;
+        free(lineAlpha);
+        for (int L = 0; L < nDrawn; L++) {
+            double glyphAlpha = L < 80 ? drawnAlpha[L] : 1;
+            if (glyphAlpha < 0.02) continue;
+            NSString *text = PressureText((int)llround(drawn[L].level));
+            NSColor *halo = HaloColour(view, drawn[L].x, drawn[L].y, landMask,
+                cube->nLon, cube->nLat, sea, land);
+            DrawHaloText(ctx, text, labelFont,
+                [inkColor colorWithAlphaComponent:glyphAlpha],
+                [halo colorWithAlphaComponent:glyphAlpha],
+                drawn[L].x, drawn[L].y, 0);
         }
         NSFont *letterFont = [NSFont fontWithName:@"Helvetica-Bold" size:18] ?: [NSFont boldSystemFontOfSize:18];
         NSFont *valueFont = [NSFont fontWithName:@"Helvetica-Bold" size:11] ?: [NSFont boldSystemFontOfSize:11];
-        CGContextSetRGBStrokeColor(ctx, ink.red, ink.green, ink.blue, 1);
-        CGContextSetLineWidth(ctx, 1.15);
-        for (int e = 0; e < nExt && !options.motionState; e++) {
-            double x = centers[e].x, yUp = centers[e].y;
-            // Bureau centres are a saltire, not a plus.
-            CGContextMoveToPoint(ctx, x - 4.2, yUp - 4.2);
-            CGContextAddLineToPoint(ctx, x + 4.2, yUp + 4.2);
-            CGContextMoveToPoint(ctx, x - 4.2, yUp + 4.2);
-            CGContextAddLineToPoint(ctx, x + 4.2, yUp - 4.2);
-            CGContextStrokePath(ctx);
-            DrawText(ctx, extrema[e].high ? @"H" : @"L", letterFont, inkColor, x, yUp + 14, 0);
-            DrawText(ctx, [NSString stringWithFormat:@"%.0f", round(extrema[e].value)], valueFont, inkColor, x, yUp - 16, 0);
-        }
-        if (options.motionState) {
-            NSFont *motionLetter = [NSFont fontWithName:@"Helvetica-Bold" size:18] ?: [NSFont boldSystemFontOfSize:18];
-            NSFont *motionValue = [NSFont fontWithName:@"Helvetica-Bold" size:11] ?: [NSFont boldSystemFontOfSize:11];
+        if (!options.motionState) {
+            for (int e = 0; e < nExt; e++) {
+                NSColor *halo = HaloColour(view, centers[e].x, centers[e].y, landMask,
+                    cube->nLon, cube->nLat, sea, land);
+                DrawCentreMark(ctx, centers[e].x, centers[e].y, extrema[e].high, extrema[e].value,
+                    letterFont, valueFont, inkColor, halo);
+            }
+        } else {
             for (int s = 0; s < 24; s++) {
                 MotionCentreSlot *slot = &options.motionState->_motionCentres[s];
-                if (!slot->active || slot->age < 3 || slot->alpha <= 0) continue;
-                CGContextSetRGBStrokeColor(ctx, ink.red, ink.green, ink.blue, slot->alpha);
-                CGContextSetLineWidth(ctx, 1.15);
-                CGContextMoveToPoint(ctx, slot->x - 4.2, slot->y - 4.2);
-                CGContextAddLineToPoint(ctx, slot->x + 4.2, slot->y + 4.2);
-                CGContextMoveToPoint(ctx, slot->x - 4.2, slot->y + 4.2);
-                CGContextAddLineToPoint(ctx, slot->x + 4.2, slot->y - 4.2);
-                CGContextStrokePath(ctx);
-                NSColor *centreInk = [NSColor colorWithSRGBRed:ink.red green:ink.green blue:ink.blue alpha:slot->alpha];
-                DrawText(ctx, slot->high ? @"H" : @"L", motionLetter, centreInk, slot->x, slot->y + 14, 0);
-                DrawText(ctx, [NSString stringWithFormat:@"%.0f", round(slot->value)], motionValue, centreInk, slot->x, slot->y - 16, 0);
+                if (!slot->active || slot->alpha < 0.02) continue;
+                NSColor *halo = HaloColour(view, slot->x, slot->y, landMask,
+                    cube->nLon, cube->nLat, sea, land);
+                DrawCentreMark(ctx, slot->x, slot->y, slot->high, slot->value,
+                    letterFont, valueFont,
+                    [inkColor colorWithAlphaComponent:slot->alpha],
+                    [halo colorWithAlphaComponent:slot->alpha]);
             }
         }
-#ifndef ISOBAR_APP
-        fprintf(stderr, "  isobars %d labels %d centres %d  pressure %.0f–%.0f\n",
-            lines.count, nLabels, nExt, lo, hi);
-        for (int e = 0; e < nExt; e++) {
-            fprintf(stderr, "    %s %.0f at %.1fS %.1fE\n", extrema[e].high ? "H" : "L",
-                round(extrema[e].value), fabs(extrema[e].y), extrema[e].x);
+        if (getenv("ISOBAR_CHART_LOG")) {
+            int closed = 0, closedLabelled = 0;
+            for (int i = 0; i < lines.count; i++) {
+                if (!lines.lines[i].closed) continue;
+                double loX = INFINITY, hiX = -INFINITY, loY = INFINITY, hiY = -INFINITY;
+                for (int p = 0; p < lines.lines[i].count; p++) {
+                    OwnVec q = lines.lines[i].pts[p];
+                    if (q.x < loX) loX = q.x;
+                    if (q.x > hiX) hiX = q.x;
+                    if (q.y < loY) loY = q.y;
+                    if (q.y > hiY) hiY = q.y;
+                }
+                if (fmax(hiX - loX, hiY - loY) < 28) continue;
+                closed++;
+                for (int L = 0; L < nLabels; L++) if (drawn[L].line == i) closedLabelled++;
+            }
+            fprintf(stderr, "  isobars %d labels %d closed %d closed-labelled %d centres %d candidates %d  pressure %.0f–%.0f\n",
+                lines.count, nLabels, closed, closedLabelled, nExt, nCand, lo, hi);
+            for (int e = 0; e < nExt; e++) {
+                double prom = 0;
+                for (int c = 0; c < nCand; c++) {
+                    if (candidates[c].high != extrema[e].high) continue;
+                    if (hypot(candidates[c].x - extrema[e].x, candidates[c].y - extrema[e].y) < 0.8)
+                        prom = candProm[c];
+                }
+                fprintf(stderr, "    %s %.0f at %.1fS %.1fE  prom %.1f\n", extrema[e].high ? "H" : "L",
+                    round(extrema[e].value), fabs(extrema[e].y), extrema[e].x, prom);
+            }
         }
-#endif
         OwnLineSetFree(lines);
+        gRenderProfile.drawMs += ProfileLap();
     }
 
-    if (options.barbs) {
+    if (!options.inkOnly && options.barbs) {
         // Sparse, geographically fixed samples do not jump as the time changes.
         const double barbStep = 8.0;
         for (double lat = ceil(kViewSouth / barbStep) * barbStep; lat <= kViewNorth; lat += barbStep) {
@@ -2168,7 +2949,7 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
         }
     }
 
-    if (options.observed && options.stations && options.nStations > 0) {
+    if (!options.inkOnly && options.observed && options.stations && options.nStations > 0) {
         NSFont *valueFont = [NSFont fontWithName:@"Helvetica-Bold" size:9] ?: [NSFont boldSystemFontOfSize:9];
         NSColor *ink = [NSColor colorWithSRGBRed:0.12 green:0.11 blue:0.10 alpha:1];
         ObservedRainLabel candidates[48];
@@ -2250,20 +3031,23 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
         }
     }
 
-    if (options.temperature && options.legend) {
+    if (!options.inkOnly && options.temperature && options.legend) {
         DrawLegend(ctx, kPanelW, kMapH, [NSString stringWithUTF8String:options.legend],
             options.rain && !options.observed, options.observed);
     }
     CGContextRestoreGState(ctx);
 
+    if (!options.inkOnly) {
     CGContextSetRGBStrokeColor(ctx, 0.42, 0.43, 0.44, 1);
     CGContextSetLineWidth(ctx, 1);
     CGContextStrokeRect(ctx, CGRectMake(0.5, 0.5, kPanelW - 1, kMapH - 1));
-    if (!options.bare) {
+    }
+    if (!options.inkOnly && !options.bare) {
         CGContextSetRGBStrokeColor(ctx, titleColour.red, titleColour.green, titleColour.blue, 1);
         CGContextStrokeRect(ctx, CGRectMake(0.5, 0.5, kPanelW - 1, kPanelH - 1));
     }
 
+    gRenderProfile.overlayMs += ProfileLap();
     free(mslp);
     free(rough);
     free(temp);
@@ -2390,13 +3174,15 @@ double OwnChartMapAspect(void) { return (double)kPanelW / (double)kMapH; }
     stations:(NSArray *)stations scale:(CGFloat)scale {
     if (!isfinite(hour) || hour < 0 || hour > _cube.nHours - 1) return nil;
     AdoptCubeGrid(&_cube);
+    double frameBegan = ProfileNow();
     if (scale < 1) scale = 1;
-    if (scale > 3) scale = 3;
+    if (scale > 4) scale = 4;
     int logicalH = layers.bare ? kMapH : kPanelH;
     int pixelsW = (int)llround(kPanelW * scale);
     int pixelsH = (int)llround(logicalH * scale);
     CGContextRef ctx = MakeContext(pixelsW, pixelsH);
     if (!ctx) return nil;
+    if (layers.inkOnly) CGContextClearRect(ctx, CGRectMake(0, 0, pixelsW, pixelsH));
     CGContextScaleCTM(ctx, scale, scale);
     PanelOptions options = {0};
     options.temperature = layers.temperature;
@@ -2404,6 +3190,8 @@ double OwnChartMapAspect(void) { return (double)kPanelW / (double)kMapH; }
     options.rain = layers.rain && !layers.observed;
     options.observed = layers.observed;
     options.bare = layers.bare;
+    options.plateOnly = layers.plateOnly;
+    options.inkOnly = layers.inkOnly;
     // The app draws one key in the chrome. A panel does not carry a legend box.
     StationRain stack[48];
     int nStations = 0;
@@ -2425,20 +3213,23 @@ double OwnChartMapAspect(void) { return (double)kPanelW / (double)kMapH; }
     if (!image) return nil;
     NSImage *result = [[NSImage alloc] initWithCGImage:image size:NSMakeSize(kPanelW, logicalH)];
     CGImageRelease(image);
+    gRenderProfile.totalMs = ProfileNow() - frameBegan;
     return result;
 }
 
 - (NSImage *)renderMotion:(double)hour title:(NSString *)title layers:(OwnLayerOptions)layers
     stations:(NSArray *)stations scale:(CGFloat)scale state:(OwnMotionState *)state {
     if (!state || _cube.nPoints > 1000000 || !isfinite(hour) || hour < 0 || hour > _cube.nHours - 1) return nil;
+    double frameBegan = ProfileNow();
     AdoptCubeGrid(&_cube);
     if (scale < 1) scale = 1;
-    if (scale > 3) scale = 3;
+    if (scale > 4) scale = 4;
     int logicalH = layers.bare ? kMapH : kPanelH;
     int pixelsW = (int)llround(kPanelW * scale);
     int pixelsH = (int)llround(logicalH * scale);
     CGContextRef ctx = MakeContext(pixelsW, pixelsH);
     if (!ctx) return nil;
+    if (layers.inkOnly) CGContextClearRect(ctx, CGRectMake(0, 0, pixelsW, pixelsH));
     CGContextScaleCTM(ctx, scale, scale);
     PanelOptions options = {0};
     options.temperature = layers.temperature;
@@ -2446,6 +3237,8 @@ double OwnChartMapAspect(void) { return (double)kPanelW / (double)kMapH; }
     options.rain = layers.rain && !layers.observed;
     options.observed = layers.observed;
     options.bare = layers.bare;
+    options.plateOnly = layers.plateOnly;
+    options.inkOnly = layers.inkOnly;
     options.motionState = state;
     StationRain stack[48];
     int nStations = 0;
@@ -2464,6 +3257,7 @@ double OwnChartMapAspect(void) { return (double)kPanelW / (double)kMapH; }
     if (!image) return nil;
     NSImage *result = [[NSImage alloc] initWithCGImage:image size:NSMakeSize(kPanelW, logicalH)];
     CGImageRelease(image);
+    gRenderProfile.totalMs = ProfileNow() - frameBegan;
     return result;
 }
 

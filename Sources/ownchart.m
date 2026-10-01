@@ -1,4 +1,5 @@
 #import "ownchart.h"
+#import <Accelerate/Accelerate.h>
 #import <math.h>
 #import <stdlib.h>
 #import <string.h>
@@ -428,9 +429,15 @@ OwnLineSet OwnContours(const double *field, int nLon, int nLat,
     OwnLineSet set = {0};
     if (!field || nLon < 2 || nLat < 2 || !levels || nLevels <= 0) return set;
     if (!(dx != 0) || !(dy != 0)) return set;
-    int stride = nLon + 1;
-    int keyMax = (nLat + 1) * stride * 2;
-    int segCap = nLon * nLat * 2;
+    size_t cells = (size_t)nLon * (size_t)nLat;
+    if (nLon > 1000 || nLat > 1000 || cells > 250000) return set;
+    size_t strideS = (size_t)nLon + 1;
+    size_t keyMaxS = ((size_t)nLat + 1) * strideS * 2;
+    size_t segCapS = cells * 2;
+    if (keyMaxS > INT_MAX || segCapS > INT_MAX) return set;
+    int stride = (int)strideS;
+    int keyMax = (int)keyMaxS;
+    int segCap = (int)segCapS;
     Seg *segs = malloc((size_t)segCap * sizeof(Seg));
     Adj *adj = malloc((size_t)keyMax * 2 * sizeof(Adj));
     int *nAdj = malloc((size_t)keyMax * sizeof(int));
@@ -448,10 +455,10 @@ OwnLineSet OwnContours(const double *field, int nLon, int nLat,
         for (int j = 0; j < nLat - 1; j++) {
             for (int i = 0; i < nLon - 1; i++) {
                 double v[4] = {
-                    field[j * nLon + i],
-                    field[j * nLon + i + 1],
-                    field[(j + 1) * nLon + i + 1],
-                    field[(j + 1) * nLon + i],
+                    field[(size_t)j * (size_t)nLon + (size_t)i],
+                    field[(size_t)j * (size_t)nLon + (size_t)i + 1],
+                    field[(size_t)(j + 1) * (size_t)nLon + (size_t)i + 1],
+                    field[(size_t)(j + 1) * (size_t)nLon + (size_t)i],
                 };
                 if (!isfinite(v[0]) || !isfinite(v[1]) || !isfinite(v[2]) || !isfinite(v[3])) continue;
                 // Nudge a node that sits on the level so the edge still has a crossing.
@@ -604,6 +611,206 @@ OwnLineSet OwnContours(const double *field, int nLon, int nLat,
     return set;
 }
 
+static double SegLen(OwnVec a, OwnVec b) { return hypot(b.x - a.x, b.y - a.y); }
+
+static double RingLength(const OwnVec *pts, int n, int closed) {
+    if (!pts || n < 2) return 0;
+    double total = 0;
+    int edges = closed ? n : n - 1;
+    for (int i = 0; i < edges; i++) total += SegLen(pts[i], pts[(i + 1) % n]);
+    return total;
+}
+
+static double RingArea(const OwnVec *pts, int n) {
+    if (!pts || n < 3) return 0;
+    double area = 0;
+    for (int i = 0; i < n; i++) {
+        OwnVec p = pts[i], q = pts[(i + 1) % n];
+        area += p.x * q.y - q.x * p.y;
+    }
+    return 0.5 * area;
+}
+
+// Drop the `step` vertices after `i` (the detour), wrapping on a closed ring.
+static int CutDetour(OwnVec **pts, int n, int closed, int i, int step) {
+    if (!pts || !*pts || step < 2 || n - step < (closed ? 3 : 2)) return n;
+    int keep = n - step;
+    OwnVec *out = malloc((size_t)keep * sizeof(OwnVec));
+    if (!out) return n;
+    int w = 0;
+    for (int k = 0; k < n; k++) {
+        int rel = closed ? (k - i + n) % n : k - i;
+        if (!closed && (k <= i || k > i + step)) out[w++] = (*pts)[k];
+        if (closed && (rel == 0 || rel > step)) out[w++] = (*pts)[k];
+    }
+    if (w != keep) { free(out); return n; }
+    free(*pts);
+    *pts = out;
+    return keep;
+}
+
+static int ExciseLoops(OwnVec **pts, int n, int closed, double minArea, double pinch, double maxAlong) {
+    if (!pts || !*pts || n < 4 || !(pinch > 0) || !(minArea > 0)) return n;
+    for (int guard = 0; guard < 8; guard++) {
+        int cutI = -1, cutStep = 0;
+        for (int i = 0; i < n && cutI < 0; i++) {
+            double along = 0;
+            int limit = closed ? n / 2 : n - 1 - i;
+            for (int step = 2; step <= limit; step++) {
+                int prev = closed ? (i + step - 1) % n : i + step - 1;
+                int j = closed ? (i + step) % n : i + step;
+                along += SegLen((*pts)[prev], (*pts)[j]);
+                if (along > maxAlong) break;
+                if (!closed && j == n - 1) continue;
+                double chord = SegLen((*pts)[i], (*pts)[j]);
+                if (chord > pinch) continue;
+                if (chord > 1e-4 && along < chord * 2.5) continue;
+                double area = 0;
+                int m = step + 1;
+                for (int k = 0; k < m; k++) {
+                    int ia = closed ? (i + k) % n : i + k;
+                    int ib = closed ? (i + (k + 1) % m) % n : i + (k + 1) % m;
+                    area += (*pts)[ia].x * (*pts)[ib].y - (*pts)[ib].x * (*pts)[ia].y;
+                }
+                if (fabs(0.5 * area) >= minArea) continue;
+                cutI = i;
+                cutStep = step;
+                break;
+            }
+        }
+        if (cutI < 0) break;
+        int next = CutDetour(pts, n, closed, cutI, cutStep);
+        if (next == n) break;
+        n = next;
+    }
+    return n;
+}
+
+void OwnPruneContours(OwnLineSet *set, double minLength, double minArea, double pinch) {
+    if (!set || !set->lines || !(minLength > 0) || !(minArea > 0)) return;
+    int w = 0;
+    for (int i = 0; i < set->count; i++) {
+        OwnLine line = set->lines[i];
+        int n = ExciseLoops(&line.pts, line.count, line.closed, minArea, pinch, minLength * 4.0);
+        line.count = n;
+        double length = RingLength(line.pts, n, line.closed);
+        double area = line.closed ? fabs(RingArea(line.pts, n)) : 0;
+        BOOL drop = n < (line.closed ? 3 : 2) || length < minLength || (line.closed && area < minArea);
+        if (drop) { free(line.pts); continue; }
+        set->lines[w++] = line;
+    }
+    set->count = w;
+}
+
+static BOOL NearMapEdge(OwnVec p, double minX, double minY, double maxX, double maxY, double edge) {
+    return p.x <= minX + edge || p.x >= maxX - edge || p.y <= minY + edge || p.y >= maxY - edge;
+}
+
+BOOL OwnIsOpenFragment(const OwnLine *line, double minLength, double edgeLength,
+    double minX, double minY, double maxX, double maxY, double edge) {
+    if (!line || line->closed) return NO;
+    if (!line->pts || line->count < 2 || !(minLength > 0)) return YES;
+    double length = RingLength(line->pts, line->count, 0);
+    if (length >= minLength) return NO;
+    if (!(edgeLength > 0)) edgeLength = minLength;
+    if (!(edge > 0)) edge = 0;
+    OwnVec head = line->pts[0], tail = line->pts[line->count - 1];
+    BOOL crosses = NearMapEdge(head, minX, minY, maxX, maxY, edge)
+        || NearMapEdge(tail, minX, minY, maxX, maxY, edge);
+    if (crosses && length >= edgeLength) return NO;
+    return YES;
+}
+
+static double PerpDist(OwnVec a, OwnVec b, OwnVec p) {
+    double dx = b.x - a.x, dy = b.y - a.y;
+    double len = hypot(dx, dy);
+    if (len < 1e-12) return hypot(p.x - a.x, p.y - a.y);
+    return fabs((p.x - a.x) * dy - (p.y - a.y) * dx) / len;
+}
+
+static void SimplifyMark(const OwnVec *pts, int i0, int i1, double epsilon, char *keep) {
+    if (i1 <= i0 + 1) return;
+    int stackN = 0;
+    int cap = (i1 - i0 + 1) * 2;
+    if (cap < 4) cap = 4;
+    int *stack = malloc((size_t)cap * sizeof(int));
+    if (!stack) return;
+    stack[stackN++] = i0;
+    stack[stackN++] = i1;
+    while (stackN >= 2) {
+        int b = stack[--stackN];
+        int a = stack[--stackN];
+        if (b <= a + 1) continue;
+        double best = 0;
+        int at = -1;
+        for (int i = a + 1; i < b; i++) {
+            double d = PerpDist(pts[a], pts[b], pts[i]);
+            if (d > best) { best = d; at = i; }
+        }
+        if (at < 0 || !(best > epsilon)) continue;
+        keep[at] = 1;
+        if (stackN + 4 > cap) {
+            int next = cap * 2;
+            int *grown = realloc(stack, (size_t)next * sizeof(int));
+            if (!grown) break;
+            stack = grown;
+            cap = next;
+        }
+        stack[stackN++] = a;
+        stack[stackN++] = at;
+        stack[stackN++] = at;
+        stack[stackN++] = b;
+    }
+    free(stack);
+}
+
+static int SimplifyOpen(OwnVec **pts, int n, double epsilon) {
+    char *keep = calloc((size_t)n, 1);
+    if (!keep) return n;
+    keep[0] = keep[n - 1] = 1;
+    SimplifyMark(*pts, 0, n - 1, epsilon, keep);
+    int w = 0;
+    for (int i = 0; i < n; i++) if (keep[i]) w++;
+    OwnVec *out = malloc((size_t)w * sizeof(OwnVec));
+    if (!out) { free(keep); return n; }
+    int k = 0;
+    for (int i = 0; i < n; i++) if (keep[i]) out[k++] = (*pts)[i];
+    free(keep);
+    free(*pts);
+    *pts = out;
+    return w;
+}
+
+void OwnSimplifyContours(OwnLineSet *set, double epsilon) {
+    if (!set || !set->lines || !(epsilon > 0)) return;
+    for (int i = 0; i < set->count; i++) {
+        OwnLine *line = &set->lines[i];
+        if (!line->pts || line->count < 3) continue;
+        if (!line->closed) {
+            line->count = SimplifyOpen(&line->pts, line->count, epsilon);
+            continue;
+        }
+        int n = line->count;
+        int pivot = 0;
+        for (int p = 1; p < n; p++) {
+            if (line->pts[p].x < line->pts[pivot].x
+                || (line->pts[p].x == line->pts[pivot].x && line->pts[p].y < line->pts[pivot].y))
+                pivot = p;
+        }
+        OwnVec *rot = malloc((size_t)(n + 1) * sizeof(OwnVec));
+        if (!rot) continue;
+        for (int p = 0; p < n; p++) rot[p] = line->pts[(pivot + p) % n];
+        rot[n] = rot[0];
+        int m = SimplifyOpen(&rot, n + 1, epsilon);
+        if (m < 5) { free(rot); continue; }
+        if (fabs(rot[0].x - rot[m - 1].x) < 1e-9 && fabs(rot[0].y - rot[m - 1].y) < 1e-9) m--;
+        if (m < 4) { free(rot); continue; }
+        free(line->pts);
+        line->pts = rot;
+        line->count = m;
+    }
+}
+
 void OwnSmoothLine(OwnVec *pts, int count, int closed, int passes) {
     if (!pts || count < 3 || passes <= 0) return;
     OwnVec *tmp = malloc((size_t)count * sizeof(OwnVec));
@@ -645,6 +852,134 @@ int OwnDensify(const OwnVec *in, int n, int closed, OwnVec *out, int outCap) {
     }
     if (!closed) out[w++] = in[n - 1];
     return w;
+}
+
+int OwnChaikin(const OwnVec *in, int n, int closed, OwnVec *out, int outCap) {
+    if (!in || !out || n < 2 || (closed && n < 3)) return -1;
+    int need = n * 2;
+    if (outCap < need) return -1;
+    if (closed) {
+        int w = 0;
+        for (int i = 0; i < n; i++) {
+            OwnVec a = in[i], b = in[(i + 1) % n];
+            out[w++] = (OwnVec){0.75 * a.x + 0.25 * b.x, 0.75 * a.y + 0.25 * b.y};
+            out[w++] = (OwnVec){0.25 * a.x + 0.75 * b.x, 0.25 * a.y + 0.75 * b.y};
+        }
+        return w;
+    }
+    int w = 0;
+    out[w++] = in[0];
+    for (int i = 0; i < n - 1; i++) {
+        OwnVec a = in[i], b = in[i + 1];
+        out[w++] = (OwnVec){0.75 * a.x + 0.25 * b.x, 0.75 * a.y + 0.25 * b.y};
+        out[w++] = (OwnVec){0.25 * a.x + 0.75 * b.x, 0.25 * a.y + 0.75 * b.y};
+    }
+    out[w++] = in[n - 1];
+    return w;
+}
+
+// numpy 'reflect': the sample just outside an edge is the sample just inside it.
+static int ReflectIndex(int i, int n) {
+    if (n <= 1) return 0;
+    int period = 2 * (n - 1);
+    i %= period;
+    if (i < 0) i += period;
+    if (i >= n) i = period - i;
+    return i;
+}
+
+static BOOL ConvSeparable(const double *src, double *dst, int nLon, int nLat,
+    const double *kernel, int rad, int reflect) {
+    int flen = rad * 2 + 1;
+    size_t n = (size_t)nLon * (size_t)nLat;
+    int span = (nLon > nLat ? nLon : nLat) + flen;
+    double *tmp = malloc(n * sizeof(double));
+    double *pad = malloc((size_t)span * sizeof(double));
+    if (!tmp || !pad) { free(tmp); free(pad); return NO; }
+    for (int j = 0; j < nLat; j++) {
+        for (int i = -rad; i < nLon + rad; i++) {
+            int ii = i;
+            if (reflect) ii = ReflectIndex(i, nLon);
+            else { if (ii < 0) ii = 0; if (ii >= nLon) ii = nLon - 1; }
+            pad[i + rad] = src[(size_t)j * (size_t)nLon + (size_t)ii];
+        }
+        vDSP_convD(pad, 1, kernel, 1, tmp + (size_t)j * (size_t)nLon, 1,
+            (vDSP_Length)nLon, (vDSP_Length)flen);
+    }
+    for (int i = 0; i < nLon; i++) {
+        for (int j = -rad; j < nLat + rad; j++) {
+            int jj = j;
+            if (reflect) jj = ReflectIndex(j, nLat);
+            else { if (jj < 0) jj = 0; if (jj >= nLat) jj = nLat - 1; }
+            pad[j + rad] = tmp[(size_t)jj * (size_t)nLon + (size_t)i];
+        }
+        vDSP_convD(pad, 1, kernel, 1, dst + i, (vDSP_Stride)nLon,
+            (vDSP_Length)nLat, (vDSP_Length)flen);
+    }
+    free(tmp);
+    free(pad);
+    return YES;
+}
+
+void OwnGaussianSmooth(double *field, int nLon, int nLat, double sigma) {
+    if (!field || nLon < 1 || nLat < 1 || !(sigma >= 0.4)) return;
+    int rad = (int)ceil(3.0 * sigma);
+    if (rad < 1) rad = 1;
+    if (rad > 8) rad = 8;
+    double kernel[17];
+    double norm = 0;
+    for (int i = -rad; i <= rad; i++) {
+        double w = exp(-0.5 * (double)(i * i) / (sigma * sigma));
+        kernel[i + rad] = w;
+        norm += w;
+    }
+    for (int i = 0; i <= rad * 2; i++) kernel[i] /= norm;
+    size_t n = (size_t)nLon * (size_t)nLat;
+    BOOL finite = YES;
+    for (size_t i = 0; i < n && finite; i++) if (!isfinite(field[i])) finite = NO;
+    if (finite && ConvSeparable(field, field, nLon, nLat, kernel, rad, 1)) return;
+    double *val = malloc(n * sizeof(double));
+    double *wgt = malloc(n * sizeof(double));
+    double *tmpV = malloc(n * sizeof(double));
+    double *tmpW = malloc(n * sizeof(double));
+    if (!val || !wgt || !tmpV || !tmpW) {
+        free(val); free(wgt); free(tmpV); free(tmpW);
+        return;
+    }
+    for (size_t i = 0; i < n; i++) {
+        if (isfinite(field[i])) { val[i] = field[i]; wgt[i] = 1; }
+        else { val[i] = 0; wgt[i] = 0; }
+    }
+    for (int j = 0; j < nLat; j++) {
+        for (int i = 0; i < nLon; i++) {
+            double accV = 0, accW = 0;
+            for (int di = -rad; di <= rad; di++) {
+                int ii = ReflectIndex(i + di, nLon);
+                double w = kernel[di + rad];
+                size_t k = (size_t)j * (size_t)nLon + (size_t)ii;
+                accV += w * val[k];
+                accW += w * wgt[k];
+            }
+            size_t o = (size_t)j * (size_t)nLon + (size_t)i;
+            tmpV[o] = accV;
+            tmpW[o] = accW;
+        }
+    }
+    for (int i = 0; i < nLon; i++) {
+        for (int j = 0; j < nLat; j++) {
+            double accV = 0, accW = 0;
+            for (int dj = -rad; dj <= rad; dj++) {
+                int jj = ReflectIndex(j + dj, nLat);
+                double w = kernel[dj + rad];
+                size_t k = (size_t)jj * (size_t)nLon + (size_t)i;
+                accV += w * tmpV[k];
+                accW += w * tmpW[k];
+            }
+            size_t o = (size_t)j * (size_t)nLon + (size_t)i;
+            field[o] = isfinite(field[o]) && accW > 1e-9 ? accV / accW : NAN;
+        }
+    }
+    free(val); free(wgt); free(tmpV); free(tmpW);
 }
 
 int OwnInteriorLevels(double minV, double maxV, double step, double *out, int cap) {
@@ -748,6 +1083,194 @@ int OwnExtrema(const double *field, int nLon, int nLat,
     return kept;
 }
 
+static double FieldAt(const double *field, int nLon, int nLat,
+    double originX, double originY, double dx, double dy, double x, double y) {
+    if (!(dx != 0) || !(dy != 0)) return NAN;
+    double fi = (x - originX) / dx;
+    double fj = (y - originY) / dy;
+    int i0 = (int)floor(fi);
+    int j0 = (int)floor(fj);
+    double tx = fi - i0, ty = fj - j0;
+    double a = Sample(field, nLon, nLat, i0, j0);
+    double b = Sample(field, nLon, nLat, i0 + 1, j0);
+    double c = Sample(field, nLon, nLat, i0, j0 + 1);
+    double d = Sample(field, nLon, nLat, i0 + 1, j0 + 1);
+    if (!isfinite(a) || !isfinite(b) || !isfinite(c) || !isfinite(d)) return NAN;
+    return a * (1 - tx) * (1 - ty) + b * tx * (1 - ty) + c * (1 - tx) * ty + d * tx * ty;
+}
+
+double OwnRingProminence(const double *field, int nLon, int nLat,
+    double originX, double originY, double dx, double dy,
+    double x, double y, double radius) {
+    if (!field || !(radius > 0)) return 0;
+    double centre = FieldAt(field, nLon, nLat, originX, originY, dx, dy, x, y);
+    if (!isfinite(centre)) return 0;
+    double sum = 0;
+    int n = 0;
+    for (int k = 0; k < 16; k++) {
+        double ang = k * (M_PI / 8.0);
+        double value = FieldAt(field, nLon, nLat, originX, originY, dx, dy,
+            x + radius * cos(ang), y + radius * sin(ang));
+        if (!isfinite(value)) continue;
+        sum += value;
+        n++;
+    }
+    if (n < 8) return 0;
+    return centre - sum / n;
+}
+
+static double CentreKilometres(OwnExtremum a, OwnExtremum b) {
+    double mid = (a.y + b.y) * 0.5 * (M_PI / 180.0);
+    double dx = (b.x - a.x) * 111.32 * cos(mid);
+    double dy = (b.y - a.y) * 110.57;
+    return hypot(dx, dy);
+}
+
+static double CentreDistance(OwnExtremum a, OwnExtremum b, int geographic) {
+    if (geographic) return CentreKilometres(a, b);
+    return hypot(a.x - b.x, a.y - b.y);
+}
+
+// YES when a should be kept ahead of b. Different types do not compete.
+static BOOL CentreStronger(OwnExtremum a, double pa, OwnExtremum b, double pb) {
+    if (a.high != b.high) return NO;
+    if (a.high) {
+        if (a.value != b.value) return a.value > b.value;
+    } else if (a.value != b.value) return a.value < b.value;
+    return fabs(pa) > fabs(pb);
+}
+
+int OwnSettleCentres(const OwnExtremum *candidates, const double *prominence,
+    const int *enclosed, int n,
+    double appear, double hold, double mergeDistance, double holdDistance,
+    int geographic,
+    const OwnExtremum *previous, int nPrevious,
+    OwnExtremum *out, int cap) {
+    if (!candidates || !prominence || !out || cap <= 0 || n <= 0) return 0;
+    if (nPrevious < 0) nPrevious = 0;
+    if (!previous) nPrevious = 0;
+    int *order = malloc((size_t)n * sizeof(int));
+    if (!order) return 0;
+    int nOrder = 0;
+    for (int i = 0; i < n; i++) {
+        double need = appear;
+        for (int p = 0; p < nPrevious; p++) {
+            if (previous[p].high != candidates[i].high) continue;
+            if (CentreDistance(previous[p], candidates[i], geographic) <= holdDistance) {
+                need = hold;
+                break;
+            }
+        }
+        double p = prominence[i];
+        BOOL deep = candidates[i].high ? p >= need : p <= -need;
+        if (!deep && enclosed && enclosed[i])
+            deep = candidates[i].high ? p >= 0.5 : p <= -0.5;
+        if (deep) order[nOrder++] = i;
+    }
+    for (int a = 1; a < nOrder; a++) {
+        int key = order[a];
+        int b = a;
+        while (b > 0 && !CentreStronger(candidates[order[b - 1]], prominence[order[b - 1]],
+                candidates[key], prominence[key])) {
+            order[b] = order[b - 1];
+            b--;
+        }
+        order[b] = key;
+    }
+    int kept = 0;
+    for (int a = 0; a < nOrder && kept < cap; a++) {
+        OwnExtremum c = candidates[order[a]];
+        BOOL near = NO;
+        for (int k = 0; k < kept && !near; k++) {
+            if (out[k].high != c.high) continue;
+            if (CentreDistance(out[k], c, geographic) <= mergeDistance) near = YES;
+        }
+        if (!near) out[kept++] = c;
+    }
+    free(order);
+    return kept;
+}
+
+BOOL OwnLineContains(const OwnLine *line, double x, double y) {
+    if (!line || !line->closed || !line->pts || line->count < 3) return NO;
+    BOOL inside = NO;
+    int n = line->count;
+    for (int i = 0, j = n - 1; i < n; j = i++) {
+        double yi = line->pts[i].y, yj = line->pts[j].y;
+        double xi = line->pts[i].x, xj = line->pts[j].x;
+        if ((yi > y) != (yj > y)) {
+            double cross = xi + (xj - xi) * (y - yi) / (yj - yi);
+            if (x < cross) inside = !inside;
+        }
+    }
+    return inside;
+}
+
+static double LineSpan(const OwnLine *line) {
+    if (!line || line->count < 1 || !line->pts) return 0;
+    double minX = INFINITY, maxX = -INFINITY, minY = INFINITY, maxY = -INFINITY;
+    for (int i = 0; i < line->count; i++) {
+        if (line->pts[i].x < minX) minX = line->pts[i].x;
+        if (line->pts[i].x > maxX) maxX = line->pts[i].x;
+        if (line->pts[i].y < minY) minY = line->pts[i].y;
+        if (line->pts[i].y > maxY) maxY = line->pts[i].y;
+    }
+    return fmax(maxX - minX, maxY - minY);
+}
+
+void OwnMarkEnclosedCentres(const OwnExtremum *candidates, int n,
+    const OwnLine *lines, int nLines, double minSpan,
+    double minX, double minY, double maxX, double maxY, int *enclosed) {
+    if (!enclosed) return;
+    for (int i = 0; i < n; i++) enclosed[i] = 0;
+    if (!candidates || !lines || n <= 0 || nLines <= 0) return;
+    for (int i = 0; i < n; i++) {
+        for (int li = 0; li < nLines; li++) {
+            const OwnLine *line = &lines[li];
+            if (!line->closed || line->count < 3) continue;
+            if (LineSpan(line) < minSpan) continue;
+            BOOL onMap = YES;
+            for (int p = 0; p < line->count && onMap; p++) {
+                double x = line->pts[p].x, y = line->pts[p].y;
+                if (!isfinite(x) || !isfinite(y) || x < minX || x > maxX || y < minY || y > maxY)
+                    onMap = NO;
+            }
+            if (!onMap) continue;
+            if (!OwnLineContains(line, candidates[i].x, candidates[i].y)) continue;
+            if (candidates[i].high) {
+                if (!(line->level < candidates[i].value)) continue;
+            } else if (!(line->level > candidates[i].value)) continue;
+            BOOL best = YES;
+            for (int k = 0; k < n && best; k++) {
+                if (k == i || candidates[k].high != candidates[i].high) continue;
+                if (!OwnLineContains(line, candidates[k].x, candidates[k].y)) continue;
+                if (candidates[i].high ? candidates[k].value > candidates[i].value + 1e-3
+                                        : candidates[k].value < candidates[i].value - 1e-3)
+                    best = NO;
+            }
+            if (best) { enclosed[i] = 1; break; }
+        }
+    }
+}
+
+void OwnDropStrayRings(OwnLineSet *set, const OwnExtremum *centres, int nCentres, double maxSpan) {
+    if (!set || !set->lines || !(maxSpan > 0)) return;
+    int w = 0;
+    for (int i = 0; i < set->count; i++) {
+        OwnLine line = set->lines[i];
+        BOOL stray = NO;
+        if (line.closed && line.count >= 3 && LineSpan(&line) < maxSpan) {
+            stray = YES;
+            for (int c = 0; c < nCentres && stray; c++) {
+                if (OwnLineContains(&line, centres[c].x, centres[c].y)) stray = NO;
+            }
+        }
+        if (stray) { free(line.pts); continue; }
+        set->lines[w++] = line;
+    }
+    set->count = w;
+}
+
 static double Dist(OwnVec a, OwnVec b) { return hypot(b.x - a.x, b.y - a.y); }
 
 static double *ArcLengths(const OwnVec *pts, int n, int closed, double *total) {
@@ -826,6 +1349,46 @@ BOOL OwnLabelsOverlap(OwnLabel a, OwnLabel b, double padding) {
     return YES;
 }
 
+static BOOL LabelsCrowded(OwnLabel a, OwnLabel b) {
+    double width = 2.0 * fmax(a.halfW, b.halfW);
+    if (!(width > 0)) return YES;
+    return hypot(a.x - b.x, a.y - b.y) < 3.0 * width;
+}
+
+int OwnKeepSeparated(OwnLabel *labels, int n, double padding) {
+    if (!labels || n <= 0) return 0;
+    int w = 0;
+    for (int i = 0; i < n; i++) {
+        BOOL hit = NO;
+        for (int k = 0; k < w && !hit; k++)
+            hit = OwnLabelsOverlap(labels[i], labels[k], padding) || LabelsCrowded(labels[i], labels[k]);
+        if (!hit) labels[w++] = labels[i];
+    }
+    return w;
+}
+
+int OwnKeepRingLabels(OwnLabel *labels, int n, const OwnLine *lines, int nLines, double padding) {
+    if (!labels || n <= 0) return 0;
+    if (nLines < 0 || !lines) nLines = 0;
+    int w = 0;
+    for (int i = 0; i < n; i++) {
+        BOOL ring = NO;
+        int line = labels[i].line;
+        if (line >= 0 && line < nLines && lines[line].closed) {
+            int others = 0;
+            for (int k = 0; k < n; k++) if (k != i && labels[k].line == line) others++;
+            ring = others == 0;
+        }
+        BOOL hit = NO;
+        for (int k = 0; k < w && !hit; k++) {
+            hit = OwnLabelsOverlap(labels[i], labels[k], padding);
+            if (!hit && !ring) hit = LabelsCrowded(labels[i], labels[k]);
+        }
+        if (!hit) labels[w++] = labels[i];
+    }
+    return w;
+}
+
 static BOOL LabelInside(OwnLabel lab, double minX, double minY, double maxX, double maxY) {
     OwnVec c, ax, ay;
     RectAxes(lab, 0, &c, &ax, &ay);
@@ -842,227 +1405,539 @@ static BOOL LabelInside(OwnLabel lab, double minX, double minY, double maxX, dou
     return YES;
 }
 
+static double EdgeMargin(double halfHeight) {
+    return 1.5 * halfHeight * 2.0;
+}
+
+static BOOL LabelOnMap(OwnLabel lab, double minX, double minY, double maxX, double maxY) {
+    double m = EdgeMargin(lab.halfH);
+    return LabelInside(lab, minX + m, minY + m, maxX - m, maxY - m);
+}
+
+static double LabelSiteScore(double turn, double arc, double total, int closed,
+    double x, double y, double minX, double minY, double maxX, double maxY) {
+    double mid = (!closed && total > 0) ? fabs(arc - total * 0.5) / total : 0;
+    double clearance = fmin(fmin(x - minX, maxX - x), fmin(y - minY, maxY - y));
+    double reach = 0.5 * fmin(maxX - minX, maxY - minY);
+    double interior = reach > 1.0 ? clearance / reach : 1.0;
+    if (interior < 0) interior = 0;
+    if (interior > 1) interior = 1;
+    return -fabs(turn) + 1.25 * interior - 0.35 * mid;
+}
+
+static BOOL LabelHits(OwnLabel lab, const OwnLabel *labels, int n, double padding) {
+    for (int i = 0; i < n; i++) {
+        if (OwnLabelsOverlap(lab, labels[i], padding) || LabelsCrowded(lab, labels[i])) return YES;
+    }
+    return NO;
+}
+
+int OwnClearCentreLabels(OwnLabel *labels, int nLabels,
+    const OwnLine *lines, int nLines, const OwnVec *centres, int nCentres,
+    double minX, double minY, double maxX, double maxY) {
+    if (!labels || nLabels <= 0) return 0;
+    if (nCentres < 0) nCentres = 0;
+    if (!centres) nCentres = 0;
+    int w = 0;
+    for (int i = 0; i < nLabels; i++) {
+        OwnLabel lab = labels[i];
+        double gap = 6.0 * lab.halfW;
+        if (!(gap > 0)) gap = 0;
+        BOOL close = NO;
+        for (int c = 0; c < nCentres && !close; c++)
+            close = hypot(lab.x - centres[c].x, lab.y - centres[c].y) < gap;
+        if (!close && LabelOnMap(lab, minX, minY, maxX, maxY) && !LabelHits(lab, labels, w, 0)) {
+            labels[w++] = lab;
+            continue;
+        }
+        const OwnLine *line = (lines && lab.line >= 0 && lab.line < nLines) ? &lines[lab.line] : NULL;
+        if (!line || line->count < 2) continue;
+        double total = 0;
+        double *s = ArcLengths(line->pts, line->count, line->closed, &total);
+        if (!s || !(total > 0)) { free(s); continue; }
+        BOOL found = NO;
+        OwnLabel best = lab;
+        double bestD = 1e9;
+        double step = fmax(lab.halfW * 0.5, 4.0);
+        for (double arc = 0; arc <= total + 1e-6; arc += step) {
+            OwnVec p;
+            if (!PointOnLine(line->pts, line->count, line->closed, s, total, arc, &p, NULL)) continue;
+            BOOL ok = YES;
+            for (int c = 0; c < nCentres && ok; c++)
+                ok = hypot(p.x - centres[c].x, p.y - centres[c].y) >= gap;
+            if (!ok) continue;
+            OwnLabel trial = lab;
+            trial.x = p.x;
+            trial.y = p.y;
+            trial.arc = arc;
+            if (!LabelOnMap(trial, minX, minY, maxX, maxY)) continue;
+            if (LabelHits(trial, labels, w, 0)) continue;
+            BOOL later = NO;
+            for (int k = i + 1; k < nLabels && !later; k++)
+                later = OwnLabelsOverlap(trial, labels[k], 0) || LabelsCrowded(trial, labels[k]);
+            if (later) continue;
+            double d = hypot(trial.x - lab.x, trial.y - lab.y);
+            if (!found || d < bestD) { found = YES; bestD = d; best = trial; }
+        }
+        free(s);
+        if (found) labels[w++] = best;
+    }
+    return w;
+}
+
 int OwnPlaceLabels(const OwnLine *lines, int nLines,
     OwnHalfWidth halfWidth, void *context, double halfHeight, double padding,
     double minX, double minY, double maxX, double maxY,
     OwnLabel *out, int cap) {
     if (!lines || !halfWidth || !out || cap <= 0 || halfHeight <= 0) return 0;
     int placed = 0;
+    // One label on every line first. A second label, on the next pass, must
+    // not take the only clear site of a neighbouring isobar.
+    for (int pass = 0; pass < 2; pass++) {
+        for (int li = 0; li < nLines; li++) {
+            int have = 0;
+            for (int k = 0; k < placed; k++) if (out[k].line == li) have++;
+            if (have != pass) continue;
+            const OwnLine *line = &lines[li];
+            if (line->count < 2) continue;
+            double total = 0;
+            double *s = ArcLengths(line->pts, line->count, line->closed, &total);
+            if (!s || total < 1) { free(s); continue; }
+            double halfW = halfWidth(line->level, context);
+            if (!(halfW > 0)) { free(s); continue; }
+            double margin = line->closed ? 0 : halfW + 2.0;
+            if (!line->closed && total < margin * 2.0 + halfW) { free(s); continue; }
+            int got = 0;
+            double step = fmax(halfW * 0.85, 4.0);
+            // Straighter spans nearer the middle of the map come first.
+            typedef struct { double arc, score; } Cand;
+            int maxCand = (int)(total / step) + 3;
+            if (maxCand < 1) maxCand = 1;
+            if (maxCand > 400) maxCand = 400;
+            Cand *cands = malloc((size_t)maxCand * sizeof(Cand));
+            if (!cands) { free(s); continue; }
+            int nc = 0;
+            double begin = line->closed ? 0 : margin;
+            double end = line->closed ? total : total - margin;
+            for (double arc = begin; arc <= end + 1e-6 && nc < maxCand; arc += step) {
+                double before = arc - fmin(12.0, total * 0.08);
+                double after = arc + fmin(12.0, total * 0.08);
+                OwnVec pb, pa, here;
+                double ab, aa;
+                if (!PointOnLine(line->pts, line->count, line->closed, s, total, before, &pb, &ab)) continue;
+                if (!PointOnLine(line->pts, line->count, line->closed, s, total, after, &pa, &aa)) continue;
+                if (!PointOnLine(line->pts, line->count, line->closed, s, total, arc, &here, NULL)) continue;
+                double turn = aa - ab;
+                while (turn > M_PI) turn -= 2 * M_PI;
+                while (turn < -M_PI) turn += 2 * M_PI;
+                cands[nc++] = (Cand){arc, LabelSiteScore(turn, arc, total, line->closed,
+                    here.x, here.y, minX, minY, maxX, maxY)};
+            }
+            for (int a = 1; a < nc; a++) {
+                Cand c = cands[a];
+                int b = a;
+                while (b > 0 && cands[b - 1].score < c.score) {
+                    cands[b] = cands[b - 1];
+                    b--;
+                }
+                cands[b] = c;
+            }
+            for (int c = 0; c < nc && got < 1 && placed < cap; c++) {
+                OwnVec p;
+                double ang;
+                if (!PointOnLine(line->pts, line->count, line->closed, s, total, cands[c].arc, &p, &ang)) continue;
+                double support = fabs(halfW * cos(ang)) + fabs(halfHeight * sin(ang));
+                OwnLabel lab = {
+                    p.x, p.y, 0, halfW, halfHeight,
+                    cands[c].arc, support + 2.5, line->level, li,
+                };
+                if (!LabelOnMap(lab, minX, minY, maxX, maxY)) continue;
+                if (LabelHits(lab, out, placed, padding)) continue;
+                out[placed++] = lab;
+                got++;
+            }
+            free(cands);
+            free(s);
+        }
+    }
+    return placed;
+}
+
+static double HeadingChange(const OwnVec *pts, int n, int closed, const double *s, double total, double arc) {
+    double window = fmin(12.0, total * 0.08);
+    if (window < 1.0) window = 1.0;
+    double ab = 0, aa = 0;
+    if (!PointOnLine(pts, n, closed, s, total, arc - window, NULL, &ab)) return 0;
+    if (!PointOnLine(pts, n, closed, s, total, arc + window, NULL, &aa)) return 0;
+    double turn = aa - ab;
+    while (turn > M_PI) turn -= 2 * M_PI;
+    while (turn < -M_PI) turn += 2 * M_PI;
+    return fabs(turn);
+}
+
+BOOL OwnContourAnchor(double x, double y, const OwnLine *line,
+    double maxDist, double slide,
+    double minX, double minY, double maxX, double maxY,
+    double *outX, double *outY, double *outArc, double *outTangent, double *distance) {
+    if (!line || line->count < 2 || !(maxDist > 0)) return NO;
+    double total = 0;
+    double *s = ArcLengths(line->pts, line->count, line->closed, &total);
+    if (!s || !(total > 0)) { free(s); return NO; }
+    double footArc = 0, footDist = 1e9, acc = 0;
+    int edges = line->closed ? line->count : line->count - 1;
+    for (int i = 0; i < edges; i++) {
+        OwnVec a = line->pts[i];
+        OwnVec b = line->pts[(i + 1) % line->count];
+        double vx = b.x - a.x, vy = b.y - a.y;
+        double denom = vx * vx + vy * vy;
+        double t = denom > 1e-12 ? ((x - a.x) * vx + (y - a.y) * vy) / denom : 0;
+        if (t < 0) t = 0;
+        if (t > 1) t = 1;
+        double d = hypot(a.x + t * vx - x, a.y + t * vy - y);
+        double edge = hypot(vx, vy);
+        if (d < footDist) { footDist = d; footArc = acc + t * edge; }
+        acc += edge;
+    }
+    if (distance) *distance = footDist;
+    if (footDist > maxDist) { free(s); return NO; }
+    if (!(slide > 0)) slide = 0;
+    double bestArc = footArc, bestScore = 1e9;
+    BOOL found = NO;
+    double step = 2.0;
+    if (step > slide && slide > 0) step = slide;
+    int samples = slide > 0 ? (int)(slide / step) : 0;
+    for (int k = -samples; k <= samples; k++) {
+        double arc = footArc + k * step;
+        OwnVec p;
+        double tangent = 0;
+        if (!PointOnLine(line->pts, line->count, line->closed, s, total, arc, &p, &tangent)) continue;
+        if (p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) continue;
+        double dArc = fabs(arc - footArc);
+        if (line->closed && total > 0) {
+            double wrap = fabs(fmod(arc - footArc, total));
+            if (wrap > total * 0.5) wrap = total - wrap;
+            dArc = wrap;
+        }
+        double score = HeadingChange(line->pts, line->count, line->closed, s, total, arc) + 0.02 * dArc;
+        if (!found || score < bestScore) {
+            found = YES;
+            bestScore = score;
+            bestArc = arc;
+        }
+    }
+    if (!found) { free(s); return NO; }
+    OwnVec p;
+    double tangent = 0;
+    if (!PointOnLine(line->pts, line->count, line->closed, s, total, bestArc, &p, &tangent)) {
+        free(s);
+        return NO;
+    }
+    if (outX) *outX = p.x;
+    if (outY) *outY = p.y;
+    if (outArc) *outArc = bestArc < 0 ? bestArc + total : bestArc;
+    if (outTangent) *outTangent = tangent;
+    free(s);
+    return YES;
+}
+
+static double ArcGap(double a, double b, double total, int closed) {
+    double d = fabs(a - b);
+    if (closed && total > 0 && d > total * 0.5) d = total - d;
+    return d;
+}
+
+int OwnCoverLabels(const OwnLine *lines, int nLines,
+    OwnHalfWidth halfWidth, void *context, double halfHeight, double padding,
+    double minX, double minY, double maxX, double maxY,
+    double minLength, double longLength,
+    OwnLabel *labels, int nLabels, int cap) {
+    if (!lines || !halfWidth || !labels || cap <= 0) return 0;
+    if (nLabels < 0) nLabels = 0;
+    if (nLabels > cap) nLabels = cap;
     for (int li = 0; li < nLines; li++) {
         const OwnLine *line = &lines[li];
         if (line->count < 2) continue;
         double total = 0;
         double *s = ArcLengths(line->pts, line->count, line->closed, &total);
-        if (!s || total < 1) { free(s); continue; }
+        if (!s || total < minLength) { free(s); continue; }
+        int need = (longLength > 0 && total >= longLength) ? 2 : 1;
+        int have = 0;
+        for (int i = 0; i < nLabels; i++) if (labels[i].line == li) have++;
         double halfW = halfWidth(line->level, context);
         if (!(halfW > 0)) { free(s); continue; }
         double margin = line->closed ? 0 : halfW + 2.0;
-        if (!line->closed && total < margin * 2.0 + halfW) { free(s); continue; }
-        // Two labels are enough on a panel this size; a third piles up on the
-        // straight stretch of a long isobar.
-        int budget = 2;
-        int got = 0;
-        double step = fmax(halfW * 0.85, 4.0);
-        // Score candidates: straighter and closer to the middle first.
-        typedef struct { double arc, score; } Cand;
-        int maxCand = (int)(total / step) + 3;
-        if (maxCand < 1) maxCand = 1;
-        if (maxCand > 400) maxCand = 400;
-        Cand *cands = malloc((size_t)maxCand * sizeof(Cand));
-        if (!cands) { free(s); continue; }
-        int nc = 0;
         double begin = line->closed ? 0 : margin;
         double end = line->closed ? total : total - margin;
-        for (double arc = begin; arc <= end + 1e-6 && nc < maxCand; arc += step) {
-            double before = arc - fmin(12.0, total * 0.08);
-            double after = arc + fmin(12.0, total * 0.08);
-            OwnVec pb, pa;
-            double ab, aa;
-            if (!PointOnLine(line->pts, line->count, line->closed, s, total, before, &pb, &ab)) continue;
-            if (!PointOnLine(line->pts, line->count, line->closed, s, total, after, &pa, &aa)) continue;
-            double turn = aa - ab;
-            while (turn > M_PI) turn -= 2 * M_PI;
-            while (turn < -M_PI) turn += 2 * M_PI;
-            double mid = line->closed ? 0 : fabs(arc - total * 0.5) / total;
-            cands[nc++] = (Cand){arc, -fabs(turn) - mid};
-        }
-        for (int a = 1; a < nc; a++) {
-            Cand c = cands[a];
-            int b = a;
-            while (b > 0 && cands[b - 1].score < c.score) {
-                cands[b] = cands[b - 1];
-                b--;
+        while (have < need && nLabels < cap && end > begin) {
+            double bestScore = -1e9, bestArc = -1, bestAng = 0;
+            OwnVec bestP = {0, 0};
+            double step = fmax(halfW * 0.5, 8.0);
+            for (double arc = begin; arc <= end + 1e-6; arc += step) {
+                BOOL spaced = YES;
+                for (int i = 0; i < nLabels && spaced; i++) {
+                    if (labels[i].line != li) continue;
+                    if (ArcGap(labels[i].arc, arc, total, line->closed) < fmax(80.0, total * 0.22))
+                        spaced = NO;
+                }
+                if (!spaced) continue;
+                OwnVec p;
+                double ang = 0;
+                if (!PointOnLine(line->pts, line->count, line->closed, s, total, arc, &p, &ang)) continue;
+                double support = fabs(halfW * cos(ang)) + fabs(halfHeight * sin(ang));
+                OwnLabel lab = {p.x, p.y, 0, halfW, halfHeight, arc, support + 2.5, line->level, li};
+                if (!LabelOnMap(lab, minX, minY, maxX, maxY)) continue;
+                if (LabelHits(lab, labels, nLabels, padding)) continue;
+                double score = LabelSiteScore(
+                    HeadingChange(line->pts, line->count, line->closed, s, total, arc),
+                    arc, total, line->closed, p.x, p.y, minX, minY, maxX, maxY);
+                if (bestArc < 0 || score > bestScore) {
+                    bestScore = score;
+                    bestArc = arc;
+                    bestP = p;
+                    bestAng = ang;
+                }
             }
-            cands[b] = c;
-        }
-        for (int c = 0; c < nc && got < budget && placed < cap; c++) {
-            OwnVec p;
-            double ang;
-            if (!PointOnLine(line->pts, line->count, line->closed, s, total, cands[c].arc, &p, &ang)) continue;
-            OwnLabel lab = {
-                p.x, p.y, OwnReadableAngle(ang), halfW, halfHeight,
-                cands[c].arc, halfW + 6.0, line->level, li,
+            if (bestArc < 0) break;
+            double support = fabs(halfW * cos(bestAng)) + fabs(halfHeight * sin(bestAng));
+            labels[nLabels++] = (OwnLabel){
+                bestP.x, bestP.y, 0, halfW, halfHeight, bestArc, support + 2.5, line->level, li
             };
-            if (!LabelInside(lab, minX, minY, maxX, maxY)) continue;
-            BOOL hit = NO;
-            for (int k = 0; k < placed; k++) {
-                if (OwnLabelsOverlap(lab, out[k], padding)) { hit = YES; break; }
-            }
-            if (hit) continue;
-            out[placed++] = lab;
-            got++;
+            have++;
         }
-        free(cands);
         free(s);
     }
-    return placed;
+    return nLabels;
 }
 
-static BOOL ArcInGap(double arc, double total, int closed, const OwnLabel *labels, int nLabels) {
-    for (int i = 0; i < nLabels; i++) {
-        double d = fabs(arc - labels[i].arc);
-        if (closed && total > 0) {
-            double wrap = total - d;
-            if (wrap < d) d = wrap;
+int OwnCoverClosedRings(const OwnLine *lines, int nLines,
+    OwnHalfWidth halfWidth, void *context, double halfHeight,
+    double minX, double minY, double maxX, double maxY, double minSpan,
+    const OwnVec *centres, int nCentres,
+    OwnLabel *labels, int nLabels, int cap) {
+    if (!lines || !halfWidth || !labels || cap <= 0 || !(halfHeight > 0)) return nLabels > 0 ? nLabels : 0;
+    if (nLabels < 0) nLabels = 0;
+    if (nLabels > cap) nLabels = cap;
+    if (nCentres < 0 || !centres) nCentres = 0;
+    if (!(minSpan > 0)) minSpan = 0;
+    for (int li = 0; li < nLines; li++) {
+        const OwnLine *line = &lines[li];
+        if (!line->closed || line->count < 4 || nLabels >= cap) continue;
+        BOOL labelled = NO;
+        for (int i = 0; i < nLabels && !labelled; i++) labelled = labels[i].line == li;
+        if (labelled) continue;
+        double loX = INFINITY, hiX = -INFINITY, loY = INFINITY, hiY = -INFINITY;
+        for (int p = 0; p < line->count; p++) {
+            if (line->pts[p].x < loX) loX = line->pts[p].x;
+            if (line->pts[p].x > hiX) hiX = line->pts[p].x;
+            if (line->pts[p].y < loY) loY = line->pts[p].y;
+            if (line->pts[p].y > hiY) hiY = line->pts[p].y;
         }
-        if (d < labels[i].gap) return YES;
+        if (fmax(hiX - loX, hiY - loY) < minSpan) continue;
+        double total = 0;
+        double *s = ArcLengths(line->pts, line->count, 1, &total);
+        if (!s || !(total > 1)) { free(s); continue; }
+        double halfW = halfWidth(line->level, context);
+        if (!(halfW > 0)) { free(s); continue; }
+        double step = fmax(halfW * 0.5, 6.0);
+        BOOL found = NO;
+        double bestAway = -1;
+        OwnLabel best = {0};
+        for (double arc = 0; arc <= total + 1e-6; arc += step) {
+            OwnVec p;
+            double ang = 0;
+            if (!PointOnLine(line->pts, line->count, 1, s, total, arc, &p, &ang)) continue;
+            double support = fabs(halfW * cos(ang)) + fabs(halfHeight * sin(ang));
+            OwnLabel lab = {p.x, p.y, 0, halfW, halfHeight, arc, support + 2.5, line->level, li};
+            if (!LabelOnMap(lab, minX, minY, maxX, maxY)) continue;
+            if (LabelHits(lab, labels, nLabels, 4)) continue;
+            double away = 1e9;
+            for (int c = 0; c < nCentres; c++) {
+                double d = hypot(p.x - centres[c].x, p.y - centres[c].y);
+                if (d < away) away = d;
+            }
+            if (nCentres == 0) away = 0;
+            if (!found || away > bestAway) { found = YES; bestAway = away; best = lab; }
+        }
+        free(s);
+        if (found) labels[nLabels++] = best;
     }
-    return NO;
+    return nLabels;
 }
 
-static OwnVec ArcPoint(const OwnVec *pts, int n, int closed, const double *s, double total, double arc) {
-    OwnVec p = pts[0];
-    PointOnLine(pts, n, closed, s, total, arc, &p, NULL);
-    return p;
+static const double kLabelGapPad = 2.5;
+
+static void LabelLocal(OwnLabel lab, double x, double y, double *lx, double *ly) {
+    double dx = x - lab.x, dy = y - lab.y;
+    double co = cos(lab.angle), si = sin(lab.angle);
+    *lx = dx * co + dy * si;
+    *ly = -dx * si + dy * co;
+}
+
+static BOOL SegmentInBox(OwnLabel lab, double x0, double y0, double x1, double y1, double *t0, double *t1) {
+    double ax, ay, bx, by;
+    LabelLocal(lab, x0, y0, &ax, &ay);
+    LabelLocal(lab, x1, y1, &bx, &by);
+    double hw = lab.halfW + kLabelGapPad, hh = lab.halfH + kLabelGapPad;
+    double dx = bx - ax, dy = by - ay;
+    double enter = 0, exit = 1;
+    double p[4] = {-dx, dx, -dy, dy};
+    double q[4] = {ax + hw, hw - ax, ay + hh, hh - ay};
+    for (int i = 0; i < 4; i++) {
+        if (fabs(p[i]) < 1e-12) {
+            if (q[i] < -1e-9) return NO;
+        } else {
+            double t = q[i] / p[i];
+            if (p[i] < 0) { if (t > enter) enter = t; }
+            else if (t < exit) exit = t;
+            if (enter > exit + 1e-12) return NO;
+        }
+    }
+    if (exit < 0 || enter > 1) return NO;
+    if (enter < 0) enter = 0;
+    if (exit > 1) exit = 1;
+    if (exit - enter < 1e-8) return NO;
+    *t0 = enter;
+    *t1 = exit;
+    return YES;
+}
+
+static void GapAppend(OwnVec **cur, int *nCur, int *cap, OwnVec p) {
+    if (*nCur > 0 && fabs((*cur)[*nCur - 1].x - p.x) < 1e-6 && fabs((*cur)[*nCur - 1].y - p.y) < 1e-6) return;
+    if (*nCur + 1 > *cap) {
+        int next = *cap ? *cap * 2 : 16;
+        OwnVec *grown = realloc(*cur, (size_t)next * sizeof(OwnVec));
+        if (!grown) return;
+        *cur = grown;
+        *cap = next;
+    }
+    (*cur)[(*nCur)++] = p;
 }
 
 OwnLineSet OwnCutGaps(const OwnVec *pts, int count, int closed,
     const OwnLabel *labels, int nLabels) {
     OwnLineSet set = {0};
     if (!pts || count < 2) return set;
-    double total = 0;
-    double *s = ArcLengths(pts, count, closed, &total);
-    if (!s || total <= 0) { free(s); return set; }
-    BOOL any = NO;
-    if (labels && nLabels > 0) {
-        for (int i = 0; i < count; i++) if (ArcInGap(s[i], total, closed, labels, nLabels)) any = YES;
-        if (!any) {
-            // A gap can sit between vertices.
-            int edges = closed ? count : count - 1;
-            for (int e = 0; e < edges && !any; e++) {
-                double a0 = s[e];
-                double a1 = (e + 1 == count) ? total : s[e + 1];
-                if (ArcInGap(0.5 * (a0 + a1), total, closed, labels, nLabels)) any = YES;
-            }
+    BOOL labelled = labels && nLabels > 0;
+    BOOL startKept = YES;
+    if (labelled) {
+        for (int g = 0; g < nLabels && startKept; g++) {
+            double t0, t1;
+            if (SegmentInBox(labels[g], pts[0].x, pts[0].y, pts[0].x, pts[0].y, &t0, &t1)) startKept = NO;
         }
-    }
-    if (!any) {
-        OwnVec *copy = malloc((size_t)count * sizeof(OwnVec));
-        if (copy) {
-            memcpy(copy, pts, (size_t)count * sizeof(OwnVec));
-            PushLine(&set, copy, count, closed, 0);
-        }
-        free(s);
-        return set;
     }
     int edges = closed ? count : count - 1;
     OwnVec *cur = NULL;
     int nCur = 0, cap = 0;
-    OwnVec *first = NULL;
-    int nFirst = 0;
-    BOOL firstOpen = YES;
-    BOOL lastKept = NO;
+    OwnVec *head = NULL;
+    int nHead = 0;
+    BOOL savedHead = NO;
+    BOOL anyGap = NO;
     for (int e = 0; e < edges; e++) {
-        double a0 = s[e];
-        double a1 = (e + 1 == count) ? total : s[e + 1];
-        if (!(a1 > a0)) continue;
-        double marks[8];
-        int nm = 0;
-        marks[nm++] = a0;
-        marks[nm++] = a1;
-        for (int g = 0; g < nLabels; g++) {
-            double bounds[2] = {labels[g].arc - labels[g].gap, labels[g].arc + labels[g].gap};
-            for (int b = 0; b < 2; b++) {
-                double m = bounds[b];
-                if (closed) {
-                    if (m < 0) m += total;
-                    if (m >= total) m -= total;
-                }
-                if (m > a0 + 1e-8 && m < a1 - 1e-8 && nm < 8) marks[nm++] = m;
+        OwnVec a = pts[e];
+        OwnVec b = pts[(e + 1) % count];
+        double gaps[32];
+        int nGap = 0;
+        if (labelled) {
+            for (int g = 0; g < nLabels && nGap + 2 <= 32; g++) {
+                double t0, t1;
+                if (!SegmentInBox(labels[g], a.x, a.y, b.x, b.y, &t0, &t1)) continue;
+                gaps[nGap++] = t0;
+                gaps[nGap++] = t1;
             }
         }
-        for (int a = 1; a < nm; a++) {
-            double v = marks[a];
-            int b = a;
-            while (b > 0 && marks[b - 1] > v) { marks[b] = marks[b - 1]; b--; }
-            marks[b] = v;
+        for (int i = 2; i < nGap; i += 2) {
+            double t0 = gaps[i], t1 = gaps[i + 1];
+            int j = i;
+            while (j > 0 && gaps[j - 2] > t0) {
+                gaps[j] = gaps[j - 2];
+                gaps[j + 1] = gaps[j - 1];
+                j -= 2;
+            }
+            gaps[j] = t0;
+            gaps[j + 1] = t1;
         }
-        for (int m = 0; m < nm - 1; m++) {
-            if (marks[m + 1] - marks[m] < 1e-8) continue;
-            double mid = 0.5 * (marks[m] + marks[m + 1]);
-            BOOL gap = ArcInGap(mid, total, closed, labels, nLabels);
-            if (gap) {
-                if (nCur >= 2) {
-                    if (closed && firstOpen && e == 0 && m == 0) {
-                        // The opening of a closed ring is handled by merging later.
-                    }
-                    if (firstOpen && closed) {
-                        first = cur;
-                        nFirst = nCur;
-                        firstOpen = NO;
-                        cur = NULL;
-                        nCur = 0;
-                        cap = 0;
-                    } else {
-                        PushLine(&set, cur, nCur, 0, 0);
-                        cur = NULL;
-                        nCur = 0;
-                        cap = 0;
-                    }
-                } else {
-                    free(cur);
-                    cur = NULL;
-                    nCur = 0;
-                    cap = 0;
-                }
-                lastKept = NO;
-                continue;
+        double merged[32];
+        int nMerged = 0;
+        for (int i = 0; i < nGap; i += 2) {
+            double t0 = gaps[i], t1 = gaps[i + 1];
+            if (nMerged && t0 <= merged[nMerged - 1] + 1e-8) {
+                if (t1 > merged[nMerged - 1]) merged[nMerged - 1] = t1;
+            } else if (nMerged + 2 <= 32) {
+                merged[nMerged++] = t0;
+                merged[nMerged++] = t1;
             }
-            OwnVec p0 = ArcPoint(pts, count, closed, s, total, marks[m]);
-            OwnVec p1 = ArcPoint(pts, count, closed, s, total, marks[m + 1]);
-            if (nCur + 2 > cap) {
-                cap = cap ? cap * 2 : 16;
-                if (cap < nCur + 2) cap = nCur + 2;
-                OwnVec *grown = realloc(cur, (size_t)cap * sizeof(OwnVec));
-                if (!grown) { free(cur); cur = NULL; nCur = 0; break; }
-                cur = grown;
+        }
+        double kept[34];
+        int nKept = 0;
+        double cursor = 0;
+        for (int i = 0; i < nMerged; i += 2) {
+            if (merged[i] > cursor + 1e-7) {
+                kept[nKept++] = cursor;
+                kept[nKept++] = merged[i];
             }
-            if (nCur == 0) cur[nCur++] = p0;
-            else if (fabs(cur[nCur - 1].x - p0.x) > 1e-7 || fabs(cur[nCur - 1].y - p0.y) > 1e-7)
-                cur[nCur++] = p0;
-            cur[nCur++] = p1;
-            lastKept = YES;
+            if (merged[i + 1] > cursor) cursor = merged[i + 1];
+        }
+        if (cursor < 1 - 1e-7) {
+            kept[nKept++] = cursor;
+            kept[nKept++] = 1;
+        }
+        for (int i = 0; i < nKept; i += 2) {
+            if (kept[i] > 1e-7) {
+                if (nCur >= 2 && closed && startKept && !savedHead) {
+                    head = cur; nHead = nCur; savedHead = YES;
+                } else if (nCur >= 2) {
+                    PushLine(&set, cur, nCur, 0, 0);
+                } else free(cur);
+                cur = NULL; nCur = 0; cap = 0;
+                anyGap = YES;
+            }
+            GapAppend(&cur, &nCur, &cap, LerpVec(a, b, kept[i]));
+            GapAppend(&cur, &nCur, &cap, LerpVec(a, b, kept[i + 1]));
+            if (kept[i + 1] < 1 - 1e-7) {
+                if (nCur >= 2 && closed && startKept && !savedHead) {
+                    head = cur; nHead = nCur; savedHead = YES;
+                } else if (nCur >= 2) {
+                    PushLine(&set, cur, nCur, 0, 0);
+                } else free(cur);
+                cur = NULL; nCur = 0; cap = 0;
+                anyGap = YES;
+            }
+        }
+        if (nKept == 0) {
+            if (nCur >= 2 && closed && startKept && !savedHead) {
+                head = cur; nHead = nCur; savedHead = YES;
+            } else if (nCur >= 2) {
+                PushLine(&set, cur, nCur, 0, 0);
+            } else free(cur);
+            cur = NULL; nCur = 0; cap = 0;
+            anyGap = YES;
         }
     }
-    if (closed && first && nCur >= 2 && lastKept) {
-        // The walk started inside a kept span and the ring joins the saved prefix.
-        int merged = nCur + nFirst;
-        OwnVec *join = malloc((size_t)merged * sizeof(OwnVec));
+    if (!anyGap && closed && nCur >= 3) {
+        if (fabs(cur[0].x - cur[nCur - 1].x) < 1e-6 && fabs(cur[0].y - cur[nCur - 1].y) < 1e-6) nCur--;
+        PushLine(&set, cur, nCur, 1, 0);
+        free(head);
+        return set;
+    }
+    if (savedHead && nCur >= 2) {
+        int skip = 0;
+        if (nHead > 0 && fabs(cur[nCur - 1].x - head[0].x) < 1e-6 && fabs(cur[nCur - 1].y - head[0].y) < 1e-6)
+            skip = 1;
+        int mergedN = nCur + nHead - skip;
+        OwnVec *join = malloc((size_t)mergedN * sizeof(OwnVec));
         if (join) {
             memcpy(join, cur, (size_t)nCur * sizeof(OwnVec));
-            memcpy(join + nCur, first, (size_t)nFirst * sizeof(OwnVec));
-            // Drop a duplicate joint.
-            PushLine(&set, join, merged, 0, 0);
+            if (nHead - skip > 0) memcpy(join + nCur, head + skip, (size_t)(nHead - skip) * sizeof(OwnVec));
+            PushLine(&set, join, mergedN, 0, 0);
         }
         free(cur);
-        free(first);
-    } else {
-        if (nCur >= 2) PushLine(&set, cur, nCur, 0, 0);
-        else free(cur);
-        if (nFirst >= 2) PushLine(&set, first, nFirst, 0, 0);
-        else free(first);
+        free(head);
+        return set;
     }
-    free(s);
+    if (nCur >= 2) PushLine(&set, cur, nCur, 0, 0);
+    else free(cur);
+    if (nHead >= 2) PushLine(&set, head, nHead, 0, 0);
+    else free(head);
     return set;
 }
 
@@ -1162,6 +2037,24 @@ OwnRGB OwnTemperatureRGB(double celsius) {
         }
     }
     return cols[4];
+}
+
+static OwnRGB ChartByte(int red, int green, int blue) {
+    return (OwnRGB){red / 255.0, green / 255.0, blue / 255.0};
+}
+
+// Soft sea, warm stone land, charcoal ink. Contrast is part of the contract
+// in test_ownchart: ink on both fills stays above 4.5:1, including at the
+// small size of the menu-bar popover.
+OwnRGB OwnChartSea(void) { return ChartByte(0xC5, 0xD6, 0xE4); }
+OwnRGB OwnChartLand(void) { return ChartByte(0xE4, 0xD8, 0xC4); }
+OwnRGB OwnChartInk(void) { return ChartByte(0x1B, 0x28, 0x30); }
+OwnRGB OwnChartTitle(void) { return ChartByte(0x2E, 0x4C, 0x5C); }
+
+double OwnIsobarWidth(double levelHPa) {
+    if (!isfinite(levelHPa)) return 1.15;
+    double k = levelHPa / 20.0;
+    return fabs(k - round(k)) < 1e-6 ? 1.55 : 1.15;
 }
 
 static uint16_t ReadU16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }

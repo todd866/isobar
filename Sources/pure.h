@@ -191,6 +191,10 @@ NSDate *AnalysisValidTime(NSData *pdf);
 // "04am AEST 26 Sep" from the chart's local validity line. Nil if absent.
 NSString *AnalysisLocalValidText(NSData *pdf);
 // Eight IDG00073 panel times, oldest first. Times are Eastern Standard (UTC+10).
+// Parsed prognosis times. When a document is loaded and nothing parses, undated
+// is YES and the result is empty: callers label the panels undated.
+extern NSString * const UndatedPanelLabel;
+NSArray<NSDate *> *BureauPanelTimes(NSArray *parsed, BOOL documentLoaded, BOOL *undated);
 NSArray<NSDate *> *PrognosisValidTimes(NSData *pdf);
 // Analysis first, then the prognosis times in order.
 NSArray<NSDate *> *ChartSequenceTimes(NSDate *analysis, NSArray<NSDate *> *prognosis);
@@ -349,6 +353,16 @@ NSDictionary *StoreRainObservation(NSData *json);
 // Model point file: {"hourly":[{"time","temp","wind_direction","wind_speed_kmh"}]}.
 // Same keys as ParseHourlyForecasts.
 NSArray<NSDictionary *> *StorePointHours(NSData *json, NSDate *now, NSInteger limit);
+// ISO 8601 instant. Naive "YYYY-MM-DDTHH:MM" and "YYYY-MM-DDTHH:MM:SS" are GMT.
+// A trailing Z or a numeric offset is honoured. Nil when the text is not a time.
+NSDate *WeatherInstant(NSString *text);
+// Up to `limit` local days from a surface-point product, from `now`'s local day.
+// `placeZone` is used only when the product has no timezone. Missing numbers are
+// NSNull. Keys: date, weekday, min, max, rainMm, rainHours, weatherCode, gust, windDir.
+NSArray<NSDictionary *> *StorePointDays(NSData *json, NSDate *now, NSInteger limit, NSTimeZone *placeZone);
+// WMO weather code. `day` selects the daytime SF Symbol. Nil when the code is unknown.
+NSString *WeatherCodeSymbol(NSInteger code, BOOL day);
+NSString *WeatherCodeLabel(NSInteger code);
 
 // One fitted size, placed in every cell with the same inset, so a column shares x and a gutter.
 void SequenceUniformFrames(SequenceScreen screen, double srcWidth, double srcHeight, MSLPRect *frames);
@@ -437,6 +451,10 @@ NSString *ShoreFacingName(double degrees);
 // Perth Airport and Sydney Airport. Nil for an unknown code.
 NSArray<NSDictionary *> *KnownAerodromes(void);
 NSDictionary *AerodromeForCode(NSString *code);
+// Primary capital aerodrome for a state abbreviation. Nil when the state is unknown.
+// YPPH and YSSY include runways; other capitals are code and time zone only.
+NSString *PrimaryAerodromeCode(NSString *state);
+NSDictionary *AerodromeForState(NSString *state);
 
 // @{line, detail}. Spots are kite places plus hours (a point series).
 // The line names the best window in the next three days.

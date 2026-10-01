@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "run": "2026-10-01T00:00:00Z",
+  "generated": "2026-10-01T00:00:00Z",
+  "attribution": "ECMWF Open Data",
+  "grid": {
+    "west": 108.0,
+    "east": 162.0,
+    "north": -5.0,
+    "south": -45.5,
+    "step": 0.25,
+    "nx": 217,
+    "ny": 163,
+    "dtype": "float16",
+    "endian": "little",
+    "order": "time, north-to-south, west-to-east",
+    "fill": -32768
+  },
+  "times": [
+    "2026-10-01T00:00:00Z",
+    "2026-10-01T03:00:00Z",
+    "2026-10-01T06:00:00Z",
+    "2026-10-01T09:00:00Z"
+  ],
+  "variables": {
+    "msl": {
+      "file": "msl.f16",
+      "units": "hPa"
+    },
+    "t850": {
+      "file": "t850.f16",
+      "units": "degC"
+    },
+    "t2m": {
+      "file": "t2m.f16",
+      "units": "degC"
+    },
+    "rain24": {
+      "file": "rain24.f16",
+      "units": "mm"
+    },
+    "u10": {
+      "file": "u10.f16",
+      "units": "m/s"
+    },
+    "v10": {
+      "file": "v10.f16",
+      "units": "m/s"
+    }
+  }
+}

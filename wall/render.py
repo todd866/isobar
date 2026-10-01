@@ -40,6 +40,10 @@ INK = (28, 30, 29)
 SECONDARY = (92, 95, 91)
 PAPER = (247, 246, 240)
 RULE = (190, 190, 183)
+# Bump when a cached movie would no longer match this renderer.
+RENDERER_VERSION = 7
+CHART_TOOL_TIMEOUT = 60
+PROBE_TIMEOUT = 20
 
 
 class RenderError(RuntimeError):
@@ -124,6 +128,10 @@ def finite(value: Any) -> float | None:
     return number if math.isfinite(number) else None
 
 
+def run_tool(args: list[str], timeout: float, check: bool = False) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(args, capture_output=True, text=True, check=check, timeout=timeout)
+
+
 def direction(degrees: Any) -> str:
     value = finite(degrees)
     if value is None:
@@ -137,10 +145,7 @@ def render_chart(pdf: Path, out_size: tuple[int, int]) -> Image.Image:
         raise RenderError("IDG00073.pdf is missing")
     with tempfile.TemporaryDirectory(prefix="isobar-wall-pdf-") as temp:
         prefix = str(Path(temp) / "page")
-        result = subprocess.run(
-            ["pdftoppm", "-f", "1", "-l", "1", "-r", "180", "-png", "-singlefile", str(pdf), prefix],
-            capture_output=True, text=True, check=False,
-        )
+        result = run_tool(["pdftoppm", "-f", "1", "-l", "1", "-r", "180", "-png", "-singlefile", str(pdf), prefix], CHART_TOOL_TIMEOUT)
         if result.returncode or not Path(prefix + ".png").is_file():
             raise RenderError("could not render Bureau chart")
         page = Image.open(prefix + ".png").convert("RGB")
@@ -172,10 +177,7 @@ def render_panel(pdf: Path, panel: int, out_size: tuple[int, int]) -> Image.Imag
         raise RenderError("invalid chart panel")
     with tempfile.TemporaryDirectory(prefix="isobar-wall-pdf-") as temp:
         prefix = str(Path(temp) / "page")
-        result = subprocess.run(
-            ["pdftoppm", "-f", "1", "-l", "1", "-r", "180", "-png", "-singlefile", str(pdf), prefix],
-            capture_output=True, text=True, check=False,
-        )
+        result = run_tool(["pdftoppm", "-f", "1", "-l", "1", "-r", "180", "-png", "-singlefile", str(pdf), prefix], CHART_TOOL_TIMEOUT)
         if result.returncode or not Path(prefix + ".png").is_file():
             raise RenderError("could not render Bureau chart")
         page = Image.open(prefix + ".png").convert("RGB")
@@ -194,13 +196,14 @@ def render_panel(pdf: Path, panel: int, out_size: tuple[int, int]) -> Image.Imag
 
 def chart_labels(pdf: Path, chart_time: str | None) -> list[str]:
     try:
-        text = subprocess.run(["pdftotext", str(pdf), "-"], capture_output=True, text=True, check=False).stdout
-    except OSError:
+        text = run_tool(["pdftotext", str(pdf), "-"], CHART_TOOL_TIMEOUT).stdout
+    except (OSError, subprocess.TimeoutExpired):
         text = ""
     matches = re.findall(r"\b(\d{1,2}(?:am|pm)\s+[A-Z][a-z]+\s+[A-Z][a-z]+\s+\d{1,2},\s+\d{4})\b", text)
-    if len(matches) >= 8:
-        return matches[:8]
-    return [f"Panel {index + 1}" for index in range(8)]
+    labels = matches[:8]
+    if len(labels) != 8 or any(label_to_utc(label) is None for label in labels):
+        raise RenderError("Bureau chart does not contain eight dated panel labels")
+    return labels
 
 
 def label_to_utc(label: str) -> str | None:
@@ -248,8 +251,8 @@ def build_fronts_video(output_dir: Path, chart_pdf: Path, labels: list[str],
         "-movflags", "+faststart", str(movie)], capture_output=True, text=True, timeout=300)
     if result.returncode or not movie.is_file():
         raise RenderError("could not encode forecast animation: " + result.stderr.strip()[-400:])
-    probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
-        "-of", "default=nw=1:nk=1", str(movie)], capture_output=True, text=True, check=True, timeout=20)
+    probe = run_tool(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=nw=1:nk=1", str(movie)], PROBE_TIMEOUT, check=True)
     if abs(float(probe.stdout) - duration) > 1 / 24:
         raise RenderError(f"encoded movie duration {probe.stdout.strip()} differs from {duration}")
     metadata = {
@@ -329,14 +332,15 @@ def point_conditions(store: Path, now: datetime) -> dict[str, Any]:
     swell = waves[0] if waves and (waves[0]["time"] - now).total_seconds() <= 3600 else {}
     wind_from = value(first, "wind_direction_10m", "°", units)
     wave_from = value(swell, "wave_direction", "°", marine_units)
+    wind_degrees = wind_from if wind_from is not None and wind_from <= 360 else None
+    wave_degrees = wave_from if wave_from is not None and wave_from <= 360 else None
     return {"place": "Perth coast", "generatedAt": now.isoformat(),
         "rain": {"mm": round(sum(known), 2) if len(known) == 12 else None,
             "knownMm": round(sum(known), 2) if known else None, "coveredHours": len(known), "hours": 12},
-        "wind": {"kt": value(first, "wind_speed_10m", "kn", units),
-            "from": wind_from if wind_from is not None and wind_from <= 360 else None},
+        "wind": {"kt": value(first, "wind_speed_10m", "kn", units), "from": wind_degrees, "compass": direction(wind_degrees)},
         "surf": {"metres": value(swell, "wave_height", "m", marine_units),
             "period": value(swell, "wave_period", "s", marine_units),
-            "from": wave_from if wave_from is not None and wave_from <= 360 else None},
+            "from": wave_degrees, "compass": direction(wave_degrees)},
         "surfaceRun": surface.get("run"), "marineRun": marine.get("run")}
 
 
@@ -354,7 +358,7 @@ def render(store: Path, output: Path, now: datetime | None = None) -> Path:
     digest = hashlib.sha256(pdf_bytes).hexdigest()
     generation_root = output.parent / "generations"
     generation_root.mkdir(exist_ok=True)
-    generation = generation_root / f"{digest[:16]}-v6"
+    generation = generation_root / f"{digest[:16]}-v{RENDERER_VERSION}"
     if not ((generation / "fronts.json").is_file() and (generation / "fronts.mp4").is_file()):
         with tempfile.TemporaryDirectory(prefix=".prepare-", dir=generation_root) as scratch:
             staging = Path(scratch) / "bundle"
@@ -365,6 +369,8 @@ def render(store: Path, output: Path, now: datetime | None = None) -> Path:
             for index in range(8):
                 render_panel(snapshot, index, (580, 436)).save(staging / "frames" / f"{index}.png")
             build_fronts_video(staging, snapshot, labels, chart_entry.get("valid_time"), chart_entry.get("run"))
+            if generation.exists():
+                shutil.rmtree(generation)
             os.replace(staging, generation)
     metadata = read_json(generation / "fronts.json")
     conditions = point_conditions(store, now)
@@ -382,9 +388,16 @@ def render(store: Path, output: Path, now: datetime | None = None) -> Path:
     chart = chart.resize((int(830 * chart.width / chart.height), 830), Image.Resampling.LANCZOS)
     canvas.paste(chart, ((1600-chart.width)//2, 130))
     rain, wind, surf = conditions["rain"], conditions["wind"], conditions["surf"]
+    wind_detail = wind["compass"] if isinstance(wind.get("compass"), str) else direction(wind.get("from"))
+    period = f'{surf["period"]:.0f} s' if surf.get("period") is not None else None
+    surf_compass = surf.get("compass") if isinstance(surf.get("compass"), str) and surf.get("compass") != "—" else None
+    if period and surf_compass:
+        surf_detail = f"{period} · {surf_compass}"
+    else:
+        surf_detail = period or surf_compass or "Unavailable"
     values = [("Rain", f'{rain["mm"]:.1f} mm' if rain["mm"] is not None else "—", "Next 12h" if rain["mm"] is not None else "Unavailable"),
-        ("Wind", f'{wind["kt"]:.0f} kt' if wind["kt"] is not None else "—", direction(wind["from"])),
-        ("Waves", f'{surf["metres"]:.1f} m' if surf["metres"] is not None else "—", f'{surf["period"]:.0f} s' if surf["period"] is not None else "Unavailable")]
+        ("Wind", f'{wind["kt"]:.0f} kt' if wind["kt"] is not None else "—", wind_detail),
+        ("Waves", f'{surf["metres"]:.1f} m' if surf["metres"] is not None else "—", surf_detail)]
     for i, (title, value, detail) in enumerate(values):
         draw_card(draw, (54+i*504, 990, 536+i*504, 1160), title, value, detail)
     temporary = output.with_suffix(".png.tmp")
@@ -419,9 +432,25 @@ class WallServer:
                 raise RenderError(str(exc)) from exc
 
 
+def last_good_generation(output: Path) -> bool:
+    try:
+        pointer = json.loads((output.parent / "current.json").read_text())
+    except (OSError, ValueError):
+        return False
+    name = pointer.get("generation") if isinstance(pointer, dict) else None
+    if not isinstance(name, str) or not re.fullmatch(r"[a-f0-9]{16}-v[0-9]+", name):
+        return False
+    generation = output.parent / "generations" / name
+    return (generation / "fronts.mp4").is_file() and (generation / "fronts.json").is_file()
+
+
 def serve(store: Path, output: Path, host: str, port: int) -> None:
     server_state = WallServer(store, output)
-    server_state.refresh()
+    try:
+        server_state.refresh()
+    except RenderError:
+        if not last_good_generation(output):
+            raise
     timer = threading.Thread(target=lambda: refresh_loop(server_state), daemon=True)
     timer.start()
     try:

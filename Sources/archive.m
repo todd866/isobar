@@ -1,4 +1,5 @@
 #import "archive.h"
+#import "pure.h"
 #import <sqlite3.h>
 #import <math.h>
 
@@ -116,6 +117,30 @@ NSDictionary<NSString *, NSData *> *ArchiveObservationFiles(NSString *root) {
     return ArchiveObservationFilesAtDate(root, NSDate.date);
 }
 
+static NSMutableDictionary *ObservationSnapshots(void) {
+    static NSMutableDictionary *cache;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ cache = [NSMutableDictionary dictionary]; });
+    return cache;
+}
+
+static NSDictionary *CachedObservations(NSString *path) {
+    if (!path.length) return nil;
+    @synchronized (ObservationSnapshots()) { return ObservationSnapshots()[path]; }
+}
+
+static void CacheObservations(NSString *path, NSDictionary *rows) {
+    if (!path.length || !rows) return;
+    @synchronized (ObservationSnapshots()) { ObservationSnapshots()[path] = rows; }
+}
+
+// A missing database is an empty snapshot. A database that exists but cannot be
+// read completely keeps the last successful snapshot, or nil when there is none.
+static NSDictionary *ObservationFailure(NSString *path) {
+    if (!path.length || ![NSFileManager.defaultManager fileExistsAtPath:path]) return @{};
+    return CachedObservations(path);
+}
+
 NSDictionary<NSString *, NSData *> *ArchiveObservationFilesAtDate(NSString *root, NSDate *now) {
     NSString *path = [[root stringByExpandingTildeInPath] stringByAppendingPathComponent:@"products/obs/obs.sqlite"];
     sqlite3 *db = NULL;
@@ -130,39 +155,40 @@ NSDictionary<NSString *, NSData *> *ArchiveObservationFilesAtDate(NSString *root
         stmt = NULL;
         if (db) sqlite3_close(db);
         db = NULL;
-        if ((openRC & 0xff) != SQLITE_CANTOPEN && (openRC & 0xff) != SQLITE_READONLY) return @{};
+        if ((openRC & 0xff) != SQLITE_CANTOPEN && (openRC & 0xff) != SQLITE_READONLY) return ObservationFailure(path);
         // macOS may require a writable handle to recreate idle WAL sidecars.
         // Disallow SQL writes and close-time checkpoints before reading.
         NSString *rwURI = [NSString stringWithFormat:@"file:%@?mode=rw", path];
         openRC = sqlite3_open_v2(rwURI.UTF8String, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_URI, NULL);
-        if (openRC != SQLITE_OK || !db) { if (db) sqlite3_close(db); return @{}; }
+        if (openRC != SQLITE_OK || !db) { if (db) sqlite3_close(db); return ObservationFailure(path); }
         sqlite3_busy_timeout(db, 750);
         int oldCheckpoint = 0;
         if (sqlite3_db_config(db, SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, 1, &oldCheckpoint) != SQLITE_OK ||
             sqlite3_exec(db, "PRAGMA query_only=ON", NULL, NULL, NULL) != SQLITE_OK) {
             sqlite3_close(db);
-            return @{};
+            return ObservationFailure(path);
         }
         sqlite3_stmt *guard = NULL;
         if (sqlite3_prepare_v2(db, "PRAGMA query_only", -1, &guard, NULL) != SQLITE_OK ||
             sqlite3_step(guard) != SQLITE_ROW || sqlite3_column_int(guard, 0) != 1) {
             if (guard) sqlite3_finalize(guard);
             sqlite3_close(db);
-            return @{};
+            return ObservationFailure(path);
         }
         sqlite3_finalize(guard);
         if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
             if (stmt) sqlite3_finalize(stmt);
             sqlite3_close(db);
-            return @{};
+            return ObservationFailure(path);
         }
     }
     NSMutableDictionary *rowsByWMO = [NSMutableDictionary dictionary];
     if (sqlite3_exec(db, "BEGIN", NULL, NULL, NULL) != SQLITE_OK) {
         sqlite3_finalize(stmt);
         sqlite3_close(db);
-        return @{};
+        return ObservationFailure(path);
     }
+    int step = SQLITE_DONE;
     if (stmt) {
         NSDateFormatter *stampFormat = [NSDateFormatter new];
         stampFormat.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
@@ -170,7 +196,7 @@ NSDictionary<NSString *, NSData *> *ArchiveObservationFilesAtDate(NSString *root
         stampFormat.dateFormat = @"yyyyMMddHHmmss";
         NSString *cutoff = [stampFormat stringFromDate:[now dateByAddingTimeInterval:-48 * 3600]];
         sqlite3_bind_text(stmt, 1, cutoff.UTF8String, -1, SQLITE_TRANSIENT);
-        while (sqlite3_step(stmt) == SQLITE_ROW) {
+        while ((step = sqlite3_step(stmt)) == SQLITE_ROW) {
             NSString *wmo = [NSString stringWithFormat:@"%d", sqlite3_column_int(stmt, 0)];
             NSString *product = [NSString stringWithUTF8String:(const char *)sqlite3_column_text(stmt, 2) ?: ""];
             NSString *state = [product hasPrefix:@"IDN"] ? @"NSW" : [product hasPrefix:@"IDV"] ? @"VIC" : [product hasPrefix:@"IDQ"] ? @"QLD" : [product hasPrefix:@"IDS"] ? @"SA" : [product hasPrefix:@"IDT"] ? @"TAS" : [product hasPrefix:@"IDD"] ? @"NT" : @"WA";
@@ -195,6 +221,7 @@ NSDictionary<NSString *, NSData *> *ArchiveObservationFilesAtDate(NSString *root
     sqlite3_finalize(stmt);
     sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
     sqlite3_close(db);
+    if (step != SQLITE_DONE) return CachedObservations(path);
     NSMutableDictionary *out = [NSMutableDictionary dictionary];
     [rowsByWMO enumerateKeysAndObjectsUsingBlock:^(NSString *wmo, NSArray *rows, BOOL *stop) {
         (void)stop;
@@ -202,6 +229,7 @@ NSDictionary<NSString *, NSData *> *ArchiveObservationFilesAtDate(NSString *root
         NSString *state = [product hasPrefix:@"IDN"] ? @"NSW" : [product hasPrefix:@"IDV"] ? @"VIC" : [product hasPrefix:@"IDQ"] ? @"QLD" : [product hasPrefix:@"IDS"] ? @"SA" : [product hasPrefix:@"IDT"] ? @"TAS" : [product hasPrefix:@"IDD"] ? @"NT" : @"WA";
         out[wmo] = Encode(@{@"observations": @{@"header": @[@{@"state_time_zone": state}], @"data": rows}});
     }];
+    CacheObservations(path, out);
     return out;
 }
 
@@ -298,15 +326,13 @@ NSData *ArchivePointFile(NSString *root, NSDictionary *place) {
         else if (![time hasSuffix:@"Z"] && ![time containsString:@"+"]) time = [time stringByAppendingString:@"Z"];
         NSMutableDictionary *row = [@{@"time": time} mutableCopy];
         BOOL isDay = NO;
-        if ([sunrise isKindOfClass:NSArray.class] && [sunset isKindOfClass:NSArray.class]) {
+        NSDate *instant = WeatherInstant(times[i]);
+        if (instant && [sunrise isKindOfClass:NSArray.class] && [sunset isKindOfClass:NSArray.class]) {
             for (NSUInteger d = 0; d < sunrise.count && d < sunset.count; d++) {
-                NSString *rise = sunrise[d], *set = sunset[d];
-                if ([rise isKindOfClass:NSString.class] && [set isKindOfClass:NSString.class]) {
-                    if (rise.length == 16) rise = [rise stringByAppendingString:@":00Z"];
-                    if (set.length == 16) set = [set stringByAppendingString:@":00Z"];
-                    isDay = [time compare:rise] != NSOrderedAscending && [time compare:set] != NSOrderedDescending;
-                    if (isDay) break;
-                }
+                NSDate *rise = WeatherInstant(sunrise[d]), *set = WeatherInstant(sunset[d]);
+                if (!rise || !set) continue;
+                isDay = [instant compare:rise] != NSOrderedAscending && [instant compare:set] != NSOrderedDescending;
+                if (isDay) break;
             }
         }
         row[@"is_day"] = @(isDay);
@@ -335,7 +361,14 @@ NSData *ArchivePointFile(NSString *root, NSDictionary *place) {
         }
         [hours addObject:row];
     }
-    return Encode(@{@"hourly": hours, @"_archive": @{@"run": run, @"distance_km": @(bestDistance), @"point": bestID ?: NSNull.null}});
+    NSMutableDictionary *payload = [@{@"hourly": hours, @"_archive": @{@"run": run, @"distance_km": @(bestDistance), @"point": bestID ?: NSNull.null}} mutableCopy];
+    if (daily) payload[@"daily"] = daily;
+    if ([best[@"timezone"] isKindOfClass:NSString.class]) payload[@"timezone"] = best[@"timezone"];
+    return Encode(payload);
+}
+
+static NSString *TextOrNil(id value) {
+    return [value isKindOfClass:NSString.class] && [(NSString *)value length] ? value : nil;
 }
 
 static NSString *GeoHash(double lat, double lon) {
@@ -364,7 +397,16 @@ NSData *ArchiveKiteFile(NSString *root) {
         NSDictionary *thresholds = [item[@"thresholds"] isKindOfClass:NSDictionary.class] ? item[@"thresholds"] : @{};
         NSNumber *shore = item[@"onshore_from_deg"]; if (![lat isKindOfClass:NSNumber.class] || ![lon isKindOfClass:NSNumber.class] || !ValidCoordinate(lat.doubleValue, lon.doubleValue) || ![shore isKindOfClass:NSNumber.class] || shore.doubleValue < 0 || shore.doubleValue > 360) continue;
         NSString *friendly = [id isEqual:@"cottesloe"] ? @"Cottesloe" : [id isEqual:@"safety-bay"] ? @"Safety Bay" : id.capitalizedString;
-        NSMutableDictionary *spot = [@{@"archiveID": id, @"name": friendly, @"geohash": GeoHash(lat.doubleValue, lon.doubleValue), @"latitude": lat, @"longitude": lon, @"shoreNormal": shore, @"stationName": friendly, @"state": @"WA", @"timezone": @"Australia/Perth"} mutableCopy];
+        NSString *state = TextOrNil(point[@"state"]) ?: TextOrNil(item[@"state"]);
+        NSString *zone = TextOrNil(point[@"timezone"]) ?: TextOrNil(point[@"time_zone"]) ?: TextOrNil(item[@"timezone"]) ?: TextOrNil(item[@"time_zone"]);
+        if (!zone && state) {
+            NSDictionary *zones = @{@"WA": @"Australia/Perth", @"NSW": @"Australia/Sydney", @"VIC": @"Australia/Melbourne",
+                @"QLD": @"Australia/Brisbane", @"SA": @"Australia/Adelaide", @"TAS": @"Australia/Hobart",
+                @"NT": @"Australia/Darwin", @"ACT": @"Australia/Sydney"};
+            zone = zones[state.uppercaseString];
+        }
+        if (zone && ![NSTimeZone timeZoneWithName:zone]) zone = nil;
+        NSMutableDictionary *spot = [@{@"archiveID": id, @"name": friendly, @"geohash": GeoHash(lat.doubleValue, lon.doubleValue), @"latitude": lat, @"longitude": lon, @"shoreNormal": shore, @"stationName": friendly, @"state": state ?: @"", @"timezone": zone ?: @""} mutableCopy];
         spot[@"minKt"] = thresholds[@"speed_min_kt"] ?: @15; spot[@"maxKt"] = thresholds[@"speed_max_kt"] ?: @30;
         if (!rootMin) rootMin = spot[@"minKt"];
         if (!rootMax) rootMax = spot[@"maxKt"];

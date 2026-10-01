@@ -5,8 +5,8 @@ NS_ASSUME_NONNULL_BEGIN
 // A shaft-and-head arrow centred on the reading, north up, pointing downwind.
 // Length is the full tip-to-tail distance in points.
 NSBezierPath * _Nullable KiteWindArrowPath(NSPoint centre, double windFromDegrees, CGFloat length);
-// Seabreeze-style strength bands: <12 kt red, 12–18 yellow, 18+ green.
-NSColor *KiteWindSpeedColour(double knots);
+// Amber under the saved kite band, green inside it, red above it.
+NSColor *KiteWindSpeedColour(double knots, double minKt, double maxKt);
 
 // A compact two-lane forecast: wind is the main plot and rain is the hourly
 // strip beneath it. Rows are dictionaries containing the keys documented here.

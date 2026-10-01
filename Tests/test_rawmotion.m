@@ -13,7 +13,7 @@ static void check(BOOL okay, NSString *message) {
 static OwnRun *SyntheticRun(NSString *directory) {
     [NSFileManager.defaultManager createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:NULL];
     NSDictionary *manifest = @{
-        @"grid":@{@"nx":@91,@"ny":@66,@"step":@1,@"west":@90,@"north":@5,@"dtype":@"float32"},
+        @"grid":@{@"nx":@91,@"ny":@66,@"step":@1,@"west":@90,@"north":@5,@"dtype":@"float32",@"endian":@"little"},
         @"times":@[@"2026-09-27T00:00:00Z",@"2026-09-27T03:00:00Z"],
         @"run":@"2026-09-27T00:00:00Z", @"generated":@"2026-09-27T00:00:00Z"
     };
@@ -79,7 +79,31 @@ static BOOL WaitFor(BOOL (^ready)(void)) {
     return ready();
 }
 
+static void CheckLabelFade(void) {
+    NSString *error = nil;
+    OwnRun *run = OwnRunLoad(@"Tests/fixtures/grid025", @"Resources/ownchart-coast.bin", &error);
+    check(run.hours >= 3, [NSString stringWithFormat:@"label-fade fixture loads (%@)", error ?: @""]);
+    if (run.hours < 3) return;
+    OwnLayerOptions layers = {.bare = 1};
+    OwnMotionState *state = [OwnMotionState new];
+    const int frames = 64;
+    for (int i = 0; i < frames; i++) { @autoreleasepool {
+        double hour = 0.35 + i * (30.0 / 3600.0);
+        NSImage *image = OwnRunRenderMotion(run, hour, @"", layers, nil, 1, state);
+        check(image != nil, @"a playback frame renders");
+    }}
+    CGPoint points[80];
+    NSInteger labels = [state copyLabelPoints:points max:80];
+    fprintf(stderr, "label fade changes %ld alpha step %.4f labels %ld\n",
+        (long)state.labelSetChanges, state.maxAnnotationAlphaStep, (long)labels);
+    check(labels >= 4, @"playback keeps several isobar labels");
+    check(state.maxAnnotationAlphaStep <= 0.15 + 1e-9,
+        @"label, centre and fragment alpha fades instead of jumping");
+    check(state.labelSetChanges <= 8, @"the set of labels changes rarely across playback frames");
+}
+
 int main(void) { @autoreleasepool {
+    CheckLabelFade();
     NSString *directory = [NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
     @try {
         OwnRun *run = SyntheticRun(directory);

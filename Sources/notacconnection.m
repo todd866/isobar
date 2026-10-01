@@ -1,6 +1,24 @@
 #import "notacconnection.h"
-#import <Security/Security.h>
 #import <signal.h>
+
+static NSDictionary *SubprocessEnvironment(void) {
+    NSDictionary *parent = NSProcessInfo.processInfo.environment;
+    NSMutableDictionary *env = [NSMutableDictionary dictionary];
+    env[@"PATH"] = @"/usr/bin:/bin:/usr/sbin:/sbin";
+    for (NSString *key in @[@"HOME", @"LANG", @"TMPDIR"]) {
+        NSString *value = parent[key];
+        if ([value isKindOfClass:NSString.class] && value.length) env[key] = value;
+    }
+    return env;
+}
+
+NSDictionary *IsobarNotacNewKeychainItem(NSDictionary *query, NSString *secret) {
+    NSMutableDictionary *item = [query mutableCopy];
+    item[(__bridge id)kSecValueData] = [secret dataUsingEncoding:NSUTF8StringEncoding];
+    item[(__bridge id)kSecAttrAccessible] = (__bridge id)kSecAttrAccessibleWhenUnlockedThisDeviceOnly;
+    item[(__bridge id)kSecAttrSynchronizable] = @NO;
+    return item;
+}
 
 NSString * const IsobarNotacErrorDomain = @"com.iantodd.isobar.notac";
 
@@ -41,9 +59,7 @@ BOOL IsobarNotacTokenIsValid(NSString *token) {
     OSStatus status = SecItemUpdate((__bridge CFDictionaryRef)query,
                                     (__bridge CFDictionaryRef)@{(__bridge id)kSecValueData: [token dataUsingEncoding:NSUTF8StringEncoding]});
     if (status == errSecItemNotFound) {
-        NSMutableDictionary *item = [query mutableCopy];
-        item[(__bridge id)kSecValueData] = [token dataUsingEncoding:NSUTF8StringEncoding];
-        status = SecItemAdd((__bridge CFDictionaryRef)item, NULL);
+        status = SecItemAdd((__bridge CFDictionaryRef)IsobarNotacNewKeychainItem(query, token), NULL);
     }
     if (status != errSecSuccess) { if (error) *error = NotacError(@"The NOTAC key could not be saved"); return NO; }
     return YES;
@@ -68,6 +84,16 @@ BOOL IsobarNotacTokenIsValid(NSString *token) {
 }
 @end
 
+// Only the bundled app may read the pilot's real key. Test and tool binaries
+// get an empty in-memory store, so they can never raise a Keychain prompt.
+@interface IsobarNotacMemoryKeychain : NSObject <IsobarNotacKeychain>
+@end
+@implementation IsobarNotacMemoryKeychain { NSString *_token; }
+- (BOOL)saveToken:(NSString *)token error:(NSError **)error { (void)error; _token = [token copy]; return YES; }
+- (NSString *)loadToken:(NSError **)error { (void)error; return _token; }
+- (BOOL)removeToken:(NSError **)error { (void)error; _token = nil; return YES; }
+@end
+
 @implementation IsobarNotacConnection {
     id<IsobarNotacKeychain> _keychain;
 }
@@ -82,7 +108,11 @@ static NSString *FetchFailure(NSData *diagnostics, BOOL timedOut) {
     if ([text containsString:@"request limit reached"]) return @"Too many notices for one refresh";
     return @"NOTAMs could not update";
 }
-- (instancetype)init { return [self initWithService:@"com.iantodd.isobar.notac" account:@"api-token" keychain:nil]; }
+- (instancetype)init {
+    BOOL app = [NSBundle.mainBundle.bundleIdentifier isEqual:@"com.iantodd.isobar"];
+    return [self initWithService:@"com.iantodd.isobar.notac" account:@"api-token"
+                        keychain:app ? nil : [IsobarNotacMemoryKeychain new]];
+}
 - (instancetype)initWithService:(NSString *)service account:(NSString *)account keychain:(id<IsobarNotacKeychain>)keychain {
     if ((self = [super init])) {
         _keychain = keychain ?: [[IsobarNotacSystemKeychain alloc] initWithService:service account:account];
@@ -110,10 +140,7 @@ static NSString *FetchFailure(NSData *diagnostics, BOOL timedOut) {
         task.executableURL = executable;
         task.arguments = @[@"fetch-notams", @"--token-stdin", @"--data-dir", root];
         task.currentDirectoryURL = [NSURL fileURLWithPath:root isDirectory:YES];
-        NSMutableDictionary *environment = [NSProcessInfo.processInfo.environment mutableCopy];
-        [environment removeObjectForKey:@"PYTHONPATH"]; [environment removeObjectForKey:@"PYTHONHOME"];
-        environment[@"PATH"] = @"/usr/bin:/bin:/usr/sbin:/sbin";
-        task.environment = environment;
+        task.environment = SubprocessEnvironment();
         NSPipe *input = [NSPipe pipe];
         NSPipe *diagnostics = [NSPipe pipe];
         task.standardInput = input;

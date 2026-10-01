@@ -28,10 +28,50 @@ NATIVE_LEADS = tuple(range(0, 97, 3))
 NATIVE_GRID = {"lat0": 0.0, "lon0": 95.0, "dlat": -0.25, "dlon": 0.25, "fill": -32768, "native_step_hours": 3}
 NATIVE_UNITS = {"mslp": "hPa", "t850": "degC", "t2m": "degC", "u10": "m/s", "v10": "m/s", "tp": "mm"}
 NATIVE_PARAMS = {"mslp": "msl", "t850": "t", "t2m": "2t", "u10": "10u", "v10": "10v", "tp": "tp"}
+POINT_MAX_AGE_HOURS = 36
+POINT_MIN_FUTURE_HOURS = 72
+MSLP_MIN_HPA = 850.0
+MSLP_MAX_HPA = 1100.0
+F16_FILL = 0xF800
 
 
 def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def decode_f16(bits: int) -> float:
+    """Little-endian IEEE binary16, matching the native grid decoder."""
+    sign = (bits >> 15) & 1
+    exponent = (bits >> 10) & 0x1F
+    fraction = bits & 0x3FF
+    if exponent == 0:
+        value = 0.0 if fraction == 0 else math.ldexp(fraction, -24)
+    elif exponent == 31:
+        value = math.nan if fraction else math.inf
+    else:
+        value = math.ldexp(1.0 + fraction / 1024.0, exponent - 15)
+    return -value if sign else value
+
+
+def validate_mslp_grid(raw: bytes) -> None:
+    if len(raw) % 2:
+        raise ValueError("truncated float16 mslp")
+    finite = 0
+    for offset in range(0, len(raw), 2):
+        bits = raw[offset] | (raw[offset + 1] << 8)
+        if bits == F16_FILL:
+            continue
+        value = decode_f16(bits)
+        if not math.isfinite(value) or value < MSLP_MIN_HPA or value > MSLP_MAX_HPA:
+            raise ValueError(f"mslp sample {value} is non-finite or out of range")
+        finite += 1
+    if finite == 0:
+        raise ValueError("mslp has no finite in-range value")
+
+
+def real_number(value: Any) -> bool:
+    # bool is a subclass of int; a true/false sample is not a measurement.
+    return type(value) in (int, float) and math.isfinite(value)
 
 
 def iso(value: Any) -> datetime | None:
@@ -265,6 +305,8 @@ def check_native_grid(store: Path, errors: list[str], warnings: list[str], now: 
                     expected = meta["nx"] * meta["ny"] * 2
                     if not data_path.is_file() or data_path.stat().st_size != expected:
                         raise ValueError(f"binary size {data_path.stat().st_size if data_path.exists() else 0}, expected {expected}")
+                    if variable == "mslp":
+                        validate_mslp_grid(data_path.read_bytes())
                     entries.append(valid_id)
                 except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
                     errors.append(f"native ECMWF {variable} {valid_id}: {exc}")
@@ -350,6 +392,31 @@ def open_observation_db(path: Path) -> sqlite3.Connection:
         raise
 
 
+def surface_point_valid(root: Any, now: datetime) -> bool:
+    if not isinstance(root, dict):
+        return False
+    times = root.get("time")
+    hourly = root.get("hourly")
+    units = root.get("units")
+    expected_units = {"temperature_2m": "°C", "wind_speed_10m": "kn", "wind_direction_10m": "°"}
+    if not isinstance(times, list) or not times or any(not isinstance(value, str) or iso(value) is None for value in times):
+        return False
+    if not isinstance(units, dict) or any(units.get(key) != value for key, value in expected_units.items()):
+        return False
+    if not isinstance(hourly, dict):
+        return False
+    for key in expected_units:
+        values = hourly.get(key)
+        if not isinstance(values, list) or len(values) != len(times) or any(not real_number(value) for value in values):
+            return False
+    future = 0
+    for value in times:
+        parsed = iso(value)
+        if parsed is not None and parsed >= now:
+            future += 1
+    return future >= POINT_MIN_FUTURE_HOURS
+
+
 def check_native_locations(store: Path, errors: list[str], now: datetime) -> dict[str, Any]:
     observations: dict[str, bool] = {}
     points: dict[str, bool] = {}
@@ -390,6 +457,10 @@ def check_native_locations(store: Path, errors: list[str], now: datetime) -> dic
         runs = pointer.get("runs") if isinstance(pointer, dict) else None
         if not isinstance(latest, str) or not isinstance(runs, list) or latest not in runs or "/" in latest or "\\" in latest or ".." in latest:
             raise ValueError("pointer must name a safe latest run")
+        run_time = datetime.strptime(latest, "%Y-%m-%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+        age_hours = (now - run_time).total_seconds() / 3600
+        if age_hours > POINT_MAX_AGE_HOURS:
+            raise ValueError(f"run is stale: {age_hours:.1f}h old (limit {POINT_MAX_AGE_HOURS}h)")
         run_dir = points_family / "runs" / latest
         candidates = list(run_dir.glob("*.json"))
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
@@ -400,26 +471,13 @@ def check_native_locations(store: Path, errors: list[str], now: datetime) -> dic
             try:
                 root = read_json(path)
                 distance = _distance_km(lat, lon, float(root["latitude"]), float(root["longitude"]))
-                if distance <= 30 and (nearest is None or distance < nearest[0]):
-                    times = root.get("time")
-                    hourly = root.get("hourly")
-                    units = root.get("units")
-                    expected_units = {"temperature_2m": "°C", "wind_speed_10m": "kn", "wind_direction_10m": "°"}
-                    valid = isinstance(times, list) and times and all(isinstance(value, str) and iso(value) for value in times)
-                    valid = valid and isinstance(units, dict) and all(units.get(key) == value for key, value in expected_units.items())
-                    if not isinstance(hourly, dict):
-                        valid = False
-                    else:
-                        valid = valid and all(
-                            isinstance(hourly.get(key), list)
-                            and len(hourly[key]) == len(times)
-                            and all(isinstance(value, (int, float)) and math.isfinite(value) for value in hourly[key])
-                            for key in expected_units
-                        )
-                    nearest = (distance, path.name, bool(valid))
             except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
                 continue
-        points[place] = nearest is not None and nearest[2]
+            if not math.isfinite(distance) or distance > 30 or not surface_point_valid(root, now):
+                continue
+            if nearest is None or distance < nearest:
+                nearest = distance
+        points[place] = nearest is not None
         if not points[place]:
             errors.append(f"no valid ECMWF surface point within 30km of {place}")
     return {"observations": observations, "point_forecasts": points, "source": "obs.sqlite + ecmwf_ifs surface points"}
@@ -495,8 +553,6 @@ def preflight(store: Path, now: datetime) -> dict[str, Any]:
     charts = check_chart(store, errors, warnings)
     kite = check_kite(store, errors, warnings)
     daemon_archive = (store / "products/grids/ecmwf_ifs025/current.json").is_file()
-    if daemon_archive and not ecmwf["consumable"]:
-        warnings.append("daemon grid archive is present, but it is not consumed by this app")
     return {
         "ok": not errors,
         "store": str(store),

@@ -130,6 +130,26 @@ int main(void) { @autoreleasepool {
     NSDictionary *expiredOut = AviationOutlook(aviation(nil, expired), utc(@"2026-09-26 18:00"), perth);
     ck([expiredOut[@"status"] containsString:@"expired"], @"TAF expires at valid_to boundary");
     ck([expiredOut[@"periods"] count] == 0, @"expired TAF has no forecast periods");
+
+    NSDictionary *remarks = taf(@"TAF YSSY 010500Z 0106/0212 18015KT 9999 FEW040 "
+        @"FM011200 16012KT 9999 SCT025 "
+        @"RMK T 18 22 24 21 Q 1018 1017 1016 1017",
+        @"2026-10-01 06:00", @"2026-10-02 12:00");
+    NSArray *remarkPeriods = AviationOutlook(aviation(nil, remarks), utc(@"2026-10-01 06:30"),
+        [NSTimeZone timeZoneWithName:@"Australia/Sydney"])[@"periods"];
+    NSDictionary *remarkBase = period(remarkPeriods, @"Base");
+    ck([remarkBase[@"visibilityM"] doubleValue] == 9999 && [remarkBase[@"visibility"] isEqual:@"10+ km"],
+        @"Australian TAF remarks do not replace 9999 visibility");
+    BOOL qnh = NO;
+    for (NSDictionary *p in remarkPeriods) {
+        double metres = [p[@"visibilityM"] doubleValue];
+        if (metres == 1018 || metres == 1017 || metres == 1016) qnh = YES;
+    }
+    ck(!qnh && remarkPeriods.count >= 2, @"QNH groups after RMK are not visibility");
+    NSDictionary *second = taf(@"TAF YPPH 2612/2712 9999 4000 SCT030", @"2026-09-26 12:00", @"2026-09-27 12:00");
+    NSDictionary *secondBase = period(AviationOutlook(aviation(nil, second), now, perth)[@"periods"], @"Base");
+    ck([secondBase[@"visibilityM"] doubleValue] == 9999 && [secondBase[@"visibilityAtLeast"] boolValue],
+        @"a group keeps only its first visibility token");
 }
 return failures ? 1 : 0;
 }

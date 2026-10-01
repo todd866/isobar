@@ -55,8 +55,10 @@ static NSDictionary *Conditions(NSString *body) {
     BOOL cavok = NO, visibilityAtLeast = NO; NSNumber *visibilityM = nil;
     NSMutableArray *weather = [NSMutableArray array], *cloudLayers = [NSMutableArray array];
     for (NSString *token in tokens) {
+        // Australian remarks (RMK T … Q 1018) and ICAO TX/TN groups are not visibility.
+        if ([token isEqual:@"RMK"] || [token isEqual:@"TX"] || [token isEqual:@"TN"] || Match(token,@"^T[XN][0-9]")) break;
         if ([token isEqual:@"CAVOK"]) { cavok = YES; cloud = YES; [cloudLayers removeAllObjects]; visibilityAtLeast = YES; visibilityM = @9999; result[@"visibility"] = @"10+ km"; result[@"ceiling"] = @"CAVOK"; result[@"weather"] = @"CAVOK"; }
-        else if (Match(token,@"^[0-9]{4}$")) { visibilityM = @(token.doubleValue); visibilityAtLeast = token.doubleValue >= 9999; result[@"visibility"] = Visibility(token.doubleValue); }
+        else if (!visibilityM && Match(token,@"^[0-9]{4}$")) { visibilityM = @(token.doubleValue); visibilityAtLeast = token.doubleValue >= 9999; result[@"visibility"] = Visibility(token.doubleValue); }
         else if (Match(token,@"^(FEW|SCT|BKN|OVC|VV)([0-9]{3}|///)(CB|TCU)?$")) {
             cloud = YES;
             NSString *amount=[token hasPrefix:@"VV"]?@"VV":[token substringToIndex:3];

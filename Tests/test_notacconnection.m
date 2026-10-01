@@ -32,6 +32,7 @@ int main(void) {
         NSString *source = @"#!/bin/sh\nread token\n[ \"$1\" = fetch-notams ] || exit 10\n[ \"$2\" = --token-stdin ] || exit 11\n[ \"$3\" = --data-dir ] || exit 12\n[ -n \"$token\" ] || exit 13\nprintf '%s' \"$token\" > \"$4/token.txt\"\nprintf '%s\\n' \"$@\" > \"$4/args.txt\"\nenv > \"$4/env.txt\"\n";
         [source writeToFile:script atomically:YES encoding:NSUTF8StringEncoding error:nil]; chmod(script.fileSystemRepresentation, 0700);
         check([connection saveToken:token error:&error], @"saves token for collector test");
+        setenv("ISOBAR_PARENT_SENTINEL", "secret", 1);
         dispatch_semaphore_t done = dispatch_semaphore_create(0);
         __block BOOL success = NO; __block NSString *message = nil;
         [connection fetchWithDataDirectory:root executableURL:[NSURL fileURLWithPath:script] completion:^(BOOL ok, NSString *status) { success = ok; message = status; dispatch_semaphore_signal(done); }];
@@ -41,6 +42,10 @@ int main(void) {
         NSString *args=[NSString stringWithContentsOfFile:[root stringByAppendingPathComponent:@"args.txt"] encoding:NSUTF8StringEncoding error:nil];
         NSString *env=[NSString stringWithContentsOfFile:[root stringByAppendingPathComponent:@"env.txt"] encoding:NSUTF8StringEncoding error:nil];
         check(![args containsString:token] && ![env containsString:token], @"key is absent from collector arguments and environment");
+        check([env containsString:@"PATH=/usr/bin:/bin:/usr/sbin:/sbin"] && [env containsString:@"HOME="] && ![env containsString:@"ISOBAR_PARENT_SENTINEL"], @"collector environment is only PATH, HOME, LANG and TMPDIR");
+        NSDictionary *item = IsobarNotacNewKeychainItem(@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword}, token);
+        check(item[(__bridge id)kSecAttrAccessible] == (__bridge id)kSecAttrAccessibleWhenUnlockedThisDeviceOnly, @"a new item unlocks only on this device");
+        check([item[(__bridge id)kSecAttrSynchronizable] isEqual:@NO], @"a new item is not synchronizable");
         check(![message containsString:token], @"collector status does not expose the key");
         NSString *errorScript=[root stringByAppendingPathComponent:@"failed.sh"];
         [@"#!/bin/sh\nread token\nprintf 'NOTAC bad key (HTTP 401): %s\\n' \"$token\" >&2\nexit 2\n" writeToFile:errorScript atomically:YES encoding:NSUTF8StringEncoding error:nil];
@@ -49,6 +54,7 @@ int main(void) {
         [connection fetchWithDataDirectory:root executableURL:[NSURL fileURLWithPath:errorScript] completion:^(BOOL ok, NSString *status) { success=ok; message=status; dispatch_semaphore_signal(done); }];
         dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC));
         check(!success && [message isEqual:@"NOTAC rejected this key"] && ![message containsString:token], @"invalid-key diagnostic is useful without echoing credentials");
+        unsetenv("ISOBAR_PARENT_SENTINEL");
         [[NSFileManager defaultManager] removeItemAtPath:root error:nil];
     }
     return failures ? 1 : 0;

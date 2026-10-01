@@ -28,8 +28,14 @@ def font(size: int, bold: bool = False):
     raise RuntimeError("A readable display font is required")
 
 
+PROBE_TIMEOUT = 20
+
+
 def probe(path: Path) -> dict:
-    return json.loads(subprocess.check_output(["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(path)]))
+    return json.loads(subprocess.check_output(
+        ["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(path)],
+        timeout=PROBE_TIMEOUT,
+    ))
 
 
 def compose(movie: Path, root: Path) -> Path:

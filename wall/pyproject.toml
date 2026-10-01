@@ -5,5 +5,10 @@ description = "Portable local wall renderer for Isobar"
 requires-python = ">=3.10"
 dependencies = ["Pillow>=10"]
 
+[project.optional-dependencies]
+numpy = ["numpy"]
+scipy = ["scipy"]
+pymupdf = ["pymupdf"]
+
 [tool.pytest.ini_options]
 testpaths = ["."]

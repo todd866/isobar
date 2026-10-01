@@ -28,8 +28,11 @@ def safe_component(value: str, label: str) -> str:
     return value
 
 
-def command(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, check=check, text=True, capture_output=True)
+SPCTL_TIMEOUT = 60
+
+
+def command(*args: str, check: bool = True, timeout: float | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(args, check=check, text=True, capture_output=True, timeout=timeout)
 
 
 def bundle_info(app: Path) -> tuple[dict, str]:
@@ -86,9 +89,11 @@ def validate_notarized(app: Path) -> None:
     for args in (("xcrun", "stapler", "validate", str(app)),
                  ("spctl", "--assess", "--type", "execute", "--verbose=4", str(app))):
         try:
-            command(*args)
-        except (FileNotFoundError, subprocess.CalledProcessError) as error:
-            if isinstance(error, subprocess.CalledProcessError):
+            command(*args, timeout=SPCTL_TIMEOUT if args[0] == "spctl" else None)
+        except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+            if isinstance(error, subprocess.TimeoutExpired):
+                detail = f"{args[0]} timed out"
+            elif isinstance(error, subprocess.CalledProcessError):
                 detail = (error.stderr or error.stdout or "notarization validation failed").strip()
             else:
                 detail = f"required command is unavailable: {args[0]}"

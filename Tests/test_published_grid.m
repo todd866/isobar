@@ -77,7 +77,7 @@ static void MakeFloatRun(NSString *root, int nx, int ny, float offset) {
     NSDate *start = [NSDate dateWithTimeIntervalSince1970:1780099200];
     for (int h = 0; h < 3; h++) [times addObject:[fmt stringFromDate:[start dateByAddingTimeInterval:h * 3 * 3600]]];
     NSDictionary *manifest = @{
-        @"grid":@{@"dtype":@"float32", @"nx":@(nx), @"ny":@(ny), @"step":@0.25, @"west":@95, @"north":@0},
+        @"grid":@{@"dtype":@"float32", @"endian":@"little", @"nx":@(nx), @"ny":@(ny), @"step":@0.25, @"west":@95, @"north":@0},
         @"times":times, @"generated":times[0], @"run":times[0], @"attribution":@"test"};
     NSData *manifestData = [NSJSONSerialization dataWithJSONObject:manifest options:0 error:nil];
     [manifestData writeToFile:[dir stringByAppendingPathComponent:@"manifest.json"] atomically:YES];
@@ -206,6 +206,26 @@ int main(void) {
         NSData *arrayData = [NSJSONSerialization dataWithJSONObject:@[] options:0 error:nil];
         [arrayData writeToFile:[pointerFamily stringByAppendingPathComponent:@"current.json"] atomically:YES];
         check(OwnRunLoadPublished(pointerBad, NO, coast, &error) == nil, @"malformed published pointer is rejected");
+        NSString *hugeDir = [root stringByAppendingPathComponent:@"huge-run"];
+        [[NSFileManager defaultManager] createDirectoryAtPath:hugeDir withIntermediateDirectories:YES attributes:nil error:nil];
+        NSDictionary *grid = @{@"dtype": @"float32", @"nx": @100000, @"ny": @100000, @"step": @1,
+            @"west": @0, @"east": @1, @"north": @0, @"south": @-1};
+        NSDictionary *base = @{@"schema": @1, @"run": @"2026-09-25T18:00:00Z",
+            @"times": @[@"2026-09-26T00:00:00Z"], @"grid": [grid mutableCopy]};
+        NSMutableDictionary *huge = [base mutableCopy];
+        huge[@"grid"] = [grid mutableCopy];
+        ((NSMutableDictionary *)huge[@"grid"])[@"endian"] = @"little";
+        NSData *hugeJSON = [NSJSONSerialization dataWithJSONObject:huge options:0 error:nil];
+        [hugeJSON writeToFile:[hugeDir stringByAppendingPathComponent:@"manifest.json"] atomically:YES];
+        check(OwnRunLoad(hugeDir, coast, &error) == nil, @"an oversized run grid is refused");
+        ((NSMutableDictionary *)huge[@"grid"])[@"nx"] = @4;
+        ((NSMutableDictionary *)huge[@"grid"])[@"ny"] = @4;
+        [(NSMutableDictionary *)huge[@"grid"] removeObjectForKey:@"endian"];
+        [[NSJSONSerialization dataWithJSONObject:huge options:0 error:nil] writeToFile:[hugeDir stringByAppendingPathComponent:@"manifest.json"] atomically:YES];
+        check(OwnRunLoad(hugeDir, coast, &error) == nil, @"a run grid without endian is refused");
+        ((NSMutableDictionary *)huge[@"grid"])[@"endian"] = @"big";
+        [[NSJSONSerialization dataWithJSONObject:huge options:0 error:nil] writeToFile:[hugeDir stringByAppendingPathComponent:@"manifest.json"] atomically:YES];
+        check(OwnRunLoad(hugeDir, coast, &error) == nil, @"a big-endian run grid is refused");
     } @finally { [[NSFileManager defaultManager] removeItemAtPath:root error:nil]; }
     TestConcurrentDifferentGrids();
     return failures ? 1 : 0;

@@ -9,6 +9,34 @@ static void check(BOOL cond, NSString *msg) {
     if (!cond) failures++;
 }
 
+static NSData *InflateBombPDF(void) {
+    z_stream strm = {0};
+    if (deflateInit(&strm, Z_BEST_SPEED) != Z_OK) return nil;
+    NSMutableData *compressed = [NSMutableData data];
+    uint8_t zeros[1 << 16] = {0};
+    uint8_t out[1 << 16];
+    size_t left = 70ull << 20;
+    int rc;
+    do {
+        if (!strm.avail_in && left) {
+            uInt chunk = (uInt)MIN(sizeof zeros, left);
+            strm.next_in = zeros;
+            strm.avail_in = chunk;
+            left -= chunk;
+        }
+        strm.next_out = out;
+        strm.avail_out = sizeof out;
+        rc = deflate(&strm, left ? Z_NO_FLUSH : Z_FINISH);
+        if (sizeof out > strm.avail_out) [compressed appendBytes:out length:sizeof out - strm.avail_out];
+    } while (rc == Z_OK);
+    deflateEnd(&strm);
+    if (rc != Z_STREAM_END) return nil;
+    NSMutableData *pdf = [NSMutableData dataWithData:[@"stream\n" dataUsingEncoding:NSASCIIStringEncoding]];
+    [pdf appendData:compressed];
+    [pdf appendData:[@"\nendstream" dataUsingEncoding:NSASCIIStringEncoding]];
+    return pdf;
+}
+
 static NSData *Fixture(NSString *name) {
     NSString *root = [NSProcessInfo.processInfo.environment[@"ISOBAR_FIXTURES"] stringByExpandingTildeInPath];
     NSString *path = [root stringByAppendingPathComponent:name];
@@ -1371,6 +1399,110 @@ int main(void) {
                 @{@"time": Date(@"2026-09-27T06:00:00Z"), @"windDir": @"SW", @"windKt": @20}]}],
             Date(@"2026-09-26T06:00:00Z"), perth, 15, 30);
         check([soonKite[@"line"] containsString:@"today"], @"a longer tomorrow window does not hide today's opportunity");
+
+        NSCalendar *sydney = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+        sydney.timeZone = [NSTimeZone timeZoneWithName:@"Australia/Sydney"];
+        NSData *(^gapJSON)(NSString *, NSString *) = ^NSData *(NSString *zone, NSString *stamp) {
+            NSString *header = zone.length ? [NSString stringWithFormat:@"{\"state_time_zone\":\"%@\"}", zone] : @"";
+            NSString *json = [NSString stringWithFormat:@"{\"observations\":{\"header\":[%@],\"data\":[{\"local_date_time_full\":\"%@\",\"air_temp\":18,\"press_msl\":1016}]}}", header, stamp];
+            return [json dataUsingEncoding:NSUTF8StringEncoding];
+        };
+        NSDate *beforeGap = ParseLatestObservation(gapJSON(@"NSW", @"20261004013000"))[@"time"];
+        NSDate *afterGap = ParseLatestObservation(gapJSON(@"NSW", @"20261004033000"))[@"time"];
+        NSDateComponents *beforeParts = [sydney components:NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay | NSCalendarUnitHour | NSCalendarUnitMinute fromDate:beforeGap];
+        NSDateComponents *afterParts = [sydney components:NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay | NSCalendarUnitHour | NSCalendarUnitMinute fromDate:afterGap];
+        check(beforeParts.year == 2026 && beforeParts.month == 10 && beforeParts.day == 4 && beforeParts.hour == 1 && beforeParts.minute == 30,
+            @"1:30 AEST on 4 Oct 2026 exists");
+        check(afterParts.day == 4 && afterParts.hour == 3 && afterParts.minute == 30, @"3:30 AEDT on 4 Oct 2026 exists");
+        check(beforeGap && afterGap && fabs([afterGap timeIntervalSinceDate:beforeGap] - 3600) < 1,
+            @"the Sydney spring-forward gap is one hour of UTC");
+        check(ParseLatestObservation(gapJSON(@"NSW", @"20261004023000")) == nil, @"2:30 does not exist on the Sydney changeover");
+        check(ParseLatestObservation(gapJSON(nil, @"20261004013000")) == nil, @"a missing state is not Western Australia");
+        check(ParseLatestObservation(gapJSON(@"ZZ", @"20261004013000")) == nil, @"an unknown state is not the Mac zone");
+        check(ParseLatestObservation(gapJSON(@"NSW", @"20260231013000")) == nil, @"civil time is not lenient");
+        check(ObservationHistory(gapJSON(@"ZZ", @"20261004013000")).count == 0, @"history without a zone is empty");
+        check(PressureTendency(gapJSON(@"ZZ", @"20261004013000")) == nil, @"pressure tendency without a zone is missing");
+
+        NSString *oversized = @"{\"schema\":1,\"grid\":{\"dtype\":\"float32\",\"endian\":\"little\",\"nx\":100000,\"ny\":100000,\"step\":1,\"west\":0,\"east\":1,\"north\":0,\"south\":-1},\"times\":[\"2026-09-26T00:00:00Z\"],\"run\":\"2026-09-25T18:00:00Z\"}";
+        NSString *noEndian = @"{\"schema\":1,\"grid\":{\"dtype\":\"float32\",\"nx\":4,\"ny\":4,\"step\":1,\"west\":0,\"east\":1,\"north\":0,\"south\":-1},\"times\":[\"2026-09-26T00:00:00Z\"],\"run\":\"2026-09-25T18:00:00Z\"}";
+        NSString *bigEndian = @"{\"schema\":1,\"grid\":{\"dtype\":\"float32\",\"endian\":\"big\",\"nx\":4,\"ny\":4,\"step\":1,\"west\":0,\"east\":1,\"north\":0,\"south\":-1},\"times\":[\"2026-09-26T00:00:00Z\"],\"run\":\"2026-09-25T18:00:00Z\"}";
+        check(StoreManifestFromJSON([oversized dataUsingEncoding:NSUTF8StringEncoding]) == nil, @"an oversized manifest is refused");
+        check(StoreManifestFromJSON([noEndian dataUsingEncoding:NSUTF8StringEncoding]) == nil, @"a manifest without endian is refused");
+        check(StoreManifestFromJSON([bigEndian dataUsingEncoding:NSUTF8StringEncoding]) == nil, @"a big-endian manifest is refused");
+
+        NSDate *bombStarted = [NSDate date];
+        check(PrognosisValidTimes(InflateBombPDF()).count == 0 && -[bombStarted timeIntervalSinceNow] < 8,
+            @"an inflate bomb does not expand without a ceiling");
+        BOOL undated = NO;
+        NSDate *datedPanel = [NSDate dateWithTimeIntervalSince1970:1000];
+        check([BureauPanelTimes(@[datedPanel], YES, &undated) count] == 1 && !undated, @"parsed panel times stay dated");
+        check(BureauPanelTimes(@[], YES, &undated).count == 0 && undated, @"a loaded chart with no times is undated");
+        check(BureauPanelTimes(@[], NO, &undated).count == 0 && !undated, @"no document does not invent undated panels");
+        check([PrimaryAerodromeCode(@"NSW") isEqual:@"YSSY"] && [PrimaryAerodromeCode(@"VIC") isEqual:@"YMML"]
+            && [PrimaryAerodromeCode(@"QLD") isEqual:@"YBBN"] && [PrimaryAerodromeCode(@"SA") isEqual:@"YPAD"]
+            && [PrimaryAerodromeCode(@"WA") isEqual:@"YPPH"] && [PrimaryAerodromeCode(@"TAS") isEqual:@"YMHB"]
+            && [PrimaryAerodromeCode(@"NT") isEqual:@"YPDN"] && [PrimaryAerodromeCode(@"ACT") isEqual:@"YSCB"],
+            @"each state has its capital aerodrome");
+        check(PrimaryAerodromeCode(@"ZZ") == nil && AerodromeForState(@"ZZ") == nil, @"an unknown state has no aerodrome");
+        check([AerodromeForState(@"NSW")[@"runways"] count] > 0 && [AerodromeForState(@"WA")[@"code"] isEqual:@"YPPH"],
+            @"Sydney and Perth keep their runway configuration");
+        check([AerodromeForState(@"VIC")[@"code"] isEqual:@"YMML"] && [AerodromeForState(@"VIC")[@"runways"] count] == 0
+            && [AerodromeForState(@"VIC")[@"timeZone"] isEqual:@"Australia/Melbourne"],
+            @"Melbourne is named without invented runways");
+
+        NSDate *naiveNine = WeatherInstant(@"2026-09-26T09:00");
+        NSDate *zuluNine = WeatherInstant(@"2026-09-26T09:00:00Z");
+        NSDate *plusTen = WeatherInstant(@"2026-09-26T19:00+10:00");
+        check(naiveNine && zuluNine && fabs([naiveNine timeIntervalSinceDate:zuluNine]) < 1, @"a naive point time is GMT");
+        check(plusTen && fabs([plusTen timeIntervalSinceDate:zuluNine]) < 1, @"an offset clock is the same instant");
+        check(WeatherInstant(@"2026-10-02T05:31+10:00") != nil && WeatherInstant(@"not-a-time") == nil,
+            @"local sunrise with an offset parses and a blank time does not");
+
+        NSString *pointFixtureRoot = NSProcessInfo.processInfo.environment[@"ISOBAR_FIXTURES"] ?: @"Tests/fixtures";
+        NSData *sydneyPoint = [NSData dataWithContentsOfFile:[pointFixtureRoot stringByAppendingPathComponent:
+            @"store/products/points/ecmwf_ifs/runs/20261001T00Z/sydney.json"]];
+        NSData *perthPoint = [NSData dataWithContentsOfFile:[pointFixtureRoot stringByAppendingPathComponent:
+            @"store/products/points/ecmwf_ifs/runs/20261001T00Z/perth.json"]];
+        NSDate *octoberMorning = WeatherInstant(@"2026-10-01T00:30:00Z");
+        NSArray *sydneyWeek = StorePointDays(sydneyPoint, octoberMorning, 7, [NSTimeZone timeZoneWithName:@"Australia/Perth"]);
+        NSArray *perthWeek = StorePointDays(perthPoint, octoberMorning, 7, [NSTimeZone timeZoneWithName:@"Australia/Sydney"]);
+        check(sydneyWeek.count == 7 && perthWeek.count == 7, @"Sydney and Perth each keep seven local days");
+        check([sydneyWeek[0][@"weekday"] isEqual:@"Today"] && [sydneyWeek[1][@"weekday"] isEqual:@"Fri"]
+            && fabs([sydneyWeek[0][@"max"] doubleValue] - 28.9) < 0.01
+            && fabs([sydneyWeek[0][@"min"] doubleValue] - 13.5) < 0.01
+            && fabs([sydneyWeek[1][@"rainMm"] doubleValue] - 5.6) < 0.01
+            && [sydneyWeek[0][@"weatherCode"] integerValue] == 3
+            && [sydneyWeek[1][@"weatherCode"] integerValue] == 80
+            && [sydneyWeek[2][@"weatherCode"] integerValue] == 95
+            && [sydneyWeek[3][@"weatherCode"] integerValue] == 51,
+            @"Sydney day 0 is today with the published max, min and weather codes");
+        check([sydneyWeek[0][@"rainMm"] doubleValue] == 0 && sydneyWeek[0][@"rainMm"] != (id)NSNull.null,
+            @"a dry day stays zero and is not treated as missing");
+        check(perthWeek[2][@"min"] == (id)NSNull.null && perthWeek[3][@"gust"] == (id)NSNull.null
+            && fabs([perthWeek[5][@"rainMm"] doubleValue] - 8.4) < 0.01
+            && fabs([perthWeek[0][@"windDir"] doubleValue] - 270) < 0.01,
+            @"a missing Perth min or gust stays missing");
+        NSCalendar *sydneyCal = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+        sydneyCal.timeZone = [NSTimeZone timeZoneWithName:@"Australia/Sydney"];
+        NSDateComponents *sydneyDay = [sydneyCal components:NSCalendarUnitYear|NSCalendarUnitMonth|NSCalendarUnitDay fromDate:sydneyWeek[0][@"date"]];
+        check(sydneyDay.year == 2026 && sydneyDay.month == 10 && sydneyDay.day == 1, @"the day is the local calendar date");
+        NSString *noZone = @"{\"daily\":{\"time\":[\"2026-10-01\",\"2026-10-02\"],\"temperature_2m_max\":[20,21],\"temperature_2m_min\":[null,10]}}";
+        NSDate *sydneyEvening = WeatherInstant(@"2026-10-01T15:00:00Z");
+        NSArray *fellBack = StorePointDays([noZone dataUsingEncoding:NSUTF8StringEncoding], sydneyEvening, 7,
+            [NSTimeZone timeZoneWithName:@"Australia/Sydney"]);
+        check(fellBack.count == 1 && [fellBack[0][@"weekday"] isEqual:@"Today"]
+            && fabs([fellBack[0][@"min"] doubleValue] - 10) < 0.01,
+            @"a product without a timezone uses the place zone and drops the previous local day");
+        check([WeatherCodeSymbol(0, YES) isEqual:@"sun.max"] && [WeatherCodeSymbol(0, NO) isEqual:@"moon.stars"]
+            && [WeatherCodeLabel(0) isEqual:@"Clear"] && [WeatherCodeLabel(1) isEqual:@"Mostly clear"]
+            && [WeatherCodeSymbol(2, YES) isEqual:@"cloud.sun"] && [WeatherCodeLabel(2) isEqual:@"Partly cloudy"]
+            && [WeatherCodeSymbol(3, YES) isEqual:@"cloud"] && [WeatherCodeLabel(3) isEqual:@"Cloudy"]
+            && [WeatherCodeSymbol(45, YES) isEqual:@"cloud.fog"] && [WeatherCodeLabel(51) isEqual:@"Drizzle"]
+            && [WeatherCodeSymbol(65, YES) isEqual:@"cloud.heavyrain"] && [WeatherCodeLabel(65) isEqual:@"Heavy rain"]
+            && [WeatherCodeSymbol(80, YES) isEqual:@"cloud.sun.rain"] && [WeatherCodeSymbol(80, NO) isEqual:@"cloud.moon.rain"]
+            && [WeatherCodeLabel(80) isEqual:@"Showers"] && [WeatherCodeSymbol(95, YES) isEqual:@"cloud.bolt.rain"]
+            && [WeatherCodeLabel(95) isEqual:@"Thunderstorm"] && WeatherCodeSymbol(999, YES) == nil,
+            @"weather codes map to a day symbol and a short label");
     }
     return failures ? 1 : 0;
 }

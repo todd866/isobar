@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import math
+import os
 import re
 from pathlib import Path, PurePosixPath
 import shutil
@@ -21,11 +22,22 @@ GRID_FAMILY = "products/grids/ecmwf_ifs025"
 GRID_FIELDS = ("cloud_cover", "gust10", "mslp", "mucape", "t2m", "t850", "tp", "u10", "v10")
 CORE_FIELDS = ("mslp", "t850", "t2m", "u10", "v10", "tp")
 POINT_FAMILIES = ("products/points/ecmwf_ifs", "products/points/marine")
-POINT_ID = "cottesloe"
-POINT_COORDS = {
-    "ecmwf_ifs": (-32.02109, 115.72979),
-    "marine": (-31.958336, 115.79167),
+# Configured surface points (isobar-data config/isobar.toml). Coordinates are the
+# requested locations; published files may be snapped within 30 km.
+SURFACE_POINTS = {
+    "cottesloe": {"place": "Perth", "public_name": "Cottesloe", "latitude": -31.9953964, "longitude": 115.7511955, "timezone": "Australia/Perth", "marine": True},
+    "yssy": {"place": "Sydney", "public_name": "Sydney", "latitude": -33.946, "longitude": 151.177, "timezone": "Australia/Sydney", "marine": False},
+    "safety-bay": {"place": "Safety Bay", "public_name": "Safety Bay", "latitude": -32.3040595, "longitude": 115.7286309, "timezone": "Australia/Perth", "marine": True},
+    "rottnest": {"place": "Rottnest", "public_name": "Rottnest", "latitude": -32.0, "longitude": 115.5, "timezone": "Australia/Perth", "marine": False},
+    "perth-airport": {"place": "Perth Airport", "public_name": "Perth Airport", "latitude": -31.9403, "longitude": 115.967003, "timezone": "Australia/Perth", "marine": False},
+    "garden-island": {"place": "Garden Island", "public_name": "Garden Island", "latitude": -32.2, "longitude": 115.7, "timezone": "Australia/Perth", "marine": False},
 }
+REQUIRED_SURFACE = ("cottesloe", "yssy")
+DAILY_NUMBERS = ("temperature_2m_max", "temperature_2m_min", "precipitation_sum", "precipitation_hours", "weather_code",
+                 "wind_speed_10m_max", "wind_gusts_10m_max", "wind_direction_10m_dominant")
+DATE_TEXT = re.compile(r"\d{4}-\d{2}-\d{2}")
+CLOCK_TEXT = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2})?")
+ZONE_TEXT = re.compile(r"[A-Za-z]+(?:/[A-Za-z0-9_+-]+)+")
 POINT_HOURLY = {
     "ecmwf_ifs": ("temperature_2m", "dew_point_2m", "pressure_msl", "wind_speed_10m", "wind_direction_10m",
                    "wind_gusts_10m", "precipitation", "cape", "visibility", "cloud_cover", "cloud_cover_low", "weather_code"),
@@ -168,27 +180,80 @@ def public_grid_sidecar(source: Path, field: str, run: str) -> dict:
     return expected
 
 
+def finite_coord(value) -> bool:
+    return type(value) in (int, float) and math.isfinite(value)
+
+
+def distance_km(lat: float, lon: float, want_lat: float, want_lon: float) -> float:
+    radius = 6371.0
+    phi1, phi2 = math.radians(lat), math.radians(want_lat)
+    dphi = math.radians(want_lat - lat)
+    dlambda = math.radians(want_lon - lon)
+    arc = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return 2 * radius * math.asin(math.sqrt(arc))
+
+
+def public_timezone(value, fallback: str) -> str:
+    # Older products omit the IANA zone. An unknown or private string falls back
+    # to the configured place zone rather than being copied through.
+    if isinstance(value, str) and ZONE_TEXT.fullmatch(value) and value not in {"Etc/UTC", "Etc/GMT"}:
+        return value
+    return fallback
+
+
+def public_daily(daily) -> dict | None:
+    if not isinstance(daily, dict):
+        return None
+    times = daily.get("time")
+    if not isinstance(times, list) or not 1 <= len(times) <= 8 or any(not isinstance(item, str) or not DATE_TEXT.fullmatch(item) for item in times):
+        return None
+    out = {"time": list(times)}
+    for key in DAILY_NUMBERS:
+        values = daily.get(key)
+        if not isinstance(values, list) or len(values) != len(times):
+            continue
+        if any(value is not None and (type(value) not in (int, float) or not math.isfinite(value)) for value in values):
+            continue
+        out[key] = values
+    for key in ("sunrise", "sunset"):
+        values = daily.get(key)
+        if not isinstance(values, list) or len(values) != len(times):
+            continue
+        if any(value is not None and (not isinstance(value, str) or not CLOCK_TEXT.fullmatch(value)) for value in values):
+            continue
+        out[key] = values
+    return out
+
+
 def public_point(source: Path, family: str) -> dict:
     body = read_json(source)
-    if body.get("id") != POINT_ID or body.get("licence_id") != "open-meteo-cc-by-4.0":
+    point_id = body.get("id")
+    spec = SURFACE_POINTS.get(point_id) if isinstance(point_id, str) else None
+    if spec is None or body.get("licence_id") != "open-meteo-cc-by-4.0":
         fail(f"point contains non-public identity metadata: {source}")
-    expected = POINT_COORDS[family]
-    coords = (body.get("latitude"), body.get("longitude"))
-    if any(type(value) not in (int, float) or not math.isfinite(value) or abs(value-wanted) > .00001 for value, wanted in zip(coords, expected)):
-        fail(f"point coordinates are not the public Cottesloe point: {source}")
+    lat, lon = body.get("latitude"), body.get("longitude")
+    if not finite_coord(lat) or not finite_coord(lon):
+        fail(f"non-finite coordinate: {source}")
+    if distance_km(lat, lon, spec["latitude"], spec["longitude"]) > 30:
+        fail(f"point coordinates are not the public {spec['public_name']} point: {source}")
     if not isinstance(body.get("units"), dict) or not isinstance(body.get("time"), list) or not isinstance(body.get("hourly"), dict):
         fail(f"point schema is incomplete: {source}")
     times = body["time"]
     parsed = [timestamp(value) for value in times]
-    if not 24 <= len(times) <= 240 or any((b-a).total_seconds() != 3600 for a, b in zip(parsed, parsed[1:])):
+    # Seven local days are 168 hourly steps. Allow a short margin, not an open-ended series.
+    if not 24 <= len(times) <= 192 or any((b - a).total_seconds() != 3600 for a, b in zip(parsed, parsed[1:])):
         fail("point must contain consecutive hourly times")
     issued = timestamp(body.get("run"))
     model = "ecmwf_ifs" if family == "ecmwf_ifs" else "best-match"
     if body.get("model") != model or body.get("native_step_hours") != 1:
         fail("unexpected public point model")
-    out = {"id": POINT_ID, "licence_id": "open-meteo-cc-by-4.0", "model": model,
+    out = {"id": point_id, "licence_id": "open-meteo-cc-by-4.0", "model": model,
            "run": issued.strftime("%Y-%m-%dT%H:%M:%SZ"), "native_step_hours": 1,
-           "latitude": expected[0], "longitude": expected[1], "time": times}
+           "latitude": lat, "longitude": lon, "timezone": public_timezone(body.get("timezone"), spec["timezone"]),
+           "time": times}
+    daily = public_daily(body.get("daily"))
+    if daily:
+        out["daily"] = daily
     out["hourly"] = {key: body["hourly"][key] for key in POINT_HOURLY[family] if key in body["hourly"]}
     out["units"] = {key: body["units"][key] for key in out["hourly"] if key in body["units"]}
     for key, values in out["hourly"].items():
@@ -230,13 +295,20 @@ def build_manifest(staging: Path, runs: list[str], generated_at: str) -> dict:
             fail(f"selected run is missing a required core grid field: {run}")
     if not fields:
         fail("selected runs contain no public grid fields")
-    points = []
-    for family in ("ecmwf_ifs", "marine"):
+    places, marine = [], []
+    for family, bucket in (("ecmwf_ifs", places), ("marine", marine)):
         pointer = read_json(staging / "products/points" / family / "current.json")
         run = pointer["latest"]
-        point_path = staging / "products/points" / family / "runs" / run / f"{POINT_ID}.json"
-        points.append({"family": family, "run": run, "path": str(point_path.relative_to(staging)),
-                      "sha256": hashlib.sha256(point_path.read_bytes()).hexdigest()})
+        directory = staging / "products/points" / family / "runs" / run
+        if not directory.is_dir():
+            fail(f"missing point run: {family}")
+        for path in sorted(directory.glob("*.json")):
+            point = public_point(path, family)
+            bucket.append({"id": point["id"], "name": SURFACE_POINTS[point["id"]]["place"], "timezone": point["timezone"],
+                           "family": family, "run": run, "path": str(path.relative_to(staging)),
+                           "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+    if {item["id"] for item in places} < set(REQUIRED_SURFACE) or not any(item["id"] == "cottesloe" for item in marine):
+        fail("snapshot is missing Perth or Sydney")
     return {
         "schemaVersion": SCHEMA,
         "generatedAt": generated_at,
@@ -244,9 +316,37 @@ def build_manifest(staging: Path, runs: list[str], generated_at: str) -> dict:
         "runTime": run_datetime(runs[-1]).isoformat().replace("+00:00", "Z"),
         "runs": runs,
         "grid": {"family": "ecmwf_ifs025", "fields": fields},
-        "points": {"id": POINT_ID, "families": ["ecmwf_ifs", "marine"], "products": points},
+        "points": {"places": places, "marine": marine},
         "attribution": ["ecmwf-cc-by-4.0", "open-meteo-cc-by-4.0"],
     }
+
+
+def publish_archive(staging: Path, output: Path) -> None:
+    """Write the snapshot beside output, fsync it, then publish with os.replace."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(prefix=f".{output.name}.", dir=output.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(fd, "wb") as raw:
+            with tarfile.open(fileobj=raw, mode="w:gz", format=tarfile.PAX_FORMAT) as archive:
+                for path in sorted(staging.rglob("*")):
+                    if not path.is_file():
+                        continue
+                    data = path.read_bytes()
+                    info = tarfile.TarInfo(path.relative_to(staging).as_posix())
+                    info.size = len(data)
+                    info.mode = 0o644
+                    info.mtime = 0
+                    info.uid = info.gid = 0
+                    info.uname = info.gname = ""
+                    archive.addfile(info, io.BytesIO(data))
+            raw.flush()
+            os.fsync(raw.fileno())
+        os.replace(temporary, output)
+    except BaseException:
+        if temporary.exists():
+            temporary.unlink()
+        raise
 
 
 def export_snapshot(source: Path, output: Path, max_age_hours: float | None = None) -> None:
@@ -274,36 +374,28 @@ def export_snapshot(source: Path, output: Path, max_age_hours: float | None = No
                     sidecar_rel = str(Path(relative).with_suffix(".json"))
                     write_json(staging, sidecar_rel, public_grid_sidecar(binary.with_suffix(".json"), field, run))
         for family in POINT_FAMILIES:
+            kind = family.removeprefix("products/points/")
             source_family = source / family
             pointer = read_json(source_family / "current.json")
             run = pointer.get("latest")
             if not isinstance(run, str) or not safe_component(run):
                 fail(f"invalid point pointer: {family}")
-            point = source_family / "runs" / run / f"{POINT_ID}.json"
-            if not point.is_file():
-                fail(f"missing public point: {point}")
-            rel = Path(family) / "runs" / run / f"{POINT_ID}.json"
-            write_json(staging, str(rel), public_point(point, family.removeprefix("products/points/")))
-            pointer_rel = Path(family) / "current.json"
-            pointer_path = staging / pointer_rel
-            pointer_path.parent.mkdir(parents=True, exist_ok=True)
-            write_json(staging, str(pointer_rel), {"latest": run, "runs": [run]})
+            for point_id, spec in SURFACE_POINTS.items():
+                if kind == "marine" and not spec["marine"]:
+                    continue
+                point = source_family / "runs" / run / f"{point_id}.json"
+                required = point_id in REQUIRED_SURFACE if kind == "ecmwf_ifs" else point_id == "cottesloe"
+                if not point.is_file():
+                    if required:
+                        fail(f"missing public point: {point}")
+                    continue
+                write_json(staging, f"{family}/runs/{run}/{point_id}.json", public_point(point, kind))
+            write_json(staging, f"{family}/current.json", {"latest": run, "runs": [run]})
         write_json(staging, "attribution.json", public_attribution(source / "attribution.json"))
         manifest = build_manifest(staging, runs, datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"))
         write_json(staging, "manifest.json", manifest)
         validate_tree(staging, max_age_hours=max_age_hours)
-        output.parent.mkdir(parents=True, exist_ok=True)
-        with tarfile.open(output, "w:gz", format=tarfile.PAX_FORMAT) as archive:
-            for path in sorted(staging.rglob("*")):
-                if path.is_file():
-                    data = path.read_bytes()
-                    info = tarfile.TarInfo(path.relative_to(staging).as_posix())
-                    info.size = len(data)
-                    info.mode = 0o644
-                    info.mtime = 0
-                    info.uid = info.gid = 0
-                    info.uname = info.gname = ""
-                    archive.addfile(info, io.BytesIO(data))
+        publish_archive(staging, output)
 
 
 def validate_tree(root: Path, max_age_hours: float | None = None) -> dict:
@@ -376,16 +468,27 @@ def validate_tree(root: Path, max_age_hours: float | None = None) -> dict:
             if steps != set(range(0, 97, 3)):
                 fail(f"snapshot is missing required core forecast hours for {run}/{field}")
     points_section = manifest.get("points")
-    points = points_section.get("products") if isinstance(points_section, dict) else None
-    if not isinstance(points, list) or len(points) != 2 or not all(isinstance(item, dict) and isinstance(item.get("family"), str) for item in points) or {item["family"] for item in points} != {"ecmwf_ifs", "marine"}:
+    places = points_section.get("places") if isinstance(points_section, dict) else None
+    marine = points_section.get("marine") if isinstance(points_section, dict) else None
+    if not isinstance(places, list) or not isinstance(marine, list) or not places or not marine:
         fail("point manifest is incomplete")
-    for item in points:
+    if {item.get("id") for item in places if isinstance(item, dict)} < set(REQUIRED_SURFACE) or not any(isinstance(item, dict) and item.get("id") == "cottesloe" for item in marine):
+        fail("snapshot is missing Perth or Sydney")
+    seen_ids = set()
+    for item in places + marine:
+        if not isinstance(item, dict) or item.get("family") not in {"ecmwf_ifs", "marine"} or item.get("id") not in SURFACE_POINTS:
+            fail("point manifest is incomplete")
+        if item["family"] == "marine" and not SURFACE_POINTS[item["id"]]["marine"]:
+            fail("invalid point manifest path")
+        if (item["family"], item["id"]) in seen_ids:
+            fail("invalid point manifest path")
+        seen_ids.add((item["family"], item["id"]))
         path = item.get("path", "")
-        if not safe_component(item.get("run")) or path != f"products/points/{item['family']}/runs/{item['run']}/{POINT_ID}.json" or not safe_rel(path) or path in expected or not (root / path).is_file():
+        if not safe_component(item.get("run")) or path != f"products/points/{item['family']}/runs/{item['run']}/{item['id']}.json" or not safe_rel(path) or path in expected or not (root / path).is_file():
             fail("invalid point manifest path")
         expected.add(path)
         point = public_point(root / path, item["family"])
-        if read_json(root / path) != point:
+        if read_json(root / path) != point or item.get("name") != SURFACE_POINTS[item["id"]]["place"] or item.get("timezone") != point.get("timezone"):
             fail("point contains non-canonical metadata")
         if hashlib.sha256((root / path).read_bytes()).hexdigest() != item.get("sha256"):
             fail("point hash mismatch")
@@ -400,7 +503,7 @@ def validate_tree(root: Path, max_age_hours: float | None = None) -> dict:
         if max_age_hours is not None:
             now = datetime.now(timezone.utc)
             for key in required:
-                if sum(0 <= (timestamp(time)-now).total_seconds() <= 48*3600 and values is not None for time, values in zip(times, hourly[key])) < 24:
+                if sum(0 <= (timestamp(time) - now).total_seconds() <= 48 * 3600 and values is not None for time, values in zip(times, hourly[key])) < 24:
                     fail(f"{item['family']} lacks 24 future hours of {key}")
     for exact in allowed_exact:
         if not (root / exact).is_file():
@@ -442,9 +545,9 @@ def import_snapshot(bundle: Path, destination: Path, max_age_hours: float | None
                 with archive.extractfile(member) as incoming, target.open("xb") as outgoing:
                     shutil.copyfileobj(incoming, outgoing)
         validate_tree(staging, max_age_hours=max_age_hours)
-        if destination.exists():
-            destination.rmdir()
-        staging.rename(destination)
+        # Replace an empty destination in one step. Removing it first would drop
+        # the only copy of the staged tree if the rename then failed.
+        os.replace(staging, destination)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -22,15 +22,17 @@
 #import "notices.h"
 #import "notacconnection.h"
 #import "fullscreenwindow.h"
+#import "daystrip.h"
+#import "playback.h"
 #import <math.h>
 #import <zlib.h>
-#import <AVFoundation/AVFoundation.h>
 
 static const NSTimeInterval kRefreshInterval = 5 * 60;
 static const NSUInteger kMotionIntervals = 24;
 static const double kMotionFPS = 24;
-static const double kEvolutionDuration = 120;
 static BOOL MotionEnabled(void) { return getenv("ISOBAR_EXPERIMENTAL_MOTION") || getenv("ISOBAR_CHECK_MOTION"); }
+static NSString *const kForecastPausedKey = @"forecastPaused";
+static NSString *const kPlaybackSpeedKey = @"playbackSpeed";
 
 static NSTimeZone *ZoneForPlace(NSDictionary *place) {
     NSString *name = place[@"timezone"];
@@ -42,10 +44,6 @@ static NSTimeZone *ZoneForPlace(NSDictionary *place) {
         @"VIC": @"Australia/Melbourne", @"TAS": @"Australia/Hobart",
     };
     return [NSTimeZone timeZoneWithName:names[[place[@"state"] uppercaseString] ?: @""] ?: @"Australia/Perth"];
-}
-
-static NSTimeZone *OwnerZone(void) {
-    return [NSTimeZone timeZoneWithName:@"Australia/Perth"];
 }
 
 static NSDictionary *SavedPlaceForTimeZone(NSArray<NSDictionary *> *places, NSString *zone) {
@@ -158,9 +156,12 @@ static CGPDFDocumentRef PDFDocumentFromData(NSData *data) {
 @implementation ChartRoot
 - (BOOL)acceptsFirstMouse:(NSEvent *)event { (void)event; return YES; }
 - (void)drawRect:(NSRect)dirty {
-    MSLPColour paper = MSLPColourPaper();
-    [[NSColor colorWithSRGBRed:paper.red green:paper.green blue:paper.blue alpha:1] setFill];
+    [NSColor.windowBackgroundColor setFill];
     NSRectFill(NSIntersectionRect(dirty, self.bounds));
+}
+- (void)viewDidChangeEffectiveAppearance {
+    [super viewDidChangeEffectiveAppearance];
+    self.needsDisplay = YES;
 }
 - (void)mouseDown:(NSEvent *)event {
     (void)event;
@@ -733,8 +734,8 @@ static NSColor *SeaColour(void) { return MSLPNSColour(MSLPColourSea()); }
 - (void)setPins:(NSArray<NSDictionary *> *)pins;
 - (void)setComparisonDocument:(CGPDFDocumentRef)document crop:(CGRect)crop alpha:(CGFloat)alpha;
 - (void)clearComparison;
-- (void)attachMoviePlayer:(AVPlayer *)player;
-- (void)removeMoviePlayer;
+- (void)setLiveFrames:(NSImage *)base next:(NSImage *)next opacity:(CGFloat)opacity;
+- (void)clearLiveFrames;
 @end
 
 static CGImageRef ChartCropImage(CGPDFDocumentRef document, CGRect crop, size_t pw, size_t ph) {
@@ -761,6 +762,24 @@ static CGImageRef ChartCropImage(CGPDFDocumentRef document, CGRect crop, size_t 
     return image;
 }
 
+static CGImageRef LiveCGImage(NSImage *image) {
+    for (NSImageRep *rep in image.representations) {
+        if (![rep isKindOfClass:NSBitmapImageRep.class]) continue;
+        CGImageRef cg = ((NSBitmapImageRep *)rep).CGImage;
+        if (cg) return cg;
+    }
+    return [image CGImageForProposedRect:NULL context:nil hints:nil];
+}
+
+static id LiveLayerContents(NSImage *image, NSSize viewSize, CGFloat *scaleOut) {
+    if (!image) return nil;
+    CGImageRef cg = LiveCGImage(image);
+    if (!cg) return image;
+    CGFloat scale = viewSize.width > 1 ? (CGFloat)CGImageGetWidth(cg) / viewSize.width : 1;
+    if (scaleOut) *scaleOut = MAX(1, scale);
+    return (__bridge id)cg;
+}
+
 @implementation PDFCropView {
     CGPDFDocumentRef _document;
     CGRect _crop;
@@ -774,14 +793,16 @@ static CGImageRef ChartCropImage(CGPDFDocumentRef document, CGRect crop, size_t 
     NSArray<NSDictionary *> *_pins;
     NSImage *_chartImage;
     NSImage *_compareImage;
-    AVPlayerLayer *_movieLayer;
+    CALayer *_liveBase;
+    CALayer *_liveNext;
     NSPoint _down, _last;
     BOOL _dragged;
 }
 - (BOOL)isFlipped { return YES; }
 - (BOOL)acceptsFirstMouse:(NSEvent *)event { (void)event; return YES; }
 - (void)dealloc {
-    [_movieLayer removeFromSuperlayer];
+    [_liveBase removeFromSuperlayer];
+    [_liveNext removeFromSuperlayer];
     if (_cache) CGImageRelease(_cache);
     if (_compareCache) CGImageRelease(_compareCache);
     if (_document) CGPDFDocumentRelease(_document);
@@ -796,22 +817,43 @@ static CGImageRef ChartCropImage(CGPDFDocumentRef document, CGRect crop, size_t 
         if (_compareCache) { CGImageRelease(_compareCache); _compareCache = NULL; }
     }
     [super setFrameSize:size];
-    _movieLayer.frame = self.bounds;
+    _liveBase.frame = self.bounds;
+    _liveNext.frame = self.bounds;
 }
-- (void)attachMoviePlayer:(AVPlayer *)player {
-    if (_movieLayer.player == player && _movieLayer.superlayer == self.layer) return;
-    [self removeMoviePlayer];
+- (void)clearLiveFrames {
+    [_liveBase removeFromSuperlayer];
+    [_liveNext removeFromSuperlayer];
+    _liveBase = nil;
+    _liveNext = nil;
+}
+- (void)setLiveFrames:(NSImage *)base next:(NSImage *)next opacity:(CGFloat)opacity {
+    if (!base) { [self clearLiveFrames]; return; }
     self.wantsLayer = YES;
-    _movieLayer = [AVPlayerLayer playerLayerWithPlayer:player];
-    _movieLayer.videoGravity = AVLayerVideoGravityResizeAspect;
-    _movieLayer.frame = self.bounds;
-    _movieLayer.autoresizingMask = kCALayerWidthSizable | kCALayerHeightSizable;
-    [self.layer addSublayer:_movieLayer];
-    self.needsDisplay = YES;
-}
-- (void)removeMoviePlayer {
-    [_movieLayer removeFromSuperlayer];
-    _movieLayer = nil;
+    if (!_liveBase) {
+        NSDictionary *actions = @{@"contents": NSNull.null, @"opacity": NSNull.null, @"bounds": NSNull.null, @"position": NSNull.null};
+        _liveBase = [CALayer layer];
+        _liveNext = [CALayer layer];
+        _liveBase.actions = actions;
+        _liveNext.actions = actions;
+        _liveBase.contentsGravity = kCAGravityResize;
+        _liveNext.contentsGravity = kCAGravityResize;
+        [self.layer addSublayer:_liveBase];
+        [self.layer addSublayer:_liveNext];
+    }
+    _liveBase.frame = self.bounds;
+    _liveNext.frame = self.bounds;
+    CGFloat screen = self.window.backingScaleFactor > 0 ? self.window.backingScaleFactor : 2;
+    self.layer.contentsScale = screen;
+    CGFloat baseScale = screen, nextScale = screen;
+    id baseContents = LiveLayerContents(base, self.bounds.size, &baseScale);
+    id nextContents = LiveLayerContents(next, self.bounds.size, &nextScale);
+    _liveBase.contentsScale = baseScale;
+    _liveNext.contentsScale = nextScale;
+    if (_liveBase.contents != baseContents) _liveBase.contents = baseContents;
+    if (_liveNext.contents != nextContents) _liveNext.contents = nextContents;
+    _liveNext.opacity = (float)MIN(1, MAX(0, opacity));
+    _liveNext.hidden = !next || opacity <= 0.001;
+    _chartImage = base;
 }
 - (void)clearComparison {
     _compareImage=nil;
@@ -820,7 +862,7 @@ static CGImageRef ChartCropImage(CGPDFDocumentRef document, CGRect crop, size_t 
 }
 - (void)setDocument:(CGPDFDocumentRef)document crop:(CGRect)crop {
     if (document == _document && CGRectEqualToRect(crop, _crop) && !_chartImage) return;
-    [self removeMoviePlayer];
+    [self clearLiveFrames];
     if (document) CGPDFDocumentRetain(document);
     if (_document) CGPDFDocumentRelease(_document);
     _document = document;
@@ -831,7 +873,7 @@ static CGImageRef ChartCropImage(CGPDFDocumentRef document, CGRect crop, size_t 
     self.needsDisplay = YES;
 }
 - (void)setChartImage:(NSImage *)image comparison:(NSImage *)comparison alpha:(CGFloat)alpha {
-    [self removeMoviePlayer];
+    [self clearLiveFrames];
     _chartImage = image;
     _compareImage = comparison;
     _compareAlpha = alpha;
@@ -1012,6 +1054,7 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
 @property (nonatomic, copy) void (^onHover)(NSInteger index);
 @property (nonatomic, copy) void (^onSeek)(double fraction);
 @property (nonatomic, copy) void (^onPreview)(double fraction);
+@property (nonatomic, strong) NSTimeZone *timeZone;
 @end
 
 @implementation TimelineStrip
@@ -1026,6 +1069,7 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
     NSArray *_rulerTimes;
     CGFloat _rulerWidth;
     NSDateFormatter *_selectionFormatter;
+    NSString *_rulerZone;
 }
 - (instancetype)initWithFrame:(NSRect)frame {
     self = [super initWithFrame:frame];
@@ -1062,7 +1106,7 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
     if (self.times.count < 2) return @"";
     NSDate *date = [self.times.firstObject dateByAddingTimeInterval:
         [self.times.lastObject timeIntervalSinceDate:self.times.firstObject] * (isfinite(self.progress) ? self.progress : 0)];
-    NSDateFormatter *format = [NSDateFormatter new]; format.timeZone = OwnerZone(); format.dateFormat = @"EEEE h a";
+    NSDateFormatter *format = [NSDateFormatter new]; format.timeZone = self.timeZone ?: [NSTimeZone timeZoneWithName:@"GMT"]; format.dateFormat = @"EEEE h a";
     return [format stringFromDate:date];
 }
 - (void)setAccessibilityValue:(id)value { if (self.onSeek) self.onSeek(MIN(1, MAX(0, [value doubleValue]))); }
@@ -1229,14 +1273,15 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
 }
 - (void)prepareRuler {
     CGFloat width=NSWidth([self trackRect]);
-    if (_rulerDays && _rulerWidth==width && [_rulerTimes isEqualToArray:self.times]) return;
-    _rulerWidth=width; _rulerTimes=[self.times copy];
+    NSTimeZone *zone=self.timeZone ?: [NSTimeZone timeZoneWithName:@"GMT"];
+    if (_rulerDays && _rulerWidth==width && [_rulerTimes isEqualToArray:self.times] && [_rulerZone isEqual:zone.name]) return;
+    _rulerWidth=width; _rulerTimes=[self.times copy]; _rulerZone=zone.name;
     NSDate *first=self.times.firstObject, *last=self.times.lastObject;
     NSTimeInterval span=[last timeIntervalSinceDate:first];
     NSMutableArray *days=[NSMutableArray array], *hours=[NSMutableArray array];
     if (span>0) {
-        NSCalendar *cal=[NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian]; cal.timeZone=OwnerZone();
-        NSDateFormatter *format=[NSDateFormatter new]; format.timeZone=OwnerZone();
+        NSCalendar *cal=[NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian]; cal.timeZone=zone;
+        NSDateFormatter *format=[NSDateFormatter new]; format.timeZone=zone;
         format.locale=[NSLocale localeWithLocaleIdentifier:@"en_AU_POSIX"];
         for (NSDate *date=[cal startOfDayForDate:first]; [date compare:last]==NSOrderedAscending;) {
             NSDate *next=[cal dateByAddingUnit:NSCalendarUnitDay value:1 toDate:date options:0];
@@ -1256,10 +1301,11 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
     }
     _rulerDays=days; _rulerHours=hours;
     if (!_selectionFormatter) {
-        _selectionFormatter=[NSDateFormatter new]; _selectionFormatter.timeZone=OwnerZone();
+        _selectionFormatter=[NSDateFormatter new];
         _selectionFormatter.locale=[NSLocale localeWithLocaleIdentifier:@"en_AU_POSIX"];
         _selectionFormatter.dateFormat=@"EEE h:mm a";
     }
+    _selectionFormatter.timeZone=zone;
 }
 - (void)drawTimeSlider {
     [self prepareRuler];
@@ -1982,6 +2028,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 - (void)refreshAll;
 - (void)replaceLocations:(NSArray *)locations;
 - (void)reloadStoreAtPath:(NSString *)root;
+- (NSDictionary *)hubPlace;
+- (NSTimeZone *)placeZone;
 - (void)toggleChartSource;
 - (BOOL)fullscreenReady;
 - (void)presentChartWindowInFrame:(NSRect)frame;
@@ -1992,11 +2040,17 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 - (void)focusFullscreenPanel:(NSInteger)index;
 - (void)toggleIssueCompare;
 - (void)toggleChartLoop;
-- (void)playMotionWhenReady;
+- (void)noteMapVisibility;
 - (void)resetPopoverToNow;
 - (void)inspectPopoverMovieFraction:(double)fraction;
 - (NSInteger)fullscreenPanelIndex;
 - (NSWindow *)chartWindow;
+- (NSDictionary *)homeAerodrome;
+- (NSDictionary *)currentFlyPlan;
+- (NSString *)titleForSequenceIndex:(NSInteger)index;
+- (NSString *)relativeForSequenceIndex:(NSInteger)index;
+- (NSDate *)selectedForecastDate;
+- (AviationNoticesView *)prepareAviationNotices:(BOOL)sigmet;
 @end
 
 @implementation Controller {
@@ -2076,12 +2130,14 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     BOOL _motionHasCursor;
     BOOL _motionCursorFullscreen;
     NSString *_motionError;
-    NSURL *_motionMovieURL;
-    AVPlayer *_motionPlayer;
-    id _motionTimeObserver;
-    BOOL _motionSeeking;
-    NSNumber *_motionQueuedFraction;
-    NSUInteger _motionSeekGeneration;
+    IsobarLivePlayer *_live;
+    NSTimer *_liveTimer;
+    NSTimer *_liveSizeTimer;
+    BOOL _forecastPaused;
+    IsobarLiveSpeed _liveSpeed;
+    NSTimeInterval _liveTickAt;
+    NSInteger _liveLabelMinute;
+    NSUInteger _liveDisplayTicks;
     BOOL _motionResetToNow;
     BOOL _evolutionOnOpenPending;
     NSNumber *_motionPendingFraction;
@@ -2144,7 +2200,15 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     NSInteger _shownRight;
     id _scrollMonitor;
     CGFloat _scrollAccum;
+    NSTimeInterval _lastArrowStep;
     NSString *_aerodromeCode;
+    NSString *_hubHash;
+    NSInteger _hubDayIndex;
+    DayStripView *_dayStrip;
+    DayStripView *_fullscreenDays;
+    NSTimer *_refreshTimer;
+    BOOL _watchingAppearance;
+    BOOL _prognosisUndated;
     NSTextField *_kiteMinField;
     NSTextField *_kiteMaxField;
     NSPopUpButton *_aerodromePopup;
@@ -2175,15 +2239,31 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     _windSpotHash = fixture ? @"" : ([defaults stringForKey:@"windSpot"] ?: @"");
     // Forecasts are a disclosure from the map, not a saved landing page.
     _forecastMode = -1;
+    _hubDayIndex = -1;
     _mapDetailModes = [NSMutableSet set];
     _mapDetailCache = [NSMutableDictionary dictionary];
-    if (!fixture) for (id mode in [defaults arrayForKey:@"mapDetailModes"])
-        if ([mode isKindOfClass:NSNumber.class] && [mode integerValue]>=0 && [mode integerValue]<=4) [_mapDetailModes addObject:mode];
+    // Lenses are a session disclosure. A previous launch must not reopen them as map chips.
+    // Fixture runs leave the owner's standard defaults alone; a private suite still drops the key.
+    NSUserDefaults *prefs = [self chartPreferences];
+    if (prefs && (prefs != NSUserDefaults.standardUserDefaults || !fixture))
+        [prefs removeObjectForKey:@"mapDetailModes"];
     _rainLayer = fixture || ![defaults objectForKey:@"chartRain"] || [defaults boolForKey:@"chartRain"];
     _aerodromeCode = fixture ? @"" : ([defaults stringForKey:@"homeAerodrome"] ?: @"");
     _previewIndex = -1;
     _shownLeft = -1;
     _shownRight = -1;
+    _liveLabelMinute = -1;
+    const char *clock = getenv("ISOBAR_CHECK_NOW");
+    if (clock && clock[0]) {
+        NSDate *fixed = [[NSISO8601DateFormatter new] dateFromString:[NSString stringWithUTF8String:clock]];
+        if (fixed) _chartNow = fixed;
+    }
+    if ([defaults objectForKey:kForecastPausedKey]) _forecastPaused = [defaults boolForKey:kForecastPausedKey];
+    if ([defaults objectForKey:kPlaybackSpeedKey]) {
+        NSInteger speed = [defaults integerForKey:kPlaybackSpeedKey];
+        if (speed >= IsobarLiveSpeedSlow && speed <= IsobarLiveSpeedFast) _liveSpeed = (IsobarLiveSpeed)speed;
+    }
+    [IsobarLivePlayer retireEncodedMovies];
     const char *kiteEnv = getenv("ISOBAR_KITE");
     if (kiteEnv && kiteEnv[0] == '1') _kiteSpots = YES;
     const char *barbEnv = getenv("ISOBAR_BARBS");
@@ -2191,13 +2271,24 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     return self;
 }
 
+- (void)invalidateSurfaceTimers {
+    [_clock invalidate]; _clock = nil;
+    [_refreshTimer invalidate]; _refreshTimer = nil;
+    [_loopTimer invalidate]; _loopTimer = nil;
+    [_popoverLoopTimer invalidate]; _popoverLoopTimer = nil;
+    [_liveTimer invalidate]; _liveTimer = nil;
+    if (_watchingAppearance && _item.button) {
+        [_item.button removeObserver:self forKeyPath:@"effectiveAppearance"];
+        _watchingAppearance = NO;
+    }
+}
+
 - (void)dealloc {
+    [NSNotificationCenter.defaultCenter removeObserver:self name:NSWindowDidChangeOcclusionStateNotification object:nil];
     [_chartPreparationQueue cancelAllOperations];
-    [_loopTimer invalidate];
-    [_popoverLoopTimer invalidate];
+    [self invalidateSurfaceTimers];
     [_motionPreparation cancel];
-    if (_motionTimeObserver && _motionPlayer) [_motionPlayer removeTimeObserver:_motionTimeObserver];
-    [_motionPlayer pause];
+    [_live stopRendering];
     if (_keyMonitor) [NSEvent removeMonitor:_keyMonitor];
     if (_scrollMonitor) [NSEvent removeMonitor:_scrollMonitor];
     if (_pdfDoc) CGPDFDocumentRelease(_pdfDoc);
@@ -2286,6 +2377,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 
 - (void)rebuildSequence {
     if (_sourceECMWF) {
+        _prognosisUndated = NO;
         NSMutableArray *times = [NSMutableArray array];
         for (NSNumber *idx in _frameIndices) {
             NSDate *when = [_ownRun timeAtIndex:idx.integerValue];
@@ -2300,12 +2392,15 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
         return;
     }
     NSDate *analysisTime = nil;
-    NSArray *prog = _chartPDF.length ? PrognosisValidTimes(_chartPDF) : @[];
-    if (prog.count == 0 && _pdfDoc) {
-        NSMutableArray *fallback = [NSMutableArray array];
-        for (int i = 0; i < 8; i++)
-            [fallback addObject:[NSDate dateWithTimeIntervalSince1970:4102444800.0 + i * 43200.0]];
-        prog = fallback;
+    BOOL undated = NO;
+    NSArray *parsed = _chartPDF.length ? PrognosisValidTimes(_chartPDF) : @[];
+    NSArray *prog = BureauPanelTimes(parsed, _pdfDoc != NULL, &undated);
+    _prognosisUndated = undated;
+    if (undated) {
+        // Panel indexes only. These instants are never formatted.
+        NSMutableArray *spacers = [NSMutableArray array];
+        for (int i = 0; i < 8; i++) [spacers addObject:[NSDate dateWithTimeIntervalSince1970:i]];
+        prog = spacers;
     }
     BOOL slot = NO;
     NSArray *times = ChartSequenceTimes(nil, prog) ?: @[];
@@ -2401,7 +2496,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 
 - (NSString *)humanTitleForIndex:(NSInteger)index {
     if (index < 0 || index >= (NSInteger)_sequenceTimes.count) return @"";
-    return SituationTitle(_sequenceTimes[index], _chartNow ?: NSDate.date, OwnerZone()) ?: @"";
+    if (_prognosisUndated) return UndatedPanelLabel;
+    return SituationTitle(_sequenceTimes[index], _chartNow ?: NSDate.date, [self placeZone]) ?: @"";
 }
 
 - (NSString *)ecmwfPanelTitleForIndex:(NSInteger)index {
@@ -2413,6 +2509,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (NSInteger)previousPrognosisPanelForSequenceIndex:(NSInteger)index {
+    if (_prognosisUndated) return -1;
     if (index < 0 || index >= (NSInteger)_sequenceTimes.count) return -1;
     if (_hasAnalysisSlot && index == 0) return -1;
     return PreviousIssueIndex(_previousTimes, _sequenceTimes[index]);
@@ -2421,13 +2518,13 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 // All map/detail surfaces inspect the same instant. A hover has its own
 // restore point; rebuilding a panel must not silently switch it back to now.
 - (NSDate *)selectedForecastDate {
+    if (_prognosisUndated) return nil;
     if (_sequenceTimes.count>1) {
         double fraction=NAN;
         if (_timelinePreviewing) fraction=_timelinePreviewFraction;
-        else if (_motionSeeking) fraction=[self activeTimeline].progress;
         else if (_motionPendingFraction) fraction=_motionPendingFraction.doubleValue;
         else if (_scrubHasFraction) fraction=_scrubFraction;
-        else if (_motionPlayer && _motionMovieURL) fraction=CMTimeGetSeconds(_motionPlayer.currentTime)/[self motionMovieSpan];
+        else if (_live.playhead && (_live.playing || _live.holding || _live.seaming || _live.baseImage)) return _live.playhead;
         else if (_motionHasCursor) return [self motionDateAtFrame:_motionCursor];
         if (isfinite(fraction)) return [_sequenceTimes.firstObject dateByAddingTimeInterval:
             [_sequenceTimes.lastObject timeIntervalSinceDate:_sequenceTimes.firstObject]*MIN(1,MAX(0,fraction))];
@@ -2437,12 +2534,23 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (NSDate *)detailStartDate {
+    if (_prognosisUndated) return _chartNow ?: NSDate.date;
     NSDate *now=_chartNow ?: NSDate.date;
     NSDate *first=_sequenceTimes.firstObject;
     return first && [first compare:now]==NSOrderedAscending ? first : now;
 }
 - (double)detailHorizonHours {
-    return MIN(120,MAX(24,ceil([_sequenceTimes.lastObject timeIntervalSinceDate:[self detailStartDate]]/3600)+1));
+    if (_prognosisUndated) return 24;
+    NSDate *start = [self detailStartDate];
+    NSDate *end = nil;
+    for (NSDictionary *row in [self packFor:[self hubPlace]][@"series"]) {
+        NSDate *time = [row[@"time"] isKindOfClass:NSDate.class] ? row[@"time"] : nil;
+        if (time && (!end || [time compare:end] == NSOrderedDescending)) end = time;
+    }
+    if (!end || !start) return 24;
+    double hours = ceil([end timeIntervalSinceDate:start] / 3600.0);
+    if (!isfinite(hours) || hours < 24) return 24;
+    return MIN(168, hours);
 }
 
 - (void)updateForecastInspection:(NSDate *)date {
@@ -2499,8 +2607,203 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 - (BOOL)timelinePlaying { return _expandedMap ? _looping : _popoverPlaying; }
 - (void)setTimelinePlaying:(BOOL)playing { if (_expandedMap) _looping=playing; else _popoverPlaying=playing; }
 - (void)updateTimelineHeading:(NSDate *)date {
-    if (_expandedMap) _timeTitle.stringValue=[NSString stringWithFormat:@"%@ · %@",ForecastDay(date,_chartNow ?: NSDate.date,OwnerZone()),SituationClock(date,OwnerZone())];
-    else _leftTitle.attributedStringValue=[self popoverHeadingText:ForecastDay(date,_chartNow ?: NSDate.date,OwnerZone()) clock:SituationClock(date,OwnerZone()) kind:nil];
+    if (_prognosisUndated) {
+        if (_expandedMap) _timeTitle.stringValue = UndatedPanelLabel;
+        else _leftTitle.attributedStringValue = [self popoverHeadingText:UndatedPanelLabel clock:@"" kind:nil];
+        return;
+    }
+    if (_expandedMap) _timeTitle.stringValue=[NSString stringWithFormat:@"%@ · %@",ForecastDay(date,_chartNow ?: NSDate.date,[self placeZone]),SituationClock(date,[self placeZone])];
+    else _leftTitle.attributedStringValue=[self popoverHeadingText:ForecastDay(date,_chartNow ?: NSDate.date,[self placeZone]) clock:SituationClock(date,[self placeZone]) kind:nil];
+}
+
+- (OwnLayerOptions)liveLayerOptions {
+    OwnLayerOptions layers = {0};
+    layers.temperature = (int)_tempLayer;
+    layers.barbs = _barbs ? 1 : 0;
+    layers.rain = _rainLayer ? 1 : 0;
+    layers.bare = 1;
+    return layers;
+}
+
+- (double)liveModelIndexForDate:(NSDate *)date {
+    OwnRun *run = _ownRun;
+    if (!run || run.hours < 1 || !date) return 0;
+    if (run.hours == 1) return 0;
+    for (NSInteger i = 1; i < run.hours; i++) {
+        NSDate *end = [run timeAtIndex:i];
+        NSDate *start = [run timeAtIndex:i - 1];
+        if (!end || !start) continue;
+        if ([date compare:end] != NSOrderedDescending) {
+            NSTimeInterval span = [end timeIntervalSinceDate:start];
+            double fraction = span > 0 ? MIN(1, MAX(0, [date timeIntervalSinceDate:start] / span)) : 0;
+            return (i - 1) + fraction;
+        }
+    }
+    return run.hours - 1;
+}
+
+- (BOOL)livePlaybackAvailable {
+    return _sourceECMWF && _ownRun.hours > 1 && _sequenceTimes.count > 1;
+}
+
+- (NSSize)livePixelSize {
+    NSSize size = [self timelineChart].bounds.size;
+    CGFloat scale = MAX(1, [self backingScale]);
+    if (size.width < 2 || size.height < 2) size = NSMakeSize(580, 444);
+    return NSMakeSize(floor(size.width * scale), floor(size.height * scale));
+}
+
+- (void)ensureLivePlayer {
+    OwnLayerOptions layers = [self liveLayerOptions];
+    NSSize pixelSize = [self livePixelSize];
+    CGFloat scale = MIN(4, MAX(1, [self backingScale]));
+    BOOL created = _live == nil;
+    OwnLayerOptions previous = _live.layers;
+    NSSize previousSize = _live.pixelSize;
+    CGFloat previousScale = _live.scale;
+    if (!_live) _live = [IsobarLivePlayer new];
+    _live.hoursPerSecond = IsobarLiveHoursPerSecond(_liveSpeed);
+    _live.scale = scale;
+    _live.pixelSize = pixelSize;
+    _live.layers = layers;
+    BOOL layersChanged = !created && (previous.temperature != layers.temperature || previous.barbs != layers.barbs || previous.rain != layers.rain);
+    BOOL sizeChanged = !created && (!NSEqualSizes(previousSize, pixelSize) || fabs(previousScale - scale) > 0.01);
+    OwnRun *run = _ownRun;
+    __weak Controller *weak = self;
+    [_live configureRun:run start:_sequenceTimes.firstObject end:_sequenceTimes.lastObject now:(_chartNow ?: NSDate.date)
+        modelIndex:^double(NSDate *date) {
+            Controller *strong = weak;
+            return strong ? [strong liveModelIndexForDate:date] : 0;
+        }];
+    if (layersChanged || sizeChanged) [_live invalidateFrames];
+}
+
+- (void)scheduleLiveResize {
+    if (!_live.playing && !_live.holding) return;
+    [_liveSizeTimer invalidate];
+    __weak Controller *weak = self;
+    _liveSizeTimer = [NSTimer timerWithTimeInterval:0.15 repeats:NO block:^(NSTimer *timer) {
+        (void)timer;
+        Controller *strong = weak;
+        if (!strong || !strong->_live) return;
+        if (!strong->_live.playing && !strong->_live.holding) return;
+        [strong ensureLivePlayer];
+    }];
+    [NSRunLoop.mainRunLoop addTimer:_liveSizeTimer forMode:NSRunLoopCommonModes];
+}
+
+- (void)applyLiveFrame {
+    if (!_live.baseImage || _timelinePreviewing || _scrubHasFraction) return;
+    _liveDisplayTicks++;
+    [[self timelineChart] setLiveFrames:_live.baseImage next:_live.nextImage opacity:_live.nextOpacity];
+    NSDate *date = _live.playhead;
+    if (!date) return;
+    TimelineStrip *strip = [self activeTimeline];
+    double progress = [self motionFractionForDate:date];
+    if (fabs(strip.progress - progress) > 0.0000001) {
+        strip.progress = progress;
+        NSInteger nearest = 0;
+        NSTimeInterval best = DBL_MAX;
+        for (NSInteger i = 0; i < (NSInteger)_sequenceTimes.count; i++) {
+            NSTimeInterval distance = fabs([_sequenceTimes[i] timeIntervalSinceDate:date]);
+            if (distance < best) { best = distance; nearest = i; }
+        }
+        strip.leftIndex = nearest;
+        strip.rightIndex = nearest;
+        strip.needsDisplay = YES;
+        if (_expandedMap) _panelIndex = nearest;
+    }
+    NSInteger minute = (NSInteger)floor(date.timeIntervalSince1970 / 60.0);
+    if (minute == _liveLabelMinute) return;
+    _liveLabelMinute = minute;
+    [self updateTimelineHeading:date];
+    [self updateForecastInspection:date];
+    [self timelineChart].mapDetails = [self mapDetailsAtTime:date];
+}
+
+- (void)startLiveTimer {
+    if (_liveTimer) return;
+    _liveTickAt = NSProcessInfo.processInfo.systemUptime;
+    __weak Controller *weak = self;
+    _liveTimer = [NSTimer timerWithTimeInterval:1.0 / 30.0 repeats:YES block:^(NSTimer *timer) {
+        Controller *strong = weak;
+        if (!strong) { [timer invalidate]; return; }
+        if (![strong mapIsVisible]) {
+            [strong noteMapVisibility];
+            return;
+        }
+        NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+        NSTimeInterval dt = now - strong->_liveTickAt;
+        strong->_liveTickAt = now;
+        if (strong->_timelinePreviewing || strong->_scrubHasFraction) return;
+        [strong->_live tick:dt];
+        [strong applyLiveFrame];
+    }];
+    [NSRunLoop.mainRunLoop addTimer:_liveTimer forMode:NSRunLoopCommonModes];
+}
+
+- (void)startLivePlaybackFromDate:(NSDate *)date {
+    if (![self livePlaybackAvailable]) return;
+    [self ensureLivePlayer];
+    [_scrubRenderer cancelRequests];
+    _scrubHasFraction = NO;
+    _timelinePreviewing = NO;
+    _liveLabelMinute = -1;
+    [_live playFromDate:date ?: (_chartNow ?: NSDate.date)];
+    [self setTimelinePlaying:YES];
+    [self startLiveTimer];
+    [self applyLiveFrame];
+    [self updatePopoverPlayControl];
+}
+
+- (void)pauseLivePlayback {
+    [_liveSizeTimer invalidate];
+    _liveSizeTimer = nil;
+    [_live pause];
+    [_liveTimer invalidate];
+    _liveTimer = nil;
+    [self setTimelinePlaying:NO];
+    [self updatePopoverPlayControl];
+}
+
+- (void)setForecastPaused:(BOOL)paused {
+    _forecastPaused = paused;
+    [[self chartPreferences] setBool:paused forKey:kForecastPausedKey];
+}
+
+- (BOOL)mapIsVisible {
+    if (_expandedMap) {
+        if (!_chartWindow.isVisible) return NO;
+        if (_chartWindow.screen && (_chartWindow.occlusionState & NSWindowOcclusionStateVisible) == 0) return NO;
+        return YES;
+    }
+    if (!self.popover.isShown) return NO;
+    NSWindow *window = self.popover.contentViewController.view.window;
+    if (window.screen && (window.occlusionState & NSWindowOcclusionStateVisible) == 0) return NO;
+    return YES;
+}
+
+- (void)noteMapVisibility {
+    if (![self mapIsVisible]) {
+        [_liveTimer invalidate];
+        _liveTimer = nil;
+        [_live stopRendering];
+        _popoverPlaying = NO;
+        _looping = NO;
+        [self updatePopoverPlayControl];
+        return;
+    }
+    if (_forecastPaused || ![self allowsAutomaticEvolution]) return;
+    if (![self timelinePlaying] && [self livePlaybackAvailable])
+        [self startLivePlaybackFromDate:_chartNow ?: NSDate.date];
+}
+
+- (void)choosePlaybackSpeed:(NSPopUpButton *)sender {
+    NSInteger speed = sender.selectedTag;
+    if (speed < IsobarLiveSpeedSlow || speed > IsobarLiveSpeedFast) speed = IsobarLiveSpeedSlow;
+    _liveSpeed = (IsobarLiveSpeed)speed;
+    [[self chartPreferences] setInteger:speed forKey:kPlaybackSpeedKey];
+    _live.hoursPerSecond = IsobarLiveHoursPerSecond(_liveSpeed);
 }
 
 - (void)cancelMotionPreparation {
@@ -2517,12 +2820,12 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     _timelinePreviewing = NO;
     _evolutionOnOpenPending = NO;
     _motionResetToNow = NO; _motionPendingFraction = nil;
-    _motionSeekGeneration++; _motionSeeking = NO; _motionQueuedFraction = nil;
-    [_motionPlayer.currentItem cancelPendingSeeks];
+    [_scrubRenderer cancelRequests];
+    _scrubHasFraction = NO;
     _popoverPlaying = NO;
     [_popoverLoopTimer invalidate];
     _popoverLoopTimer = nil;
-    [_motionPlayer pause];
+    [self pauseLivePlayback];
     if (!_looping) [self cancelMotionPreparation];
     [self updatePopoverPlayControl];
 }
@@ -2533,12 +2836,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     [self stopChartLoop];
     [self cancelMotionPreparation];
     _motionFrames = nil;
-    if (_motionTimeObserver && _motionPlayer) [_motionPlayer removeTimeObserver:_motionTimeObserver];
-    _motionTimeObserver = nil;
-    [_motionPlayer pause];
-    _motionPlayer = nil;
-    _motionMovieURL = nil;
-    _motionSeeking = NO; _motionSeekGeneration++;
+    [_live stopRendering];
+    _live = nil;
     _motionHasCursor = NO;
     _motionResetToNow = NO;
     _motionPendingFraction = nil;
@@ -2546,12 +2845,6 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (NSDate *)motionDateAtFrame:(NSUInteger)frame {
-    if (_motionPlayer && _motionMovieURL && _sequenceTimes.count > 1) {
-        double seconds = CMTimeGetSeconds(_motionPlayer.currentTime);
-        if (!isfinite(seconds)) return nil;
-        return [_sequenceTimes.firstObject dateByAddingTimeInterval:
-            [_sequenceTimes.lastObject timeIntervalSinceDate:_sequenceTimes.firstObject] * MIN(1, MAX(0, seconds/[self motionMovieSpan]))];
-    }
     NSUInteger segment = frame / kMotionIntervals;
     NSInteger index = MIN((NSInteger)_sequenceTimes.count - 1, _motionStartIndex + (NSInteger)segment);
     if (index < 0) return nil;
@@ -2563,8 +2856,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 - (void)retitleMotionField:(NSTextField *)field frame:(NSUInteger)frame {
     if (!field) return;
     NSDate *date = [self motionDateAtFrame:frame];
-    field.attributedStringValue = [self popoverHeadingText:ForecastDay(date, _chartNow ?: NSDate.date, OwnerZone())
-        clock:SituationClock(date, OwnerZone()) kind:nil];
+    field.attributedStringValue = [self popoverHeadingText:ForecastDay(date, _chartNow ?: NSDate.date, [self placeZone])
+        clock:SituationClock(date, [self placeZone]) kind:nil];
     field.toolTip = @"Frames interpolated between forecast maps";
 }
 
@@ -2602,122 +2895,10 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     if (_popoverPlaying) [self showPopoverMotionFrame:[self motionFrameNow]];
 }
 
-- (double)motionMovieFPS {
-    // Player-item tracks are already loaded for playback; avoid synchronous
-    // asset-track loading on every timeline tick.
-    for (AVPlayerItemTrack *track in _motionPlayer.currentItem.tracks) {
-        if (![track.assetTrack.mediaType isEqualToString:AVMediaTypeVideo]) continue;
-        double fps = track.assetTrack.nominalFrameRate;
-        if (isfinite(fps) && fps >= 1) return fps;
-    }
-    return 60; // Isobar's generated movie rate, also used while preparing.
-}
-
-- (double)motionMovieSpan {
-    AVPlayerItem *item = _motionPlayer.currentItem;
-    double duration = CMTimeGetSeconds(item.duration);
-    if (!isfinite(duration) || duration <= 0) duration = 30;
-    double fps = [self motionMovieFPS];
-    return MAX(.001, duration - 1.0 / fps);
-}
-
-- (void)updateRawMovieTime:(CMTime)time {
-    if (_motionSeeking || !CMTIME_IS_NUMERIC(time)) return;
-    double seconds = MAX(0, CMTimeGetSeconds(time));
-    double span = [self motionMovieSpan];
-    double movieProgress = MIN(1.0, MAX(0.0, seconds / span));
-    NSDate *base = [_ownRun timeAtIndex:[self hourForSequenceIndex:_motionStartIndex]];
-    NSDate *last = [_ownRun timeAtIndex:[self hourForSequenceIndex:(NSInteger)_sequenceTimes.count - 1]];
-    if (!base || !last) return;
-    NSDate *date = [base dateByAddingTimeInterval:[last timeIntervalSinceDate:base] * movieProgress];
-    double fps = [self motionMovieFPS];
-    NSUInteger frame = (NSUInteger)MAX(0, floor(seconds * fps));
-    _motionCursor = frame; _motionHasCursor = YES;
-    [self activeTimeline].progress = movieProgress;
-    NSInteger nearest = 0; NSTimeInterval nearestDistance = DBL_MAX;
-    for (NSInteger i = 0; i < (NSInteger)_sequenceTimes.count; i++) {
-        NSTimeInterval distance = fabs([_sequenceTimes[i] timeIntervalSinceDate:date]);
-        if (distance < nearestDistance) { nearest = i; nearestDistance = distance; }
-    }
-    [self activeTimeline].leftIndex = nearest; [self activeTimeline].rightIndex = nearest;
-    [self activeTimeline].needsDisplay = YES;
-    // Point readings use their hourly sample; both headings show the actual
-    // selected minute while the underlying field moves continuously.
-    NSDate *displayDate = [NSDate dateWithTimeIntervalSince1970:round(date.timeIntervalSince1970/3600)*3600];
-    if (!_motionCursorFullscreen) {
-        _leftChart.mapDetails = [self mapDetailsAtTime:displayDate];
-        [self updateForecastInspection:date];
-        _leftTitle.attributedStringValue = [self popoverHeadingText:ForecastDay(date, _chartNow ?: NSDate.date, OwnerZone())
-            clock:SituationClock(date, OwnerZone()) kind:nil];
-    } else {
-        PDFCropView *panel = (PDFCropView *)_singleScroll.documentView;
-        _panelIndex=nearest;
-        panel.mapDetails = [self mapDetailsAtTime:displayDate];
-        _timeTitle.stringValue = [NSString stringWithFormat:@"%@ · %@",
-            ForecastDay(date, _chartNow ?: NSDate.date, OwnerZone()), SituationClock(date, OwnerZone())];
-    }
-    if (seconds >= span - .0001 && !_motionQueuedFraction) {
-        // Ambient playback wraps to the current weather. A manually selected
-        // endpoint stays still, and an expired forecast never loops in place.
-        double nowFraction = [self motionFractionForDate:(_chartNow ?: NSDate.date)];
-        if ((_popoverPlaying || _looping) && nowFraction < 1) {
-            [self seekPopoverMovieFraction:nowFraction];
-            return;
-        }
-        _popoverPlaying = NO;
-        _looping = NO;
-        [_motionPlayer pause];
-        [self updatePopoverPlayControl];
-    }
-}
-
 - (void)startPreparedMotion {
-    if (!_motionFrames.count && !_motionMovieURL) return;
-    // The movie is for playback. Leave the raw renderer in control during
-    // hover and drag, including when encoding finishes mid-interaction.
+    if (!_motionFrames.count) return;
     if (([self activeTimeline].pointerScrubbing || _scrubHasFraction || _timelinePreviewing) &&
         !_popoverPlaying && !_looping) return;
-    if (_motionMovieURL) {
-        [_scrubRenderer cancelRequests];
-        _scrubHasFraction = NO;
-        if (_motionTimeObserver && _motionPlayer) [_motionPlayer removeTimeObserver:_motionTimeObserver];
-        BOOL newPlayer = !_motionPlayer;
-        if (newPlayer) {
-            _motionPlayer = [AVPlayer playerWithURL:_motionMovieURL];
-            // This is a fully encoded local file, with nothing to buffer from
-            // the network. Start promptly after a seek, including at 60 fps.
-            _motionPlayer.automaticallyWaitsToMinimizeStalling = NO;
-            _motionPlayer.allowsExternalPlayback = NO;
-        }
-        PDFCropView *target = [self timelineChart];
-        [target attachMoviePlayer:_motionPlayer];
-        _motionCursorFullscreen = _expandedMap;
-        __weak Controller *weak = self;
-        _motionTimeObserver = [_motionPlayer addPeriodicTimeObserverForInterval:CMTimeMake(1, 30)
-            queue:dispatch_get_main_queue() usingBlock:^(CMTime time) {
-                Controller *strong = weak;
-                if (!strong || strong->_motionSeeking || !CMTIME_IS_NUMERIC(time)) return;
-                [strong updateRawMovieTime:time];
-            }];
-        if (_motionResetToNow || _motionPendingFraction) {
-            double fraction = _motionResetToNow ? [self motionFractionForDate:(_chartNow ?: NSDate.date)] : _motionPendingFraction.doubleValue;
-            _motionResetToNow = NO; _motionPendingFraction = nil;
-            [self seekPopoverMovieFraction:fraction];
-        } else if (newPlayer && _sourceECMWF && _ownRun.hours > 1) {
-            NSInteger selectedHour = [self hourForSequenceIndex:MAX(_motionStartIndex, _pair.left)];
-            NSInteger firstHour = [self hourForSequenceIndex:_motionStartIndex];
-            NSInteger lastHour = [self hourForSequenceIndex:(NSInteger)_sequenceTimes.count - 1];
-            if (selectedHour >= firstHour && lastHour > firstHour) {
-                double fraction = (double)(selectedHour - firstHour) / (double)(lastHour - firstHour);
-                [self seekPopoverMovieFraction:fraction];
-            }
-        }
-        if (!newPlayer && !_motionSeeking && (_popoverPlaying || _looping) && CMTimeGetSeconds(_motionPlayer.currentTime) >= [self motionMovieSpan] - .001)
-            [self seekPopoverMovieFraction:[self motionFractionForDate:(_chartNow ?: NSDate.date)]];
-        [self playMotionWhenReady];
-        [self updatePopoverPlayControl];
-        return;
-    }
     NSInteger index = _looping ? _panelIndex : _pair.left;
     _motionOffset = _motionHasCursor && _motionCursorFullscreen == _looping ? _motionCursor : (NSUInteger)MAX(0, index - _motionStartIndex) * kMotionIntervals;
     _motionEpoch = NSProcessInfo.processInfo.systemUptime;
@@ -2744,84 +2925,6 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     [self updatePopoverPlayControl];
 }
 
-- (void)playMotionWhenReady {
-    AVPlayer *player = _motionPlayer;
-    if (!player || _motionSeeking || (!_popoverPlaying && !_looping)) return;
-    if (player.status == AVPlayerStatusFailed || player.currentItem.status == AVPlayerItemStatusFailed) {
-        _motionError = @"Animation unavailable"; _popoverPlaying = NO; _looping = NO;
-        [self updatePopoverPlayControl]; return;
-    }
-    if (player.status == AVPlayerStatusReadyToPlay && player.currentItem.status == AVPlayerItemStatusReadyToPlay) {
-        double duration = CMTimeGetSeconds(player.currentItem.duration);
-        [player playImmediatelyAtRate:(float)MIN(1.0, MAX(.25, duration / kEvolutionDuration))];
-        return;
-    }
-    __weak Controller *weak = self;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.05 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        Controller *strong = weak;
-        if (strong && strong->_motionPlayer == player) [strong playMotionWhenReady];
-    });
-}
-
-- (NSString *)motionMovieKey {
-    NSString *run = _runDate ? [NSString stringWithFormat:@"%.0f", _runDate.timeIntervalSince1970] : @"run";
-    NSInteger first = [self hourForSequenceIndex:_motionStartIndex];
-    NSInteger last = [self hourForSequenceIndex:MAX(_motionStartIndex, (NSInteger)_sequenceTimes.count - 1)];
-    return [NSString stringWithFormat:@"v5-120s-60fps-%@-%ld-%ld-t%ld-b%d-r%d", run, (long)first, (long)last,
-        (long)_tempLayer, _barbs, _rainLayer];
-}
-
-- (void)prepareRawMotionMovie {
-    if (!_ownRun || _sequenceTimes.count < 2) return;
-    NSInteger first = [self hourForSequenceIndex:_motionStartIndex];
-    NSInteger last = [self hourForSequenceIndex:(NSInteger)_sequenceTimes.count - 1];
-    if (first < 0 || last <= first) { _motionError = @"Animation source times are unavailable"; return; }
-    NSString *directory = [[@"~/Library/Caches/Isobar/motion" stringByExpandingTildeInPath] stringByStandardizingPath];
-    [NSFileManager.defaultManager createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:NULL];
-    NSURL *url = [NSURL fileURLWithPath:[directory stringByAppendingPathComponent:[[self motionMovieKey] stringByAppendingPathExtension:@"mp4"]]];
-    if ([NSFileManager.defaultManager fileExistsAtPath:url.path]) {
-        AVAsset *cached = [AVURLAsset URLAssetWithURL:url options:nil];
-        if (CMTIME_IS_NUMERIC(cached.duration) && CMTimeGetSeconds(cached.duration) >= kEvolutionDuration - .5) {
-            _motionMovieURL = url;
-            [self startPreparedMotion];
-            return;
-        }
-        [NSFileManager.defaultManager removeItemAtURL:url error:NULL];
-    }
-    NSURL *temporaryURL = [NSURL fileURLWithPath:[directory stringByAppendingPathComponent:
-        [NSString stringWithFormat:@".%@.%@.tmp.mp4", url.lastPathComponent, NSUUID.UUID.UUIDString]]];
-    _motionPreparing = YES;
-    _motionError = nil;
-    NSUInteger generation = ++_motionGeneration;
-    NSProgress *progress = [NSProgress progressWithTotalUnitCount:7200];
-    _motionPreparation = progress;
-    [self updatePopoverPlayControl];
-    OwnLayerOptions layers = {0};
-    layers.temperature = (int)_tempLayer; layers.barbs = _barbs; layers.rain = _rainLayer;
-    OwnRun *movieRun = _ownRun;
-    __weak Controller *weak = self;
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        NSString *error = nil;
-        BOOL okay = IsobarWriteRawMovie(movieRun, temporaryURL, first, last, 60, kEvolutionDuration, layers, progress, &error);
-        if (okay) okay = [NSFileManager.defaultManager moveItemAtURL:temporaryURL toURL:url error:NULL];
-        if (!okay) [NSFileManager.defaultManager removeItemAtURL:temporaryURL error:NULL];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            Controller *strong = weak;
-            if (!strong || generation != strong->_motionGeneration || progress.cancelled) return;
-            strong->_motionPreparing = NO; strong->_motionPreparation = nil;
-            if (!okay) {
-                strong->_motionError = error ?: @"Animation could not be prepared";
-                strong->_popoverPlaying = NO; strong->_looping = NO;
-                strong->_motionResetToNow = NO; strong->_motionPendingFraction = nil;
-                [strong updatePopoverPlayControl];
-                return;
-            }
-            strong->_motionMovieURL = url;
-            [strong startPreparedMotion];
-        });
-    });
-}
-
 - (void)prepareMotion {
     if (!MotionEnabled() && !_sourceECMWF) { _looping=NO; _popoverPlaying=NO; return; }
     if (_motionFrames.count) { [self startPreparedMotion]; return; }
@@ -2831,7 +2934,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     _motionStartIndex = (!_sourceECMWF && _hasAnalysisSlot) ? 1 : 0;
     NSMutableArray<NSDictionary *> *specs = [NSMutableArray array];
     if (_sourceECMWF) {
-        [self prepareRawMotionMovie];
+        [self startLivePlaybackFromDate:[self selectedForecastDate] ?: (_chartNow ?: NSDate.date)];
         return;
     }
     NSData *pdf = [_chartPDFDrawn copy];
@@ -2922,6 +3025,13 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     if (_expandedMap) [self layoutChartToolbarIn:_chartWindow.contentView height:42];
 }
 
+- (NSDate *)dateForMotionFraction:(double)fraction {
+    NSDate *first = _sequenceTimes.firstObject, *last = _sequenceTimes.lastObject;
+    if (!first || !last) return _chartNow ?: NSDate.date;
+    fraction = MIN(1, MAX(0, fraction));
+    return [first dateByAddingTimeInterval:[last timeIntervalSinceDate:first] * fraction];
+}
+
 - (void)resetPopoverToNow {
     [self endChartComparison];
     [_scrubRenderer cancelRequests];
@@ -2930,12 +3040,15 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     _evolutionOnOpenPending = _ownRun.hours < 2;
     if (_evolutionOnOpenPending) return;
     [self useRawForecastForMotion];
-    [self stopChartLoop];
-    _motionResetToNow = YES;
+    [self setForecastPaused:NO];
+    _motionResetToNow = NO;
     _motionPendingFraction = nil;
+    if ([self livePlaybackAvailable]) {
+        [self startLivePlaybackFromDate:_chartNow ?: NSDate.date];
+        return;
+    }
     [self setTimelinePlaying:YES];
-    if (_motionMovieURL) [self startPreparedMotion];
-    else [self prepareMotion];
+    [self prepareMotion];
     [self updatePopoverPlayControl];
 }
 
@@ -2944,23 +3057,34 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (void)beginPopoverEvolution {
-    if ([self allowsAutomaticEvolution]) [self resetPopoverToNow];
+    if (![self allowsAutomaticEvolution] || _forecastPaused) return;
+    if (_ownRun.hours > 0 && _ownRun.hours < 2) {
+        _evolutionOnOpenPending = YES;
+        return;
+    }
+    [self noteMapVisibility];
 }
 
 - (void)inspectPopoverMovieFraction:(double)fraction {
     [self endChartComparison];
+    BOOL keep = [self timelinePlaying];
     _timelinePreviewing = NO;
     _evolutionOnOpenPending = NO;
     if (_ownRun.hours < 2) { [self seekPopoverMovieFraction:fraction]; return; }
     [self useRawForecastForMotion];
     if (_sequenceTimes.count < 2) return;
-    [self setTimelinePlaying:NO];
-    [_motionPlayer pause];
-    _motionResetToNow = NO;
     fraction = MIN(1, MAX(0, fraction));
+    _motionResetToNow = NO;
+    _motionPendingFraction = nil;
+    if (keep && !_forecastPaused && [self livePlaybackAvailable]) {
+        [_scrubRenderer cancelRequests];
+        _scrubHasFraction = NO;
+        [self startLivePlaybackFromDate:[self dateForMotionFraction:fraction]];
+        return;
+    }
+    [self pauseLivePlayback];
     _motionPendingFraction = @(fraction);
     [self showStaticTimelineFraction:fraction];
-    if (!_motionMovieURL) [self prepareMotion];
     [self updatePopoverPlayControl];
 }
 
@@ -3029,8 +3153,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
         [surface setPins:nil];
         surface.mapDetails = [strong mapDetailsAtTime:date];
         [strong updateForecastInspection:date];
-        strong->_leftTitle.attributedStringValue = [strong popoverHeadingText:ForecastDay(date, strong->_chartNow ?: NSDate.date, OwnerZone())
-            clock:SituationClock(date, OwnerZone()) kind:nil];
+        strong->_leftTitle.attributedStringValue = [strong popoverHeadingText:ForecastDay(date, strong->_chartNow ?: NSDate.date, [strong placeZone])
+            clock:SituationClock(date, [strong placeZone]) kind:nil];
     }];
 }
 
@@ -3038,44 +3162,45 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     if (_sequenceTimes.count < 2) return;
     if (!isfinite(fraction)) {
         if (!_timelinePreviewing) return;
-        // Leaving the strip commits the inspected time. A narrow hover target
+        // Leaving the strip keeps the inspected time. A narrow hover target
         // must never bounce the map back to Now when the pointer slips off.
         double selected = isfinite(_timelinePreviewFraction) ? _timelinePreviewFraction
             : _timelinePreviewRestoreFraction;
+        BOOL resume = _timelinePreviewWasPlaying && !_forecastPaused;
         _timelinePreviewing = NO;
-        [self setTimelinePlaying:_timelinePreviewWasPlaying];
         _motionResetToNow = NO;
-        _motionPendingFraction = @(selected);
-        if ([self timelinePlaying] && _motionMovieURL && _motionPlayer) {
-            [_scrubRenderer cancelRequests];
-            _scrubHasFraction = NO;
-            _motionPendingFraction = nil;
-            [[self timelineChart] attachMoviePlayer:_motionPlayer];
-            [self seekPopoverMovieFraction:selected];
-        } else if ([self timelinePlaying]) {
-            if (_motionMovieURL) [self startPreparedMotion];
-            else if (!_motionPreparing) [self prepareMotion];
+        _motionPendingFraction = nil;
+        [_scrubRenderer cancelRequests];
+        _scrubHasFraction = NO;
+        if (resume && [self livePlaybackAvailable]) {
+            [self startLivePlaybackFromDate:[self dateForMotionFraction:selected]];
+        } else if (resume) {
+            [self setTimelinePlaying:YES];
+            if (!_motionPreparing) [self prepareMotion];
+        } else {
+            _motionPendingFraction = @(selected);
+            [self showStaticTimelineFraction:selected];
+            [self setTimelinePlaying:NO];
         }
         [self updatePopoverPlayControl];
         return;
     }
     if (!_timelinePreviewing) {
-        _timelinePreviewRestoreFraction = _motionResetToNow ? [self motionFractionForDate:(_chartNow ?: NSDate.date)]
-            : _motionPendingFraction ? _motionPendingFraction.doubleValue
-            : _motionSeeking ? [self activeTimeline].previewRestoreFraction
-            : _motionPlayer ? CMTimeGetSeconds(_motionPlayer.currentTime) / [self motionMovieSpan]
+        _timelinePreviewRestoreFraction = _live.playhead ? [self motionFractionForDate:_live.playhead]
             : [self activeTimeline].previewRestoreFraction;
-        if (!isfinite(_timelinePreviewRestoreFraction)) _timelinePreviewRestoreFraction = 0;
+        if (!isfinite(_timelinePreviewRestoreFraction)) _timelinePreviewRestoreFraction = [self activeTimeline].progress;
         _timelinePreviewWasPlaying = [self timelinePlaying];
         _timelinePreviewFraction = NAN;
         _timelinePreviewing = YES;
+        [_live pause];
+        [_liveTimer invalidate];
+        _liveTimer = nil;
     }
     fraction = MIN(1, MAX(0, fraction));
     if (isfinite(_timelinePreviewFraction) && fabs(fraction - _timelinePreviewFraction) < .000001) return;
     [self endChartComparison];
     _timelinePreviewFraction = fraction;
     [self setTimelinePlaying:NO];
-    [_motionPlayer pause];
     _motionResetToNow = NO;
     _motionPendingFraction = @(fraction);
     [self showStaticTimelineFraction:fraction];
@@ -3085,8 +3210,14 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 - (void)togglePopoverPlayback:(id)sender {
     (void)sender;
     _timelinePreviewing = NO;
-    if (_popoverPlaying) { [self stopPopoverPlayback]; return; }
+    if ([self timelinePlaying]) {
+        [self setForecastPaused:YES];
+        [self stopPopoverPlayback];
+        if (_expandedMap) [self stopChartLoop];
+        return;
+    }
     if (_sequenceTimes.count < 2 || !_pair.valid) return;
+    [self setForecastPaused:NO];
     if (!_sourceECMWF && _ownRun.hours > 0) {
         _sourceECMWF = YES;
         [[self chartPreferences] setObject:@"ecmwf" forKey:@"chartSource"];
@@ -3094,6 +3225,10 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
         [self rebuildSequence];
         [self ensurePair];
         if (self.popover.shown) [self rebuildContent];
+    }
+    if ([self livePlaybackAvailable]) {
+        [self startLivePlaybackFromDate:[self selectedForecastDate]];
+        return;
     }
     [self stopChartLoop];
     _popoverPlaying = YES;
@@ -3103,14 +3238,13 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 
 - (void)stepPopoverPair:(NSInteger)delta {
     _motionHasCursor = NO;
-    if (_motionMovieURL) [self invalidateMotion];
-    else [self stopPopoverPlayback];
     if (!_pair.valid || delta == 0) return;
     ChartPair next = StepChartPair(_pair, delta, (NSInteger)_sequenceTimes.count);
     if (next.left == _pair.left && next.right == _pair.right) return;
     _pair = next;
     _pairPinned = YES;
     if (self.popover.shown) [self rebuildContent];
+    if ([self timelinePlaying]) [self applyLiveFrame];
 }
 
 - (void)stepPairButton:(NSButton *)sender {
@@ -3119,8 +3253,6 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 
 - (void)selectPopoverIndex:(NSInteger)index {
     _motionHasCursor = NO;
-    if (_motionMovieURL) [self invalidateMotion];
-    else [self stopPopoverPlayback];
     NSInteger count = (NSInteger)_sequenceTimes.count;
     if (count < 2 || index < 0 || index >= count) return;
     ChartPair next = index >= count - 1
@@ -3134,12 +3266,14 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 
 - (NSString *)relativeForSequenceIndex:(NSInteger)index {
     if (index < 0 || index >= (NSInteger)_sequenceTimes.count) return @"";
-    return ForecastDay(_sequenceTimes[index], _chartNow ?: NSDate.date, OwnerZone()) ?: @"";
+    if (_prognosisUndated) return UndatedPanelLabel;
+    return ForecastDay(_sequenceTimes[index], _chartNow ?: NSDate.date, [self placeZone]) ?: @"";
 }
 
 - (NSString *)clockForSequenceIndex:(NSInteger)index {
     if (index < 0 || index >= (NSInteger)_sequenceTimes.count) return @"";
-    return SituationClock(_sequenceTimes[index], OwnerZone()) ?: @"";
+    if (_prognosisUndated) return @"";
+    return SituationClock(_sequenceTimes[index], [self placeZone]) ?: @"";
 }
 
 - (NSAttributedString *)popoverHeadingText:(NSString *)relative clock:(NSString *)clock kind:(NSString *)kind {
@@ -3389,11 +3523,11 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 
 - (NSDictionary *)homeAerodrome {
     NSString *code = _aerodromeCode;
-    if (!code.length) {
-        NSString *state = [self shownLocations].firstObject[@"state"];
-        code = [state isEqual:@"NSW"] ? @"YSSY" : @"YPPH";
-    }
-    NSMutableDictionary *field = [(AerodromeForCode(code) ?: AerodromeForCode(@"YPPH")) mutableCopy];
+    NSDictionary *known = nil;
+    if (code.length) known = AerodromeForCode(code) ?: @{@"code": code, @"name": code, @"timeZone": @"", @"runways": @[]};
+    else known = AerodromeForState([self shownLocations].firstObject[@"state"]);
+    if (!known) return @{};
+    NSMutableDictionary *field = [known mutableCopy];
     // Published runway headings are true bearings, matching the model wind.
     if (_publishedStore) {
         NSMutableArray *pairs = [NSMutableArray array];
@@ -3422,16 +3556,17 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
         [spots addObject:copy];
     }
     if (_publishedStore && !hasForecast) return @{@"line": @"Kite forecast unavailable", @"detail": @""};
-    return KitePlan(spots, _chartNow ?: NSDate.date, OwnerZone(), _kiteMin, _kiteMax) ?: @{};
+    return KitePlan(spots, _chartNow ?: NSDate.date, [self placeZone], _kiteMin, _kiteMax) ?: @{};
 }
 
 - (NSDictionary *)currentFlyPlan {
     NSDictionary *place = [self shownLocations].firstObject;
     NSDictionary *field = [self homeAerodrome];
+    if (![field[@"code"] length]) return @{@"line": @"Aerodrome not set", @"detail": @""};
     NSArray *series = _publishedStore ? _airportSeries : [self packFor:place][@"series"];
     if (_publishedStore && ![field[@"ends"] count])
         return @{@"line": [NSString stringWithFormat:@"%@ runway data unavailable", field[@"code"]], @"detail": @""};
-    NSMutableDictionary *plan = [(FlyPlan(series, _chartNow ?: NSDate.date, OwnerZone(), field) ?: @{}) mutableCopy];
+    NSMutableDictionary *plan = [(FlyPlan(series, _chartNow ?: NSDate.date, [self placeZone], field) ?: @{}) mutableCopy];
     if (_publishedStore) {
         plan[@"line"] = [NSString stringWithFormat:@"%@ · %@", field[@"code"], plan[@"line"] ?: @""];
         NSMutableString *detail = [NSMutableString stringWithString:plan[@"detail"] ?: @""];
@@ -3446,10 +3581,15 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 
 - (void)retitleChartField:(NSTextField *)field index:(NSInteger)index {
     if (!field) return;
+    if (_prognosisUndated) {
+        field.attributedStringValue = [self popoverHeadingText:UndatedPanelLabel clock:@"" kind:nil];
+        field.toolTip = nil;
+        return;
+    }
     NSDate *when = (index >= 0 && index < (NSInteger)_sequenceTimes.count) ? _sequenceTimes[index] : nil;
     NSDate *now = _chartNow ?: NSDate.date;
-    NSString *phrase = when ? (ForecastDay(when, now, OwnerZone()) ?: @"") : @"";
-    NSString *clock = when ? (SituationClock(when, OwnerZone()) ?: @"") : @"";
+    NSString *phrase = when ? (ForecastDay(when, now, [self placeZone]) ?: @"") : @"";
+    NSString *clock = when ? (SituationClock(when, [self placeZone]) ?: @"") : @"";
     if (!phrase.length && ![self chartsReady]) {
         phrase = _dataStale ? @"Chart unavailable" : @"Chart loading";
         clock = @"";
@@ -3460,7 +3600,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (void)previewSequenceIndex:(NSInteger)index {
-    if (_popoverPlaying || _motionMovieURL) return;
+    if ([self timelinePlaying]) return;
     if (!_leftChart || !_leftChart.superview) return;
     NSInteger show = index < 0 ? _shownLeft : index;
     if (show < 0 || show == _leftChart.sequenceIndex) return;
@@ -3472,35 +3612,10 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 
 - (void)seekPopoverMovieFraction:(double)fraction {
     fraction = MIN(1.0, MAX(0.0, fraction));
-    if (_motionPlayer && _motionMovieURL) {
-        AVPlayer *player = _motionPlayer;
-        [self activeTimeline].progress = fraction;
-        [self activeTimeline].needsDisplay = YES;
-        // Let the decoder finish each frame. Cancelling on every mouse move
-        // can starve display entirely; keep only the newest pending target.
-        if (_motionSeeking) { _motionQueuedFraction = @(fraction); return; }
-        NSUInteger seekGeneration = ++_motionSeekGeneration;
-        _motionSeeking = YES;
-        __weak Controller *weak = self;
-        [player pause];
-        [player seekToTime:CMTimeMakeWithSeconds(fraction * [self motionMovieSpan], 60000)
-            toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero completionHandler:^(BOOL finished) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    Controller *strong = weak;
-                    if (!strong || strong->_motionPlayer != player || strong->_motionSeekGeneration != seekGeneration) return;
-                    strong->_motionSeeking = NO;
-                    if (finished) [strong updateRawMovieTime:player.currentTime];
-                    NSNumber *queued = strong->_motionQueuedFraction;
-                    strong->_motionQueuedFraction = nil;
-                    if (queued) {
-                        [strong seekPopoverMovieFraction:queued.doubleValue];
-                        return;
-                    }
-                    if (fraction >= 1) { strong->_popoverPlaying = NO; strong->_looping = NO; }
-                    if (finished) [strong playMotionWhenReady];
-                    [strong updatePopoverPlayControl];
-                });
-            }];
+    if ([self livePlaybackAvailable]) {
+        NSDate *date = [self dateForMotionFraction:fraction];
+        if ([self timelinePlaying]) [self startLivePlaybackFromDate:date];
+        else [self showStaticTimelineFraction:fraction];
         return;
     }
     if (_expandedMap) { [self showStaticTimelineFraction:fraction]; return; }
@@ -3524,7 +3639,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 
 - (void)saveMapDetails {
     [_mapDetailCache removeAllObjects];
-    [[self chartPreferences] setObject:[_mapDetailModes.allObjects sortedArrayUsingSelector:@selector(compare:)] forKey:@"mapDetailModes"];
+    [[self chartPreferences] removeObjectForKey:@"mapDetailModes"];
     if (_expandedMap) [self layoutChartWindow];
 }
 
@@ -3627,7 +3742,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
             }
         }
         NSMutableDictionary *record=[@{@"kind":kind,@"place":name,@"value":value,
-            @"summary":[NSString stringWithFormat:@"%@ · %@ · %@\n%@ · %@",name,kind,value,source,sampleTime ? PopoverClockLabel(sampleTime,OwnerZone()) : @"No sample for this map time"]} mutableCopy];
+            @"summary":[NSString stringWithFormat:@"%@ · %@ · %@\n%@ · %@",name,kind,value,source,sampleTime ? PopoverClockLabel(sampleTime,[self placeZone]) : @"No sample for this map time"]} mutableCopy];
         if (direction) record[@"to"]=direction;
         if (sampleTime) record[@"time"]=sampleTime;
         [records addObject:record];
@@ -3638,8 +3753,9 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (void)selectChartLayer:(NSInteger)tag {
-    [self invalidateMotion];
     if (tag < 0 || tag > 5 || ![self modelChartsReady]) return;
+    BOOL wasPlaying = [self timelinePlaying];
+    NSDate *playingAt = _live.playhead ?: [self selectedForecastDate];
     if (tag == 0 && !_sourceECMWF) return;
     if (tag == 5) {
         _rainLayer = !_rainLayer;
@@ -3660,6 +3776,11 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     if (self.popover.shown) [self rebuildContent];
     if (_expandedMap) [self layoutChartWindow];
     [self prepareChartImages];
+    if ([self livePlaybackAvailable]) {
+        [self ensureLivePlayer];
+        [_live invalidateFrames];
+        if (wasPlaying) [self startLivePlaybackFromDate:playingAt];
+    }
 }
 
 - (void)chooseLayerItem:(id)sender {
@@ -3707,11 +3828,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 - (void)chooseForecastMode:(NSButton *)sender {
     NSInteger mode = sender.tag;
     [_warningPop close];
-    BOOL closing = _forecastMode == mode;
-    _forecastMode = closing ? -1 : mode;
-    if (closing) [_mapDetailModes removeObject:@(mode)];
-    else [_mapDetailModes addObject:@(mode)];
-    [self saveMapDetails];
+    _forecastMode = _forecastMode == mode ? -1 : mode;
+    if (_expandedMap) [self layoutChartWindow];
     [self rebuildContent];
     [self focusForecastControl:mode];
 }
@@ -3794,13 +3912,14 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
         _noticesWindow.contentMinSize=NSMakeSize(620,360);
         _noticesView=[[AviationNoticesView alloc] initWithFrame:(NSRect){NSZeroPoint,size}];
         _noticesView.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
-        _noticesView.now=_chartNow ?: NSDate.date; _noticesView.timeZone=[self aviationTimeZone];
+        _noticesView.timeZone=[self aviationTimeZone];
         __weak Controller *weak=self;
         _noticesView.onClose=^{ Controller *strong=weak; if (strong) [strong->_noticesWindow close]; };
         _noticesView.onImport=^{ [weak importAviationNotices:nil]; };
         _noticesView.onNotac=^{ [weak connectAviationNotices]; };
         _noticesWindow.contentView=_noticesView; [_noticesWindow center];
     }
+    _noticesView.now=_chartNow ?: NSDate.date;
     _noticesView.notacKeySaved=getenv("ISOBAR_FIXTURES") == NULL && [_notacConnection loadToken:nil] != nil;
     _noticesView.timeZone=[self aviationTimeZone];
     _noticesView.notams=_notams ?: @{}; _noticesView.sigmets=_sigmets ?: @{};
@@ -3899,7 +4018,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (NSTimeZone *)aviationTimeZone {
-    return [NSTimeZone timeZoneWithName:[self homeAerodrome][@"timeZone"]] ?: OwnerZone();
+    return [NSTimeZone timeZoneWithName:[self homeAerodrome][@"timeZone"]] ?: [self placeZone];
 }
 
 - (NSView *)aviationForecastWithFrame:(NSRect)frame {
@@ -4159,12 +4278,95 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     return root;
 }
 
+- (NSDictionary *)hubPlace {
+    for (NSDictionary *place in [self shownLocations])
+        if ([place[@"geohash"] isEqual:_hubHash]) return place;
+    return [self shownLocations].firstObject;
+}
+
+- (NSTimeZone *)placeZone { return ZoneForPlace([self hubPlace]); }
+
+- (NSArray *)hubMenuPlaces {
+    NSMutableArray *sydney = [NSMutableArray array], *perth = [NSMutableArray array], *rest = [NSMutableArray array];
+    for (NSDictionary *place in [self shownLocations]) {
+        NSString *name = [place[@"name"] isKindOfClass:NSString.class] ? place[@"name"] : @"";
+        if ([name hasPrefix:@"Sydney"]) [sydney addObject:place];
+        else if ([name hasPrefix:@"Perth"]) [perth addObject:place];
+        else [rest addObject:place];
+    }
+    [sydney addObjectsFromArray:perth];
+    [sydney addObjectsFromArray:rest];
+    return sydney;
+}
+
+- (void)chooseHubPlace:(NSPopUpButton *)sender {
+    _hubHash = sender.selectedItem.representedObject ?: @"";
+    _hubDayIndex = -1;
+    [_mapDetailCache removeAllObjects];
+    if (_expandedMap) [self layoutChartWindow];
+    [self rebuildContent];
+}
+
+- (NSArray *)hubHoursForDay:(NSDictionary *)day {
+    NSDate *date = [day[@"date"] isKindOfClass:NSDate.class] ? day[@"date"] : nil;
+    if (!date) return @[];
+    NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+    calendar.timeZone = [self placeZone];
+    NSMutableArray *hours = [NSMutableArray array];
+    for (NSDictionary *row in [self packFor:[self hubPlace]][@"series"]) {
+        NSDate *time = [row[@"time"] isKindOfClass:NSDate.class] ? row[@"time"] : nil;
+        if (time && [calendar isDate:time inSameDayAsDate:date]) [hours addObject:row];
+    }
+    return hours;
+}
+
+- (void)selectHubDay:(NSInteger)index {
+    NSArray *days = [self packFor:[self hubPlace]][@"daily"];
+    if (![days isKindOfClass:NSArray.class] || index < 0 || index >= (NSInteger)days.count) return;
+    _hubDayIndex = index;
+    NSDate *date = [days[index][@"date"] isKindOfClass:NSDate.class] ? days[index][@"date"] : nil;
+    NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+    calendar.timeZone = [self placeZone];
+    NSDate *noon = date ? [calendar dateBySettingHour:12 minute:0 second:0 ofDate:date options:0] : nil;
+    if (noon && _sequenceTimes.count) {
+        NSDate *first = _sequenceTimes.firstObject, *last = _sequenceTimes.lastObject;
+        if ([noon compare:first] == NSOrderedAscending) noon = first;
+        if ([noon compare:last] == NSOrderedDescending) noon = last;
+        _timelinePreviewing = NO;
+        _scrubHasFraction = YES;
+        _scrubFraction = [self motionFractionForDate:noon];
+    }
+    [self rebuildContent];
+    if (_expandedMap) [self layoutChartWindow];
+}
+
+- (void)showHubWarning:(id)sender {
+    NSArray *warnings = [self packFor:[self hubPlace]][@"warnings"];
+    NSDictionary *warning = [warnings.firstObject isKindOfClass:NSDictionary.class] ? warnings.firstObject : nil;
+    NSString *text = warning[@"text"] ?: warning[@"shortTitle"] ?: warning[@"title"];
+    [self showWarningText:text relativeTo:sender];
+}
+
+- (DayStripView *)dayStripFrame:(NSRect)frame hours:(BOOL)hours {
+    DayStripView *strip = [DayStripView new];
+    strip.frame = frame;
+    strip.timeZone = [self placeZone];
+    NSArray *days = [self packFor:[self hubPlace]][@"daily"];
+    strip.days = [days isKindOfClass:NSArray.class] ? days : @[];
+    if (hours && _hubDayIndex >= 0 && _hubDayIndex < (NSInteger)strip.days.count)
+        strip.hours = [self hubHoursForDay:strip.days[_hubDayIndex]] ?: @[];
+    strip.selectedIndex = _hubDayIndex;
+    __weak Controller *weak = self;
+    strip.onSelect = ^(NSInteger index) { [weak selectHubDay:index]; };
+    return strip;
+}
+
 - (void)rebuildContent {
-    double seekingProgress = _motionSeeking ? _popoverTimeline.progress : NAN;
+    double seekingProgress = _scrubHasFraction ? _scrubFraction : (_motionPendingFraction ? _motionPendingFraction.doubleValue : NAN);
     PDFCropView *retainedMap=_leftChart;
     TimelineStrip *retainedTimeline=_popoverTimeline;
     retainedTimeline.preservesInteraction=YES;
-    BOOL keepMovie=retainedMap && _motionPlayer && _motionMovieURL && !_motionCursorFullscreen;
+    BOOL keepLive=retainedMap && _live.playing && !_timelinePreviewing && !_scrubHasFraction && !_expandedMap;
     _forecastGraph=nil; _forecastTime=nil; _forecastReading=nil;
     if (!self.popover) {
         self.popover = [NSPopover new];
@@ -4180,15 +4382,14 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     BOOL compact = budget.height < 640;
     NSString *fresh = [self chartFreshnessAt:now];
     NSFont *issuedFont = [NSFont systemFontOfSize:11 weight:NSFontWeightRegular];
-    CGFloat pad = 12;
-    // The taller timeline needs a little tighter compact chrome so the map
-    // keeps its 500px working width at the 1024x600 breakpoint.
-    CGFloat gutter = compact ? 7 : 10;
-    CGFloat titleH = 26;
-    CGFloat layerH = 26;
-    CGFloat timelineH = compact ? 80 : 120;
-    CGFloat cardH = 28;
-    CGFloat chrome = pad + titleH + 2 * gutter + layerH + gutter + timelineH + gutter + cardH + pad;
+    CGFloat pad = compact ? 8 : 12;
+    CGFloat gutter = compact ? 3 : 8;
+    CGFloat headerH = compact ? 42 : 56;
+    CGFloat stripH = (compact ? 50 : 64) + (_hubDayIndex >= 0 ? 22 : 0);
+    CGFloat layerH = compact ? 24 : 28;
+    CGFloat timelineH = compact ? 64 : 112;
+    // Four gutters: under the header, the strip, the map and the timeline.
+    CGFloat chrome = pad + headerH + 4 * gutter + stripH + timelineH + layerH + pad;
     CGFloat maxChartH = MAX(64, budget.height - chrome - (compact ? 4 : 0));
     CGFloat aspect = _sourceECMWF ? OwnChartMapAspect() : MSLPPopoverMapAspect();
     if (!(aspect > 0.4 && aspect < 4)) aspect = 1.33;
@@ -4198,30 +4399,29 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     // (selected) index is rendered here.
     CGFloat contentCap = MIN(budget.width, 980);
     CGFloat panelW = MIN(contentCap - 2 * pad, floor(maxChartH * aspect));
-    // Details never take height away from the map. Add a right-hand inspector
-    // when the screen has room; narrow screens use a focused detail surface.
+    // The map keeps its frame when a lens opens. A wide screen puts the lens
+    // beside it; a narrow screen lays the lens over the lower part of the map.
     CGFloat width = MAX(360,2*pad+panelW);
     width=MIN(width,budget.width);
     CGFloat panelH = panelW / aspect;
-    CGFloat inspectorW=MIN(420,budget.width-width-gutter);
-    BOOL sideInspector=_forecastMode>=0 && inspectorW>=360;
-    BOOL focusedInspector=_forecastMode>=0 && !sideInspector;
-    CGFloat totalWidth=sideInspector?width+gutter+inspectorW:width;
+    CGFloat inspectorGap=9;
+    CGFloat inspectorW=MIN(420,budget.width-width-inspectorGap);
+    BOOL sideInspector=_forecastMode>=0 && inspectorW>=200;
+    CGFloat totalWidth=sideInspector?width+inspectorGap+inspectorW:width;
 
     // Keep the live map's view/layer tree attached while changing inspectors.
-    // Replacing it makes AVPlayer wait for a fresh presentation surface.
     PopoverRootView *root=(id)self.popover.contentViewController.view;
     if (![root isKindOfClass:PopoverRootView.class])
         root=[[PopoverRootView alloc] initWithFrame:NSMakeRect(0,0,width,10)];
     for (NSView *child in [root.subviews copy])
         if (child!=retainedMap && child!=retainedTimeline) [child removeFromSuperview];
     retainedMap.hidden=NO; retainedTimeline.hidden=NO;
-    CGFloat observationsY=pad;
-    CGFloat y=pad+cardH+gutter;
+    CGFloat y=pad;
     NSDate *leftWhen = [self selectedForecastDate];
-    NSString *leftRelative = leftWhen ? (ForecastDay(leftWhen, now, OwnerZone()) ?: @"") : @"";
-    NSString *leftClock = leftWhen ? (SituationClock(leftWhen, OwnerZone()) ?: @"") : @"";
-    if (!leftRelative.length && ![self chartsReady]) {
+    NSString *leftRelative = leftWhen ? (ForecastDay(leftWhen, now, [self placeZone]) ?: @"") : @"";
+    NSString *leftClock = leftWhen ? (SituationClock(leftWhen, [self placeZone]) ?: @"") : @"";
+    if (_prognosisUndated) { leftRelative = UndatedPanelLabel; leftClock = @""; }
+    else if (!leftRelative.length && ![self chartsReady]) {
         leftRelative = _dataStale ? @"Chart unavailable" : @"Chart loading";
         leftClock = @"";
     }
@@ -4233,20 +4433,57 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
             NSTextField *title = [self popoverHeading:relative clock:clock kind:nil frame:frame];
             title.accessibilityIdentifier = identifier;
             NSDate *when = leftWhen;
-            NSString *offset = SituationOffset(when, now);
+            NSString *offset = _prognosisUndated ? @"" : SituationOffset(when, now);
             if (offset.length) title.toolTip = offset;
             return title;
         };
     PDFCropView *leftChart = nil;
     NSTextField *leftCap = nil;
-    CGFloat titleW = MAX(80, issuedX - gutter - pad);
-    leftCap = heading(leftRelative, leftClock, NSMakeRect(pad, y, titleW, titleH), @"popover.title.left");
+    NSDictionary *hub = [self hubPlace];
+    NSArray *hubWarnings = [self packFor:hub][@"warnings"];
+    BOOL warned = [hubWarnings isKindOfClass:NSArray.class] && hubWarnings.count > 0;
+    CGFloat warnW = warned ? 22 : 0;
+    CGFloat placeW = MIN(168, MAX(108, floor(width * 0.22)));
+    CGFloat obsX = pad + placeW + 6;
+    CGFloat obsW = width - pad - obsX - (warnW ? warnW + 4 : 0) - (issuedW ? issuedW + 6 : 0) - gear;
+    if (obsW < 160 && issuedW > 0) { issuedW = 0; issuedX = width - pad - gear; obsW = width - pad - obsX - (warnW ? warnW + 4 : 0) - gear; }
+    obsW = MAX(80, obsW);
+    NSPopUpButton *hubPlaces = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(pad, y + (headerH - 24) / 2, placeW, 24) pullsDown:NO];
+    hubPlaces.bordered = NO;
+    hubPlaces.font = [NSFont systemFontOfSize:13 weight:NSFontWeightSemibold];
+    hubPlaces.accessibilityIdentifier = @"hub.place";
+    hubPlaces.accessibilityLabel = @"Place";
+    for (NSDictionary *place in [self hubMenuPlaces]) {
+        [hubPlaces addItemWithTitle:place[@"name"] ?: @"Place"];
+        hubPlaces.lastItem.representedObject = place[@"geohash"] ?: @"";
+        if ([place[@"geohash"] isEqual:hub[@"geohash"]]) [hubPlaces selectItem:hubPlaces.lastItem];
+    }
+    hubPlaces.target = self;
+    hubPlaces.action = @selector(chooseHubPlace:);
+    [root addSubview:hubPlaces];
+    NSButton *hubObs = [self observationButtonForPlace:hub index:0 frame:NSMakeRect(obsX, y, obsW, headerH) identifier:@"popover.obs"];
+    [root addSubview:hubObs];
+    if (warned) {
+        NSButton *badge = [NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"exclamationmark.triangle.fill" accessibilityDescription:@"Warning"] target:self action:@selector(showHubWarning:)];
+        badge.bordered = NO;
+        badge.contentTintColor = NSColor.systemOrangeColor;
+        badge.frame = NSMakeRect(obsX + obsW + 4, y + (headerH - 22) / 2, 22, 22);
+        badge.accessibilityIdentifier = @"hub.warning";
+        badge.accessibilityLabel = @"Warning";
+        badge.toolTip = hubWarnings.firstObject[@"shortTitle"] ?: @"Warning";
+        [root addSubview:badge];
+    }
+    leftCap = heading(leftRelative, leftClock, NSMakeRect(pad, y + headerH - 1, 1, 1), @"popover.title.left");
     [root addSubview:leftCap];
-    y += titleH + gutter;
+    y += headerH + gutter;
+    DayStripView *dayStrip = [self dayStripFrame:NSMakeRect(pad, y, MAX(40, width - 2 * pad), stripH) hours:YES];
+    [root addSubview:dayStrip];
+    _dayStrip = dayStrip;
+    y += stripH + gutter;
     leftChart = retainedMap ?: [self popoverChartView:@"popover.chart"];
     CGFloat mapX = MAX(pad, floor((width - panelW) / 2.0));
     NSRect mapFrame=NSMakeRect(mapX,y,panelW,panelH);
-    if (keepMovie) {
+    if (keepLive) {
         leftChart.frame=mapFrame;
         if (leftChart.superview!=root) [root addSubview:leftChart];
     } else [self placePopoverChart:leftChart index:leftIndex frame:mapFrame in:root];
@@ -4259,10 +4496,10 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     _shownRight = -1;
     _previewIndex = -1;
 
-    if (fresh.length) {
+    if (fresh.length && issuedW > 0) {
         NSTextField *issue = [self label:fresh font:issuedFont
             color:NSColor.secondaryLabelColor
-            frame:NSMakeRect(issuedX, NSMinY(leftCap.frame), issuedW, titleH)];
+            frame:NSMakeRect(issuedX, pad + (headerH - 16) / 2, issuedW, 16)];
         issue.alignment = NSTextAlignmentRight;
         issue.lineBreakMode = NSLineBreakByClipping;
         issue.accessibilityIdentifier = @"popover.issued";
@@ -4280,18 +4517,19 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     settings.contentTintColor = NSColor.secondaryLabelColor;
     settings.toolTip = @"Settings";
     settings.accessibilityLabel = @"Settings";
-    settings.frame = NSMakeRect(width - pad - 22, NSMinY(leftCap.frame) + 2, 22, 22);
+    settings.frame = NSMakeRect(width - pad - 22, pad + (headerH - 22) / 2, 22, 22);
     settings.accessibilityIdentifier = @"popover.settings";
     [root addSubview:settings];
     NSButton *expand = [NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"arrow.up.left.and.arrow.down.right" accessibilityDescription:@"Expand map"] target:self action:@selector(openChartWindow)];
     expand.bordered = NO; expand.contentTintColor = NSColor.secondaryLabelColor;
-    expand.frame = NSMakeRect(width-pad-52, NSMinY(leftCap.frame)+2, 22, 22);
+    expand.frame = NSMakeRect(width-pad-52, pad + (headerH - 22) / 2, 22, 22);
     expand.accessibilityIdentifier = @"popover.expand"; expand.toolTip = @"Expand map";
     [root addSubview:expand];
 
     BOOL compactControls = width < 500;
     CGFloat layersW = compactControls ? 56 : 84;
-    NSPopUpButton *layers = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(pad, y, layersW, layerH) pullsDown:YES];
+    CGFloat lensY = y + timelineH + gutter;
+    NSPopUpButton *layers = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(pad, lensY, layersW, layerH) pullsDown:YES];
     layers.bordered = NO;
     layers.font = [NSFont systemFontOfSize:12 weight:NSFontWeightMedium];
     layers.menu = [self mapLayersMenu];
@@ -4299,8 +4537,9 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     [root addSubview:layers];
     CGFloat modesX = compactControls ? pad + layersW + 8 : width - pad - 344;
     CGFloat modesW = compactControls ? width - pad - modesX : 344;
-    FlippedView *modes = [[FlippedView alloc] initWithFrame:NSMakeRect(modesX, y, modesW, 26)];
+    FlippedView *modes = [[FlippedView alloc] initWithFrame:NSMakeRect(modesX, lensY, modesW, layerH)];
     modes.accessibilityIdentifier = @"popover.forecastMode";
+    modes.accessibilityLabel = @"Forecast lenses";
     NSArray *titles = @[@"Rain", @"Temperature", @"Kite", @"Surf", @"Fly"];
     NSArray *symbols=@[@"cloud.rain",@"thermometer.medium",@"wind",@"water.waves",@"airplane"];
     NSArray *values = @[@2, @4, @0, @3, @1];
@@ -4322,7 +4561,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
         button.layer.backgroundColor=[NSColor.controlAccentColor colorWithAlphaComponent:selected?.12:0].CGColor;
         CGFloat buttonWidth=(modesW-16)/5;
         if (compactControls) button.imagePosition=NSNoImage;
-        button.frame = NSMakeRect(modeX, 0, buttonWidth, 26);
+        button.frame = NSMakeRect(modeX, 0, buttonWidth, layerH);
         modeX += buttonWidth+4;
         button.accessibilityIdentifier = [@"forecast.toggle." stringByAppendingString:[titles[i] lowercaseString]];
         button.accessibilityLabel=titles[i]; button.toolTip=titles[i];
@@ -4334,11 +4573,11 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
         CGFloat keyRight = NSMinX(modes.frame) - gutter;
         NSView *key = [self makeChartKeyMaxWidth:keyRight - keyLeft window:NO];
         if (key && NSHeight(key.frame) <= layerH) {
-            key.frame = NSMakeRect(keyLeft, y, MIN(NSWidth(key.frame), keyRight - keyLeft), layerH);
+            key.frame = NSMakeRect(keyLeft, lensY, MIN(NSWidth(key.frame), keyRight - keyLeft), layerH);
             [root addSubview:key];
         }
     }
-    y += layerH + gutter;
+    // Timeline sits under the map. The lens bar (already framed at lensY) follows it.
 
     CGFloat buttonW = 22;
     BOOL rawMotion = _sourceECMWF && _ownRun.hours > 0;
@@ -4386,23 +4625,32 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     nowButton.accessibilityIdentifier=@"popover.now";
     nowButton.toolTip=@"Return to now and play forecast"; [root addSubview:nowButton];
     NSButton *next = stepButton(@"›", 1, canForward);
-    next.frame = NSMakeRect(totalWidth - pad - buttonW, y, buttonW, timelineH);
+    next.frame = NSMakeRect(width - pad - buttonW, y, buttonW, timelineH);
     next.accessibilityIdentifier = @"popover.next";
     [root addSubview:next];
     NSMutableArray *ticks = [NSMutableArray array];
     NSMutableArray *clocks = [NSMutableArray array];
     NSMutableArray *days = [NSMutableArray array];
     NSMutableArray *tips = [NSMutableArray array];
-    for (NSDate *time in _sequenceTimes) {
-        [ticks addObject:ForecastDay(time, now, OwnerZone()) ?: @""];
-        [clocks addObject:SituationClock(time, OwnerZone()) ?: @""];
-        [days addObject:@(SituationAnchorDay(time, OwnerZone()))];
+    for (NSUInteger i = 0; i < _sequenceTimes.count; i++) {
+        NSDate *time = _sequenceTimes[i];
+        if (_prognosisUndated) {
+            [ticks addObject:UndatedPanelLabel];
+            [clocks addObject:@""];
+            [days addObject:@(i)];
+            [tips addObject:@""];
+            continue;
+        }
+        [ticks addObject:ForecastDay(time, now, [self placeZone]) ?: @""];
+        [clocks addObject:SituationClock(time, [self placeZone]) ?: @""];
+        [days addObject:@(SituationAnchorDay(time, [self placeZone]))];
         [tips addObject:SituationOffset(time, now) ?: @""];
     }
     TimelineStrip *strip=retainedTimeline ?: [TimelineStrip new];
     strip.frame=NSMakeRect(pad+playW+nowW+buttonW,y,
-        MAX(40,totalWidth-2*pad-2*buttonW-playW-nowW),timelineH);
+        MAX(40,width-2*pad-2*buttonW-playW-nowW),timelineH);
     _popoverTimeline = strip;
+    strip.timeZone = [self placeZone];
     strip.times = _sequenceTimes;
     strip.labels = ticks;
     strip.clocks = clocks;
@@ -4425,39 +4673,19 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     };
     strip.onHover = ^(NSInteger index) { [weak previewSequenceIndex:index]; };
     if (strip.superview!=root) [root addSubview:strip];
-
-
-    NSArray *cards = [self cardPlaces];
-    CGFloat cardGap = 8;
-    NSInteger cardCount = MAX((NSInteger)cards.count, 1);
-    CGFloat cardW = (width - 2 * pad - cardGap * (cardCount - 1)) / cardCount;
-    for (NSInteger i = 0; i < (NSInteger)cards.count; i++) {
-        NSRect frame = NSMakeRect(pad + i * (cardW + cardGap), observationsY, cardW, cardH);
-        NSButton *button=[self observationButtonForPlace:cards[i] index:i frame:frame identifier:@"popover.obs"];
-        [root addSubview:button];
-    }
-    for (NSView *control in @[play, nowButton, prev, next, strip]) {
-        NSRect frame = control.frame; frame.origin.y = y; control.frame = frame;
-    }
-    y += timelineH + pad;
+    y = lensY + layerH + pad;
 
     if (_forecastMode>=0) {
         CGFloat naturalH=(_forecastMode==1?480:(_forecastMode==2?440:374));
-        CGFloat inspectorH=sideInspector?MIN(NSMaxY(leftChart.frame),naturalH):budget.height-pad-layerH-gutter;
-        NSView *inspector=[self forecastInspectorWithWidth:sideInspector?inspectorW:width height:inspectorH sharedTimeline:sideInspector];
-        inspector.frame=NSMakeRect(sideInspector?width+gutter:0,0,NSWidth(inspector.frame),inspectorH);
-        if (focusedInspector) {
-            // A narrow screen shows the selected detail at a useful size.
-            // Keep only the mode switcher and an explicit route back to the map.
-            for (NSView *child in root.subviews) child.hidden=(child!=modes);
-            for (NSView *child in inspector.subviews)
-                if ([child.accessibilityIdentifier isEqual:@"forecast.close"]) child.hidden=YES;
-            NSRect modeFrame=modes.frame; modeFrame.origin.y=budget.height-pad-layerH; modes.frame=modeFrame;
-            NSButton *back=[NSButton buttonWithTitle:@"‹ Map" target:self action:@selector(closeForecast:)];
-            back.bordered=NO; back.font=[NSFont systemFontOfSize:12 weight:NSFontWeightMedium];
-            back.frame=NSMakeRect(pad,NSMinY(modes.frame),compactControls?56:84,26);
-            back.accessibilityIdentifier=@"forecast.back"; [root addSubview:back];
-            y=budget.height;
+        NSView *inspector=nil;
+        if (sideInspector) {
+            CGFloat inspectorH=MIN(NSMaxY(leftChart.frame),naturalH);
+            inspector=[self forecastInspectorWithWidth:inspectorW height:inspectorH sharedTimeline:YES];
+            inspector.frame=NSMakeRect(width+inspectorGap,0,NSWidth(inspector.frame),inspectorH);
+        } else {
+            CGFloat overlayH=MIN(NSHeight(leftChart.frame)*0.55, MAX(120, NSHeight(leftChart.frame)*0.42));
+            inspector=[self forecastInspectorWithWidth:NSWidth(leftChart.frame) height:overlayH sharedTimeline:YES];
+            inspector.frame=NSMakeRect(NSMinX(leftChart.frame), NSMaxY(leftChart.frame)-overlayH, NSWidth(leftChart.frame), overlayH);
         }
         [root addSubview:inspector];
     }
@@ -4466,12 +4694,11 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
         self.popover.contentSize=NSMakeSize(totalWidth,y);
     if (self.popover.contentViewController.view!=root) self.popover.contentViewController.view=root;
     strip.preservesInteraction=NO;
-    if (_motionPlayer && _motionMovieURL && !_motionCursorFullscreen &&
-        !_timelinePreviewing && !_scrubHasFraction) {
-        [_leftChart attachMoviePlayer:_motionPlayer];
-        [self updateRawMovieTime:_motionPlayer.currentTime];
-    } else if (_timelinePreviewing) [self showStaticTimelineFraction:_timelinePreviewFraction];
+    if (keepLive) [self applyLiveFrame];
+    if (!_expandedMap && (_live.playing || _live.holding)) [self scheduleLiveResize];
+    else if (_timelinePreviewing) [self showStaticTimelineFraction:_timelinePreviewFraction];
     else if (_scrubHasFraction) [self showStaticTimelineFraction:_scrubFraction];
+    else if (_motionPendingFraction) [self showStaticTimelineFraction:_motionPendingFraction.doubleValue];
     else if (_motionHasCursor && !_motionCursorFullscreen) [self showPopoverMotionFrame:_motionCursor];
     [self updateBar];
 }
@@ -4492,8 +4719,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     if (self.popover.shown) {
         NSDate *date=[self selectedForecastDate];
         [self updateForecastInspection:date];
-        _leftTitle.attributedStringValue=[self popoverHeadingText:ForecastDay(date,_chartNow ?: NSDate.date,OwnerZone())
-            clock:SituationClock(date,OwnerZone()) kind:nil];
+        _leftTitle.attributedStringValue=[self popoverHeadingText:ForecastDay(date,_chartNow ?: NSDate.date,[self placeZone])
+            clock:SituationClock(date,[self placeZone]) kind:nil];
         for (NSView *view in self.popover.contentViewController.view.subviews)
             if ([view.accessibilityIdentifier isEqual:@"popover.issued"])
                 ((NSTextField *)view).stringValue=[self chartFreshnessAt:_chartNow ?: NSDate.date] ?: @"";
@@ -4510,9 +4737,6 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     }
     [self updateBar];
 }
-
-static NSColor *Ink(void) { return MSLPNSColour(MSLPColourInk()); }
-static NSColor *Paper(void) { return MSLPNSColour(MSLPColourPaper()); }
 
 // Silence a missing-prototype warning if the SDK header is not pulled in.
 extern char *getenv(const char *);
@@ -4598,8 +4822,21 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     NSDictionary *pack = [self packFor:place];
     NSDictionary *observation = [pack[@"obs"] isKindOfClass:NSDictionary.class] ? pack[@"obs"] : nil;
     NSDictionary *windModel = FooterWindModel(observation);
-    NSString *temp = [observation[@"airTemp"] isKindOfClass:NSNumber.class]
-        ? [NSString stringWithFormat:@"%.0f°", round([observation[@"airTemp"] doubleValue])] : @"—";
+    NSString *temp = @"—";
+    if ([observation[@"airTemp"] isKindOfClass:NSNumber.class])
+        temp = [NSString stringWithFormat:@"%.0f°", round([observation[@"airTemp"] doubleValue])];
+    else if (NSHeight(frame) >= 40) {
+        NSDate *moment = _chartNow ?: NSDate.date;
+        double nearest = DBL_MAX, model = 0; BOOL found = NO;
+        for (NSDictionary *row in pack[@"series"]) {
+            NSDate *time = [row[@"time"] isKindOfClass:NSDate.class] ? row[@"time"] : nil;
+            id value = row[@"temp"];
+            if (!time || ![value isKindOfClass:NSNumber.class] || !isfinite([value doubleValue])) continue;
+            double gap = fabs([time timeIntervalSinceDate:moment]);
+            if (gap < nearest) { nearest = gap; model = [value doubleValue]; found = YES; }
+        }
+        if (found) temp = [NSString stringWithFormat:@"%.0f°", round(model)];
+    }
     BOOL hasSpeed = [windModel[@"hasSpeed"] boolValue];
     NSString *speed = FooterWindSpeedLabel(windModel);
     NSString *warningMark = [pack[@"warnings"] count] ? @"  ⚠" : @"";
@@ -4608,10 +4845,11 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     button.bordered = NO;
     button.alignment = NSTextAlignmentLeft;
     button.font = [NSFont systemFontOfSize:12];
+    BOOL hero = NSHeight(frame) >= 40;
     NSMutableAttributedString *attributed=[[NSMutableAttributedString alloc] initWithString:
         [NSString stringWithFormat:@"%@  ",temp]
-        attributes:@{NSFontAttributeName:[NSFont monospacedDigitSystemFontOfSize:22 weight:NSFontWeightSemibold],NSForegroundColorAttributeName:NSColor.labelColor}];
-    [attributed appendAttributedString:[[NSAttributedString alloc] initWithString:
+        attributes:@{NSFontAttributeName:[NSFont monospacedDigitSystemFontOfSize:hero ? (NSHeight(frame) >= 52 ? 40 : 34) : 22 weight:hero ? NSFontWeightLight : NSFontWeightSemibold],NSForegroundColorAttributeName:NSColor.labelColor}];
+    if (!hero) [attributed appendAttributedString:[[NSAttributedString alloc] initWithString:
         [NSString stringWithFormat:@"%@ · now  ",place[@"name"] ?: @""]
         attributes:@{NSFontAttributeName:[NSFont systemFontOfSize:12 weight:NSFontWeightMedium],NSForegroundColorAttributeName:NSColor.secondaryLabelColor}]];
     NSImage *windImage = FooterWindImage(windModel);
@@ -4640,6 +4878,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
 }
 
 - (void)layoutStatusBar:(NSArray *)places bar:(MSLPRect)bar in:(NSView *)root {
+    (void)places;
     if (!_statusBar) {
         _statusBar = [[PassThroughView alloc] initWithFrame:NSZeroRect];
         _statusBar.accessibilityIdentifier = @"fullscreen.statusBar";
@@ -4647,32 +4886,58 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     _statusBar.frame = RectOf(bar);
     if (_statusBar.superview!=root) [root addSubview:_statusBar];
     for (NSView *child in _statusBar.subviews.copy) [child removeFromSuperview];
-    CGFloat inset=18, gap=12;
-    NSInteger count=places.count;
-    CGFloat cardW=count?MIN(440,(bar.width-2*inset-gap*(count-1))/count):0;
-    for (NSInteger i=0;i<count;i++) {
-        NSRect frame=NSMakeRect(inset+i*(cardW+gap),0,cardW,34);
-        NSButton *button=[self observationButtonForPlace:places[i] index:i frame:frame
-            identifier:i==0?@"fullscreen.status":@"fullscreen.observation"];
+    CGFloat inset = 12;
+    NSFont *font = [NSFont systemFontOfSize:11];
+    NSString *runLine = [self chartFreshnessAt:_chartNow ?: NSDate.date];
+    CGFloat runW = runLine.length ? MIN(240, TextWidth(runLine, font) + 8) : 0;
+    if (runW > bar.width - 2 * inset - 80) runW = MAX(0, bar.width - 2 * inset - 80);
+    NSArray *titles = @[@"Rain", @"Temp", @"Kite", @"Surf", @"Fly"];
+    NSArray *symbols = @[@"cloud.rain", @"thermometer.medium", @"wind", @"water.waves", @"airplane"];
+    NSArray *values = @[@2, @4, @0, @3, @1];
+    NSArray *names = @[@"rain", @"temp", @"kite", @"surf", @"fly"];
+    CGFloat gap = 4;
+    CGFloat buttonsW = bar.width - 2 * inset - runW - (runW ? 12 : 0);
+    CGFloat buttonW = (buttonsW - gap * (titles.count - 1)) / titles.count;
+    if (buttonW > 88) buttonW = 88;
+    if (buttonW < 36) buttonW = 36;
+    CGFloat y = MAX(0, floor((bar.height - 22) / 2));
+    CGFloat x = inset;
+    for (NSUInteger i = 0; i < titles.count; i++) {
+        if (x + buttonW > bar.width - inset - runW) break;
+        NSButton *button = [NSButton buttonWithTitle:titles[i] target:self action:@selector(chooseForecastMode:)];
+        button.buttonType = NSButtonTypePushOnPushOff;
+        button.bordered = NO;
+        button.image = [NSImage imageWithSystemSymbolName:symbols[i] accessibilityDescription:nil];
+        button.imagePosition = buttonW >= 64 ? NSImageLeading : NSImageOnly;
+        button.imageScaling = NSImageScaleProportionallyDown;
+        button.font = [NSFont systemFontOfSize:12 weight:NSFontWeightMedium];
+        button.tag = [values[i] integerValue];
+        BOOL selected = _forecastMode == button.tag;
+        button.state = selected ? NSControlStateValueOn : NSControlStateValueOff;
+        button.contentTintColor = selected ? NSColor.controlAccentColor : NSColor.secondaryLabelColor;
+        button.frame = NSMakeRect(x, y, buttonW, 22);
+        button.accessibilityIdentifier = [@"fullscreen.lens." stringByAppendingString:names[i]];
+        button.accessibilityLabel = titles[i];
+        button.toolTip = titles[i];
         [_statusBar addSubview:button];
+        x += buttonW + gap;
     }
-    NSFont *font=[NSFont systemFontOfSize:11];
-    NSString *runLine=[self chartFreshnessAt:_chartNow ?: NSDate.date];
-    CGFloat runW=MIN(bar.width-2*inset,TextWidth(runLine,font)+8);
-    if (runLine.length) {
-        NSTextField *run=[self label:runLine font:font color:NSColor.secondaryLabelColor
-            frame:NSMakeRect(bar.width-inset-runW,42,runW,18)];
-        run.alignment=NSTextAlignmentRight;
-        run.accessibilityIdentifier=@"fullscreen.run";
-        [_statusBar addSubview:run];
-    }
-    if (_sourceECMWF) {
-        CGFloat room=bar.width-2*inset-runW-gap;
-        NSView *key=room>=96?[self makeChartKeyMaxWidth:room window:NO]:nil;
-        if (key) {
-            key.frame=NSMakeRect(inset,38,MIN(NSWidth(key.frame),room),MIN(28,NSHeight(key.frame)));
+    if (_sourceECMWF && bar.width - x - runW - inset >= 96) {
+        CGFloat room = bar.width - x - runW - inset - 8;
+        NSView *key = [self makeChartKeyMaxWidth:room window:NO];
+        if (key && NSHeight(key.frame) <= bar.height) {
+            key.frame = NSMakeRect(x, MAX(0, floor((bar.height - NSHeight(key.frame)) / 2)),
+                MIN(NSWidth(key.frame), room), NSHeight(key.frame));
             [_statusBar addSubview:key];
         }
+    }
+    if (runLine.length && runW >= 40) {
+        NSTextField *run = [self label:runLine font:font color:NSColor.secondaryLabelColor
+            frame:NSMakeRect(bar.width - inset - runW, MAX(0, floor((bar.height - 16) / 2)), runW, 16)];
+        run.alignment = NSTextAlignmentRight;
+        run.lineBreakMode = NSLineBreakByTruncatingTail;
+        run.accessibilityIdentifier = @"fullscreen.run";
+        [_statusBar addSubview:run];
     }
 }
 
@@ -4683,7 +4948,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     _timeTitle.selectable = NO;
     _timeTitle.bezeled = NO;
     _timeTitle.drawsBackground = NO;
-    _timeTitle.textColor = Ink();
+    _timeTitle.textColor = NSColor.labelColor;
     _timeTitle.font = [NSFont systemFontOfSize:15 weight:NSFontWeightSemibold];
     _timeTitle.alignment = NSTextAlignmentCenter;
     _timeTitle.lineBreakMode = NSLineBreakByTruncatingTail;
@@ -4740,11 +5005,14 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
 }
 
 - (void)layoutChartToolbarIn:(NSView *)root height:(CGFloat)height {
+    if (height < 56) height = 56;
     if (!_chartToolbar) {
         _chartToolbar = [FlippedView new];
         _chartToolbar.accessibilityIdentifier = @"fullscreen.toolbar";
     }
     CGFloat width = NSWidth(root.bounds);
+    CGFloat controlY = floor((height - 28) / 2);
+    CGFloat menuY = floor((height - 26) / 2);
     NSResponder *responder = root.window.firstResponder;
     NSString *focusedControl = [responder isKindOfClass:NSView.class] &&
         [(NSView *)responder isDescendantOf:_chartToolbar] ? [(NSView *)responder accessibilityIdentifier] : nil;
@@ -4757,7 +5025,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
             NSButton *button = [NSButton buttonWithImage:image target:self action:@selector(chartToolbarAction:)];
             button.bordered = NO;
             button.imageScaling = NSImageScaleProportionallyDown;
-            button.frame = NSMakeRect(x, 6, w, 28);
+            button.frame = NSMakeRect(x, controlY, w, 28);
             button.tag = tag;
             button.toolTip = tip;
             button.accessibilityLabel = tip;
@@ -4767,7 +5035,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
             return button;
         };
     control(@"close", @"xmark", @"Close map (⌘W)", 8, width-40, 28);
-    NSPopUpButton *layerMenu=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(width-300,8,84,26) pullsDown:YES];
+    NSPopUpButton *layerMenu=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(width-300,menuY,84,26) pullsDown:YES];
     layerMenu.menu=[self mapLayersMenu]; layerMenu.bordered=NO; layerMenu.font=[NSFont systemFontOfSize:12];
     layerMenu.accessibilityIdentifier=@"fullscreen.layers"; [_chartToolbar addSubview:layerMenu];
     control(@"zoomOut", @"minus.magnifyingglass", @"Zoom out (⌘−)", 4, width-212, 28).enabled = _panelZoom > 1;
@@ -4783,9 +5051,38 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     compare.enabled = canCompare;
     compare.contentTintColor = _comparing ? NSColor.controlAccentColor : NSColor.labelColor;
     compare.state = _comparing ? NSControlStateValueOn : NSControlStateValueOff;
+    CGFloat rightLimit = width - 312;
+    CGFloat placeW = MIN(180, MAX(108, floor(rightLimit * 0.34)));
+    if (14 + placeW + 88 > rightLimit) placeW = MAX(88, rightLimit - 108);
+    NSPopUpButton *places = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(14, menuY, placeW, 26) pullsDown:NO];
+    places.bordered = NO;
+    places.font = [NSFont systemFontOfSize:15 weight:NSFontWeightSemibold];
+    places.accessibilityIdentifier = @"fullscreen.place";
+    places.accessibilityLabel = @"Place";
+    NSDictionary *hub = [self hubPlace];
+    for (NSDictionary *place in [self hubMenuPlaces]) {
+        [places addItemWithTitle:place[@"name"] ?: @"Place"];
+        places.lastItem.representedObject = place[@"geohash"] ?: @"";
+        if ([place[@"geohash"] isEqual:hub[@"geohash"]]) [places selectItem:places.lastItem];
+    }
+    places.target = self;
+    places.action = @selector(chooseHubPlace:);
+    [_chartToolbar addSubview:places];
+    CGFloat cursor = NSMaxX(places.frame) + 8;
+    CGFloat tempW = MIN(168, rightLimit - cursor - 8);
+    CGFloat tempH = MIN(52, height - 4);
+    if (tempW >= 72) {
+        NSButton *temperature = [self observationButtonForPlace:hub index:0
+            frame:NSMakeRect(cursor, floor((height - tempH) / 2), tempW, tempH)
+            identifier:@"fullscreen.temperature"];
+        [_chartToolbar addSubview:temperature];
+        cursor = NSMaxX(temperature.frame) + 8;
+    }
     NSTextField *title = [self timeTitleField];
-    title.hidden = NO;
-    title.frame = NSMakeRect(14, 10, MAX(40, width-324), 22);
+    CGFloat titleW = rightLimit - cursor;
+    title.hidden = titleW < 80;
+    title.textColor = NSColor.labelColor;
+    title.frame = NSMakeRect(cursor, floor((height - 22) / 2), MAX(0, titleW), 22);
     title.alignment=NSTextAlignmentLeft;
     title.stringValue = [self singleTitleForIndex:_panelIndex] ?: @"";
     title.toolTip = title.stringValue;
@@ -4816,12 +5113,21 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     _chartTimeline.accessibilityIdentifier=@"fullscreen.timeline";
     _chartTimeline.times=_sequenceTimes;
     NSMutableArray *labels=[NSMutableArray array], *clocks=[NSMutableArray array], *days=[NSMutableArray array], *tips=[NSMutableArray array];
-    for (NSDate *date in _sequenceTimes) {
-        [labels addObject:ForecastDay(date,_chartNow ?: NSDate.date,OwnerZone()) ?: @""];
-        [clocks addObject:SituationClock(date,OwnerZone()) ?: @""];
-        [days addObject:@(SituationAnchorDay(date,OwnerZone()))];
+    for (NSUInteger i = 0; i < _sequenceTimes.count; i++) {
+        NSDate *date = _sequenceTimes[i];
+        if (_prognosisUndated) {
+            [labels addObject:UndatedPanelLabel];
+            [clocks addObject:@""];
+            [days addObject:@(i)];
+            [tips addObject:@""];
+            continue;
+        }
+        [labels addObject:ForecastDay(date,_chartNow ?: NSDate.date,[self placeZone]) ?: @""];
+        [clocks addObject:SituationClock(date,[self placeZone]) ?: @""];
+        [days addObject:@(SituationAnchorDay(date,[self placeZone]))];
         [tips addObject:SituationOffset(date,_chartNow ?: NSDate.date) ?: @""];
     }
+    _chartTimeline.timeZone=[self placeZone];
     _chartTimeline.labels=labels; _chartTimeline.clocks=clocks;
     _chartTimeline.dayKeys=days; _chartTimeline.tips=tips;
     _chartTimeline.leftIndex=_panelIndex; _chartTimeline.rightIndex=_panelIndex;
@@ -4841,10 +5147,10 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     NSRect bounds=root.bounds;
     if (NSWidth(bounds)<200 || NSHeight(bounds)<200) return;
     _panelIndex=MIN(MAX(0,_panelIndex),(NSInteger)_sequenceTimes.count-1);
-    CGFloat toolbarH=42, timelineH=112;
-    CGFloat footerH=72;
+    CGFloat toolbarH=56, stripH=50, timelineH=112, footerH=36, gap=4;
     CGFloat timelineY=NSHeight(bounds)-footerH-timelineH;
-    NSRect area=NSMakeRect(12,toolbarH+4,NSWidth(bounds)-24,MAX(40,timelineY-toolbarH-10));
+    CGFloat mapTop=toolbarH+stripH+gap;
+    NSRect area=NSMakeRect(8,mapTop,NSWidth(bounds)-16,MAX(40,timelineY-gap-mapTop));
     double sw=580,sh=444;
     if (!_sourceECMWF) {
         CGRect crop=CGRectZero;
@@ -4858,20 +5164,38 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     panel.hidden=NO;
     NSRect scrollFrame=_panelZoom<=1.001?RectOf(fitted):area;
     if (!NSEqualRects(scroll.frame,scrollFrame)) scroll.frame=scrollFrame;
+    if (!_fullscreenDays) _fullscreenDays = [DayStripView new];
+    _fullscreenDays.frame = NSMakeRect(8, toolbarH, NSWidth(bounds) - 16, stripH);
+    _fullscreenDays.timeZone = [self placeZone];
+    NSArray *days = [self packFor:[self hubPlace]][@"daily"];
+    _fullscreenDays.days = [days isKindOfClass:NSArray.class] ? days : @[];
+    _fullscreenDays.hours = nil;
+    _fullscreenDays.selectedIndex = _hubDayIndex;
+    __weak Controller *weakDays = self;
+    _fullscreenDays.onSelect = ^(NSInteger index) { [weakDays selectHubDay:index]; };
+    if (_fullscreenDays.superview != root) [root addSubview:_fullscreenDays];
     if (scroll.documentView!=panel) scroll.documentView=panel;
     NSSize mapSize=NSMakeSize(fitted.width*MAX(1,_panelZoom),fitted.height*MAX(1,_panelZoom));
     if (!NSEqualSizes(panel.frame.size,mapSize)) [panel setFrameSize:mapSize];
     panel.sequenceIndex=_panelIndex;
-    BOOL hasMovie=_motionPlayer && _motionMovieURL && !_comparing &&
-        !_timelinePreviewing && !_scrubHasFraction;
-    if (!hasMovie && !_scrubHasFraction) [self assignChart:panel index:_panelIndex bare:YES compare:YES];
-    if (hasMovie) { [panel attachMoviePlayer:_motionPlayer]; _motionCursorFullscreen=YES; }
+    BOOL hasLive=_live.playing && !_comparing && !_timelinePreviewing && !_scrubHasFraction;
+    if (!hasLive && !_scrubHasFraction) [self assignChart:panel index:_panelIndex bare:YES compare:YES];
     [self layoutStatusBar:[self cardPlaces] bar:(MSLPRect){0,NSHeight(bounds)-footerH,NSWidth(bounds),footerH} in:root];
     [self layoutChartToolbarIn:root height:toolbarH];
     [self layoutChartTransportIn:root y:timelineY height:timelineH];
-    if (hasMovie && !_motionSeeking) [self updateRawMovieTime:_motionPlayer.currentTime];
-    else if (!_comparing && (_scrubHasFraction || _motionSeeking)) [self updateTimelineHeading:[self selectedForecastDate]];
+    for (NSView *child in root.subviews.copy)
+        if ([child.accessibilityIdentifier isEqual:@"forecast.inspector"]) [child removeFromSuperview];
+    if (_forecastMode >= 0 && NSHeight(scroll.frame) >= 140) {
+        CGFloat overlayH = MIN(220, MAX(120, NSHeight(scroll.frame) * 0.42));
+        NSView *inspector = [self forecastInspectorWithWidth:NSWidth(scroll.frame) height:overlayH sharedTimeline:YES];
+        inspector.frame = NSMakeRect(NSMinX(scroll.frame), NSMaxY(scroll.frame) - overlayH, NSWidth(scroll.frame), overlayH);
+        inspector.clipsToBounds = YES;
+        [root addSubview:inspector];
+    }
+    if (hasLive) [self applyLiveFrame];
+    else if (!_comparing && _scrubHasFraction) [self updateTimelineHeading:[self selectedForecastDate]];
     if (_compareNote.superview) [root addSubview:_compareNote];
+    if (_live.playing || _live.holding) [self scheduleLiveResize];
 }
 
 - (NSInteger)fullscreenPanelIndex { return _panelIndex; }
@@ -4886,14 +5210,14 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     if (last<0 || index>last) return;
     if (index<0) index=MAX(0,_panelIndex);
     [self dismissCompareNote];
-    [self stopChartLoop];
     [_scrubRenderer cancelRequests]; _scrubHasFraction=NO; _timelinePreviewing=NO;
     _motionHasCursor=NO;
     if (_comparing && [self earlierIssueForIndex:index]<0) [self endChartComparison];
     _panelIndex=index;
     [self layoutChartWindow];
-    if (_motionPlayer && _motionMovieURL && !_comparing)
-        [self seekPopoverMovieFraction:[self motionFractionForDate:_sequenceTimes[index]]];
+    if (!_forecastPaused && [self allowsAutomaticEvolution] && [self livePlaybackAvailable] && !_comparing)
+        [self startLivePlaybackFromDate:_sequenceTimes[index]];
+    else [self stopChartLoop];
 }
 
 - (void)escapeFullscreen { [self closeChartWindow]; }
@@ -4913,23 +5237,33 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     _looping = NO;
     [_loopTimer invalidate];
     _loopTimer = nil;
-    [_motionPlayer pause];
+    [_live pause];
+    [_liveTimer invalidate];
+    _liveTimer = nil;
     if (!_popoverPlaying) [self cancelMotionPreparation];
+    [self updatePopoverPlayControl];
 }
 
 - (void)toggleChartLoop {
     if (_panelIndex < 0) return;
-    if (_looping) {
+    if ([self timelinePlaying]) {
+        [self setForecastPaused:YES];
         [self stopChartLoop];
+        _popoverPlaying = NO;
         [self layoutChartToolbarIn:_chartWindow.contentView height:42];
         [self updateTimelineHeading:[self selectedForecastDate]];
-        [self updatePopoverPlayControl];
+        return;
+    }
+    [self setForecastPaused:NO];
+    [self endChartComparison];
+    if ([self livePlaybackAvailable]) {
+        [self startLivePlaybackFromDate:[self selectedForecastDate]];
+        [self layoutChartToolbarIn:_chartWindow.contentView height:42];
         return;
     }
     double fraction=[self activeTimeline].progress;
     [self stopPopoverPlayback];
     _motionPendingFraction=isfinite(fraction)?@(fraction):nil;
-    [self endChartComparison];
     _looping = YES;
     [self prepareMotion];
     [self layoutChartToolbarIn:_chartWindow.contentView height:42];
@@ -4947,7 +5281,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     panel.mapDetails = [self mapDetailsAtTime:[self motionDateAtFrame:frame]];
     [panel setChartImage:_motionFrames[frame] comparison:nil alpha:0];
     NSDate *date = [self motionDateAtFrame:frame];
-    _timeTitle.stringValue = [NSString stringWithFormat:@"%@ · %@", ForecastDay(date, _chartNow ?: NSDate.date, OwnerZone()), SituationClock(date, OwnerZone())];
+    _timeTitle.stringValue = [NSString stringWithFormat:@"%@ · %@", ForecastDay(date, _chartNow ?: NSDate.date, [self placeZone]), SituationClock(date, [self placeZone])];
     _timeTitle.toolTip = @"Frames interpolated between forecast maps";
 }
 
@@ -4959,8 +5293,8 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
         _compareNote.selectable = NO;
         _compareNote.bezeled = NO;
         _compareNote.drawsBackground = YES;
-        _compareNote.backgroundColor = Paper();
-        _compareNote.textColor = Ink();
+        _compareNote.backgroundColor = NSColor.controlBackgroundColor;
+        _compareNote.textColor = NSColor.labelColor;
         _compareNote.alignment = NSTextAlignmentCenter;
         _compareNote.font = [NSFont systemFontOfSize:13 weight:NSFontWeightMedium];
         _compareNote.accessibilityIdentifier = @"fullscreen.compareNote";
@@ -5013,7 +5347,8 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     [self stopPopoverPlayback];
     [_scrubRenderer cancelRequests]; _scrubHasFraction=NO; _timelinePreviewing=NO;
     _expandedMap=NO; _motionCursorFullscreen=NO;
-    [(PDFCropView *)_singleScroll.documentView removeMoviePlayer];
+    [(PDFCropView *)_singleScroll.documentView clearLiveFrames];
+    [_live stopRendering];
     _comparing = NO;
     [_compareNote removeFromSuperview];
     [_warningPop close];
@@ -5072,30 +5407,36 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     // returns. The destination owns playback throughout that transition.
     _expandedMap=YES;
     [self.popover performClose:nil];
-    [_leftChart removeMoviePlayer];
+    [_leftChart clearLiveFrames];
     _comparing=NO;
     _panelIndex=MAX(0,[self nearestChartIndexToDate:selected]); _panelZoom=1;
     _popoverPlaying=NO; [_popoverLoopTimer invalidate]; _popoverLoopTimer=nil;
-    _looping=playing;
+    _looping=NO;
     if (!_chartWindow) {
         FullscreenWindow *window=[[FullscreenWindow alloc] initWithContentRect:frame styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
         window.controller=self; window.delegate=self; window.releasedWhenClosed=NO;
-        window.opaque=YES; window.hasShadow=NO; window.backgroundColor=Paper();
-        window.appearance=[NSAppearance appearanceNamed:NSAppearanceNameAqua];
+        window.opaque=YES; window.hasShadow=NO; window.backgroundColor=NSColor.windowBackgroundColor;
         window.level=NSFloatingWindowLevel;
         window.collectionBehavior=NSWindowCollectionBehaviorCanJoinAllSpaces|NSWindowCollectionBehaviorFullScreenAuxiliary;
         window.contentView=[[ChartRoot alloc] initWithFrame:NSMakeRect(0,0,frame.size.width,frame.size.height)];
         _chartWindow=window;
     }
+    _chartWindow.backgroundColor = NSColor.windowBackgroundColor;
+    _chartWindow.appearance = nil;
     [_chartWindow setFrame:frame display:NO];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(windowOcclusionChanged:)
+        name:NSWindowDidChangeOcclusionStateNotification object:_chartWindow];
     [self layoutChartWindow];
     _motionCursorFullscreen=YES;
-    if (_motionMovieURL) { _motionPendingFraction=@(fraction); [self startPreparedMotion]; }
-    else {
+    if (_forecastPaused || ![self allowsAutomaticEvolution] || ![self livePlaybackAvailable]) {
         [self showStaticTimelineFraction:fraction];
-        if (playing) [self prepareMotion];
-    }
+        if (playing && ![self livePlaybackAvailable]) [self prepareMotion];
+    } else [self startLivePlaybackFromDate:selected];
     [self ensureClock];
+}
+
+- (void)windowOcclusionChanged:(NSNotification *)note {
+    if (note.object == _chartWindow) [self noteMapVisibility];
 }
 
 - (void)openChartWindow {
@@ -5118,11 +5459,16 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
              [event.window.firstResponder isKindOfClass:RainForecastView.class] ||
              [event.window.firstResponder isKindOfClass:TimelineStrip.class]) &&
             (event.keyCode == 123 || event.keyCode == 124)) return event;
-        if (event.keyCode == 49) { [strong togglePopoverPlayback:nil]; return nil; }
-        if (event.keyCode == 53) { [strong escapePopover]; return nil; }
-        if (event.keyCode == 123) { [strong stepPopoverPair:-1]; return nil; }
-        if (event.keyCode == 124) { [strong stepPopoverPair:1]; return nil; }
-        return event;
+        ChartKeyAction action = ChartKeyActionFor(event.keyCode, event.charactersIgnoringModifiers, event.modifierFlags,
+            event.isARepeat, NSDate.timeIntervalSinceReferenceDate, &strong->_lastArrowStep);
+        switch (action) {
+            case ChartKeyDrop: return nil;
+            case ChartKeyEscape: [strong escapePopover]; return nil;
+            case ChartKeyLeft: [strong stepPopoverPair:-1]; return nil;
+            case ChartKeyRight: [strong stepPopoverPair:1]; return nil;
+            case ChartKeyPlay: [strong togglePopoverPlayback:nil]; return nil;
+            default: return event;
+        }
     }];
     if (_scrollMonitor) return;
     _scrollAccum = 0;
@@ -5145,7 +5491,10 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
 
 - (void)popoverWillClose:(NSNotification *)notification {
     if (notification.object != self.popover) return;
-    if (!_expandedMap) [self stopPopoverPlayback];
+    if (!_expandedMap) {
+        [self stopPopoverPlayback];
+        [_live stopRendering];
+    }
     _popoverClosedAt = [NSDate timeIntervalSinceReferenceDate];
     if (!_expandedMap) { _forecastMode=-1; _pairPinned=NO; _previewIndex=-1; }
     _scrollAccum=0;
@@ -5618,7 +5967,8 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
             if (where.length && state.length && [where caseInsensitiveCompare:state] != NSOrderedSame) continue;
             [mine addObject:warning];
         }
-        [self noteWeatherForGeohash:hash obs:obs daily:nil hourly:hourly.count ? hourly : nil warnings:mine];
+        NSArray *daily = StorePointDays(point, now, 7, ZoneForPlace(place));
+        [self noteWeatherForGeohash:hash obs:obs daily:daily hourly:hourly.count ? hourly : nil warnings:mine];
         [self noteGlanceForGeohash:hash history:history series:series];
         [_weather[hash] removeObjectForKey:@"marine"];
         NSDictionary *pointInfo = point ? [NSJSONSerialization JSONObjectWithData:point options:0 error:nil] : nil;
@@ -5632,7 +5982,8 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     _airportSeries = @[];
     if (_publishedStore) {
         NSDictionary *field = [self homeAerodrome];
-        _aviation=ArchiveAviationProduct(_storeRoot,[NSString stringWithFormat:@"%@.json",field[@"code"]]);
+        NSString *code = [field[@"code"] isKindOfClass:NSString.class] ? field[@"code"] : @"";
+        if (code.length) _aviation=ArchiveAviationProduct(_storeRoot,[NSString stringWithFormat:@"%@.json",code]);
         _airportSeries = StorePointSeries(ArchivePointFile(_storeRoot, field));
     }
     _notams=ArchiveAviationProduct(_storeRoot,@"notams.json");
@@ -5771,16 +6122,37 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
         color:NSColor.secondaryLabelColor frame:NSMakeRect(16, spotY, 200, 16)]];
     spotY += 22;
     _aerodromePopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(16, spotY, 260, 26) pullsDown:NO];
-    NSString *selectedCode = [self homeAerodrome][@"code"] ?: @"YPPH";
+    NSString *selectedCode = [self homeAerodrome][@"code"];
+    BOOL selected = NO;
     for (NSDictionary *field in KnownAerodromes()) {
         NSString *title = [NSString stringWithFormat:@"%@ (%@)", field[@"name"], field[@"code"]];
         [_aerodromePopup addItemWithTitle:title];
         _aerodromePopup.lastItem.representedObject = field[@"code"];
-        if ([field[@"code"] isEqual:selectedCode]) [_aerodromePopup selectItem:_aerodromePopup.lastItem];
+        if (selectedCode.length && [field[@"code"] isEqual:selectedCode]) {
+            [_aerodromePopup selectItem:_aerodromePopup.lastItem];
+            selected = YES;
+        }
     }
+    if (!selected) [_aerodromePopup selectItem:nil];
     _aerodromePopup.target = self;
     _aerodromePopup.action = @selector(chooseAerodrome:);
     [root addSubview:_aerodromePopup];
+    spotY += 40;
+    [root addSubview:[self label:@"Playback" font:[NSFont systemFontOfSize:12 weight:NSFontWeightSemibold]
+        color:NSColor.secondaryLabelColor frame:NSMakeRect(16, spotY, 200, 16)]];
+    spotY += 22;
+    NSPopUpButton *speed = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(16, spotY, 220, 26) pullsDown:NO];
+    speed.accessibilityIdentifier = @"settings.playbackSpeed";
+    [speed addItemWithTitle:@"Slow"];
+    speed.lastItem.tag = IsobarLiveSpeedSlow;
+    [speed addItemWithTitle:@"Medium"];
+    speed.lastItem.tag = IsobarLiveSpeedMedium;
+    [speed addItemWithTitle:@"Fast"];
+    speed.lastItem.tag = IsobarLiveSpeedFast;
+    [speed selectItemWithTag:_liveSpeed];
+    speed.target = self;
+    speed.action = @selector(choosePlaybackSpeed:);
+    [root addSubview:speed];
     spotY += 40;
     _loginToggle = [NSButton checkboxWithTitle:@"Open Isobar when I log in" target:self action:@selector(toggleLaunch:)];
     _loginToggle.frame = NSMakeRect(16, spotY, 280, 20);
@@ -6012,6 +6384,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     _item.button.target = self;
     _item.button.action = @selector(togglePopover:);
     [_item.button addObserver:self forKeyPath:@"effectiveAppearance" options:0 context:NULL];
+    _watchingAppearance = YES;
     _offline = NO;
     [self updateBar];
     // Explicit custom stores are managed by their owner. The ordinary download
@@ -6023,7 +6396,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
         _collector.onUpdate=^{ Controller *strong=weak; if(strong){ [strong reloadStoreAtPath:strong->_storeRoot]; [strong prepareChartImages]; } };
     }
     [self refreshAll];
-    [NSTimer scheduledTimerWithTimeInterval:kRefreshInterval target:self selector:@selector(refreshAll) userInfo:nil repeats:YES];
+    _refreshTimer = [NSTimer scheduledTimerWithTimeInterval:kRefreshInterval target:self selector:@selector(refreshAll) userInfo:nil repeats:YES];
     _locationManager = [CLLocationManager new];
     _locationManager.delegate = self;
     _locationManager.desiredAccuracy = kCLLocationAccuracyKilometer;
@@ -6033,7 +6406,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     else [self startLocationIfAllowed];
 }
 
-- (void)applicationWillTerminate:(NSNotification *)note { (void)note; [_collector stop]; }
+- (void)applicationWillTerminate:(NSNotification *)note { (void)note; [self invalidateSurfaceTimers]; [_collector stop]; }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
     (void)keyPath; (void)object; (void)change; (void)context;

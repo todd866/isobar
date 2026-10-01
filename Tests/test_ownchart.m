@@ -242,6 +242,9 @@ static void TestContours(void) {
     OwnLineSet none = OwnContours(bowl, n, n, 0, 0, 1, 1, &flatLevel, 1);
     check(none.count == 0, @"a flat field has no isobar");
     OwnLineSetFree(none);
+    double level = 1012;
+    OwnLineSet huge = OwnContours((const double *)1, 100000, 100000, 0, 0, 1, 1, &level, 1);
+    check(huge.count == 0 && huge.lines == NULL, @"an oversized field is refused before it is read");
     free(bowl);
     free(plane);
 
@@ -370,6 +373,555 @@ static void TestLabelsAndSmooth(void) {
     check(OwnLabelsOverlap(gap, same, 0), @"a label overlaps itself");
     check(!OwnLabelsOverlap(gap, other, 0), @"labels forty units apart stay clear");
     check(Near(OwnReadableAngle(M_PI), 0, 1e-9), @"a leftward baseline flips upright");
+
+    OwnVec corner[5] = {{0, 0}, {1, 1}, {2, 0}, {3, 1}, {4, 0}};
+    OwnVec cut[10];
+    int nCut = OwnChaikin(corner, 5, 0, cut, 10);
+    check(nCut == 10 && Near(cut[0].x, 0, 1e-12) && Near(cut[0].y, 0, 1e-12)
+        && Near(cut[9].x, 4, 1e-12) && Near(cut[9].y, 0, 1e-12), @"Chaikin keeps the ends of an open line");
+    double peak = 0;
+    for (int i = 1; i < nCut - 1; i++) if (cut[i].y > peak) peak = cut[i].y;
+    check(nCut == 10 && peak < 0.9, @"Chaikin lowers a zigzag peak");
+    check(OwnChaikin(corner, 5, 0, cut, 4) == -1, @"Chaikin refuses a short buffer");
+    OwnVec ring[4] = {{0, 0}, {2, 0}, {2, 2}, {0, 2}};
+    OwnVec rounded[8];
+    int nRing = OwnChaikin(ring, 4, 1, rounded, 8);
+    BOOL boxed = nRing == 8;
+    for (int i = 0; i < nRing; i++) {
+        if (rounded[i].x < -1e-9 || rounded[i].x > 2 + 1e-9 || rounded[i].y < -1e-9 || rounded[i].y > 2 + 1e-9)
+            boxed = NO;
+    }
+    check(boxed, @"a closed ring doubles and stays inside its box");
+
+    OwnLabel crowded[3] = {
+        {.x = 0, .y = 0, .halfW = 12, .halfH = 6, .level = 1016},
+        {.x = 10, .y = 0, .halfW = 12, .halfH = 6, .level = 1016},
+        {.x = 80, .y = 0, .halfW = 12, .halfH = 6, .level = 1012},
+    };
+    int kept = OwnKeepSeparated(crowded, 3, 4);
+    check(kept == 2 && Near(crowded[0].x, 0, 1e-9) && Near(crowded[1].x, 80, 1e-9),
+          @"an overlapping pressure label is dropped and a distant one stays");
+
+    OwnVec upright[2] = {{0, 0}, {0, 200}};
+    OwnLabel tall = {.x = 0, .y = 100, .angle = 0, .halfW = 20, .halfH = 6, .arc = 100, .gap = 40, .level = 1008, .line = 0};
+    OwnLineSet sliced = OwnCutGaps(upright, 2, 0, &tall, 1);
+    double lowerTop = -1, upperBottom = 1e9;
+    BOOL hasFoot = NO, hasHead = NO, throughCentre = NO;
+    for (int p = 0; p < sliced.count; p++) {
+        double minY = 1e9, maxY = -1e9;
+        for (int i = 0; i < sliced.lines[p].count; i++) {
+            double y = sliced.lines[p].pts[i].y;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+            if (y < 1) hasFoot = YES;
+            if (y > 190) hasHead = YES;
+            if (y > 97 && y < 103) throughCentre = YES;
+        }
+        if (maxY < 100 && maxY > lowerTop) lowerTop = maxY;
+        if (minY > 100 && minY < upperBottom) upperBottom = minY;
+    }
+    double removed = upperBottom - lowerTop;
+    check(sliced.count == 2 && hasFoot && hasHead && !throughCentre && removed > 12 && removed < 22,
+          [NSString stringWithFormat:@"a vertical isobar loses the label height, not its width (gap %.1f)", removed]);
+    OwnLineSetFree(sliced);
+
+    OwnVec square[4] = {{0, 0}, {100, 0}, {100, 100}, {0, 100}};
+    OwnLabel east = {.x = 100, .y = 50, .angle = 0, .halfW = 18, .halfH = 6, .gap = 80, .level = 1020, .line = 0};
+    OwnLineSet opened = OwnCutGaps(square, 4, 1, &east, 1);
+    double keptLen = 0, endGap = 0;
+    BOOL sawCorner = NO;
+    if (opened.count == 1) {
+        OwnLine part = opened.lines[0];
+        for (int i = 1; i < part.count; i++)
+            keptLen += hypot(part.pts[i].x - part.pts[i - 1].x, part.pts[i].y - part.pts[i - 1].y);
+        endGap = hypot(part.pts[0].x - part.pts[part.count - 1].x, part.pts[0].y - part.pts[part.count - 1].y);
+        for (int i = 0; i < part.count; i++)
+            if (fabs(part.pts[i].x) < 1e-6 && fabs(part.pts[i].y) < 1e-6) sawCorner = YES;
+    }
+    check(opened.count == 1 && !opened.lines[0].closed && sawCorner && keptLen > 360 && endGap > 10 && endGap < 20,
+          [NSString stringWithFormat:@"a ring opens only across the label box (kept %.0f, mouth %.1f)", keptLen, endGap]);
+    OwnLineSetFree(opened);
+
+    OwnVec circle[64];
+    for (int i = 0; i < 64; i++) {
+        double t = i * (2 * M_PI / 64);
+        circle[i] = (OwnVec){50 * cos(t), 50 * sin(t)};
+    }
+    OwnLabel side = {.x = 50, .y = 0, .angle = 0, .halfW = 22, .halfH = 6, .gap = 100, .level = 1020, .line = 0};
+    OwnLineSet coast = OwnCutGaps(circle, 64, 1, &side, 1);
+    double coastLen = 0, mouth = 1e9;
+    if (coast.count == 1) {
+        OwnLine part = coast.lines[0];
+        for (int i = 1; i < part.count; i++)
+            coastLen += hypot(part.pts[i].x - part.pts[i - 1].x, part.pts[i].y - part.pts[i - 1].y);
+        mouth = hypot(part.pts[0].x - part.pts[part.count - 1].x, part.pts[0].y - part.pts[part.count - 1].y);
+    }
+    check(coast.count == 1 && coastLen > 280 && mouth > 8 && mouth < 24,
+          [NSString stringWithFormat:@"a round isobar is not cut into a C (mouth %.1f, kept %.0f)", mouth, coastLen]);
+    OwnLineSetFree(coast);
+
+    OwnVec flat[2] = {{0, 0}, {100, 0}};
+    double ax = 0, ay = 0, aarc = 0, atang = 0, adist = 0;
+    check(OwnContourAnchor(40, 4, &(OwnLine){flat, 2, 0, 1012}, 10, 0, -10, -10, 200, 200,
+            &ax, &ay, &aarc, &atang, &adist) && Near(ax, 40, 0.2) && Near(ay, 0, 0.2) && adist < 5,
+          @"a label snaps onto the isobar under it");
+    check(!OwnContourAnchor(40, 30, &(OwnLine){flat, 2, 0, 1012}, 10, 0, -10, -10, 200, 200,
+            &ax, &ay, &aarc, &atang, &adist),
+          @"a label too far from every isobar is not placed");
+    OwnVec kink[5] = {{0, 0}, {20, 0}, {28, 12}, {36, 0}, {70, 0}};
+    check(OwnContourAnchor(28, 12, &(OwnLine){kink, 5, 0, 1016}, 8, 30, -10, -10, 200, 200,
+            &ax, &ay, &aarc, &atang, &adist) && ay < 2,
+          @"a label slides off a kink onto a straighter stretch");
+    double againX = 0, againY = 0;
+    OwnContourAnchor(28, 12, &(OwnLine){kink, 5, 0, 1016}, 8, 30, -10, -10, 200, 200,
+        &againX, &againY, &aarc, &atang, &adist);
+    check(Near(ax, againX, 1e-9) && Near(ay, againY, 1e-9), @"the same isobar anchors a label in the same place");
+    check(OwnContourAnchor(5, 1, &(OwnLine){flat, 2, 0, 1012}, 8, 40, 20, -10, 200, 200,
+            &ax, &ay, &aarc, &atang, &adist) && ax >= 20 && Near(ay, 0, 0.2),
+          @"a label stays inside the map rather than on the edge");
+
+    OwnVec box[4] = {{0, 0}, {80, 0}, {80, 80}, {0, 80}};
+    OwnLine border = {box, 4, 1, 1016};
+    double edgeHalf = 8;
+    OwnLabel edgeLabels[4];
+    int nEdge = OwnPlaceLabels(&border, 1, FixedHalf, &edgeHalf, 6, 4, -30, -30, 200, 200, edgeLabels, 4);
+    BOOL offEdge = nEdge > 0;
+    for (int i = 0; i < nEdge; i++) if (edgeLabels[i].x < 25) offEdge = NO;
+    check(offEdge, @"labels prefer a straight span away from the map edge");
+
+    OwnVec grazePts[2] = {{0, 12}, {220, 12}};
+    OwnLine graze = {grazePts, 2, 0, 1024};
+    double grazeHalf = 16;
+    int nGraze = OwnPlaceLabels(&graze, 1, FixedHalf, &grazeHalf, 8, 4, 0, 0, 400, 220, labels, 4);
+    check(nGraze == 0, @"a contour that only grazes the map edge stays unlabelled");
+    nGraze = OwnCoverLabels(&graze, 1, FixedHalf, &grazeHalf, 8, 4, 0, 0, 400, 220, 40, 400, labels, 0, 4);
+    check(nGraze == 0, @"coverage does not put a label on a contour that only grazes the edge");
+
+    OwnVec inlandPts[] = {
+        {30, 48}, {110, 48}, {150, 80}, {200, 150}, {280, 150}, {360, 150},
+    };
+    OwnLine inland = {inlandPts, 6, 0, 1020};
+    double inlandHalf = 10;
+    OwnLabel inlandLabels[4];
+    int nInland = OwnPlaceLabels(&inland, 1, FixedHalf, &inlandHalf, 8, 4, 0, 0, 400, 300, inlandLabels, 4);
+    BOOL onRim = NO, deep = NO;
+    for (int i = 0; i < nInland; i++) {
+        if (inlandLabels[i].y < 90) onRim = YES;
+        if (inlandLabels[i].y > 120 && inlandLabels[i].x >= 190) deep = YES;
+    }
+    check(nInland >= 1 && !onRim && deep,
+          [NSString stringWithFormat:@"a label prefers the interior of its contour (%d at %.0f,%.0f)",
+              nInland, nInland ? inlandLabels[0].x : -1, nInland ? inlandLabels[0].y : -1]);
+
+    OwnLine stack[4];
+    OwnVec stackPts[4][2];
+    for (int i = 0; i < 4; i++) {
+        stackPts[i][0] = (OwnVec){0, 40.0 + i * 22.0};
+        stackPts[i][1] = (OwnVec){520, 40.0 + i * 22.0};
+        stack[i] = (OwnLine){stackPts[i], 2, 0, 1008 + i * 4};
+    }
+    double stackHalf = 14;
+    OwnLabel stackLabels[8];
+    int nStack = OwnPlaceLabels(stack, 4, FixedHalf, &stackHalf, 7, 4, 0, 0, 520, 200, stackLabels, 8);
+    double minSep = 1e9;
+    BOOL inMargin = nStack > 0;
+    double margin = 1.5 * 14.0;
+    for (int i = 0; i < nStack; i++) {
+        if (stackLabels[i].x - stackLabels[i].halfW < margin) inMargin = NO;
+        if (stackLabels[i].y - stackLabels[i].halfH < margin) inMargin = NO;
+        if (520 - (stackLabels[i].x + stackLabels[i].halfW) < margin) inMargin = NO;
+        if (200 - (stackLabels[i].y + stackLabels[i].halfH) < margin) inMargin = NO;
+        for (int j = i + 1; j < nStack; j++) {
+            double d = hypot(stackLabels[i].x - stackLabels[j].x, stackLabels[i].y - stackLabels[j].y);
+            if (d < minSep) minSep = d;
+        }
+    }
+    double need = 3.0 * 28.0;
+    check(nStack >= 1 && inMargin && (nStack < 2 || minSep >= need - 0.5),
+          [NSString stringWithFormat:@"stacked isobars keep labels %.0f apart and inside the margin (got %d, sep %.0f)",
+              need, nStack, nStack < 2 ? -1 : minSep]);
+
+    OwnLabel column[2] = {
+        {.x = 40, .y = 50, .halfW = 16, .halfH = 8, .level = 1024, .line = 0},
+        {.x = 44, .y = 88, .halfW = 16, .halfH = 8, .level = 1024, .line = 1},
+    };
+    int nColumn = OwnKeepSeparated(column, 2, 0);
+    check(nColumn == 1, @"two labels closer than three widths are not both kept");
+}
+
+static OwnVec *HeapLine(const OwnVec *src, int n) {
+    OwnVec *pts = malloc((size_t)n * sizeof(OwnVec));
+    if (pts) memcpy(pts, src, (size_t)n * sizeof(OwnVec));
+    return pts;
+}
+
+static void TestCentresAndCoverage(void) {
+    const int n = 21;
+    double *flat = calloc((size_t)(n * n), sizeof(double));
+    double *bump = calloc((size_t)(n * n), sizeof(double));
+    for (int i = 0; i < n * n; i++) { flat[i] = 1010; bump[i] = 1010; }
+    bump[10 * n + 10] = 1011;
+    check(Near(OwnRingProminence(flat, n, n, 0, 0, 1, 1, 10, 10, 4), 0, 1e-6),
+          @"a flat field has no prominence");
+    double shallow = OwnRingProminence(bump, n, n, 0, 0, 1, 1, 10, 10, 4);
+    check(Near(shallow, 1, 0.05), [NSString stringWithFormat:@"a 1 hPa bump stands 1 hPa off its ring, got %.2f", shallow]);
+    bump[10 * n + 10] = 1013;
+    double deep = OwnRingProminence(bump, n, n, 0, 0, 1, 1, 10, 10, 4);
+    check(Near(deep, 3, 0.05), [NSString stringWithFormat:@"a 3 hPa bump stands 3 hPa off its ring, got %.2f", deep]);
+    for (int j = 0; j < n; j++) for (int i = 0; i < n; i++) {
+        double di = i - 10, dj = j - 10;
+        bump[j * n + i] = 1000 + di * di + dj * dj;
+    }
+    double bowl = OwnRingProminence(bump, n, n, 0, 0, 1, 1, 10, 10, 4);
+    check(bowl < -15, [NSString stringWithFormat:@"a bowl is a low against its ring, got %.1f", bowl]);
+    free(flat);
+    free(bump);
+
+    OwnExtremum cands[4] = {
+        {0, 0, 1018, 0},
+        {30, 0, 1004, 0},
+        {0, 20, 1028, 1},
+        {3, 20, 1032, 1},
+    };
+    double prom[4] = {-1.0, -4.0, 3.0, 5.0};
+    OwnExtremum out[4];
+    int nKept = OwnSettleCentres(cands, prom, NULL, 4, 2.0, 1.0, 5.0, 3.0, 0, NULL, 0, out, 4);
+    int lows = 0, highs = 0;
+    BOOL deepLow = NO, strongHigh = NO;
+    for (int i = 0; i < nKept; i++) {
+        if (!out[i].high) { lows++; if (out[i].value < 1010) deepLow = YES; }
+        else { highs++; if (out[i].value > 1030) strongHigh = YES; }
+    }
+    check(lows == 1 && deepLow, @"a 1 hPa dimple is dropped and the deep low stays");
+    check(highs == 1 && strongHigh, @"same-type highs inside the merge distance collapse to the stronger");
+
+    cands[3].x = 12;
+    nKept = OwnSettleCentres(cands, prom, NULL, 4, 2.0, 1.0, 5.0, 3.0, 0, NULL, 0, out, 4);
+    highs = 0;
+    for (int i = 0; i < nKept; i++) if (out[i].high) highs++;
+    check(highs == 2, @"highs outside the merge distance both stay");
+
+    OwnExtremum weak = {0, 0, 1019, 0};
+    double weakProm = -1.2;
+    nKept = OwnSettleCentres(&weak, &weakProm, NULL, 1, 2.0, 1.0, 10.0, 3.0, 0, NULL, 0, out, 2);
+    check(nKept == 0, @"a new centre below the appear threshold stays unmarked");
+    OwnExtremum prior = {2, 0, 1018, 0};
+    nKept = OwnSettleCentres(&weak, &weakProm, NULL, 1, 2.0, 1.0, 10.0, 3.0, 0, &prior, 1, out, 2);
+    check(nKept == 1 && !out[0].high, @"a centre already shown is held at the lower threshold");
+    prior.x = 20;
+    nKept = OwnSettleCentres(&weak, &weakProm, NULL, 1, 2.0, 1.0, 10.0, 3.0, 0, &prior, 1, out, 2);
+    check(nKept == 0, @"a held centre does not keep a different system");
+
+    OwnExtremum pair[2] = {{115, -38, 1029, 1}, {119, -38, 1031, 1}};
+    double pairProm[2] = {3.0, 4.0};
+    nKept = OwnSettleCentres(pair, pairProm, NULL, 2, 2.0, 1.0, 500.0, 280.0, 1, NULL, 0, out, 2);
+    check(nKept == 1 && out[0].value > 1030, @"highs about 350 km apart merge, keeping the stronger");
+    pair[1].x = 130;
+    nKept = OwnSettleCentres(pair, pairProm, NULL, 2, 2.0, 1.0, 500.0, 280.0, 1, NULL, 0, out, 2);
+    check(nKept == 2, @"highs far past 500 km both stay");
+
+    OwnVec ring[4] = {{0, 0}, {10, 0}, {10, 10}, {0, 10}};
+    OwnLine box = {ring, 4, 1, 1016};
+    OwnExtremum inside[2] = {{4, 4, 1012, 0}, {7, 6, 1008, 0}};
+    int enclosed[2] = {0, 0};
+    OwnMarkEnclosedCentres(inside, 2, &box, 1, 2.0, -INFINITY, -INFINITY, INFINITY, INFINITY, enclosed);
+    check(enclosed[1] == 1 && enclosed[0] == 0, @"only the deeper low inside a closed isobar is enclosed");
+    check(!OwnLineContains(&box, 12, 4), @"a point outside a closed isobar is not inside it");
+    double mild[2] = {-0.8, -0.8};
+    nKept = OwnSettleCentres(inside, mild, enclosed, 2, 2.0, 1.0, 3.0, 2.0, 0, NULL, 0, out, 2);
+    check(nKept == 1 && Near(out[0].value, 1008, 1e-6),
+          @"enclosure keeps a shallow low that a closed isobar surrounds");
+
+    OwnExtremum vic = {4, 4, 1019, 0};
+    double vicProm = -3.0;
+    int vicEnclosed = 0;
+    nKept = OwnSettleCentres(&vic, &vicProm, &vicEnclosed, 1, kOwnIsobarInterval, 1.0, 10.0, 3.0, 0,
+        NULL, 0, out, 2);
+    check(nKept == 0, @"a low under one contour interval and outside every ring is unmarked");
+    vicProm = -kOwnIsobarInterval;
+    nKept = OwnSettleCentres(&vic, &vicProm, &vicEnclosed, 1, kOwnIsobarInterval, 1.0, 10.0, 3.0, 0,
+        NULL, 0, out, 2);
+    check(nKept == 1 && !out[0].high, @"a low standing one contour interval is marked without a ring");
+    vicProm = -3.0;
+    vicEnclosed = 1;
+    nKept = OwnSettleCentres(&vic, &vicProm, &vicEnclosed, 1, kOwnIsobarInterval, 1.0, 10.0, 3.0, 0,
+        NULL, 0, out, 2);
+    check(nKept == 1, @"a closed isobar keeps a low that has not reached the contour interval");
+    vicEnclosed = 0;
+    OwnExtremum vicPrior = {5, 4, 1018, 0};
+    nKept = OwnSettleCentres(&vic, &vicProm, &vicEnclosed, 1, kOwnIsobarInterval, 1.0, 10.0, 3.0, 0,
+        &vicPrior, 1, out, 2);
+    check(nKept == 1, @"hysteresis holds a centre below the contour interval");
+
+    OwnVec offRing[4] = {{0, 0}, {10, 0}, {10, 10}, {0, 10}};
+    OwnLine offBox = {offRing, 4, 1, 1024};
+    int offEnc[1] = {1};
+    OwnMarkEnclosedCentres(&vic, 1, &offBox, 1, 2.0, 2, 2, 12, 12, offEnc);
+    check(offEnc[0] == 0, @"a ring that leaves the map does not enclose its low");
+    OwnMarkEnclosedCentres(&vic, 1, &offBox, 1, 2.0, -1, -1, 11, 11, offEnc);
+    check(offEnc[0] == 1, @"a closed isobar inside the map encloses its low");
+
+    OwnVec through[2] = {{0, 100}, {400, 100}};
+    OwnLine throughLine = {through, 2, 0, 1020};
+    OwnLabel onMark = {.x = 200, .y = 100, .halfW = 16, .halfH = 8, .arc = 200, .level = 1020, .line = 0};
+    OwnVec mark = {200, 100};
+    int nClear = OwnClearCentreLabels(&onMark, 1, &throughLine, 1, &mark, 1, 0, 0, 400, 220);
+    double clearD = hypot(onMark.x - mark.x, onMark.y - mark.y);
+    check(nClear == 1 && clearD >= 3.0 * 32.0 - 0.5,
+          [NSString stringWithFormat:@"a label slides until it is three widths from an H or L (%.0f)", clearD]);
+    OwnVec stubPts[2] = {{170, 100}, {230, 100}};
+    OwnLine stubLine = {stubPts, 2, 0, 1020};
+    OwnLabel stuck = {.x = 200, .y = 100, .halfW = 16, .halfH = 8, .arc = 30, .level = 1020, .line = 0};
+    nClear = OwnClearCentreLabels(&stuck, 1, &stubLine, 1, &mark, 1, 0, 0, 400, 220);
+    check(nClear == 0, @"a label that cannot clear an H or L is dropped");
+
+    OwnVec ringPts[4] = {{100, 100}, {180, 100}, {180, 180}, {100, 180}};
+    OwnLine ringLine = {ringPts, 4, 1, 1008};
+    OwnVec ringCentre = {140, 140};
+    double ringHalf = 12;
+    OwnLabel ringLabels[4];
+    int nRing = OwnCoverClosedRings(&ringLine, 1, FixedHalf, &ringHalf, 8, 0, 0, 400, 400, 28,
+        &ringCentre, 1, ringLabels, 0, 4);
+    double ringAway = nRing == 1 ? hypot(ringLabels[0].x - 140, ringLabels[0].y - 140) : 0;
+    check(nRing == 1 && ringAway > 36,
+        [NSString stringWithFormat:@"a closed ring keeps one label off the centre (%.0f)", ringAway]);
+    nRing = OwnCoverClosedRings(&ringLine, 1, FixedHalf, &ringHalf, 8, 0, 0, 400, 400, 28,
+        &ringCentre, 1, ringLabels, 1, 4);
+    check(nRing == 1, @"a ring that already has a label does not gain a second");
+    OwnVec openOnly[2] = {{0, 0}, {200, 0}};
+    OwnLine openLine = {openOnly, 2, 0, 1016};
+    int nOpen = OwnCoverClosedRings(&openLine, 1, FixedHalf, &ringHalf, 8, 0, 0, 400, 400, 28,
+        NULL, 0, ringLabels, 0, 4);
+    check(nOpen == 0, @"an open isobar is not given a ring label");
+    OwnVec tinyPts[4] = {{0, 0}, {10, 0}, {10, 10}, {0, 10}};
+    OwnLine tinyLine = {tinyPts, 4, 1, 1004};
+    int nTiny = OwnCoverClosedRings(&tinyLine, 1, FixedHalf, &ringHalf, 8, 0, 0, 400, 400, 28,
+        NULL, 0, ringLabels, 0, 4);
+    check(nTiny == 0, @"a ring smaller than the span threshold stays bare");
+    OwnVec crowdOpen[2] = {{0, 0}, {200, 0}};
+    OwnVec crowdRing[4] = {{0, 0}, {40, 0}, {40, 40}, {0, 40}};
+    OwnLine crowdLines[2] = {
+        {crowdOpen, 2, 0, 1020},
+        {crowdRing, 4, 1, 1016},
+    };
+    OwnLabel crowded[2] = {
+        {.x = 100, .y = 100, .halfW = 16, .halfH = 8, .level = 1020, .line = 0},
+        {.x = 180, .y = 100, .halfW = 16, .halfH = 8, .level = 1016, .line = 1},
+    };
+    OwnLabel separated[2] = {crowded[0], crowded[1]};
+    int nCrowd = OwnKeepSeparated(separated, 2, 4);
+    check(nCrowd == 1, @"the crowd radius drops a label eighty points from another");
+    int nRingKept = OwnKeepRingLabels(crowded, 2, crowdLines, 2, 4);
+    check(nRingKept == 2 && crowded[1].level == 1016, @"a closed ring keeps its label inside the crowd radius");
+    OwnLabel overlap[2] = {
+        {.x = 100, .y = 100, .halfW = 16, .halfH = 8, .level = 1020, .line = 0},
+        {.x = 110, .y = 100, .halfW = 16, .halfH = 8, .level = 1016, .line = 1},
+    };
+    int nOverlap = OwnKeepRingLabels(overlap, 2, crowdLines, 2, 4);
+    check(nOverlap == 1, @"a closed ring label that overlaps another glyph is dropped");
+    crowdLines[1].closed = 0;
+    OwnLabel openCrowded[2] = {
+        {.x = 100, .y = 100, .halfW = 16, .halfH = 8, .level = 1020, .line = 0},
+        {.x = 180, .y = 100, .halfW = 16, .halfH = 8, .level = 1016, .line = 1},
+    };
+    int nOpenCrowd = OwnKeepRingLabels(openCrowded, 2, crowdLines, 2, 4);
+    check(nOpenCrowd == 1, @"an open isobar still loses a crowded label");
+
+    OwnVec tinyRing[4] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+    OwnVec bigRing[4] = {{0, 0}, {8, 0}, {8, 8}, {0, 8}};
+    OwnVec openPts[2] = {{0, 0}, {6, 0}};
+    OwnLine *lines = calloc(3, sizeof(OwnLine));
+    lines[0] = (OwnLine){HeapLine(tinyRing, 4), 4, 1, 1020};
+    lines[1] = (OwnLine){HeapLine(bigRing, 4), 4, 1, 1024};
+    lines[2] = (OwnLine){HeapLine(openPts, 2), 2, 0, 1012};
+    OwnLineSet set = {lines, 3};
+    OwnExtremum centre = {4, 4, 1028, 1};
+    OwnDropStrayRings(&set, &centre, 1, 3.0);
+    int tiny = 0, big = 0, open = 0;
+    for (int i = 0; i < set.count; i++) {
+        if (!set.lines[i].closed) { open++; continue; }
+        double minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+        for (int p = 0; p < set.lines[i].count; p++) {
+            if (set.lines[i].pts[p].x < minX) minX = set.lines[i].pts[p].x;
+            if (set.lines[i].pts[p].x > maxX) maxX = set.lines[i].pts[p].x;
+            if (set.lines[i].pts[p].y < minY) minY = set.lines[i].pts[p].y;
+            if (set.lines[i].pts[p].y > maxY) maxY = set.lines[i].pts[p].y;
+        }
+        if (fmax(maxX - minX, maxY - minY) < 2) tiny++;
+        else big++;
+    }
+    check(tiny == 0 && big == 1 && open == 1, @"a small ring with no centre is dropped and a ring around a centre stays");
+    OwnLineSetFree(set);
+
+    OwnVec longPts[2] = {{0, 10}, {600, 10}};
+    OwnVec midPts[2] = {{0, 40}, {140, 40}};
+    OwnVec shortPts[2] = {{0, 70}, {40, 70}};
+    OwnLine coverLines[3] = {
+        {longPts, 2, 0, 1008},
+        {midPts, 2, 0, 1012},
+        {shortPts, 2, 0, 1016},
+    };
+    double half = 16;
+    OwnLabel labels[8];
+    int nLab = OwnCoverLabels(coverLines, 3, FixedHalf, &half, 6, 4, -20, -20, 700, 120, 80, 280, labels, 0, 8);
+    int onLong = 0, onMid = 0, onShort = 0;
+    for (int i = 0; i < nLab; i++) {
+        if (labels[i].line == 0) onLong++;
+        else if (labels[i].line == 1) onMid++;
+        else if (labels[i].line == 2) onShort++;
+    }
+    check(onLong == 2 && onMid == 1 && onShort == 0,
+          [NSString stringWithFormat:@"every long contour is labelled and a very long one twice (got %d %d %d)",
+              onLong, onMid, onShort]);
+    BOOL apart = YES;
+    for (int i = 0; i < nLab; i++) for (int j = i + 1; j < nLab; j++)
+        if (OwnLabelsOverlap(labels[i], labels[j], 4)) apart = NO;
+    check(apart, @"covered labels do not overlap");
+}
+
+static void TestOpenFragments(void) {
+    OwnVec stub[] = {{80, 40}, {130, 42}};
+    OwnLine stubLine = {stub, 2, 0, 1012};
+    check(OwnIsOpenFragment(&stubLine, 96, 48, 0, 0, 580, 444, 2),
+        @"a short open stub inside the map is a fragment");
+    OwnVec edge[] = {{0, 180}, {70, 190}};
+    OwnLine edgeLine = {edge, 2, 0, 1016};
+    check(!OwnIsOpenFragment(&edgeLine, 96, 48, 0, 0, 580, 444, 2),
+        @"the visible end of a contour that leaves the map stays");
+    OwnVec tick[] = {{578, 20}, {580, 28}};
+    OwnLine tickLine = {tick, 2, 0, 1020};
+    check(OwnIsOpenFragment(&tickLine, 96, 48, 0, 0, 580, 444, 2),
+        @"a tick on the map edge is still a fragment");
+    OwnVec longPts[] = {{40, 40}, {220, 80}, {360, 60}};
+    OwnLine longLine = {longPts, 3, 0, 1024};
+    check(!OwnIsOpenFragment(&longLine, 96, 48, 0, 0, 580, 444, 2),
+        @"a long open isobar stays");
+    OwnVec ring[] = {{10, 10}, {30, 10}, {30, 30}, {10, 30}};
+    OwnLine ringLine = {ring, 4, 1, 1008};
+    check(!OwnIsOpenFragment(&ringLine, 96, 48, 0, 0, 580, 444, 2),
+        @"a closed ring is not an open fragment");
+}
+
+static void TestPruneAndReflect(void) {
+    OwnVec spurSrc[] = {
+        {0, 0}, {3, 0}, {6, 0}, {6.1, 1.0}, {7.0, 1.0}, {7.0, 0.05}, {6.05, 0}, {9, 0}, {12, 0},
+    };
+    OwnVec stubSrc[] = {{0, 0}, {0.2, 0.1}, {0.35, 0}};
+    OwnVec openSrc[] = {{0, 0}, {5, 0}};
+    OwnVec tinySrc[] = {{0, 0}, {2, 0}, {1, 0.02}};
+    OwnVec bigSrc[] = {{0, 0}, {10, 0}, {10, 10}, {0, 10}};
+    OwnLineSet set = {0};
+    OwnLine *lines = calloc(5, sizeof(OwnLine));
+    lines[0] = (OwnLine){HeapLine(spurSrc, 9), 9, 0, 1016};
+    lines[1] = (OwnLine){HeapLine(stubSrc, 3), 3, 0, 1020};
+    lines[2] = (OwnLine){HeapLine(openSrc, 2), 2, 0, 1012};
+    lines[3] = (OwnLine){HeapLine(tinySrc, 3), 3, 1, 1008};
+    lines[4] = (OwnLine){HeapLine(bigSrc, 4), 4, 1, 1024};
+    set.lines = lines;
+    set.count = 5;
+    OwnPruneContours(&set, 1.2, 2.0, 0.3);
+    int spur = 0, stub = 0, open = 0, tiny = 0, big = 0;
+    double spurTop = 0;
+    for (int i = 0; i < set.count; i++) {
+        OwnLine line = set.lines[i];
+        if (Near(line.level, 1016, 0.1)) {
+            spur++;
+            for (int p = 0; p < line.count; p++) if (line.pts[p].y > spurTop) spurTop = line.pts[p].y;
+            check(Near(line.pts[0].x, 0, 1e-6) && Near(line.pts[line.count - 1].x, 12, 1e-6),
+                  @"cutting a squiggle keeps the rest of the isobar");
+        } else if (Near(line.level, 1020, 0.1)) stub++;
+        else if (Near(line.level, 1012, 0.1)) open++;
+        else if (Near(line.level, 1008, 0.1)) tiny++;
+        else if (Near(line.level, 1024, 0.1)) {
+            big++;
+            check(line.closed, @"a large closed isobar stays a ring");
+        }
+    }
+    check(spur == 1 && spurTop < 0.2, @"a tight loop is cut out of its isobar");
+
+    // A hairpin copied from the northwest 1016: it leaves the line and returns
+    // within a degree, enclosing under half a square degree. A 0.35° pinch
+    // misses the mouth. A bow whose length stays near its chord stays.
+    OwnVec hookSrc[] = {
+        {116.0, -10.0}, {117.0, -10.584}, {117.099, -10.750}, {117.250, -10.978},
+        {117.262, -11.000}, {117.414, -11.250}, {117.468, -11.500}, {117.442, -11.750},
+        {117.428, -12.000}, {117.431, -12.250}, {117.484, -12.500}, {117.500, -12.529},
+        {117.750, -12.539}, {117.773, -12.500}, {117.817, -12.250}, {117.825, -12.000},
+        {117.848, -11.750}, {118.000, -11.547}, {119.0, -13.0}, {120.0, -14.0},
+    };
+    OwnVec bowSrc[] = {{0, 0}, {1, 0.08}, {2, 0.14}, {3, 0.16}, {4, 0.14}, {5, 0.08}, {6, 0}};
+    OwnLineSet wide = {0};
+    OwnLine *wideLines = calloc(2, sizeof(OwnLine));
+    wideLines[0] = (OwnLine){HeapLine(hookSrc, 20), 20, 0, 1016};
+    wideLines[1] = (OwnLine){HeapLine(bowSrc, 7), 7, 0, 1020};
+    wide.lines = wideLines;
+    wide.count = 2;
+    OwnPruneContours(&wide, 1.2, 0.45, 0.85);
+    double bowTop = 0;
+    int nHook = 0, nBow = 0;
+    BOOL bulge = NO;
+    for (int i = 0; i < wide.count; i++) {
+        if (Near(wide.lines[i].level, 1016, 0.1)) {
+            nHook++;
+            for (int p = 0; p < wide.lines[i].count; p++)
+                if (wide.lines[i].pts[p].x < 118.2 && wide.lines[i].pts[p].y < -12.1) bulge = YES;
+            check(wide.lines[i].count >= 2
+                    && Near(wide.lines[i].pts[0].x, 116, 1e-6)
+                    && Near(wide.lines[i].pts[wide.lines[i].count - 1].x, 120, 1e-6),
+                @"cutting the hairpin keeps the rest of the isobar");
+        } else if (Near(wide.lines[i].level, 1020, 0.1)) {
+            nBow++;
+            for (int p = 0; p < wide.lines[i].count; p++)
+                if (wide.lines[i].pts[p].y > bowTop) bowTop = wide.lines[i].pts[p].y;
+        }
+    }
+    check(nHook == 1 && !bulge, @"a hairpin under a degree is cut out of the isobar");
+    check(nBow == 1 && bowTop > 0.1, @"a shallow bow is not treated as a squiggle");
+    OwnLineSetFree(wide);
+
+    OwnVec waveSrc[] = {{0, 0}, {1, 0.05}, {2, -0.2}, {2.4, 0.35}, {3, -0.1}, {4, 0}, {8, 0}};
+    OwnVec bendSrc[] = {{0, 0}, {2, 0}, {4, 2.5}, {6, 0}, {8, 0}};
+    OwnVec squareSrc[] = {{0, 0}, {10, 0}, {10, 10}, {0, 10}};
+    OwnLineSet simple = {0};
+    OwnLine *simpleLines = calloc(3, sizeof(OwnLine));
+    simpleLines[0] = (OwnLine){HeapLine(waveSrc, 7), 7, 0, 1016};
+    simpleLines[1] = (OwnLine){HeapLine(bendSrc, 5), 5, 0, 1020};
+    simpleLines[2] = (OwnLine){HeapLine(squareSrc, 4), 4, 1, 1024};
+    simple.lines = simpleLines;
+    simple.count = 3;
+    OwnSimplifyContours(&simple, 0.6);
+    double waveOff = 0, bendOff = 0;
+    int nWave = 0, nBend = 0, nSquare = 0;
+    for (int i = 0; i < simple.count; i++) {
+        OwnLine line = simple.lines[i];
+        if (Near(line.level, 1016, 0.1)) {
+            nWave++;
+            for (int p = 0; p < line.count; p++) waveOff = fmax(waveOff, fabs(line.pts[p].y));
+            check(Near(line.pts[0].x, 0, 1e-9) && Near(line.pts[line.count - 1].x, 8, 1e-9),
+                @"simplifying a wiggle keeps the ends of the isobar");
+        } else if (Near(line.level, 1020, 0.1)) {
+            nBend++;
+            for (int p = 0; p < line.count; p++) bendOff = fmax(bendOff, line.pts[p].y);
+        } else if (Near(line.level, 1024, 0.1)) {
+            nSquare++;
+            check(line.closed && line.count == 4, @"a square ring keeps its corners");
+        }
+    }
+    check(nWave == 1 && waveOff < 0.05, @"a half-degree wiggle is straightened");
+    check(nBend == 1 && bendOff > 2.0, @"a deep bend is not simplified away");
+    check(nSquare == 1, @"a closed ring is still there after simplifying");
+    OwnLineSetFree(simple);
+    check(stub == 0 && tiny == 0, @"a fragment and a tiny ring are dropped");
+    check(open == 1 && big == 1, @"a long open line and a large ring stay");
+    OwnLineSetFree(set);
+
+    const int n = 8;
+    double *ramp = malloc((size_t)n * n * sizeof(double));
+    for (int j = 0; j < n; j++) for (int i = 0; i < n; i++) ramp[j * n + i] = 1000 + 3.0 * i + 2.0 * j;
+    OwnGaussianSmooth(ramp, n, n, 1.0);
+    check(Near(ramp[0], 1003.633, 2e-3), @"the Gaussian reflects the field at the border");
+    check(Near(ramp[3 * n + 3], 1015, 1e-3), @"reflection leaves the interior of a linear field unchanged");
+    free(ramp);
 }
 
 static void TestBarbsAndColour(void) {
@@ -414,6 +966,75 @@ static void TestBarbsAndColour(void) {
     double sat = fmax(mid.r, fmax(mid.g, mid.b)) - fmin(mid.r, fmin(mid.g, mid.b));
     check(sat < 0.2, @"the middle of the ramp stays quiet");
     check(OwnTemperatureRGB(0).b > OwnTemperatureRGB(20).b, @"the ramp warms as temperature rises");
+
+    const int n = 31;
+    double *field = calloc((size_t)(n * n), sizeof(double));
+    for (int i = 0; i < n * n; i++) field[i] = 1010;
+    OwnGaussianSmooth(field, n, n, 1.25);
+    BOOL flat = YES;
+    for (int i = 0; i < n * n; i++) if (fabs(field[i] - 1010) > 1e-6) flat = NO;
+    check(flat, @"a constant pressure field is unchanged at the border and the middle");
+    for (int j = 0; j < n; j++) for (int i = 0; i < n; i++) field[j * n + i] = 3.0 * i + 2.0 * j;
+    OwnGaussianSmooth(field, n, n, 1.25);
+    BOOL linear = YES;
+    for (int j = 6; j < n - 6; j++) for (int i = 6; i < n - 6; i++)
+        if (fabs(field[j * n + i] - (3.0 * i + 2.0 * j)) > 1e-4) linear = NO;
+    check(linear, @"the Gaussian keeps a linear field away from the border");
+    for (int i = 0; i < n * n; i++) field[i] = 1000;
+    field[15 * n + 15] = NAN;
+    OwnGaussianSmooth(field, n, n, 1.25);
+    check(isnan(field[15 * n + 15]), @"a missing pressure cell stays missing");
+    check(isfinite(field[15 * n + 16]) && fabs(field[15 * n + 16] - 1000) < 0.05,
+          @"a neighbour of a missing cell is not pulled toward zero");
+    for (int i = 0; i < n * n; i++) field[i] = 0;
+    field[15 * n + 15] = 1;
+    OwnGaussianSmooth(field, n, n, 1.25);
+    double mass = 0;
+    for (int i = 0; i < n * n; i++) mass += field[i];
+    check(fabs(mass - 1) < 1e-6 && field[15 * n + 15] < 0.25, @"a spike spreads and keeps its mass");
+    double before = 0, after = 0;
+    for (int i = 0; i < n; i++) {
+        double wave = sin(i * (2.0 * M_PI / 3.0));
+        field[15 * n + i] = wave;
+        if (i >= 8 && i < n - 8) before += fabs(wave);
+    }
+    for (int j = 0; j < n; j++) if (j != 15) for (int i = 0; i < n; i++) field[j * n + i] = 0;
+    for (int i = 0; i < n; i++) field[15 * n + i] = sin(i * (2.0 * M_PI / 3.0));
+    OwnGaussianSmooth(field, n, n, 1.25);
+    for (int i = 8; i < n - 8; i++) after += fabs(field[15 * n + i]);
+    check(before > 1 && after < before * 0.25, @"a three-cell wiggle is smoothed away");
+    free(field);
+
+    BOOL (^nearByte)(OwnRGB, int, int, int) = ^BOOL(OwnRGB colour, int r, int g, int b) {
+        return fabs(colour.r - r / 255.0) < 1e-12 && fabs(colour.g - g / 255.0) < 1e-12
+            && fabs(colour.b - b / 255.0) < 1e-12;
+    };
+    check(nearByte(OwnChartSea(), 0xC5, 0xD6, 0xE4), @"sea is the soft chart blue");
+    check(nearByte(OwnChartLand(), 0xE4, 0xD8, 0xC4), @"land is warm stone");
+    check(nearByte(OwnChartInk(), 0x1B, 0x28, 0x30), @"isobar ink is charcoal");
+    check(nearByte(OwnChartTitle(), 0x2E, 0x4C, 0x5C), @"the title bar is a calm slate");
+    double (^lum)(OwnRGB) = ^double(OwnRGB colour) {
+        double c[3] = {colour.r, colour.g, colour.b}, y = 0;
+        double w[3] = {0.2126, 0.7152, 0.0722};
+        for (int i = 0; i < 3; i++) {
+            double v = c[i] <= 0.04045 ? c[i] / 12.92 : pow((c[i] + 0.055) / 1.055, 2.4);
+            y += w[i] * v;
+        }
+        return y;
+    };
+    double (^contrast)(OwnRGB, OwnRGB) = ^double(OwnRGB a, OwnRGB b) {
+        double L1 = lum(a), L2 = lum(b);
+        if (L1 < L2) { double t = L1; L1 = L2; L2 = t; }
+        return (L1 + 0.05) / (L2 + 0.05);
+    };
+    OwnRGB white = {1, 1, 1};
+    check(contrast(OwnChartInk(), OwnChartSea()) >= 4.5 && contrast(OwnChartInk(), OwnChartLand()) >= 4.5,
+          @"ink stays legible on sea and on land");
+    check(contrast(white, OwnChartTitle()) >= 4.5, @"white title text stays legible on the bar");
+    check(OwnIsobarWidth(1020) > OwnIsobarWidth(1016) && OwnIsobarWidth(1000) == OwnIsobarWidth(1040),
+          @"1000 and 1020 lines are heavier than the 4 hPa lines");
+    check(OwnIsobarWidth(1012) == OwnIsobarWidth(1004) && OwnIsobarWidth(1012) < 1.4,
+          @"ordinary isobars stay the lighter weight");
 }
 
 static void TestCoast(void) {
@@ -456,6 +1077,9 @@ int main(void) {
         TestContours();
         TestExtrema();
         TestLabelsAndSmooth();
+        TestCentresAndCoverage();
+        TestOpenFragments();
+        TestPruneAndReflect();
         TestBarbsAndColour();
         TestCoast();
         fprintf(stderr, "%s\n", failures ? "FAILED" : "OK");

@@ -2,7 +2,7 @@ name: Publish site
 on:
   push:
     branches: [main]
-    paths: ['site/**', 'tools/own-chart.m', 'tools/export-site.*', 'tools/check-site-movies.*', 'tools/public-weather.py', 'tools/test-site.mjs', 'Sources/**', '.github/workflows/pages.yml']
+    paths: ['site/**', 'tools/own-chart.m', 'tools/export-site.*', 'tools/check-site-movies.*', 'tools/public-weather.py', 'tools/test-site.mjs', 'tools/package.json', 'tools/package-lock.json', 'Sources/**', '.github/workflows/pages.yml']
   workflow_dispatch:
   workflow_run:
     workflows: ['Collect public weather']
@@ -10,20 +10,17 @@ on:
     branches: [main]
 permissions:
   contents: read
-  actions: read
-  pages: write
-  id-token: write
 concurrency:
   group: pages
   cancel-in-progress: false
 jobs:
-  deploy:
+  build:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: macos-15
     timeout-minutes: 90
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -84,15 +81,24 @@ jobs:
           node-version: '24'
       - name: Verify website
         run: |
-          npm install --prefix "$RUNNER_TEMP/isobar-browser" playwright
-          "$RUNNER_TEMP/isobar-browser/node_modules/.bin/playwright" install chromium
-          ISOBAR_ANIMATION_MP4=$(python3 -c 'import json; print("site/data/" + json.load(open("site/data/current.json"))["animations"]["pressure"]["src"])')
-          export ISOBAR_ANIMATION_MP4
-          ISOBAR_RELEASE_QA=1 PLAYWRIGHT_MODULE="$RUNNER_TEMP/isobar-browser/node_modules/playwright" node tools/test-site.mjs
-      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+          npm ci --ignore-scripts --prefix tools
+          tools/node_modules/.bin/playwright install chromium
+          ISOBAR_RELEASE_QA=1 PLAYWRIGHT_MODULE="$PWD/tools/node_modules/playwright" node tools/test-site.mjs --site site
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
+  deploy:
+    needs: build
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -58,6 +58,15 @@ int main(void) {
             Capture(view,[NSString stringWithFormat:@"surf-%.0fx160-%@.png",width.doubleValue,appearance]);
         }
         view.outlook=SurfOutlook(@{},now); Check([[view summaryAtPoint:NSMakePoint(200,80)] containsString:@"unavailable"],@"empty graph exposes a useful short state");
+        view.appearance=[NSAppearance appearanceNamed:NSAppearanceNameAqua];
+        __block BOOL neutral=NO;
+        [view.effectiveAppearance performAsCurrentDrawingAppearance:^{
+            NSColor *ink=[SurfWindInk() colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
+            NSColor *label=[NSColor.labelColor colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
+            neutral=ink && label && fabs(ink.redComponent-label.redComponent)<0.02 &&
+                fabs(ink.greenComponent-label.greenComponent)<0.02 && fabs(ink.blueComponent-label.blueComponent)<0.02;
+        }];
+        Check(neutral, @"surf wind uses neutral label ink");
     }
     return failures?1:0;
 }

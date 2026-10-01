@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tempfile
 import unittest
@@ -67,7 +68,9 @@ def make_native_store(tmp_path, *, truncated=False, missing_observation_column=N
             }
             write_json(run_dir / variable / f"{valid}.json", sidecar)
             size = 8 - (1 if truncated and variable == "mslp" and lead == 0 else 0)
-            (run_dir / variable / f"{valid}.f16").write_bytes(b"0" * size)
+            # 1024 hPa is an in-range little-endian float16 sample. Zeros are not.
+            sample = b"\x00\x64" if variable == "mslp" else b"\x00\x00"
+            (run_dir / variable / f"{valid}.f16").write_bytes((sample * 4)[:size])
     import sqlite3
     db_path = store / "products/obs/obs.sqlite"
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -101,11 +104,13 @@ def make_native_store(tmp_path, *, truncated=False, missing_observation_column=N
     write_json(store / "products/points/ecmwf_ifs/current.json", {
         "latest": "2026-09-26T000000Z", "runs": ["2026-09-26T000000Z"],
     })
+    start = datetime(2026, 9, 26, tzinfo=timezone.utc)
+    times = [(start + timedelta(hours=hour)).strftime("%Y-%m-%dT%H:%M:%SZ") for hour in range(96)]
     for place, _wmo, _geohash, lat, lon in check_store.DEFAULT_PLACES:
         write_json(store / "products/points/ecmwf_ifs/runs/2026-09-26T000000Z" / f"{place.lower()}.json", {
-            "latitude": lat, "longitude": lon, "time": ["2026-09-26T12:00:00Z"],
+            "latitude": lat, "longitude": lon, "time": times,
             "units": {"temperature_2m": "°C", "wind_speed_10m": "kn", "wind_direction_10m": "°"},
-            "hourly": {"temperature_2m": [20], "wind_speed_10m": [10], "wind_direction_10m": [270]},
+            "hourly": {"temperature_2m": [20] * len(times), "wind_speed_10m": [10] * len(times), "wind_direction_10m": [270] * len(times)},
         })
     write_json(store / "products/kite/current.json", {
         "latest": "2026-09-26T000000Z", "runs": ["2026-09-26T000000Z"],
@@ -382,6 +387,70 @@ class CheckStoreTests(unittest.TestCase):
         report = check_store.preflight(store, NOW)
         self.assertFalse(report["ok"])
         self.assertTrue(any("surface point within 30km of Perth coast" in item for item in report["errors"]))
+
+    def test_boolean_temperature_is_not_a_measurement(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        store = make_native_store(Path(self.tempdir.name))
+        point = store / "products/points/ecmwf_ifs/runs/2026-09-26T000000Z/perth coast.json"
+        value = json.loads(point.read_text())
+        self.assertTrue(check_store.surface_point_valid(value, NOW))
+        value["hourly"]["temperature_2m"] = [True] * len(value["time"])
+        self.assertFalse(check_store.surface_point_valid(value, NOW))
+        write_json(point, value)
+        report = check_store.preflight(store, NOW)
+        self.assertFalse(report["ok"])
+        self.assertTrue(any("Perth coast" in item for item in report["errors"]))
+
+    def test_closer_invalid_point_does_not_hide_a_valid_series(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        store = make_native_store(Path(self.tempdir.name))
+        run = store / "products/points/ecmwf_ifs/runs/2026-09-26T000000Z"
+        valid = json.loads((run / "perth coast.json").read_text())
+        closer = json.loads((run / "perth coast.json").read_text())
+        closer["hourly"]["temperature_2m"] = [True] * len(closer["time"])
+        write_json(run / "perth coast.json", closer)
+        valid["longitude"] = valid["longitude"] + 0.12
+        write_json(run / "perth-farther.json", valid)
+        report = check_store.preflight(store, NOW)
+        self.assertTrue(report["locations"]["point_forecasts"]["Perth coast"], report["errors"])
+        self.assertTrue(report["ok"], report["errors"])
+
+    def test_short_or_stale_point_series_is_not_ready(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        store = make_native_store(Path(self.tempdir.name))
+        run = store / "products/points/ecmwf_ifs/runs/2026-09-26T000000Z"
+        for count, ready in ((71, False), (72, True)):
+            with self.subTest(hours=count):
+                start = NOW
+                times = [(start + timedelta(hours=hour)).strftime("%Y-%m-%dT%H:%M:%SZ") for hour in range(count)]
+                for place, _wmo, _geohash, lat, lon in check_store.DEFAULT_PLACES:
+                    write_json(run / f"{place.lower()}.json", {
+                        "latitude": lat, "longitude": lon, "time": times,
+                        "units": {"temperature_2m": "°C", "wind_speed_10m": "kn", "wind_direction_10m": "°"},
+                        "hourly": {"temperature_2m": [20] * count, "wind_speed_10m": [10] * count, "wind_direction_10m": [270] * count},
+                    })
+                report = check_store.preflight(store, NOW)
+                self.assertEqual(report["ok"], ready, report["errors"])
+        stale_now = check_store.iso("2026-09-27T13:00:00Z")
+        report = check_store.preflight(store, stale_now)
+        self.assertFalse(report["ok"])
+        self.assertTrue(any("stale" in item and "36" in item for item in report["errors"]))
+        self.assertFalse(any("not consumed by this app" in item for item in report["warnings"]))
+
+    def test_native_mslp_must_be_finite_and_in_range(self):
+        check_store.validate_mslp_grid(b"\x00\x64" * 4)
+        check_store.validate_mslp_grid(b"\x00\xf8" + b"\x00\x64" * 3)
+        for payload in (b"\x00\x7c" * 4, b"\x00\x00" * 4, b"\x00\xf8" * 4):
+            with self.subTest(payload=payload):
+                with self.assertRaisesRegex(ValueError, "non-finite or out of range|no finite"):
+                    check_store.validate_mslp_grid(payload)
+        self.tempdir = tempfile.TemporaryDirectory()
+        store = make_native_store(Path(self.tempdir.name))
+        (store / "products/grids/ecmwf_ifs025/runs/20260926T00Z/mslp/20260926T00Z.f16").write_bytes(b"\x00\x00" * 4)
+        report = check_store.preflight(store, NOW)
+        self.assertFalse(report["ok"])
+        self.assertTrue(any("out of range" in item for item in report["errors"]))
+        self.assertFalse(any("not consumed by this app" in item for item in report["warnings"]))
 
 
 if __name__ == "__main__":

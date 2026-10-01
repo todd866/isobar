@@ -124,15 +124,16 @@ NSString *AviationNoticeDetail(NSDictionary *row, NSTimeZone *zone) {
     NSString *meta=[NSString stringWithFormat:@"%@ · %@ · %@",CategoryName(self.notice[@"category"]),[Locations(self.notice) componentsJoinedByString:@", "],TimeSpan(self.notice,self.zone)];
     [meta drawInRect:NSMakeRect(r.origin.x,29,r.size.width,17) withAttributes:attrs];
     NSDate *from=Stamp(self.notice[@"effective_from"]), *to=Stamp(self.notice[@"effective_to"]);
+    BOOL scheduled=String(self.notice[@"schedule"]).length>0;
     CGFloat y=53;
     [[NSColor.separatorColor colorWithAlphaComponent:.4] setFill]; NSRectFillUsingOperation(NSMakeRect(r.origin.x,y,r.size.width,2),NSCompositingOperationSourceOver);
-    if (from && !String(self.notice[@"schedule"]).length && !Flag(self.notice[@"estimated"]) && (to || Flag(self.notice[@"permanent"]))) {
+    if (from && !Flag(self.notice[@"estimated"]) && (to || Flag(self.notice[@"permanent"]))) {
         CGFloat x0=MAX(0,MIN(1,[from timeIntervalSinceDate:self.start]/86400));
         CGFloat x1=to?MAX(0,MIN(1,[to timeIntervalSinceDate:self.start]/86400)):1;
         if (x1>x0) {
             [[NSColor.systemBlueColor colorWithAlphaComponent:.55] setFill];
             CGFloat begin=r.origin.x+x0*r.size.width, finish=r.origin.x+x1*r.size.width;
-            if (String(self.notice[@"schedule"]).length) {
+            if (scheduled) {
                 for (CGFloat x=begin;x<finish;x+=7) NSRectFillUsingOperation(NSMakeRect(x,y,MIN(4,finish-x),2),NSCompositingOperationSourceOver);
             } else NSRectFillUsingOperation(NSMakeRect(begin,y,finish-begin,2),NSCompositingOperationSourceOver);
         }
@@ -151,7 +152,7 @@ NSString *AviationNoticeDetail(NSDictionary *row, NSTimeZone *zone) {
     NSTextView *_raw;
     NSArray *_rows;
     NSString *_importStatus;
-    BOOL _dateInitialized;
+    BOOL _datePinned;
 }
 - (BOOL)isFlipped { return YES; }
 - (BOOL)isOpaque { return YES; }
@@ -177,6 +178,7 @@ NSString *AviationNoticeDetail(NSDictionary *row, NSTimeZone *zone) {
         _table=[[NSTableView alloc] initWithFrame:NSZeroRect]; NSTableColumn *column=[[NSTableColumn alloc] initWithIdentifier:@"notice"]; [_table addTableColumn:column]; _table.headerView=nil; _table.rowHeight=62; _table.dataSource=self; _table.delegate=self; _table.allowsEmptySelection=YES; _table.accessibilityIdentifier=@"notices.list";
         _list=[[NSScrollView alloc] initWithFrame:NSZeroRect]; _list.documentView=_table; _list.hasVerticalScroller=YES; _list.borderType=NSNoBorder; [self addSubview:_list];
         _raw=[[NSTextView alloc] initWithFrame:NSZeroRect]; _raw.editable=NO; _raw.verticallyResizable=YES; _raw.horizontallyResizable=NO; _raw.maxSize=NSMakeSize(CGFLOAT_MAX,CGFLOAT_MAX); _raw.font=[NSFont monospacedSystemFontOfSize:12 weight:NSFontWeightRegular]; _raw.textContainerInset=NSMakeSize(10,10); _raw.autoresizingMask=NSViewWidthSizable; _raw.textContainer.widthTracksTextView=YES; _raw.accessibilityIdentifier=@"notices.raw";
+        _raw.drawsBackground=YES; _raw.backgroundColor=NSColor.textBackgroundColor; _raw.textColor=NSColor.labelColor;
         _detail=[[NSScrollView alloc] initWithFrame:NSZeroRect]; _detail.documentView=_raw; _detail.hasVerticalScroller=YES; _detail.borderType=NSBezelBorder; [self addSubview:_detail];
     }
     return self;
@@ -199,13 +201,13 @@ NSString *AviationNoticeDetail(NSDictionary *row, NSTimeZone *zone) {
     for (NSMenuItem *item in _location.itemArray) if ([item.representedObject isEqual:selected]) [_location selectItem:item];
     NSString *selectedRaw=_table.selectedRow>=0 && _table.selectedRow<(NSInteger)self.rows.count?String(self.rows[_table.selectedRow][@"raw"]):@"";
     _date.timeZone=self.timeZone;
-    if (!_dateInitialized) { _date.dateValue=self.now ?: NSDate.date; _dateInitialized=YES; }
+    if (!_datePinned) _date.dateValue=self.now ?: NSDate.date;
     [self filter:nil];
     if (selectedRaw.length) for (NSUInteger i=0;i<self.rows.count;i++) if ([self.rows[i][@"raw"] isEqual:selectedRaw]) { [self selectNoticeAtIndex:i]; break; }
 }
 - (void)changeKind:(id)sender { (void)sender; self.showingSIGMET=_kind.selectedSegment==1; [self filter:nil]; }
 - (void)filter:(id)sender {
-    (void)sender;
+    if (sender == _date) _datePinned = YES;
     BOOL sigmet=self.showingSIGMET;
     NSDictionary *product=sigmet?self.sigmets:self.notams;
     BOOL bounded=!sigmet && Coverage(product).count>0;
@@ -254,6 +256,7 @@ NSString *AviationNoticeDetail(NSDictionary *row, NSTimeZone *zone) {
 - (void)tableViewSelectionDidChange:(NSNotification *)notification {
     (void)notification; NSInteger row=_table.selectedRow;
     _raw.string=row>=0 && row<(NSInteger)self.rows.count?AviationNoticeDetail(self.rows[row],self.timeZone):@"";
+    _raw.textColor=NSColor.labelColor; _raw.backgroundColor=NSColor.textBackgroundColor;
     [self setNeedsLayout:YES];
 }
 - (void)selectNoticeAtIndex:(NSInteger)index { if (index>=0 && index<(NSInteger)self.rows.count) [_table selectRowIndexes:[NSIndexSet indexSetWithIndex:index] byExtendingSelection:NO]; }

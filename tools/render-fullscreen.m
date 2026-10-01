@@ -70,17 +70,21 @@ int main(int argc, const char **argv) {
         BOOL now = FindID(root, @"fullscreen.now") != nil;
         NSView *header = FindID(root, @"fullscreen.header");
         BOOL headerGone = !header || header.hidden;
-        NSView *statusField = FindID(root, @"fullscreen.status");
+        NSPopUpButton *place = (NSPopUpButton *)FindID(root, @"fullscreen.place");
+        NSButton *temperature = (NSButton *)FindID(root, @"fullscreen.temperature");
         NSView *legend = FindID(root, @"chart.legend");
         NSView *statusBar = FindID(root, @"fullscreen.statusBar");
-        NSInteger observationButtons = 0;
-        for (NSView *child in statusBar.subviews)
-            if ([child isKindOfClass:NSButton.class] && child.frame.size.height >= 30) observationButtons++;
-        BOOL statusFits = statusField && statusField.frame.origin.x >= 16
-            && NSMaxY(statusField.frame) <= NSHeight(statusBar.bounds)
-            && HasText(root, @"Perth") && HasText(root, @"Sydney")
-            && HasText(root, @"ECMWF 18Z · 6 h ago") && observationButtons >= 2
-            && !HasText(root, @"AWST") && !HasText(root, @"+12");
+        NSView *strip = FindID(root, @"hub.days");
+        BOOL placeNamed = NO, otherCity = NO;
+        for (NSMenuItem *item in place.itemArray) {
+            if ([item.title containsString:@"Perth"]) placeNamed = YES;
+            if ([item.title containsString:@"Sydney"]) otherCity = YES;
+        }
+        BOOL statusFits = placeNamed && otherCity && strip && strip.frame.size.width > strip.frame.size.height &&
+            temperature && [temperature.attributedTitle.string containsString:@"°"] &&
+            temperature.frame.size.height >= 40 &&
+            HasText(root, @"ECMWF 18Z · 6 h ago") && FindID(root, @"fullscreen.lens.rain") &&
+            !HasText(root, @"AWST") && !HasText(root, @"+12");
         NSRect legendFrame = legend ? [legend convertRect:legend.bounds toView:statusBar] : NSZeroRect;
         BOOL legendBar = !legend || legend.hidden || NSIsEmptyRect(legend.frame) || (legend.superview == statusBar
             && NSContainsRect(statusBar.bounds, legendFrame)
@@ -88,9 +92,9 @@ int main(int argc, const char **argv) {
             && !HasText(root, @"situational awareness")
             && !HasText(root, @"analysis"));
         if (!singleMap || !timeline || !play || !now || !headerGone || !statusFits || !legendBar) {
-            fprintf(stderr, "singleMap=%d timeline=%d play=%d now=%d headerGone=%d status=%d buttons=%ld legend=%d map %.0fx%.0f statusX=%.1f legendY=%.1f\n",
-                singleMap, timeline, play, now, headerGone, statusFits, (long)observationButtons, legendBar,
-                map.frame.size.width, map.frame.size.height, statusField.frame.origin.x, legendFrame.origin.y);
+            fprintf(stderr, "singleMap=%d timeline=%d play=%d now=%d headerGone=%d status=%d legend=%d map %.0fx%.0f legendY=%.1f\n",
+                singleMap, timeline, play, now, headerGone, statusFits, legendBar,
+                map.frame.size.width, map.frame.size.height, legendFrame.origin.y);
             return 1;
         }
         NSData *fullscreen = PNG(root);
@@ -111,7 +115,7 @@ int main(int argc, const char **argv) {
         NSRect chartInRoot = single ? [single convertRect:single.bounds toView:root] : NSZeroRect;
         BOOL legendStays = singleLegend && singleLegend.superview == FindID(root, @"fullscreen.statusBar")
             && !NSIntersectsRect(legendInRoot, chartInRoot);
-        BOOL stillStatus = HasText(root, @"Perth") && HasText(root, @"Sydney");
+        BOOL stillStatus = placeNamed && otherCity && HasText(root, @"ECMWF 18Z · 6 h ago");
         if (!big || !titled || !stillStatus || !legendStays || HasText(root, @"analysis")
             || HasText(root, @"AWST") || HasText(root, @"+12")) {
             fprintf(stderr, "single %.0fx%.0f big=%d titled=%d mapOnly=%d status=%d legend=%d title=%s\n",

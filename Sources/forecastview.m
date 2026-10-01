@@ -24,10 +24,11 @@ NSBezierPath *KiteWindArrowPath(NSPoint centre, double from, CGFloat length) {
     return path;
 }
 
-NSColor *KiteWindSpeedColour(double kt) {
-    if (!isfinite(kt) || kt < 0) return NSColor.secondaryLabelColor;
-    if (kt < 12) return [NSColor colorWithSRGBRed:.92 green:.17 blue:.12 alpha:1];
-    if (kt < 18) return [NSColor colorWithSRGBRed:1 green:.83 blue:.08 alpha:1];
+NSColor *KiteWindSpeedColour(double kt, double minKt, double maxKt) {
+    if (!isfinite(kt) || kt < 0 || !isfinite(minKt) || !isfinite(maxKt) || maxKt < minKt)
+        return NSColor.secondaryLabelColor;
+    if (kt < minKt) return [NSColor colorWithSRGBRed:1 green:.62 blue:.08 alpha:1];
+    if (kt > maxKt) return [NSColor colorWithSRGBRed:.92 green:.17 blue:.12 alpha:1];
     return [NSColor colorWithSRGBRed:.23 green:.80 blue:.18 alpha:1];
 }
 
@@ -292,7 +293,7 @@ static CGFloat YForSpeed(double kt, CGFloat windTop, CGFloat windBottom, double 
         if (![date isKindOfClass:NSDate.class] || [date compare:start] == NSOrderedAscending ||
             [date compare:end] == NSOrderedDescending || ![self row:row number:@"windKt" value:&kt] || kt < 0) continue;
         NSPoint centre=NSMakePoint(XForDate(date,start,left,plotW,horizon),YForSpeed(kt,windTop,windBottom,maxSpeed));
-        NSColor *colour=KiteWindSpeedColour(kt);
+        NSColor *colour=KiteWindSpeedColour(kt, self.minKt, self.maxKt);
         if (kt < .5) {
             [secondary setStroke];
             NSBezierPath *calm=[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(centre.x-3,centre.y-3,6,6)];
@@ -320,7 +321,7 @@ static CGFloat YForSpeed(double kt, CGFloat windTop, CGFloat windBottom, double 
 
 - (NSString *)accessibilityRoleDescription { return @"wind and rain forecast"; }
 - (NSString *)accessibilityLabel {
-    return [NSString stringWithFormat:@"%.0f hour wind and rain forecast. Arrows point downwind. Red is under 12 knots, yellow 12 to 18, green 18 or more. The shaded band is the selected wind range. Dashed lines show gusts, and rain is below.", self.horizonHours > 0 ? self.horizonHours : 48];
+    return [NSString stringWithFormat:@"%.0f hour wind and rain forecast. Arrows point downwind. Amber is lighter than the chosen kite range, green is inside it, red is stronger. Dashed lines show gusts, and rain is below.", self.horizonHours > 0 ? self.horizonHours : 48];
 }
 
 @end

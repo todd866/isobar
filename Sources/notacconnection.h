@@ -1,6 +1,11 @@
 #import <Foundation/Foundation.h>
+#import <Security/Security.h>
 
 NS_ASSUME_NONNULL_BEGIN
+
+// Attributes for a newly created NOTAC item. Existing items are read and
+// updated without rewriting their accessibility.
+NSDictionary *IsobarNotacNewKeychainItem(NSDictionary *query, NSString *secret);
 
 FOUNDATION_EXPORT NSString * const IsobarNotacErrorDomain;
 

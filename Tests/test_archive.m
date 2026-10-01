@@ -45,6 +45,12 @@ int main(void) {
         NSData *legacy = ArchivePointFile(root, @{@"latitude": @-31.96, @"longitude": @115.78});
         NSDictionary *decoded = Decode(legacy); Check([decoded[@"hourly"] count] == 2, @"point conversion"); Check(fabs([decoded[@"hourly"][0][@"wind_speed_kmh"] doubleValue] - 18.52) < 0.01, @"knots conversion");
         Check([decoded[@"hourly"][0][@"is_day"] boolValue] && ![decoded[@"hourly"][1][@"is_day"] boolValue], @"cross-midnight daylight");
+        NSMutableDictionary *offsetPoint = [point mutableCopy];
+        offsetPoint[@"daily"] = @{@"sunrise": @[@"2026-09-26T06:01+08:00"], @"sunset": @[@"2026-09-26T18:15+08:00"]};
+        [[NSJSONSerialization dataWithJSONObject:offsetPoint options:0 error:nil] writeToFile:[root stringByAppendingPathComponent:@"products/points/ecmwf_ifs/runs/2026-09-26T000000Z/near.json"] atomically:YES];
+        NSDictionary *offsetDecoded = Decode(ArchivePointFile(root, @{@"latitude": @-31.96, @"longitude": @115.78}));
+        Check([offsetDecoded[@"hourly"][0][@"is_day"] boolValue] && ![offsetDecoded[@"hourly"][1][@"is_day"] boolValue], @"offset sunrise and sunset compare as instants");
+        [[NSJSONSerialization dataWithJSONObject:point options:0 error:nil] writeToFile:[root stringByAppendingPathComponent:@"products/points/ecmwf_ifs/runs/2026-09-26T000000Z/near.json"] atomically:YES];
         Check([StorePointSeries(legacy)[0][@"temp"] doubleValue] == 20, @"legacy temperature key");
         Check([StorePointSeries(legacy)[0][@"weatherCode"] integerValue] == 61 && [StorePointSeries(legacy)[1][@"weatherCode"] integerValue] == 95, @"weather codes survive archive and series conversion");
         double degrees = 0; Check(WindFromDegrees(StorePointSeries(legacy)[0][@"windDir"], &degrees) && fabs(degrees - 270) < 0.1, @"compass wind direction");
@@ -89,7 +95,23 @@ int main(void) {
         [@"{\"latest\":\"../new\"}" writeToFile:[marineBase stringByAppendingPathComponent:@"current.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
         Check(!ArchiveMarineProduct(root,@"cottesloe"),@"invalid marine pointer cannot revive previous data");
         [pointData writeToFile:[root stringByAppendingPathComponent:@"products/points/ecmwf_ifs/runs/2026-09-26T000000Z/cottesloe.json"] atomically:YES];
-        Check([StoreKiteFile(ArchiveKiteFile(root))[@"spots"][0][@"archiveID"] isEqual:@"cottesloe"],@"marine beach identity survives native normalization");
+        NSMutableDictionary *bondi = [point mutableCopy];
+        bondi[@"id"] = @"bondi";
+        bondi[@"latitude"] = @-33.89;
+        bondi[@"longitude"] = @151.27;
+        bondi[@"timezone"] = @"Australia/Sydney";
+        bondi[@"state"] = @"NSW";
+        [[NSJSONSerialization dataWithJSONObject:bondi options:0 error:nil] writeToFile:[root stringByAppendingPathComponent:@"products/points/ecmwf_ifs/runs/2026-09-26T000000Z/bondi.json"] atomically:YES];
+        [[NSJSONSerialization dataWithJSONObject:@{@"id": @"bondi", @"onshore_from_deg": @90, @"hours": @[]} options:0 error:nil] writeToFile:[root stringByAppendingPathComponent:@"products/kite/runs/2026-09-26T000000Z/bondi.json"] atomically:YES];
+        NSArray *spots = Decode(ArchiveKiteFile(root))[@"spots"];
+        NSDictionary *cottesloe = nil, *bondiSpot = nil;
+        for (NSDictionary *spot in spots) {
+            if ([spot[@"archiveID"] isEqual:@"cottesloe"]) cottesloe = spot;
+            if ([spot[@"archiveID"] isEqual:@"bondi"]) bondiSpot = spot;
+        }
+        Check([cottesloe[@"timezone"] length] == 0 && [cottesloe[@"state"] length] == 0, @"a kite spot without a zone is not Perth");
+        Check([bondiSpot[@"timezone"] isEqual:@"Australia/Sydney"] && [bondiSpot[@"state"] isEqual:@"NSW"], @"kite zone comes from the point product");
+        Check([StoreKiteFile(ArchiveKiteFile(root))[@"spots"] count] >= 2, @"marine beach identity survives native normalization");
         // Bureau chart and warning readers follow the daemon's published
         // generation pointers. A pointer makes an incomplete generation a
         // hard failure; only an absent pointer permits legacy flat paths.
@@ -155,6 +177,26 @@ int main(void) {
         Check(!ArchiveAviationProduct(root,@"../notams.json"),@"reject aviation path traversal");
         [@"{\"latest\":\"../bad\"}" writeToFile:[av stringByAppendingPathComponent:@"current.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
         Check(!ArchiveAviationProduct(root,@"notams.json"),@"invalid pointer cannot resurrect stale notices");
+        NSString *busyRoot = [NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+        NSString *busyDir = [busyRoot stringByAppendingPathComponent:@"products/obs"];
+        [fm createDirectoryAtPath:busyDir withIntermediateDirectories:YES attributes:nil error:nil];
+        NSString *busyPath = [busyDir stringByAppendingPathComponent:@"obs.sqlite"];
+        sqlite3 *locked = NULL;
+        Check(sqlite3_open(busyPath.UTF8String, &locked) == SQLITE_OK, @"create a lockable observation database");
+        sqlite3_exec(locked, "CREATE TABLE obs (wmo INTEGER, aifstime_utc TEXT, product_id TEXT, name TEXT, lat REAL, lon REAL, air_temp REAL, wind_dir TEXT, wind_dir_deg REAL, wind_spd_kmh REAL, gust_kmh REAL, wind_spd_kt REAL, gust_kt REAL, press_msl REAL, press_tend TEXT, rain_trace TEXT, cloud_base_m REAL, vis_km REAL)", NULL, NULL, NULL);
+        sqlite3_exec(locked, "INSERT INTO obs VALUES (94768,'20260926110000','IDN60901','Sydney',-33.86,151.2,18,'E',90,10,12,5,6,1018,'-','0.0',NULL,NULL)", NULL, NULL, NULL);
+        sqlite3_exec(locked, "INSERT INTO obs VALUES (94768,'20260926103000','IDN60901','Sydney',-33.86,151.2,17,'E',90,10,12,5,6,1018,'-','0.0',NULL,NULL)", NULL, NULL, NULL);
+        Check(sqlite3_exec(locked, "BEGIN EXCLUSIVE", NULL, NULL, NULL) == SQLITE_OK, @"lock the observation database");
+        Check(ArchiveObservationFilesAtDate(busyRoot, fixtureNow) == nil, @"a busy database with no earlier read fails");
+        sqlite3_exec(locked, "COMMIT", NULL, NULL, NULL);
+        NSDictionary *read = ArchiveObservationFilesAtDate(busyRoot, fixtureNow);
+        Check([Decode(read[@"94768"])[@"observations"][@"data"] count] == 2, @"the database reads once the lock is gone");
+        Check(sqlite3_exec(locked, "BEGIN EXCLUSIVE", NULL, NULL, NULL) == SQLITE_OK, @"lock the observation database again");
+        NSDictionary *kept = ArchiveObservationFilesAtDate(busyRoot, fixtureNow);
+        Check(kept == read, @"a later busy read keeps the previous snapshot");
+        sqlite3_exec(locked, "COMMIT", NULL, NULL, NULL);
+        sqlite3_close(locked);
+        [fm removeItemAtPath:busyRoot error:nil];
         [fm removeItemAtPath:root error:nil];
     }
     return failures ? 1 : 0;

@@ -23,6 +23,12 @@ if [[ ! "$MINIMUM_MACOS" =~ '^[0-9]+\.[0-9]+(\.[0-9]+)?$' ]]; then
     echo "build.sh: ERROR — Info.plist must declare a numeric minimum macOS version." >&2
     exit 1
 fi
+SHORT=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
+BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist)
+if [[ "$SHORT" != "1.9.0" || "$BUILD" != "28" ]]; then
+    echo "build.sh: ERROR — Info.plist version is ${SHORT} (${BUILD}); expected 1.9.0 (28)." >&2
+    exit 1
+fi
 
 ARCH_FLAGS=()
 ARCH_DESCRIPTION="native"
@@ -53,8 +59,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
     "${ARCH_FLAGS[@]}" \
     -ISources \
     -DISOBAR_APP \
-    Sources/pure.m Sources/rain.m Sources/rainview.m Sources/aviation.m Sources/forecastview.m Sources/aviationview.m Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Sources/notices.m Sources/notacconnection.m Sources/surfview.m Sources/motion.m Sources/rawmovie.m Sources/scrub.m Sources/mapdetail.m Sources/collector.m Sources/archive.m Sources/ownchart.m tools/own-chart.m Sources/fullscreenwindow.m Sources/main.m \
-    -framework Cocoa -framework Security -framework ServiceManagement -framework CoreLocation -framework Vision -framework CoreVideo -framework CoreMedia -framework AVFoundation -framework QuartzCore -lz -lsqlite3 \
+    Sources/pure.m Sources/rain.m Sources/rainview.m Sources/aviation.m Sources/forecastview.m Sources/aviationview.m Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Sources/notices.m Sources/notacconnection.m Sources/surfview.m Sources/motion.m Sources/rawmovie.m Sources/scrub.m Sources/mapdetail.m Sources/collector.m Sources/archive.m Sources/ownchart.m tools/own-chart.m Sources/daystrip.m Sources/fullscreenwindow.m Sources/playback.m Sources/main.m \
+    -framework Cocoa -framework Security -framework ServiceManagement -framework CoreLocation -framework Vision -framework CoreVideo -framework CoreMedia -framework AVFoundation -framework QuartzCore -framework Accelerate -lz -lsqlite3 \
     -o "$APP/Contents/MacOS/Isobar"
 install -m 0644 Info.plist "$APP/Contents/Info.plist"
 for catalogue in stations-wa.json stations-nsw.json stations-vic.json; do

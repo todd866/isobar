@@ -6,9 +6,17 @@
 BOOL IsobarWriteRawMovie(OwnRun *run, NSURL *output, double fromIndex, double toIndex,
     NSInteger fps, double duration, OwnLayerOptions layers, NSProgress *progress,
     NSString **error) {
+    IsobarMovieEncode encode = {0};
+    return IsobarWriteRawMovieWithEncode(run, output, fromIndex, toIndex, fps, duration, layers, encode, progress, error);
+}
+
+BOOL IsobarWriteRawMovieWithEncode(OwnRun *run, NSURL *output, double fromIndex, double toIndex,
+    NSInteger fps, double duration, OwnLayerOptions layers, IsobarMovieEncode encode,
+    NSProgress *progress, NSString **error) {
     if (!run || !output.isFileURL || !isfinite(fromIndex) || !isfinite(toIndex) ||
         fromIndex < 0 || toIndex <= fromIndex || toIndex > run.hours - 1 ||
         fps < 24 || fps > 60 || !isfinite(duration) || duration < 1 || duration > 120 ||
+        !isfinite(encode.quality) || encode.quality < 0 || encode.quality > 1 ||
         [NSFileManager.defaultManager fileExistsAtPath:output.path]) {
         if (error) *error = @"Invalid animation request";
         return NO;
@@ -26,12 +34,24 @@ BOOL IsobarWriteRawMovie(OwnRun *run, NSURL *output, double fromIndex, double to
     layers.bare = 1;
     layers.observed = 0; // A moving forecast must never animate station observations.
     AVAssetWriter *writer = [[AVAssetWriter alloc] initWithURL:output fileType:AVFileTypeMPEG4 error:&failure];
+    // The app path is average bitrate. Site export passes VideoToolbox Quality
+    // (the compression key is @"Quality"; AVVideoQualityKey is JPEG-only).
+    NSDictionary *compression = encode.quality > 0 ? @{
+        @"Quality": @(encode.quality),
+        AVVideoProfileLevelKey: encode.highProfile ? AVVideoProfileLevelH264HighAutoLevel : AVVideoProfileLevelH264MainAutoLevel,
+        AVVideoExpectedSourceFrameRateKey: @(fps),
+        AVVideoMaxKeyFrameIntervalKey: @(encode.keyframeInterval > 0 ? encode.keyframeInterval : fps),
+        AVVideoMaxKeyFrameIntervalDurationKey: @1.0,
+        AVVideoAllowFrameReorderingKey: @NO,
+        AVVideoH264EntropyModeKey: AVVideoH264EntropyModeCABAC,
+    } : @{
+        AVVideoAverageBitRateKey: @(fps > 30 ? 6000000 : 4000000),
+        AVVideoProfileLevelKey: AVVideoProfileLevelH264MainAutoLevel,
+        AVVideoExpectedSourceFrameRateKey: @(fps), AVVideoMaxKeyFrameIntervalKey: @(fps),
+        AVVideoAllowFrameReorderingKey: @NO};
     AVAssetWriterInput *input = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo outputSettings:@{
         AVVideoCodecKey:AVVideoCodecTypeH264, AVVideoWidthKey:@(width), AVVideoHeightKey:@(height),
-        AVVideoCompressionPropertiesKey:@{AVVideoAverageBitRateKey:@(fps > 30 ? 6000000 : 4000000),
-            AVVideoProfileLevelKey:AVVideoProfileLevelH264MainAutoLevel,
-            AVVideoExpectedSourceFrameRateKey:@(fps), AVVideoMaxKeyFrameIntervalKey:@(fps),
-            AVVideoAllowFrameReorderingKey:@NO}}];
+        AVVideoCompressionPropertiesKey:compression}];
     input.expectsMediaDataInRealTime = NO;
     AVAssetWriterInputPixelBufferAdaptor *adaptor = [AVAssetWriterInputPixelBufferAdaptor assetWriterInputPixelBufferAdaptorWithAssetWriterInput:input sourcePixelBufferAttributes:@{
         (NSString *)kCVPixelBufferPixelFormatTypeKey:@(kCVPixelFormatType_32BGRA),
@@ -85,6 +105,8 @@ BOOL IsobarWriteRawMovie(OwnRun *run, NSURL *output, double fromIndex, double to
         }
         CVPixelBufferRelease(buffer);
         progress.completedUnitCount = i + 1;
+        if (encode.quality > 0 && (i + 1) % 48 == 0)
+            fprintf(stderr, "  %ld/%ld\n", (long)(i + 1), (long)frames);
     }}
     if (okay) {
         [input markAsFinished];

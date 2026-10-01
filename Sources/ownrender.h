@@ -13,6 +13,8 @@ typedef struct {
     int rain;
     int observed; // station dots, and no model hatch
     int bare;     // map only; the popover draws its own heading
+    int plateOnly; // sea, land and overlays, no isobars
+    int inkOnly;   // isobars, labels and centres on a clear plate
 } OwnLayerOptions;
 
 typedef NS_ENUM(NSInteger, OwnRunField) {
@@ -35,19 +37,41 @@ typedef NS_ENUM(NSInteger, OwnRunField) {
 // complete movie so annotations do not get re-selected independently per
 // frame. Static chart rendering does not use this object.
 @interface OwnMotionState : NSObject
-// Interactive stills must be readable even if the pointer stops after one
-// frame. Movies leave this off so newly appearing annotations can fade in.
+// A scrub sample can start mid-sequence. Annotations are drawn opaque in
+// stills and movies either way, so one frame never shows grey type.
 @property (nonatomic) BOOL immediateAnnotations;
 @property (nonatomic, readonly) CGFloat maxLabelStep;
 @property (nonatomic, readonly) CGFloat maxCentreStep;
+// Largest label, centre, or contour alpha change after the first frame.
+@property (nonatomic, readonly) CGFloat maxAnnotationAlphaStep;
+// Frames after the first on which the set of labels at half opacity changed.
+@property (nonatomic, readonly) NSInteger labelSetChanges;
+// Chart-point positions of the annotations last drawn with this state.
+- (NSInteger)copyLabelPoints:(CGPoint *)points max:(NSInteger)max;
+- (NSInteger)copyCentrePoints:(CGPoint *)points max:(NSInteger)max;
 @end
 
 OwnRun *OwnRunLoad(NSString *runDirectory, NSString *coastPath, NSString **error);
 OwnRun *OwnRunLoadPublished(NSString *root, BOOL previous, NSString *coastPath, NSString **error);
-// stations are @{@"lat", @"lon", @"mm"}. scale is the pixel multiple (1–3).
+// stations are @{@"lat", @"lon", @"mm"}. scale is the pixel multiple (1–4).
 NSImage *OwnRunRender(OwnRun *run, NSInteger hour, NSString *title, OwnLayerOptions layers,
     NSArray<NSDictionary *> *stations, CGFloat scale);
 NSImage *OwnRunRenderFraction(OwnRun *run, double fractionalIndex, NSString *title, OwnLayerOptions layers,
     NSArray<NSDictionary *> *stations, CGFloat scale);
 NSImage *OwnRunRenderMotion(OwnRun *run, double fractionalIndex, NSString *title, OwnLayerOptions layers,
     NSArray<NSDictionary *> *stations, CGFloat scale, OwnMotionState *state);
+
+// Last OwnRunRender / OwnRunRenderMotion on this thread, in milliseconds.
+typedef struct {
+    double fieldMs;
+    double smoothMs;
+    double contourMs;
+    double chaikinMs;
+    double labelMs;
+    double centreMs;
+    double drawMs;
+    double overlayMs;
+    double plateMs;
+    double totalMs;
+} OwnRenderProfile;
+OwnRenderProfile OwnRenderProfileLast(void);

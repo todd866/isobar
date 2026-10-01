@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import subprocess
@@ -9,7 +10,7 @@ from unittest import mock
 
 from PIL import Image, ImageDraw
 
-from wall import render
+from wall import publish_raw, render
 
 STORE = Path(os.environ["ISOBAR_WALL_STORE"]) if os.environ.get("ISOBAR_WALL_STORE") else None
 NOW = datetime(2026, 9, 27, 4, tzinfo=timezone.utc)
@@ -54,6 +55,8 @@ class WallRenderTests(unittest.TestCase):
             self.assertEqual(conditions["rain"]["coveredHours"], 11)
             self.assertIsNone(conditions["wind"]["kt"])
             self.assertIsNone(conditions["wind"]["from"])
+            self.assertEqual(conditions["wind"]["compass"], "—")
+            self.assertEqual(conditions["surf"]["compass"], "SW")
             ecmwf = next((store / "products/points/ecmwf_ifs/runs").iterdir()) / "cottesloe.json"
             data = json.loads(ecmwf.read_text()); data["units"]["wind_speed_10m"] = "mph"; ecmwf.write_text(json.dumps(data))
             self.assertIsNone(render.point_conditions(store, NOW)["wind"]["kt"])
@@ -62,13 +65,36 @@ class WallRenderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             store = Path(temp); (store / "manifest.json").write_text("{}")
             make_point_store(store, precipitation=[0.25] * 14)
-            rain = render.point_conditions(store, NOW)["rain"]
-            self.assertEqual(rain["coveredHours"], 12); self.assertEqual(rain["mm"], 3.0)
+            conditions = render.point_conditions(store, NOW)
+            self.assertEqual(conditions["rain"]["coveredHours"], 12); self.assertEqual(conditions["rain"]["mm"], 3.0)
+            self.assertEqual(conditions["wind"]["compass"], "E")
+            self.assertEqual(conditions["wind"]["from"], 90)
+            self.assertEqual(conditions["surf"]["compass"], "SW")
 
-    def test_chart_label_fallback_does_not_use_download_time(self):
-        with tempfile.TemporaryDirectory() as temp:
-            labels = render.chart_labels(Path(temp) / "not-a-pdf", "2026-09-27T01:10:52Z")
-            self.assertEqual(labels, [f"Panel {i}" for i in range(1, 9)])
+    def test_chart_labels_require_eight_parsed_dates(self):
+        labels = ["10am Monday September 28, 2026", "10pm Monday September 28, 2026",
+                  "10am Tuesday September 29, 2026", "10pm Tuesday September 29, 2026",
+                  "10am Wednesday September 30, 2026", "10pm Wednesday September 30, 2026",
+                  "10am Thursday October 1, 2026", "10pm Thursday October 1, 2026"]
+        with mock.patch.object(render.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "\n".join(labels), "")) as run:
+            self.assertEqual(render.chart_labels(Path("chart.pdf"), "2026-09-27T01:10:52Z"), labels)
+        self.assertGreater(run.call_args.kwargs["timeout"], 0)
+        with mock.patch.object(render.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "\n".join(labels[:7]), "")):
+            with self.assertRaises(render.RenderError) as caught:
+                render.chart_labels(Path("chart.pdf"), "2026-09-27T01:10:52Z")
+        self.assertNotIn("2026-09-27T01:10:52Z", str(caught.exception))
+        invalid = labels.copy()
+        invalid[0] = "10am Monday September 31, 2026"
+        with mock.patch.object(render.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "\n".join(invalid), "")):
+            with self.assertRaises(render.RenderError):
+                render.chart_labels(Path("chart.pdf"), None)
+
+    def test_pdftoppm_has_a_timeout(self):
+        with mock.patch.object(render.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, "", "")) as run:
+            with self.assertRaises(render.RenderError):
+                render.render_panel(Path("chart.pdf"), 0, (8, 8))
+        self.assertIn("pdftoppm", run.call_args.args[0])
+        self.assertEqual(run.call_args.kwargs["timeout"], render.CHART_TOOL_TIMEOUT)
 
     def test_label_to_utc_converts_bureau_est(self):
         self.assertEqual(render.label_to_utc("10am Monday September 28, 2026"), "2026-09-28T00:00:00Z")
@@ -97,6 +123,80 @@ class WallRenderTests(unittest.TestCase):
             with mock.patch.object(render, "render_panel", return_value=Image.new("RGB", (580, 436))), mock.patch.object(render, "chart_labels", return_value=[f"Panel {i}" for i in range(1, 9)]), mock.patch.object(render, "point_conditions", return_value=conditions), mock.patch.object(render, "build_fronts_video", side_effect=fake_movie) as build:
                 render.render(root, root / "current.png", NOW); render.render(root, root / "current.png", NOW)
             build.assert_called_once()
+            pointer = json.loads((root / "current.json").read_text())
+            self.assertTrue(pointer["generation"].endswith(f"-v{render.RENDERER_VERSION}"))
+
+    def test_partial_generation_is_replaced(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); (root / "products/charts").mkdir(parents=True)
+            (root / "manifest.json").write_text(json.dumps({"products": [{"id": "chart-IDG00073.pdf"}]}))
+            (root / "products/charts/IDG00073.pdf").write_bytes(b"pdf")
+            digest = hashlib.sha256(b"pdf").hexdigest()[:16]
+            partial = root / "generations" / f"{digest}-v{render.RENDERER_VERSION}"
+            partial.mkdir(parents=True)
+            (partial / "junk").write_text("partial", encoding="utf-8")
+            conditions = {"rain": {"mm": None}, "wind": {"kt": None, "from": None, "compass": "—"}, "surf": {"metres": None, "period": None, "from": None, "compass": "—"}}
+            def fake_movie(folder, *args):
+                (folder / "fronts.mp4").write_bytes(b"movie")
+                (folder / "fronts.json").write_text(json.dumps({"labels": [f"Panel {i}" for i in range(1, 9)]}))
+            with mock.patch.object(render, "render_panel", return_value=Image.new("RGB", (580, 436))), mock.patch.object(render, "chart_labels", return_value=[f"Panel {i}" for i in range(1, 9)]), mock.patch.object(render, "point_conditions", return_value=conditions), mock.patch.object(render, "build_fronts_video", side_effect=fake_movie):
+                render.render(root, root / "current.png", NOW)
+            self.assertTrue((partial / "fronts.mp4").is_file())
+            self.assertFalse((partial / "junk").exists())
+
+    def test_serve_starts_from_last_good_generation_when_refresh_fails(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            generation = root / "generations" / "0123456789abcdef-v7"
+            (generation / "frames").mkdir(parents=True)
+            (generation / "fronts.mp4").write_bytes(b"movie")
+            (generation / "fronts.json").write_text("{}", encoding="utf-8")
+            (root / "current.json").write_text(json.dumps({"generation": generation.name}), encoding="utf-8")
+            started = {}
+
+            class FakeServer:
+                def __init__(self, address, handler):
+                    started["address"] = address
+                def serve_forever(self):
+                    started["served"] = True
+                def server_close(self):
+                    started["closed"] = True
+
+            with mock.patch.object(render.WallServer, "refresh", side_effect=render.RenderError("offline")), mock.patch.object(render.http.server, "ThreadingHTTPServer", FakeServer):
+                render.serve(root, root / "current.png", "127.0.0.1", 0)
+            self.assertTrue(started.get("served"))
+            self.assertEqual(json.loads((root / "current.json").read_text())["generation"], generation.name)
+            with mock.patch.object(render.WallServer, "refresh", side_effect=render.RenderError("offline")):
+                with self.assertRaises(render.RenderError):
+                    render.serve(root / "empty", root / "empty" / "current.png", "127.0.0.1", 0)
+
+    def test_ffprobe_timeout_and_optional_extras(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            frames = folder / "frames"
+            frames.mkdir()
+            for index in range(10):
+                Image.new("RGB", (8, 8), "white").save(frames / f"{index}.png")
+            labels = ["10am Monday September 28, 2026", "10pm Monday September 28, 2026",
+                      "10am Tuesday September 29, 2026", "10pm Tuesday September 29, 2026",
+                      "10am Wednesday September 30, 2026", "10pm Wednesday September 30, 2026",
+                      "10am Thursday October 1, 2026", "10pm Thursday October 1, 2026"]
+            def fake_run(args, **kwargs):
+                if args[0] == "ffprobe":
+                    self.assertEqual(kwargs.get("timeout"), render.PROBE_TIMEOUT)
+                    return subprocess.CompletedProcess(args, 0, "15\n", "")
+                Path(args[-1]).write_bytes(b"movie")
+                return subprocess.CompletedProcess(args, 0, "", "")
+            (folder / "chart.pdf").write_bytes(b"pdf")
+            with mock.patch.object(render.shutil, "which", return_value="ffmpeg"), mock.patch.object(render.subprocess, "run", side_effect=fake_run):
+                render.build_fronts_video(folder, folder / "chart.pdf", labels)
+        with mock.patch.object(publish_raw.subprocess, "check_output", return_value=b"{}") as probe:
+            self.assertEqual(publish_raw.probe(Path("movie.mp4")), {})
+        self.assertEqual(probe.call_args.kwargs["timeout"], publish_raw.PROBE_TIMEOUT)
+        declared = (Path(__file__).parent / "pyproject.toml").read_text()
+        self.assertIn('numpy = ["numpy"]', declared)
+        self.assertIn('scipy = ["scipy"]', declared)
+        self.assertIn('pymupdf = ["pymupdf"]', declared)
 
     @unittest.skipUnless(STORE and STORE.is_dir(), "set ISOBAR_WALL_STORE for archive integration")
     def test_real_archive_render_bundle(self):

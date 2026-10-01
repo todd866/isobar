@@ -141,6 +141,55 @@ int main(void) { @autoreleasepool {
     [compact selectNoticeAtIndex:0]; [compact layoutSubtreeIfNeeded];
     screenshot(compact,@"notac-620x360-dark.png");
     [compact setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameAqua]]; screenshot(compact,@"notac-620x360.png");
+
+    NSMutableDictionary *scheduled=[notice(@"S1000/26",@"NOTAMN",now,[now dateByAddingTimeInterval:3600],@"services",@"S1000/26 E) daily closure") mutableCopy];
+    scheduled[@"schedule"]=@"2200/0600";
+    NSDictionary *barNotams=@{@"source":@"synthetic",@"retrieved_at":now,@"imported":@YES,@"notices":@[records[0],scheduled]};
+    AviationNoticesView *bars=[[AviationNoticesView alloc] initWithFrame:NSMakeRect(0,0,840,540)];
+    bars.notams=barNotams; bars.airport=@"YPPH"; bars.now=now; bars.timeZone=zone;
+    NSWindow *barWindow=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,840,540) styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:YES];
+    barWindow.releasedWhenClosed=NO; [barWindow setContentView:bars]; [bars reload]; [bars layoutSubtreeIfNeeded];
+    NSTableView *table=(NSTableView *)findView(bars,@"notices.list");
+    NSInteger solidRow=indexForId(bars.rows,@"A1000/26"), hatchRow=indexForId(bars.rows,@"S1000/26");
+    NSView *solid=[table viewAtColumn:0 row:solidRow makeIfNecessary:YES];
+    NSView *hatched=[table viewAtColumn:0 row:hatchRow makeIfNecessary:YES];
+    solid.frame=NSMakeRect(0,0,800,62); hatched.frame=NSMakeRect(0,0,800,62);
+    NSUInteger (^ink)(NSView *)=^NSUInteger(NSView *cell) {
+        NSInteger w=MAX(1,(NSInteger)NSWidth(cell.bounds)), h=MAX(1,(NSInteger)NSHeight(cell.bounds));
+        NSBitmapImageRep *bitmap=[[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:w pixelsHigh:h bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSCalibratedRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+        NSGraphicsContext *context=[NSGraphicsContext graphicsContextWithBitmapImageRep:bitmap];
+        [NSGraphicsContext saveGraphicsState]; [NSGraphicsContext setCurrentContext:context];
+        [cell displayRectIgnoringOpacity:cell.bounds inContext:context]; [NSGraphicsContext restoreGraphicsState];
+        NSUInteger count=0;
+        for (NSInteger y=0;y<h;y++) for (NSInteger x=0;x<w;x++) {
+            NSColor *c=[bitmap colorAtX:x y:y];
+            if (c.blueComponent>c.redComponent+0.12 && c.blueComponent>0.25) count++;
+        }
+        return count;
+    };
+    NSUInteger solidInk=ink(solid), hatchInk=ink(hatched);
+    ck(hatchInk>0 && solidInk>hatchInk, @"a scheduled NOTAM draws a hatched validity bar");
+    [barWindow close];
+
+    AviationNoticesView *anchor=[[AviationNoticesView alloc] initWithFrame:NSMakeRect(0,0,840,540)];
+    anchor.notams=notams; anchor.airport=@"YPPH"; anchor.now=now; anchor.timeZone=zone; [anchor reload];
+    NSDatePicker *anchorTime=(NSDatePicker *)findView(anchor,@"notices.time");
+    ck(fabs([anchorTime.dateValue timeIntervalSinceDate:now])<1, @"Next 24h starts at the current time");
+    NSDate *later=[now dateByAddingTimeInterval:2*86400];
+    anchor.now=later; [anchor reload];
+    ck(fabs([anchorTime.dateValue timeIntervalSinceDate:later])<1, @"showing notices again re-anchors an untouched picker");
+    anchorTime.dateValue=now; [anchorTime sendAction:anchorTime.action to:anchorTime.target];
+    anchor.now=[now dateByAddingTimeInterval:5*86400]; [anchor reload];
+    ck(fabs([anchorTime.dateValue timeIntervalSinceDate:now])<1, @"a picker the user changed stays put");
+
+    [view setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua]];
+    NSTextView *darkRaw=(NSTextView *)findView(view,@"notices.raw");
+    __block CGFloat backgroundRed=1;
+    [darkRaw.effectiveAppearance performAsCurrentDrawingAppearance:^{
+        NSColor *bg=[darkRaw.backgroundColor colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
+        backgroundRed=bg?bg.redComponent:1;
+    }];
+    ck(backgroundRed<0.5, @"raw notice text uses the dark text background");
     } @finally {
         [window close]; [small close];
     }

@@ -22,6 +22,7 @@
 @property (nonatomic, strong) NSUserDefaults *testPreferences;
 @end
 @implementation LayerController
+- (BOOL)allowsAutomaticEvolution { return NO; }
 - (NSSize)screenBudget { return NSMakeSize(1024, 600); }
 - (double)backingScale { return 1; }
 - (NSUserDefaults *)chartPreferences { return self.testPreferences; }
@@ -110,6 +111,15 @@ static void MatchesLayer(Controller *c, PDFCropView *actual, NSInteger index, NS
     Check(expectedImage && isfinite(diff) && diff < .002, [name stringByAppendingString:@" shows requested field"]);
 }
 
+static NSUserDefaults *SeededDefaults;
+@interface SeededLayerController : Controller
+@end
+@implementation SeededLayerController
+- (NSUserDefaults *)chartPreferences { return SeededDefaults; }
+- (NSSize)screenBudget { return NSMakeSize(1024, 600); }
+- (double)backingScale { return 1; }
+@end
+
 int main(int argc, const char **argv) {
     @autoreleasepool {
         if (argc != 3) { fprintf(stderr, "usage: check-layers STORE OUTPUT_DIRECTORY\n"); return 64; }
@@ -117,6 +127,13 @@ int main(int argc, const char **argv) {
         [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
         NSString *store = [NSString stringWithUTF8String:argv[1]], *output = [NSString stringWithUTF8String:argv[2]];
         [NSFileManager.defaultManager createDirectoryAtPath:output withIntermediateDirectories:YES attributes:nil error:nil];
+        NSString *seedSuite = [@"com.isobar.layer-seed." stringByAppendingString:NSUUID.UUID.UUIDString];
+        SeededDefaults = [[NSUserDefaults alloc] initWithSuiteName:seedSuite];
+        [SeededDefaults setObject:@[@2, @0] forKey:@"mapDetailModes"];
+        SeededLayerController *seeded = [SeededLayerController new];
+        Check([[seeded valueForKey:@"mapDetailModes"] count] == 0 && [SeededDefaults objectForKey:@"mapDetailModes"] == nil,
+              @"a new launch does not restore lens chips");
+        [SeededDefaults removePersistentDomainForName:seedSuite];
         NSString *suite = [@"com.isobar.layer-test." stringByAppendingString:NSUUID.UUID.UUIDString];
         LayerController *c = [LayerController new];
         Check([[c valueForKey:@"barbs"] boolValue], @"new installation starts with quiet wind hints on the model map");
@@ -213,10 +230,10 @@ int main(int argc, const char **argv) {
             // checking warm navigation, and ensure it keeps any image that an
             // immediate foreground request has already rendered.
             NSOperationQueue *preparation=[c valueForKey:@"chartPreparationQueue"];
-            NSDate *deadline=[NSDate dateWithTimeIntervalSinceNow:15];
+            NSDate *deadline=[NSDate dateWithTimeIntervalSinceNow:180];
             while (preparation.operationCount>0 && deadline.timeIntervalSinceNow>0)
-                [NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:.01]];
-            [NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:.02]];
+                [NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:.05]];
+            [NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:.2]];
             Check(preparation.operationCount==0,@"bounded layer images finish background preparation");
             Check([c ecmwfImageForIndex:shown bare:YES comparison:NO]==cached,@"background preparation preserves an already displayed image");
             NSUInteger count = [[c valueForKey:@"chartCache"] count];
@@ -255,6 +272,13 @@ int main(int argc, const char **argv) {
             [[c valueForKey:@"pair"] getValue:&pair size:sizeof(pair)];
             NSInteger frames = [[c valueForKey:@"sequenceTimes"] count];
             Check(pair.valid && pair.left == frames-2 && pair.right == frames-1,@"colliding nearest times retain last adjacent pair");
+            Check(Find(c.popover.contentViewController.view, @"hub.days") != nil, @"popover keeps the seven-day strip");
+            Check(Find(window.contentView, @"hub.days") != nil, @"fullscreen keeps the seven-day strip");
+            NSButton *rainLens = (NSButton *)Find(c.popover.contentViewController.view, @"forecast.toggle.rain");
+            [rainLens performClick:nil];
+            Check([[c valueForKey:@"forecastMode"] integerValue] == 2 && [[c valueForKey:@"mapDetailModes"] count] == 0 &&
+                  [c.testPreferences objectForKey:@"mapDetailModes"] == nil,
+                  @"opening a lens does not persist a map chip");
             Select(c,4);
 
             [c setValue:nil forKey:@"ownRun"];

@@ -130,13 +130,14 @@ static void TestArrowGeometry(void) {
           KiteWindArrowPath(centre, 90, -2) == nil,
           @"invalid arrow input produces no path");
 
-    NSColor *red = [KiteWindSpeedColour(11.9) colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
-    NSColor *yellow = [KiteWindSpeedColour(12) colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
-    NSColor *green = [KiteWindSpeedColour(18) colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
-    Check(red && red.redComponent > red.greenComponent &&
-          yellow && yellow.redComponent > 0.5 && yellow.greenComponent > 0.4 &&
-          green && green.greenComponent > green.redComponent,
-          @"kite speed colours cross red, yellow and green thresholds");
+    NSColor *under = [KiteWindSpeedColour(14, 15, 30) colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
+    NSColor *inside = [KiteWindSpeedColour(20, 15, 30) colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
+    NSColor *over = [KiteWindSpeedColour(35, 15, 30) colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
+    Check(under && under.redComponent > under.blueComponent && under.greenComponent > 0.3 &&
+          inside && inside.greenComponent > inside.redComponent &&
+          over && over.redComponent > over.greenComponent &&
+          over.greenComponent < inside.greenComponent,
+          @"kite colours follow the saved band: amber under, green inside, red over");
 }
 
 static HourlyForecastView *Forecast(NSSize size, NSString *appearance) {
@@ -253,10 +254,10 @@ static void TestDensityAndColours(void) {
             i==1?@"crowded hours retain a dot":@"sparse off-grid hours keep full direction arrows");
         NSColor *colour=[[rep colorAtX:(NSInteger)(anchor.x*rep.pixelsWide/NSWidth(view.bounds))
             y:(NSInteger)(anchor.y*rep.pixelsHigh/NSHeight(view.bounds))] colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
-        BOOL red=colour.redComponent>.7 && colour.greenComponent<.4;
-        BOOL yellow=colour.redComponent>.8 && colour.greenComponent>.6 && colour.blueComponent<.3;
+        BOOL amber=colour.redComponent>.8 && colour.greenComponent>.5 && colour.blueComponent<.3;
         BOOL green=colour.greenComponent>.6 && colour.redComponent<.5;
-        Check(i<2?red:(i==2?yellow:green),@"painted wind mark uses the expected strength colour");
+        // The saved kite band is 15–30 kt. Under it is amber; inside it is green.
+        Check([speeds[i] doubleValue] < view.minKt ? amber : green, @"painted wind mark uses the expected strength colour");
     }
     Capture(view,@"kite-sparse.png");
 }

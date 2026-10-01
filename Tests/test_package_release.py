@@ -143,6 +143,13 @@ class PackageReleaseTests(unittest.TestCase):
                     package_release.package(app, output, {"zip"}, notarized=True)
             self.assertFalse(output.exists())
 
+    def test_spctl_assess_has_a_timeout(self):
+        with patch.object(package_release.subprocess, "run", return_value=subprocess.CompletedProcess(("spctl",), 0, "", "")) as run:
+            package_release.validate_notarized(Path("/tmp/Isobar.app"))
+        spctl = [call for call in run.call_args_list if call.args and call.args[0][0] == "spctl"]
+        self.assertEqual(len(spctl), 1)
+        self.assertEqual(spctl[0].kwargs["timeout"], package_release.SPCTL_TIMEOUT)
+
     def test_dmg_root_contains_install_hint_and_applications_link(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "dmg"

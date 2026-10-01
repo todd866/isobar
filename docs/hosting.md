@@ -1,8 +1,11 @@
 # Hosting Isobar
 
 The website is static HTML, CSS and JavaScript in `site/`. Its only data entry
-point is `site/data/current.json`; the manifest names prepared map images and
-hourly coastal readings. No account or server is needed to view it.
+point is `site/data/current.json`. The manifest names prepared map images, the
+pressure movie, and hourly plus daily forecasts for the configured surface
+points. Perth (`cottesloe`) and Sydney (`yssy`) are required; each series keeps
+up to seven days of hours in that place's IANA timezone. Map frames stay on the
+published grid horizon. No account or server is needed to view it.
 
 ## Build a weather snapshot
 
@@ -19,9 +22,11 @@ cd ../isobar
 python3 -m http.server --directory site 8080
 ```
 
-Open `http://localhost:8080`. The export uses ECMWF model maps and the public
-Perth coastal forecast. It never copies Bureau charts, personal locations,
-observations, imported briefings, credentials or the archive as a whole.
+Open `http://localhost:8080`. The export uses ECMWF model maps and the configured
+surface points, including Perth and Sydney. It never copies Bureau charts,
+personal locations, observations, imported briefings, credentials or the archive
+as a whole. A snapshot that is missing either city, or a seven-day summary, is
+rejected so an older Perth-only bundle cannot replace the site.
 
 Serve the contents of `site/` with any static host. Export fresh data at least
 twice daily. Prepare a new site directory and switch the whole directory
@@ -47,13 +52,15 @@ python3 tools/public-weather.py export PATH_TO_ARCHIVE public-weather.tar.gz
 python3 tools/public-weather.py import public-weather.tar.gz build/web-weather
 ```
 
-The helper retains only the latest two ECMWF grid runs and the named public
-coastal forecast, validates every file and removes other metadata. Attach the
+The helper retains only the latest two ECMWF grid runs and the configured public
+surface points (Perth, Sydney, and any other listed point that is present),
+including timezone and daily fields, and removes other metadata. Attach the
 bundle to a release tagged `weather-bootstrap` in your repository (mark it as a
 prerelease, not the latest release). The workflows use this when no collection
-artifact is available. Publication requires a model run less than 36 hours old
-and at least 24 hours of coastal coverage; an expired bootstrap cannot replace
-the working website. Change the collector repository in `collect-weather.yml`
+artifact is available. Publication requires a model run less than 36 hours old, Perth and Sydney, and
+at least 24 hours of temperature, rain and wind at each published point. Perth
+also needs 24 hours of wave height. An expired or Perth-only bootstrap cannot
+replace the working website. Change the collector repository in `collect-weather.yml`
 if you maintain a fork; keep its revision pinned to a reviewed commit.
 
 An optional `site/release.json` supplies a verified Mac download:
@@ -73,7 +80,9 @@ for the build, notarization and publishing steps.
 ## Browser checks
 
 Install Playwright in your development environment and its Chromium browser,
-then run `node tools/test-site.mjs`. Set `PLAYWRIGHT_MODULE` or `CHROME_PATH` to
-use an existing installation. Checks run headlessly and cover laptop/phone
-viewports, enlarged text, actual map changes, offline reuse, retry and response
-races. Screenshots go to the system temporary directory.
+then run `node tools/test-site.mjs`. `node tools/test-site.mjs --site DIR` runs
+the same checks against an exported site, including Play under a 10 Mbps
+throttle. Set `PLAYWRIGHT_MODULE` or `CHROME_PATH` to use an existing
+installation. Checks run headlessly and cover laptop/phone viewports, enlarged
+text, actual map changes, offline reuse, retry and response races. Screenshots
+go to the system temporary directory unless `ISOBAR_SITE_QA` is set.

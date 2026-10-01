@@ -1,6 +1,8 @@
 #import <Cocoa/Cocoa.h>
 NS_ASSUME_NONNULL_BEGIN
 NSDictionary *SurfOutlook(NSDictionary * _Nullable product, NSDate * _Nullable now);
+// Surf wind is drawn in the label colour, not the kite band.
+NSColor *SurfWindInk(void);
 @interface SurfForecastView : NSView <NSViewToolTipOwner>
 @property(nonatomic, copy) NSDictionary *outlook;
 @property(nonatomic, copy) NSArray<NSDictionary *> *windRows;

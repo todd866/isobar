@@ -22,6 +22,8 @@ static BOOL SFUnit(NSDictionary *units, NSString *key, NSArray<NSString *> *allo
     return [value isKindOfClass:NSString.class] && [allowed containsObject:value];
 }
 
+NSColor *SurfWindInk(void) { return NSColor.labelColor; }
+
 NSDictionary *SurfOutlook(NSDictionary *product, NSDate *now) {
     NSDate *reference = now ?: NSDate.date;
     if (![product isKindOfClass:NSDictionary.class]) return @{
@@ -196,7 +198,7 @@ static CGFloat SFWaveY(double h, NSRect lane, double max) { return NSMaxY(lane)-
         if (offset<0 || offset>horizon*3600 || x-previous<44) continue;
         previous=x; x=SFClamp(x,NSMinX(plot)+9,NSMaxX(plot)-9);
         NSNumber *from=SFNumber(row[@"windFrom"],YES);
-        [KiteWindSpeedColour(speed.doubleValue) setFill];
+        [SurfWindInk() setFill];
         if (speed.doubleValue<.5) {
             [muted setStroke]; [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(x-3,windY-3,6,6)] stroke];
         } else if (from && from.doubleValue<=360) [KiteWindArrowPath(NSMakePoint(x,windY),from.doubleValue,16) fill];

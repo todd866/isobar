@@ -116,6 +116,7 @@ NSString *HourlyGeohash(NSString *geohash) {
 }
 
 static NSTimeZone *TimeZoneForStateCode(NSString *code) {
+    if (![code isKindOfClass:NSString.class] || !code.length) return nil;
     NSDictionary *names = @{
         @"WA": @"Australia/Perth",
         @"NT": @"Australia/Darwin",
@@ -127,22 +128,48 @@ static NSTimeZone *TimeZoneForStateCode(NSString *code) {
         @"TAS": @"Australia/Hobart",
     };
     NSString *name = names[code.uppercaseString];
-    return name ? [NSTimeZone timeZoneWithName:name] : NSTimeZone.localTimeZone;
+    return name ? [NSTimeZone timeZoneWithName:name] : nil;
 }
 
+static NSString *ObservationStateCode(NSDictionary *obs) {
+    NSArray *header = JSONArray(obs[@"header"]);
+    if (!header.count || ![header[0] isKindOfClass:NSDictionary.class]) return nil;
+    NSString *code = header[0][@"state_time_zone"];
+    if (![code isKindOfClass:NSString.class] || !code.length) return nil;
+    return code;
+}
+
+// Bureau civil stamps are local wall time. A missing or unknown state, or a
+// clock time that does not exist (the DST spring-forward gap), is not a time.
 static NSDate *CivilTime(NSString *yyyymmddhhmmss, NSTimeZone *tz) {
-    if (yyyymmddhhmmss.length < 12) return nil;
+    if (!tz || (yyyymmddhhmmss.length != 12 && yyyymmddhhmmss.length != 14)) return nil;
+    for (NSUInteger i = 0; i < yyyymmddhhmmss.length; i++) {
+        unichar c = [yyyymmddhhmmss characterAtIndex:i];
+        if (c < '0' || c > '9') return nil;
+    }
+    NSInteger year = [[yyyymmddhhmmss substringWithRange:NSMakeRange(0, 4)] integerValue];
+    NSInteger month = [[yyyymmddhhmmss substringWithRange:NSMakeRange(4, 2)] integerValue];
+    NSInteger day = [[yyyymmddhhmmss substringWithRange:NSMakeRange(6, 2)] integerValue];
+    NSInteger hour = [[yyyymmddhhmmss substringWithRange:NSMakeRange(8, 2)] integerValue];
+    NSInteger minute = [[yyyymmddhhmmss substringWithRange:NSMakeRange(10, 2)] integerValue];
+    NSInteger second = yyyymmddhhmmss.length >= 14 ? [[yyyymmddhhmmss substringWithRange:NSMakeRange(12, 2)] integerValue] : 0;
+    if (year < 1 || month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59) return nil;
+    NSCalendar *cal = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+    cal.timeZone = tz;
     NSDateComponents *c = [NSDateComponents new];
-    c.calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+    c.calendar = cal;
     c.timeZone = tz;
-    c.year = [[yyyymmddhhmmss substringWithRange:NSMakeRange(0, 4)] integerValue];
-    c.month = [[yyyymmddhhmmss substringWithRange:NSMakeRange(4, 2)] integerValue];
-    c.day = [[yyyymmddhhmmss substringWithRange:NSMakeRange(6, 2)] integerValue];
-    c.hour = [[yyyymmddhhmmss substringWithRange:NSMakeRange(8, 2)] integerValue];
-    c.minute = [[yyyymmddhhmmss substringWithRange:NSMakeRange(10, 2)] integerValue];
-    if (yyyymmddhhmmss.length >= 14)
-        c.second = [[yyyymmddhhmmss substringWithRange:NSMakeRange(12, 2)] integerValue];
-    return c.date;
+    c.year = year;
+    c.month = month;
+    c.day = day;
+    c.hour = hour;
+    c.minute = minute;
+    c.second = second;
+    NSDate *date = [cal dateFromComponents:c];
+    if (!date) return nil;
+    NSDateComponents *back = [cal components:NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay | NSCalendarUnitHour | NSCalendarUnitMinute | NSCalendarUnitSecond fromDate:date];
+    if (back.year != year || back.month != month || back.day != day || back.hour != hour || back.minute != minute || back.second != second) return nil;
+    return date;
 }
 
 double KnotsFromKmh(double kmh) {
@@ -155,15 +182,12 @@ NSDictionary *ParseLatestObservation(NSData *json) {
     NSArray *data = JSONArray(obs[@"data"]);
     if (!data.count || ![data[0] isKindOfClass:NSDictionary.class]) return nil;
     NSDictionary *row = data[0];
-    NSString *state = @"WA";
-    NSArray *header = JSONArray(obs[@"header"]);
-    if (header.count && [header[0] isKindOfClass:NSDictionary.class]) {
-        NSString *code = header[0][@"state_time_zone"];
-        if ([code isKindOfClass:NSString.class] && code.length) state = code;
-    }
+    NSString *state = ObservationStateCode(obs);
+    NSTimeZone *tz = TimeZoneForStateCode(state);
     NSString *stamp = [row[@"local_date_time_full"] isKindOfClass:NSString.class] ? row[@"local_date_time_full"] : nil;
+    NSDate *time = CivilTime(stamp, tz);
     NSNumber *temp = Num(row[@"air_temp"]);
-    if (!temp) return nil;
+    if (!temp || !time || !state) return nil;
     NSString *rain = [row[@"rain_trace"] isKindOfClass:NSString.class] ? row[@"rain_trace"]
         : [row[@"rain_trace"] isKindOfClass:NSNumber.class] ? [row[@"rain_trace"] stringValue] : @"—";
     NSDictionary *tend = PressureTendency(json);
@@ -176,7 +200,7 @@ NSDictionary *ParseLatestObservation(NSData *json) {
         @"wmo": row[@"wmo"] ? [row[@"wmo"] description] : @"",
         @"lat": Num(row[@"lat"]) ?: NSNull.null,
         @"lon": Num(row[@"lon"]) ?: NSNull.null,
-        @"time": CivilTime(stamp, TimeZoneForStateCode(state)) ?: NSDate.date,
+        @"time": time,
         @"airTemp": temp,
         @"apparent": Num(row[@"apparent_t"]) ?: NSNull.null,
         @"humidity": Num(row[@"rel_hum"]) ?: NSNull.null,
@@ -621,13 +645,9 @@ NSDictionary *PressureTendency(NSData *json) {
     NSDictionary *obs = [root[@"observations"] isKindOfClass:NSDictionary.class] ? root[@"observations"] : nil;
     NSArray *data = JSONArray(obs[@"data"]);
     if (!data.count) return nil;
-    NSString *state = @"WA";
-    NSArray *header = JSONArray(obs[@"header"]);
-    if (header.count && [header[0] isKindOfClass:NSDictionary.class]) {
-        NSString *code = header[0][@"state_time_zone"];
-        if ([code isKindOfClass:NSString.class] && code.length) state = code;
-    }
+    NSString *state = ObservationStateCode(obs);
     NSTimeZone *tz = TimeZoneForStateCode(state);
+    if (!tz) return nil;
     NSDate *latestTime = nil;
     double latestPress = 0;
     BOOL haveLatest = NO;
@@ -1138,19 +1158,29 @@ static NSArray<NSData *> *PDFInflatedStreams(NSData *pdf) {
         }
         z_stream strm = {0};
         strm.next_in = (Bytef *)raw.bytes;
-        strm.avail_in = (uInt)raw.length;
+        strm.avail_in = (uInt)MIN(raw.length, (NSUInteger)UINT_MAX);
         NSData *dec = nil;
-        if (raw.length && inflateInit(&strm) == Z_OK) {
-            NSMutableData *buf = [NSMutableData dataWithLength:raw.length * 4 + 64];
-            int rc;
-            do {
-                if (strm.total_out >= buf.length) [buf increaseLengthBy:buf.length + 65536];
+        // A cached chart must not be able to expand without a ceiling.
+        static const NSUInteger kPDFInflateLimit = 64u * 1024u * 1024u;
+        if (raw.length && raw.length <= UINT_MAX && inflateInit(&strm) == Z_OK) {
+            NSUInteger start = 65536;
+            if (raw.length < 16384) start = raw.length * 4 + 64;
+            if (start > kPDFInflateLimit) start = kPDFInflateLimit;
+            NSMutableData *buf = [NSMutableData dataWithLength:start];
+            int rc = Z_OK;
+            while (rc == Z_OK) {
+                if (strm.total_out >= kPDFInflateLimit) { rc = Z_BUF_ERROR; break; }
+                if (strm.total_out >= buf.length) {
+                    NSUInteger extra = MIN((NSUInteger)65536 + buf.length, kPDFInflateLimit - buf.length);
+                    if (!extra) { rc = Z_BUF_ERROR; break; }
+                    [buf increaseLengthBy:extra];
+                }
                 strm.next_out = (Bytef *)buf.mutableBytes + strm.total_out;
-                strm.avail_out = (uInt)(buf.length - strm.total_out);
+                strm.avail_out = (uInt)MIN(buf.length - strm.total_out, (NSUInteger)UINT_MAX);
                 rc = inflate(&strm, Z_NO_FLUSH);
-            } while (rc == Z_OK);
+            }
             inflateEnd(&strm);
-            if (rc == Z_STREAM_END) {
+            if (rc == Z_STREAM_END && strm.total_out <= kPDFInflateLimit) {
                 buf.length = strm.total_out;
                 dec = buf;
             }
@@ -1303,6 +1333,17 @@ NSString *AnalysisLocalValidText(NSData *pdf) {
         month = [[month substringToIndex:1].uppercaseString stringByAppendingString:[month substringFromIndex:1].lowercaseString];
     }
     return [NSString stringWithFormat:@"%@ AEST %@ %@", clock, day, month];
+}
+
+NSString * const UndatedPanelLabel = @"Undated";
+
+NSArray<NSDate *> *BureauPanelTimes(NSArray *parsed, BOOL documentLoaded, BOOL *undated) {
+    if (undated) *undated = NO;
+    NSMutableArray *times = [NSMutableArray array];
+    for (id item in parsed) if ([item isKindOfClass:NSDate.class]) [times addObject:item];
+    if (times.count) return times;
+    if (documentLoaded && undated) *undated = YES;
+    return @[];
 }
 
 NSArray<NSDate *> *PrognosisValidTimes(NSData *pdf) {
@@ -2333,7 +2374,7 @@ NSDictionary *StoreManifestFromJSON(NSData *json) {
     NSString *dtype = [grid[@"dtype"] isKindOfClass:NSString.class] ? grid[@"dtype"] : nil;
     if (dtype.length && ![dtype isEqual:@"float32"]) return nil;
     NSString *endian = [grid[@"endian"] isKindOfClass:NSString.class] ? grid[@"endian"] : nil;
-    if (endian.length && ![endian isEqual:@"little"]) return nil;
+    if (![endian isEqual:@"little"]) return nil;
     double step = [Num(grid[@"step"]) doubleValue];
     int nx = [Num(grid[@"nx"]) intValue];
     int ny = [Num(grid[@"ny"]) intValue];
@@ -2341,7 +2382,8 @@ NSDictionary *StoreManifestFromJSON(NSData *json) {
     NSNumber *east = Num(grid[@"east"]);
     NSNumber *north = Num(grid[@"north"]);
     NSNumber *south = Num(grid[@"south"]);
-    if (!west || !east || !north || !south || !(step > 0) || nx < 2 || ny < 2) return nil;
+    size_t cells = (size_t)nx * (size_t)ny;
+    if (!west || !east || !north || !south || !(step > 0) || nx < 2 || ny < 2 || nx > 1000 || ny > 1000 || cells > 250000) return nil;
     NSDate *run = ISODate(root[@"run"]);
     if (!run) return nil;
     NSMutableArray *times = [NSMutableArray array];
@@ -2725,6 +2767,133 @@ NSArray<NSDictionary *> *StorePointSeries(NSData *json) {
     return out;
 }
 
+NSDate *WeatherInstant(NSString *text) {
+    if (![text isKindOfClass:NSString.class] || text.length < 16) return nil;
+    NSRange tee = [text rangeOfString:@"T"];
+    if (tee.location == NSNotFound || tee.location < 8) return nil;
+    NSString *rest = [text substringFromIndex:tee.location + 1];
+    NSRange plus = [rest rangeOfString:@"+"];
+    NSRange minus = [rest rangeOfString:@"-"];
+    BOOL zulu = [text hasSuffix:@"Z"] || [text hasSuffix:@"z"];
+    BOOL offset = plus.location != NSNotFound || minus.location != NSNotFound;
+    NSString *s = text;
+    if (!zulu && !offset) {
+        if (text.length == 16) s = [text stringByAppendingString:@":00Z"];
+        else if (text.length == 19) s = [text stringByAppendingString:@"Z"];
+        else return nil;
+    } else if (offset) {
+        NSUInteger sign = plus.location != NSNotFound ? plus.location : minus.location;
+        NSString *clock = [rest substringToIndex:sign];
+        if (clock.length == 5)
+            s = [NSString stringWithFormat:@"%@%@:00%@", [text substringToIndex:tee.location + 1], clock, [rest substringFromIndex:sign]];
+    } else if (text.length == 17)
+        s = [[text substringToIndex:16] stringByAppendingString:@":00Z"];
+    NSISO8601DateFormatter *formatter = [NSISO8601DateFormatter new];
+    formatter.formatOptions = NSISO8601DateFormatWithInternetDateTime;
+    formatter.timeZone = [NSTimeZone timeZoneWithName:@"GMT"];
+    return [formatter dateFromString:s];
+}
+
+static id DayNumber(NSArray *values, NSUInteger index) {
+    if (![values isKindOfClass:NSArray.class] || index >= values.count) return NSNull.null;
+    id value = values[index];
+    if ([value isKindOfClass:NSNumber.class] && isfinite([(NSNumber *)value doubleValue])) return value;
+    return NSNull.null;
+}
+
+static NSDate *LocalCalendarDay(NSString *text, NSCalendar *calendar) {
+    if (![text isKindOfClass:NSString.class] || text.length < 10) return nil;
+    if ([text characterAtIndex:4] != '-' || [text characterAtIndex:7] != '-') return nil;
+    NSInteger year = [[text substringWithRange:NSMakeRange(0, 4)] integerValue];
+    NSInteger month = [[text substringWithRange:NSMakeRange(5, 2)] integerValue];
+    NSInteger day = [[text substringWithRange:NSMakeRange(8, 2)] integerValue];
+    if (year < 1970 || month < 1 || month > 12 || day < 1 || day > 31) return nil;
+    NSDateComponents *parts = [NSDateComponents new];
+    parts.year = year; parts.month = month; parts.day = day;
+    NSDate *date = [calendar dateFromComponents:parts];
+    if (!date) return nil;
+    NSDateComponents *back = [calendar components:NSCalendarUnitYear|NSCalendarUnitMonth|NSCalendarUnitDay fromDate:date];
+    if (back.year != year || back.month != month || back.day != day) return nil;
+    return date;
+}
+
+NSString *WeatherCodeSymbol(NSInteger code, BOOL day) {
+    switch (code) {
+        case 0: return day ? @"sun.max" : @"moon.stars";
+        case 1: return day ? @"sun.min" : @"moon.stars";
+        case 2: return day ? @"cloud.sun" : @"cloud.moon";
+        case 3: return @"cloud";
+        case 45: case 48: return @"cloud.fog";
+        case 51: case 53: case 55: case 56: case 57: return @"cloud.drizzle";
+        case 61: case 63: case 66: case 67: case 81: return @"cloud.rain";
+        case 65: case 82: return @"cloud.heavyrain";
+        case 71: case 73: case 75: case 77: case 85: case 86: return @"cloud.snow";
+        case 80: return day ? @"cloud.sun.rain" : @"cloud.moon.rain";
+        case 95: case 96: case 99: return @"cloud.bolt.rain";
+        default: return nil;
+    }
+}
+
+NSString *WeatherCodeLabel(NSInteger code) {
+    switch (code) {
+        case 0: return @"Clear";
+        case 1: return @"Mostly clear";
+        case 2: return @"Partly cloudy";
+        case 3: return @"Cloudy";
+        case 45: case 48: return @"Fog";
+        case 51: case 53: case 55: return @"Drizzle";
+        case 56: case 57: return @"Freezing drizzle";
+        case 61: case 63: case 81: return @"Rain";
+        case 65: case 82: return @"Heavy rain";
+        case 66: case 67: return @"Freezing rain";
+        case 71: case 73: case 75: case 77: return @"Snow";
+        case 80: return @"Showers";
+        case 85: case 86: return @"Snow showers";
+        case 95: case 96: case 99: return @"Thunderstorm";
+        default: return nil;
+    }
+}
+
+NSArray<NSDictionary *> *StorePointDays(NSData *json, NSDate *now, NSInteger limit, NSTimeZone *placeZone) {
+    if (limit <= 0) return @[];
+    NSDictionary *root = JSONObject(json);
+    NSDictionary *daily = [root[@"daily"] isKindOfClass:NSDictionary.class] ? root[@"daily"] : nil;
+    NSArray *dates = JSONArray(daily[@"time"]);
+    if (!dates.count) return @[];
+    NSString *zoneName = [root[@"timezone"] isKindOfClass:NSString.class] ? root[@"timezone"] : nil;
+    NSTimeZone *zone = zoneName.length ? [NSTimeZone timeZoneWithName:zoneName] : nil;
+    if (!zone) zone = placeZone;
+    if (!zone) zone = [NSTimeZone timeZoneWithName:@"GMT"];
+    NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+    calendar.timeZone = zone;
+    NSDate *today = now ? [calendar startOfDayForDate:now] : nil;
+    NSDateFormatter *weekday = [NSDateFormatter new];
+    weekday.locale = [NSLocale localeWithLocaleIdentifier:@"en_AU_POSIX"];
+    weekday.timeZone = zone;
+    weekday.dateFormat = @"EEE";
+    NSMutableArray *out = [NSMutableArray array];
+    for (NSUInteger i = 0; i < dates.count; i++) {
+        NSDate *date = LocalCalendarDay(dates[i], calendar);
+        if (!date) continue;
+        if (today && [date compare:today] == NSOrderedAscending) continue;
+        NSString *label = [weekday stringFromDate:date] ?: @"";
+        if (now && [calendar isDate:date inSameDayAsDate:now]) label = @"Today";
+        [out addObject:@{
+            @"date": date,
+            @"weekday": label,
+            @"min": DayNumber(daily[@"temperature_2m_min"], i),
+            @"max": DayNumber(daily[@"temperature_2m_max"], i),
+            @"rainMm": DayNumber(daily[@"precipitation_sum"], i),
+            @"rainHours": DayNumber(daily[@"precipitation_hours"], i),
+            @"weatherCode": DayNumber(daily[@"weather_code"], i),
+            @"gust": DayNumber(daily[@"wind_gusts_10m_max"], i),
+            @"windDir": DayNumber(daily[@"wind_direction_10m_dominant"], i),
+        }];
+        if ((NSInteger)out.count == limit) break;
+    }
+    return out;
+}
+
 NSArray<NSDictionary *> *StorePointHours(NSData *json, NSDate *now, NSInteger limit) {
     if (limit <= 0) return @[];
     NSMutableArray *out = [NSMutableArray array];
@@ -2887,13 +3056,8 @@ NSArray<NSDictionary *> *ObservationHistory(NSData *json) {
     NSDictionary *obs = [root[@"observations"] isKindOfClass:NSDictionary.class] ? root[@"observations"] : nil;
     NSArray *data = JSONArray(obs[@"data"]);
     if (!data) return @[];
-    NSString *state = @"WA";
-    NSArray *header = JSONArray(obs[@"header"]);
-    if (header.count && [header[0] isKindOfClass:NSDictionary.class]) {
-        NSString *code = header[0][@"state_time_zone"];
-        if ([code isKindOfClass:NSString.class] && code.length) state = code;
-    }
-    NSTimeZone *tz = TimeZoneForStateCode(state);
+    NSTimeZone *tz = TimeZoneForStateCode(ObservationStateCode(obs));
+    if (!tz) return @[];
     NSMutableArray *out = [NSMutableArray array];
     for (NSDictionary *row in data) {
         if (![row isKindOfClass:NSDictionary.class]) continue;
@@ -3459,6 +3623,30 @@ NSDictionary *AerodromeForCode(NSString *code) {
     for (NSDictionary *field in KnownAerodromes())
         if ([field[@"code"] caseInsensitiveCompare:code ?: @""] == NSOrderedSame) return field;
     return nil;
+}
+
+NSString *PrimaryAerodromeCode(NSString *state) {
+    if (![state isKindOfClass:NSString.class]) return nil;
+    NSDictionary *codes = @{
+        @"NSW": @"YSSY", @"VIC": @"YMML", @"QLD": @"YBBN", @"SA": @"YPAD",
+        @"WA": @"YPPH", @"TAS": @"YMHB", @"NT": @"YPDN", @"ACT": @"YSCB",
+    };
+    return codes[state.uppercaseString];
+}
+
+NSDictionary *AerodromeForState(NSString *state) {
+    NSString *code = PrimaryAerodromeCode(state);
+    if (!code) return nil;
+    NSDictionary *known = AerodromeForCode(code);
+    if (known) return known;
+    // Runway headings are configured for YPPH and YSSY only. Other capitals
+    // still name the aerodrome so METAR/TAF is not Perth's.
+    NSDictionary *zones = @{
+        @"YMML": @"Australia/Melbourne", @"YBBN": @"Australia/Brisbane",
+        @"YPAD": @"Australia/Adelaide", @"YMHB": @"Australia/Hobart",
+        @"YPDN": @"Australia/Darwin", @"YSCB": @"Australia/Sydney",
+    };
+    return @{@"code": code, @"name": code, @"timeZone": zones[code] ?: @"", @"runways": @[]};
 }
 
 static void ClockBits(NSDate *date, NSCalendar *cal, NSInteger *hour12, NSInteger *minute, BOOL *pm) {

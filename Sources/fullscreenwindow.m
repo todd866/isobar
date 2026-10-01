@@ -1,8 +1,47 @@
 #import "fullscreenwindow.h"
 
-@implementation FullscreenWindow
+static const NSTimeInterval kArrowRepeatInterval = 0.15;
+
+ChartKeyAction ChartKeyActionFor(unsigned short keyCode, NSString *characters, NSEventModifierFlags flags,
+    BOOL isRepeat, NSTimeInterval now, NSTimeInterval *lastArrow) {
+    NSEventModifierFlags mods = flags & NSEventModifierFlagDeviceIndependentFlagsMask;
+    BOOL command = (mods & NSEventModifierFlagCommand) != 0;
+    NSString *ch = characters.lowercaseString ?: @"";
+    if ([ch isEqualToString:@"d"] || [ch isEqualToString:@"b"]) {
+        if (command) return ChartKeyPass;
+        if (isRepeat) return ChartKeyDrop;
+        return [ch isEqualToString:@"d"] ? ChartKeyCompare : ChartKeySource;
+    }
+    if (keyCode == 53) return ChartKeyEscape;
+    if (keyCode == 49) return isRepeat ? ChartKeyDrop : ChartKeyPlay;
+    if (keyCode == 123 || keyCode == 124) {
+        if (isRepeat && lastArrow && now - *lastArrow < kArrowRepeatInterval) return ChartKeyDrop;
+        if (lastArrow) *lastArrow = now;
+        return keyCode == 123 ? ChartKeyLeft : ChartKeyRight;
+    }
+    return ChartKeyPass;
+}
+
+@implementation FullscreenWindow {
+    NSTimeInterval _lastArrow;
+}
 - (BOOL)canBecomeKeyWindow { return YES; }
 - (BOOL)canBecomeMainWindow { return YES; }
+- (void)performChartKey:(ChartKeyAction)action {
+    switch (action) {
+        case ChartKeyEscape: [self.controller escapeFullscreen]; break;
+        case ChartKeyLeft: [self.controller stepFullscreenPanel:-1]; break;
+        case ChartKeyRight: [self.controller stepFullscreenPanel:1]; break;
+        case ChartKeyPlay: [self.controller toggleChartLoop]; break;
+        case ChartKeyCompare: [self.controller toggleIssueCompare]; break;
+        case ChartKeySource: [self.controller toggleChartSource]; break;
+        default: break;
+    }
+}
+- (ChartKeyAction)actionForEvent:(NSEvent *)event {
+    return ChartKeyActionFor(event.keyCode, event.charactersIgnoringModifiers, event.modifierFlags,
+        event.isARepeat, NSDate.timeIntervalSinceReferenceDate, &_lastArrow);
+}
 - (void)sendEvent:(NSEvent *)event {
     if (event.type == NSEventTypeKeyDown) {
         unsigned short key = event.keyCode;
@@ -10,9 +49,9 @@
             [super sendEvent:event];
             return;
         }
-        NSString *ch = event.charactersIgnoringModifiers.lowercaseString;
-        if (key == 53 || key == 123 || key == 124 || key == 49 || [ch isEqualToString:@"d"] || [ch isEqualToString:@"b"]) {
-            [self keyDown:event];
+        ChartKeyAction action = [self actionForEvent:event];
+        if (action != ChartKeyPass) {
+            [self performChartKey:action];
             return;
         }
     }
@@ -20,13 +59,9 @@
 }
 - (void)cancelOperation:(id)sender { (void)sender; [self.controller escapeFullscreen]; }
 - (void)keyDown:(NSEvent *)e {
-    if (e.keyCode == 53) { [self.controller escapeFullscreen]; return; }
-    if (e.keyCode == 123) { [self.controller stepFullscreenPanel:-1]; return; }
-    if (e.keyCode == 124) { [self.controller stepFullscreenPanel:1]; return; }
-    if (e.keyCode == 49) { [self.controller toggleChartLoop]; return; }
-    if ([e.charactersIgnoringModifiers.lowercaseString isEqualToString:@"d"]) { [self.controller toggleIssueCompare]; return; }
-    if ([e.charactersIgnoringModifiers.lowercaseString isEqualToString:@"b"]) { [self.controller toggleChartSource]; return; }
-    [super keyDown:e];
+    ChartKeyAction action = [self actionForEvent:e];
+    if (action == ChartKeyPass) { [super keyDown:e]; return; }
+    [self performChartKey:action];
 }
 - (BOOL)performKeyEquivalent:(NSEvent *)e {
     NSEventModifierFlags mods = e.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;

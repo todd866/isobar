@@ -1,4 +1,18 @@
 #import "collector.h"
+#import <signal.h>
+
+static const NSTimeInterval kCollectorStopGrace = 2;
+
+static NSDictionary *SubprocessEnvironment(void) {
+    NSDictionary *parent = NSProcessInfo.processInfo.environment;
+    NSMutableDictionary *env = [NSMutableDictionary dictionary];
+    env[@"PATH"] = @"/usr/bin:/bin:/usr/sbin:/sbin";
+    for (NSString *key in @[@"HOME", @"LANG", @"TMPDIR"]) {
+        NSString *value = parent[key];
+        if ([value isKindOfClass:NSString.class] && value.length) env[key] = value;
+    }
+    return env;
+}
 
 @implementation IsobarCollector {
     NSURL *_executable, *_store;
@@ -7,6 +21,7 @@
     NSFileHandle *_log;
     NSDate *_lastStarted, *_lastPublished;
     NSString *_lastError;
+    BOOL _stopping;
 }
 - (instancetype)initWithExecutable:(NSURL *)executable store:(NSURL *)store {
     if ((self=[super init])) { _executable=executable; _store=store; }
@@ -15,7 +30,7 @@
 - (BOOL)running { return _task.running; }
 - (NSString *)lastError { return _lastError; }
 - (void)refresh {
-    if (_task || (_lastStarted && -_lastStarted.timeIntervalSinceNow<300)) return;
+    if (_task || _stopping || (_lastStarted && -_lastStarted.timeIntervalSinceNow<300)) return;
     if (![NSFileManager.defaultManager isExecutableFileAtPath:_executable.path]) { _lastError=@"The collector is missing from this build"; return; }
     NSError *error=nil;
     if (![NSFileManager.defaultManager createDirectoryAtURL:_store withIntermediateDirectories:YES attributes:nil error:&error]) { _lastError=error.localizedDescription; return; }
@@ -27,10 +42,7 @@
     NSTask *task=[NSTask new]; task.executableURL=_executable;
     task.arguments=@[@"run", @"--data-dir", _store.path];
     task.currentDirectoryURL=_store;
-    NSMutableDictionary *env=[NSProcessInfo.processInfo.environment mutableCopy];
-    [env removeObjectForKey:@"PYTHONPATH"]; [env removeObjectForKey:@"PYTHONHOME"];
-    env[@"PATH"]=@"/usr/bin:/bin:/usr/sbin:/sbin";
-    task.environment=env;
+    task.environment=SubprocessEnvironment();
     task.standardInput=NSFileHandle.fileHandleWithNullDevice;
     task.standardOutput=_log ?: NSFileHandle.fileHandleWithNullDevice;
     task.standardError=task.standardOutput;
@@ -39,9 +51,12 @@
         dispatch_async(dispatch_get_main_queue(), ^{
             IsobarCollector *strong=weak;
             if (!strong || strong->_task!=ended) return;
-            strong->_lastError=ended.terminationStatus ? @"Weather refresh failed" : nil;
+            BOOL stopping=strong->_stopping;
+            strong->_stopping=NO;
             strong->_task=nil; [strong->_poll invalidate]; strong->_poll=nil;
             [strong->_log closeFile]; strong->_log=nil;
+            if (stopping) return;
+            strong->_lastError=ended.terminationStatus ? @"Weather refresh failed" : nil;
             if (strong.onUpdate) strong.onUpdate();
         });
     };
@@ -62,15 +77,14 @@
 - (void)stop {
     [_poll invalidate]; _poll=nil;
     NSTask *task=_task;
-    task.terminationHandler=nil;
-    if (task.running) {
-        [task terminate];
-        // Reap asynchronously so quitting never stalls the UI. The one-folder
-        // collector runs in one process; it does not spawn shell workers.
-        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{ [task waitUntilExit]; });
-    }
-    _task=nil;
-    [_log closeFile]; _log=nil;
+    if (!task || _stopping || !task.running) return;
+    _stopping=YES;
+    // Keep the task until it exits so a refresh cannot start a second run.
+    // SIGTERM first; SIGKILL if it is still alive after the grace period.
+    [task terminate];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(kCollectorStopGrace*NSEC_PER_SEC)),dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
+        if (task.running && task.processIdentifier>0) kill(task.processIdentifier,SIGKILL);
+    });
 }
 - (void)dealloc { [self stop]; }
 @end
