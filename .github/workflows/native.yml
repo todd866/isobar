@@ -20,6 +20,15 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install playback scoring tools
+        run: |
+          python3 -m pip install --disable-pip-version-check numpy==2.4.1 scipy==1.17.0
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            brew install ffmpeg
+          fi
       - name: Build native app and run checks
         run: |
           set -o pipefail
