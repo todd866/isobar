@@ -1,0 +1,8 @@
+Natural Earth 1:50m land, public domain.
+https://www.naturalearthdata.com/  (vector 5.1.2)
+
+Cropped to the Australian region and stored as Resources/ownchart-coast.bin.
+Rings wider or taller than 80° (Eurasia, Antarctica) are left out; Australia,
+Tasmania, New Guinea, New Zealand and the nearby islands are kept.
+Coordinates are signed hundredths of a degree, little-endian.
+Packed by tools/pack-coast.py.

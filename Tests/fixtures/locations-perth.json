@@ -1,0 +1,64 @@
+{
+  "metadata": {
+    "response_timestamp": "2026-09-25T08:05:07Z",
+    "copyright": "This application programming interface (API) is owned by the Bureau of Meteorology. You must not use, copy or share it. Find out more about our data services at https://www.bom.gov.au/resources/data-services."
+  },
+  "data": [
+    {
+      "geohash": "qd66hrm",
+      "id": "Perth-qd66hrm",
+      "name": "Perth",
+      "postcode": "6000",
+      "state": "WA"
+    },
+    {
+      "geohash": "r28ekzz",
+      "id": "Perth-r28ekzz",
+      "name": "Perth",
+      "postcode": "7300",
+      "state": "TAS"
+    },
+    {
+      "geohash": "qd66qdx",
+      "id": "Perth Airport-qd66qdx",
+      "name": "Perth Airport",
+      "postcode": "6105",
+      "state": "WA"
+    },
+    {
+      "geohash": "r6437p1",
+      "id": "Perthville-r6437p1",
+      "name": "Perthville",
+      "postcode": "2795",
+      "state": "NSW"
+    },
+    {
+      "geohash": "qd66hyg",
+      "id": "East Perth-qd66hyg",
+      "name": "East Perth",
+      "postcode": "6004",
+      "state": "WA"
+    },
+    {
+      "geohash": "qd66hpc",
+      "id": "West Perth-qd66hpc",
+      "name": "West Perth",
+      "postcode": "6005",
+      "state": "WA"
+    },
+    {
+      "geohash": "qd66k7h",
+      "id": "North Perth-qd66k7h",
+      "name": "North Perth",
+      "postcode": "6006",
+      "state": "WA"
+    },
+    {
+      "geohash": "qd66hd1",
+      "id": "South Perth-qd66hd1",
+      "name": "South Perth",
+      "postcode": "6151",
+      "state": "WA"
+    }
+  ]
+}

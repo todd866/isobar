@@ -1,0 +1,180 @@
+{
+  "observations": {
+    "header": [
+      {
+        "state_time_zone": "WA",
+        "name": "Safety Bay",
+        "time_zone": "WST"
+      }
+    ],
+    "data": [
+      {
+        "wmo": 95621,
+        "name": "Safety Bay",
+        "local_date_time_full": "20260926080000",
+        "air_temp": 17.4,
+        "wind_dir": "E",
+        "wind_spd_kmh": 20,
+        "gust_kmh": 33,
+        "press_msl": 1016.4,
+        "press": 1016.4,
+        "wind_spd_kt": 11,
+        "gust_kt": 18
+      },
+      {
+        "wmo": 95621,
+        "name": "Safety Bay",
+        "local_date_time_full": "20260926070000",
+        "air_temp": 17.0,
+        "wind_dir": "E",
+        "wind_spd_kmh": 18,
+        "gust_kmh": 30,
+        "press_msl": 1016.6,
+        "press": 1016.6
+      },
+      {
+        "wmo": 95621,
+        "name": "Safety Bay",
+        "local_date_time_full": "20260926060000",
+        "air_temp": 16.6,
+        "wind_dir": "ENE",
+        "wind_spd_kmh": 16,
+        "gust_kmh": 26,
+        "press_msl": 1016.9,
+        "press": 1016.9
+      },
+      {
+        "wmo": 95621,
+        "name": "Safety Bay",
+        "local_date_time_full": "20260926050000",
+        "air_temp": 16.2,
+        "wind_dir": "ENE",
+        "wind_spd_kmh": 15,
+        "gust_kmh": 24,
+        "press_msl": 1017.6,
+        "press": 1017.6
+      },
+      {
+        "wmo": 95621,
+        "name": "Safety Bay",
+        "local_date_time_full": "20260926040000",
+        "air_temp": 15.8,
+        "wind_dir": "NE",
+        "wind_spd_kmh": 14,
+        "gust_kmh": 22,
+        "press_msl": 1017.8,
+        "press": 1017.8
+      },
+      {
+        "wmo": 95621,
+        "name": "Safety Bay",
+        "local_date_time_full": "20260926020000",
+        "air_temp": 15.4,
+        "wind_dir": "NNE",
+        "wind_spd_kmh": 12,
+        "gust_kmh": 18,
+        "press_msl": 1018.2,
+        "press": 1018.2
+      },
+      {
+        "wmo": 95621,
+        "name": "Safety Bay",
+        "local_date_time_full": "20260926000000",
+        "air_temp": 15.6,
+        "wind_dir": "N",
+        "wind_spd_kmh": 11,
+        "gust_kmh": 16,
+        "press_msl": 1018.6,
+        "press": 1018.6
+      },
+      {
+        "wmo": 95621,
+        "name": "Safety Bay",
+        "local_date_time_full": "20260925220000",
+        "air_temp": 16.2,
+        "wind_dir": "NNW",
+        "wind_spd_kmh": 14,
+        "gust_kmh": 22,
+        "press_msl": 1018.8,
+        "press": 1018.8
+      },
+      {
+        "wmo": 95621,
+        "name": "Safety Bay",
+        "local_date_time_full": "20260925200000",
+        "air_temp": 16.8,
+        "wind_dir": "NW",
+        "wind_spd_kmh": 18,
+        "gust_kmh": 28,
+        "press_msl": 1018.4,
+        "press": 1018.4
+      },
+      {
+        "wmo": 95621,
+        "name": "Safety Bay",
+        "local_date_time_full": "20260925180000",
+        "air_temp": 17.4,
+        "wind_dir": "WNW",
+        "wind_spd_kmh": 22,
+        "gust_kmh": 34,
+        "press_msl": 1018.0,
+        "press": 1018.0
+      },
+      {
+        "wmo": 95621,
+        "name": "Safety Bay",
+        "local_date_time_full": "20260925160000",
+        "air_temp": 18.0,
+        "wind_dir": "W",
+        "wind_spd_kmh": 26,
+        "gust_kmh": 40,
+        "press_msl": 1017.6,
+        "press": 1017.6
+      },
+      {
+        "wmo": 95621,
+        "name": "Safety Bay",
+        "local_date_time_full": "20260925140000",
+        "air_temp": 18.2,
+        "wind_dir": "WSW",
+        "wind_spd_kmh": 24,
+        "gust_kmh": 38,
+        "press_msl": 1017.4,
+        "press": 1017.4
+      },
+      {
+        "wmo": 95621,
+        "name": "Safety Bay",
+        "local_date_time_full": "20260925120000",
+        "air_temp": 17.6,
+        "wind_dir": "SW",
+        "wind_spd_kmh": 20,
+        "gust_kmh": 32,
+        "press_msl": 1017.8,
+        "press": 1017.8
+      },
+      {
+        "wmo": 95621,
+        "name": "Safety Bay",
+        "local_date_time_full": "20260925100000",
+        "air_temp": 16.8,
+        "wind_dir": "S",
+        "wind_spd_kmh": 14,
+        "gust_kmh": 22,
+        "press_msl": 1018.4,
+        "press": 1018.4
+      },
+      {
+        "wmo": 95621,
+        "name": "Safety Bay",
+        "local_date_time_full": "20260925080000",
+        "air_temp": 16.0,
+        "wind_dir": "SE",
+        "wind_spd_kmh": 12,
+        "gust_kmh": 18,
+        "press_msl": 1018.8,
+        "press": 1018.8
+      }
+    ]
+  }
+}

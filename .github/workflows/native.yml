@@ -1,0 +1,52 @@
+name: Native macOS build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and smoke-test Isobar
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build native app and run checks
+        run: |
+          set -o pipefail
+          mkdir -p build/ci-checks
+          ISOBAR_ADHOC=1 ISOBAR_BUNDLE_COLLECTOR=0 ./build.sh 2>&1 | tee build/ci-checks/native.log
+      - name: Check version and help
+        run: |
+          set -euo pipefail
+          app_version=$(plutil -extract CFBundleShortVersionString raw -o - build/Isobar.app/Contents/Info.plist)
+          binary_version=$(build/Isobar.app/Contents/MacOS/Isobar --version)
+          test "$binary_version" = "Isobar $app_version"
+          build/Isobar.app/Contents/MacOS/Isobar --help | grep -Fq 'animated weather maps'
+      - name: Check executable deployment target
+        run: |
+          python3 - <<'PY'
+          import plistlib, re, subprocess
+          from pathlib import Path
+          app = Path('build/Isobar.app/Contents')
+          expected = plistlib.loads((app / 'Info.plist').read_bytes())['LSMinimumSystemVersion']
+          loads = subprocess.check_output(['otool', '-l', str(app / 'MacOS/Isobar')], text=True)
+          targets = re.findall(r'^\s*minos\s+(\S+)', loads, re.MULTILINE)
+          normalize = lambda value: tuple((list(map(int, value.split('.'))) + [0, 0])[:3])
+          assert targets and all(normalize(target) == normalize(expected) for target in targets), (expected, targets)
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: failure()
+        with:
+          name: native-build-log
+          path: build/ci-checks/native.log
+          if-no-files-found: ignore

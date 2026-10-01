@@ -1,0 +1,30 @@
+{
+  "minKt": 15,
+  "maxKt": 30,
+  "spots": [
+    {
+      "name": "Cottesloe",
+      "state": "WA",
+      "geohash": "qd63czw",
+      "latitude": -31.994,
+      "longitude": 115.75,
+      "timezone": "Australia/Perth",
+      "shoreNormal": 270,
+      "stationName": "Swanbourne",
+      "stationWMO": "94614",
+      "stationProduct": "IDW60901"
+    },
+    {
+      "name": "Safety Bay",
+      "state": "WA",
+      "geohash": "qd620yz",
+      "latitude": -32.306,
+      "longitude": 115.708,
+      "timezone": "Australia/Perth",
+      "shoreNormal": 235,
+      "stationName": "Safety Bay",
+      "stationWMO": "95621",
+      "stationProduct": "IDW60901"
+    }
+  ]
+}

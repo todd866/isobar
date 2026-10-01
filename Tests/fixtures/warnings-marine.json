@@ -1,0 +1,20 @@
+{
+  "data": [
+    {
+      "id": "TAS_MW012_IDT20100",
+      "area_id": "TAS_MW012",
+      "type": "marine_wind_warning",
+      "title": "Marine Wind Warning for Tasmania",
+      "short_title": "Marine Wind Warning",
+      "state": "TAS",
+      "warning_group_type": "minor",
+      "issue_time": "2026-09-25T08:17:56Z",
+      "expiry_time": "2026-09-26T14:00:00Z",
+      "phase": "renewal"
+    }
+  ],
+  "metadata": {
+    "response_timestamp": "2026-09-25T08:32:34Z",
+    "copyright": "This application programming interface (API) is owned by the Bureau of Meteorology. You must not use, copy or share it. Find out more about our data services at https://www.bom.gov.au/resources/data-services."
+  }
+}

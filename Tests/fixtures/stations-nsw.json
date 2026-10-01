@@ -1,0 +1,1205 @@
+{
+  "product": "IDN60801",
+  "stations": [
+    {
+      "name": "Ballina",
+      "wmo": "94596",
+      "lat": -28.8,
+      "lon": 153.6
+    },
+    {
+      "name": "Cape Byron",
+      "wmo": "94599",
+      "lat": -28.6,
+      "lon": 153.6
+    },
+    {
+      "name": "Casino",
+      "wmo": "94573",
+      "lat": -28.9,
+      "lon": 153.1
+    },
+    {
+      "name": "Coolangatta",
+      "wmo": "94592",
+      "lat": -28.2,
+      "lon": 153.5
+    },
+    {
+      "name": "Evans Head",
+      "wmo": "94598",
+      "lat": -29.2,
+      "lon": 153.4
+    },
+    {
+      "name": "Grafton AgRS",
+      "wmo": "95571",
+      "lat": -29.6,
+      "lon": 153.0
+    },
+    {
+      "name": "Grafton Airport",
+      "wmo": "95570",
+      "lat": -29.8,
+      "lon": 153.0
+    },
+    {
+      "name": "Lismore Airport",
+      "wmo": "94572",
+      "lat": -28.8,
+      "lon": 153.3
+    },
+    {
+      "name": "Murwillumbah",
+      "wmo": "94582",
+      "lat": -28.3,
+      "lon": 153.4
+    },
+    {
+      "name": "Yamba",
+      "wmo": "94589",
+      "lat": -29.4,
+      "lon": 153.4
+    },
+    {
+      "name": "Coffs Harbour Airport",
+      "wmo": "95729",
+      "lat": -30.3,
+      "lon": 153.1
+    },
+    {
+      "name": "Dorrigo",
+      "wmo": "94789",
+      "lat": -30.3,
+      "lon": 152.7
+    },
+    {
+      "name": "Kempsey Airport",
+      "wmo": "94785",
+      "lat": -31.1,
+      "lon": 152.8
+    },
+    {
+      "name": "Mount Seaview",
+      "wmo": "94783",
+      "lat": -31.4,
+      "lon": 152.2
+    },
+    {
+      "name": "Port Macquarie Airport",
+      "wmo": "94799",
+      "lat": -31.4,
+      "lon": 152.9
+    },
+    {
+      "name": "Taree Airport",
+      "wmo": "95784",
+      "lat": -31.9,
+      "lon": 152.5
+    },
+    {
+      "name": "Cessnock Airport",
+      "wmo": "95771",
+      "lat": -32.8,
+      "lon": 151.3
+    },
+    {
+      "name": "Gosford",
+      "wmo": "94782",
+      "lat": -33.4,
+      "lon": 151.4
+    },
+    {
+      "name": "Lake Macquarie - Cooranbong",
+      "wmo": "95767",
+      "lat": -33.1,
+      "lon": 151.5
+    },
+    {
+      "name": "Maitland Airport",
+      "wmo": "94650",
+      "lat": -32.7,
+      "lon": 151.5
+    },
+    {
+      "name": "Mangrove Mountain",
+      "wmo": "95774",
+      "lat": -33.3,
+      "lon": 151.2
+    },
+    {
+      "name": "Merriwa",
+      "wmo": "95754",
+      "lat": -32.2,
+      "lon": 150.2
+    },
+    {
+      "name": "Murrurundi",
+      "wmo": "94758",
+      "lat": -31.8,
+      "lon": 150.8
+    },
+    {
+      "name": "Murrurundi Gap",
+      "wmo": "95747",
+      "lat": -31.7,
+      "lon": 150.8
+    },
+    {
+      "name": "Newcastle Nobbys",
+      "wmo": "94774",
+      "lat": -32.9,
+      "lon": 151.8
+    },
+    {
+      "name": "Norah Head",
+      "wmo": "95770",
+      "lat": -33.3,
+      "lon": 151.6
+    },
+    {
+      "name": "Scone Airport",
+      "wmo": "95758",
+      "lat": -32.0,
+      "lon": 150.8
+    },
+    {
+      "name": "Singleton (Defence)",
+      "wmo": "99738",
+      "lat": -32.7,
+      "lon": 151.2
+    },
+    {
+      "name": "Tocal",
+      "wmo": "94775",
+      "lat": -32.6,
+      "lon": 151.6
+    },
+    {
+      "name": "Williamtown",
+      "wmo": "94776",
+      "lat": -32.8,
+      "lon": 151.8
+    },
+    {
+      "name": "Armidale",
+      "wmo": "94773",
+      "lat": -30.5,
+      "lon": 151.7
+    },
+    {
+      "name": "Armidale Airport",
+      "wmo": "95773",
+      "lat": -30.5,
+      "lon": 151.6
+    },
+    {
+      "name": "Glen Innes Airport",
+      "wmo": "94588",
+      "lat": -29.7,
+      "lon": 151.7
+    },
+    {
+      "name": "Guyra",
+      "wmo": "94772",
+      "lat": -30.2,
+      "lon": 151.7
+    },
+    {
+      "name": "Inverell",
+      "wmo": "95541",
+      "lat": -29.8,
+      "lon": 151.1
+    },
+    {
+      "name": "Inverell RS",
+      "wmo": "94541",
+      "lat": -29.8,
+      "lon": 151.1
+    },
+    {
+      "name": "Applethorpe",
+      "wmo": "94553",
+      "lat": -28.6,
+      "lon": 152.0
+    },
+    {
+      "name": "Tenterfield",
+      "wmo": "94556",
+      "lat": -29.0,
+      "lon": 152.0
+    },
+    {
+      "name": "Badgerys Creek",
+      "wmo": "94752",
+      "lat": -33.9,
+      "lon": 150.7
+    },
+    {
+      "name": "Bankstown",
+      "wmo": "94765",
+      "lat": -33.9,
+      "lon": 151.0
+    },
+    {
+      "name": "Camden",
+      "wmo": "94755",
+      "lat": -34.0,
+      "lon": 150.7
+    },
+    {
+      "name": "Campbelltown",
+      "wmo": "94757",
+      "lat": -34.1,
+      "lon": 150.8
+    },
+    {
+      "name": "Canterbury",
+      "wmo": "94766",
+      "lat": -33.9,
+      "lon": 151.1
+    },
+    {
+      "name": "Fort Denison",
+      "wmo": "94769",
+      "lat": -33.9,
+      "lon": 151.2
+    },
+    {
+      "name": "Holsworthy",
+      "wmo": "95761",
+      "lat": -34.0,
+      "lon": 150.9
+    },
+    {
+      "name": "Holsworthy (Defence)",
+      "wmo": "95684",
+      "lat": -34.1,
+      "lon": 150.9
+    },
+    {
+      "name": "Horsley Park",
+      "wmo": "94760",
+      "lat": -33.9,
+      "lon": 150.9
+    },
+    {
+      "name": "Kurnell",
+      "wmo": "95756",
+      "lat": -34.0,
+      "lon": 151.2
+    },
+    {
+      "name": "Little Bay",
+      "wmo": "94780",
+      "lat": -34.0,
+      "lon": 151.3
+    },
+    {
+      "name": "Lucas Heights (ANSTO)",
+      "wmo": "95757",
+      "lat": -34.1,
+      "lon": 151.0
+    },
+    {
+      "name": "North Head",
+      "wmo": "95768",
+      "lat": -33.8,
+      "lon": 151.3
+    },
+    {
+      "name": "Parramatta",
+      "wmo": "94764",
+      "lat": -33.8,
+      "lon": 151.0
+    },
+    {
+      "name": "Penrith",
+      "wmo": "94763",
+      "lat": -33.7,
+      "lon": 150.7
+    },
+    {
+      "name": "Richmond",
+      "wmo": "95753",
+      "lat": -33.6,
+      "lon": 150.8
+    },
+    {
+      "name": "Sydney Airport",
+      "wmo": "94767",
+      "lat": -33.9,
+      "lon": 151.2
+    },
+    {
+      "name": "Sydney - Observatory Hill",
+      "wmo": "94768",
+      "lat": -33.9,
+      "lon": 151.2
+    },
+    {
+      "name": "Sydney Harbour",
+      "wmo": "95766",
+      "lat": -33.8,
+      "lon": 151.3
+    },
+    {
+      "name": "Sydney Olympic Park",
+      "wmo": "95765",
+      "lat": -33.8,
+      "lon": 151.1
+    },
+    {
+      "name": "Terrey Hills",
+      "wmo": "94759",
+      "lat": -33.7,
+      "lon": 151.2
+    },
+    {
+      "name": "Wattamolla",
+      "wmo": "95752",
+      "lat": -34.1,
+      "lon": 151.1
+    },
+    {
+      "name": "Western Sydney Airport",
+      "wmo": "94149",
+      "lat": -33.9,
+      "lon": 150.7
+    },
+    {
+      "name": "Albion Park",
+      "wmo": "95748",
+      "lat": -34.6,
+      "lon": 150.8
+    },
+    {
+      "name": "Bellambi",
+      "wmo": "94749",
+      "lat": -34.4,
+      "lon": 150.9
+    },
+    {
+      "name": "High Range (Wanganderry)",
+      "wmo": "99742",
+      "lat": -34.3,
+      "lon": 150.3
+    },
+    {
+      "name": "Jervis Bay Airfield",
+      "wmo": "94751",
+      "lat": -35.1,
+      "lon": 150.7
+    },
+    {
+      "name": "Kiama",
+      "wmo": "95749",
+      "lat": -34.7,
+      "lon": 150.9
+    },
+    {
+      "name": "Moss Vale",
+      "wmo": "94746",
+      "lat": -34.5,
+      "lon": 150.4
+    },
+    {
+      "name": "Nowra",
+      "wmo": "94750",
+      "lat": -34.9,
+      "lon": 150.5
+    },
+    {
+      "name": "Point Perpendicular",
+      "wmo": "95940",
+      "lat": -35.1,
+      "lon": 150.8
+    },
+    {
+      "name": "Port Kembla Harbour",
+      "wmo": "95745",
+      "lat": -34.5,
+      "lon": 150.9
+    },
+    {
+      "name": "Bega",
+      "wmo": "95931",
+      "lat": -36.7,
+      "lon": 149.8
+    },
+    {
+      "name": "Gabo Island",
+      "wmo": "94933",
+      "lat": -37.6,
+      "lon": 149.9
+    },
+    {
+      "name": "Green Cape",
+      "wmo": "94934",
+      "lat": -37.3,
+      "lon": 150.1
+    },
+    {
+      "name": "Merimbula",
+      "wmo": "95929",
+      "lat": -36.9,
+      "lon": 149.9
+    },
+    {
+      "name": "Montague Island",
+      "wmo": "94939",
+      "lat": -36.3,
+      "lon": 150.2
+    },
+    {
+      "name": "Moruya Airport",
+      "wmo": "95937",
+      "lat": -35.9,
+      "lon": 150.1
+    },
+    {
+      "name": "Narooma",
+      "wmo": "95935",
+      "lat": -36.2,
+      "lon": 150.1
+    },
+    {
+      "name": "Ulladulla",
+      "wmo": "94938",
+      "lat": -35.4,
+      "lon": 150.5
+    },
+    {
+      "name": "Bathurst Airport",
+      "wmo": "94729",
+      "lat": -33.4,
+      "lon": 149.7
+    },
+    {
+      "name": "Bathurst Agricultural Station",
+      "wmo": "94158",
+      "lat": -33.4,
+      "lon": 149.6
+    },
+    {
+      "name": "Gulgong",
+      "wmo": "94732",
+      "lat": -32.4,
+      "lon": 149.5
+    },
+    {
+      "name": "Katoomba",
+      "wmo": "94744",
+      "lat": -33.7,
+      "lon": 150.3
+    },
+    {
+      "name": "Lithgow",
+      "wmo": "94741",
+      "lat": -33.5,
+      "lon": 150.1
+    },
+    {
+      "name": "Marrangaroo (Defence)",
+      "wmo": "95686",
+      "lat": -33.4,
+      "lon": 150.1
+    },
+    {
+      "name": "Mount Boyce",
+      "wmo": "94743",
+      "lat": -33.6,
+      "lon": 150.3
+    },
+    {
+      "name": "Mudgee",
+      "wmo": "94727",
+      "lat": -32.6,
+      "lon": 149.6
+    },
+    {
+      "name": "Nullo Mountain",
+      "wmo": "94754",
+      "lat": -32.7,
+      "lon": 150.2
+    },
+    {
+      "name": "Orange AgIn",
+      "wmo": "95725",
+      "lat": -33.3,
+      "lon": 149.1
+    },
+    {
+      "name": "Orange Airport",
+      "wmo": "95726",
+      "lat": -33.4,
+      "lon": 149.1
+    },
+    {
+      "name": "Braidwood",
+      "wmo": "94927",
+      "lat": -35.4,
+      "lon": 149.8
+    },
+    {
+      "name": "Canberra",
+      "wmo": "94926",
+      "lat": -35.3,
+      "lon": 149.2
+    },
+    {
+      "name": "Goulburn",
+      "wmo": "94716",
+      "lat": -34.7,
+      "lon": 149.7
+    },
+    {
+      "name": "Goulburn Airport",
+      "wmo": "95716",
+      "lat": -34.8,
+      "lon": 149.7
+    },
+    {
+      "name": "Mount Ginini",
+      "wmo": "95925",
+      "lat": -35.5,
+      "lon": 148.8
+    },
+    {
+      "name": "Nerriga",
+      "wmo": "94943",
+      "lat": -35.1,
+      "lon": 150.1
+    },
+    {
+      "name": "Tuggeranong",
+      "wmo": "94925",
+      "lat": -35.4,
+      "lon": 149.1
+    },
+    {
+      "name": "Bombala",
+      "wmo": "94928",
+      "lat": -36.9,
+      "lon": 149.2
+    },
+    {
+      "name": "Bombala AWS",
+      "wmo": "94929",
+      "lat": -37.0,
+      "lon": 149.2
+    },
+    {
+      "name": "Cabramurra",
+      "wmo": "95916",
+      "lat": -35.9,
+      "lon": 148.4
+    },
+    {
+      "name": "Cooma",
+      "wmo": "94923",
+      "lat": -36.2,
+      "lon": 149.1
+    },
+    {
+      "name": "Cooma Airport",
+      "wmo": "94921",
+      "lat": -36.3,
+      "lon": 149.0
+    },
+    {
+      "name": "Perisher Valley",
+      "wmo": "94915",
+      "lat": -36.4,
+      "lon": 148.4
+    },
+    {
+      "name": "Thredbo Top Station",
+      "wmo": "95909",
+      "lat": -36.5,
+      "lon": 148.3
+    },
+    {
+      "name": "Thredbo Village",
+      "wmo": "95908",
+      "lat": -36.5,
+      "lon": 148.3
+    },
+    {
+      "name": "Barraba",
+      "wmo": "94761",
+      "lat": -30.4,
+      "lon": 150.6
+    },
+    {
+      "name": "Goondiwindi",
+      "wmo": "99468",
+      "lat": -28.5,
+      "lon": 150.3
+    },
+    {
+      "name": "Gunnedah Airport",
+      "wmo": "95740",
+      "lat": -31.0,
+      "lon": 150.2
+    },
+    {
+      "name": "Gunnedah Resource Centre",
+      "wmo": "94740",
+      "lat": -31.0,
+      "lon": 150.3
+    },
+    {
+      "name": "Moree",
+      "wmo": "95527",
+      "lat": -29.5,
+      "lon": 149.8
+    },
+    {
+      "name": "Mungindi",
+      "wmo": "94520",
+      "lat": -29.0,
+      "lon": 149.0
+    },
+    {
+      "name": "Narrabri",
+      "wmo": "95734",
+      "lat": -30.3,
+      "lon": 149.8
+    },
+    {
+      "name": "Quirindi",
+      "wmo": "95746",
+      "lat": -31.5,
+      "lon": 150.7
+    },
+    {
+      "name": "Tamworth Airport",
+      "wmo": "95762",
+      "lat": -31.1,
+      "lon": 150.8
+    },
+    {
+      "name": "Walgett",
+      "wmo": "95715",
+      "lat": -30.0,
+      "lon": 148.1
+    },
+    {
+      "name": "Woolbrook",
+      "wmo": "94792",
+      "lat": -31.0,
+      "lon": 151.4
+    },
+    {
+      "name": "Brewon",
+      "wmo": "94793",
+      "lat": -30.2,
+      "lon": 147.5
+    },
+    {
+      "name": "Condobolin Airport",
+      "wmo": "95708",
+      "lat": -33.1,
+      "lon": 147.2
+    },
+    {
+      "name": "Coonabarabran",
+      "wmo": "94728",
+      "lat": -31.3,
+      "lon": 149.3
+    },
+    {
+      "name": "Coonabarabran Airport",
+      "wmo": "95728",
+      "lat": -31.3,
+      "lon": 149.3
+    },
+    {
+      "name": "Coonamble",
+      "wmo": "95718",
+      "lat": -31.0,
+      "lon": 148.4
+    },
+    {
+      "name": "Cowra",
+      "wmo": "95721",
+      "lat": -33.8,
+      "lon": 148.7
+    },
+    {
+      "name": "Dubbo",
+      "wmo": "95719",
+      "lat": -32.2,
+      "lon": 148.6
+    },
+    {
+      "name": "Forbes",
+      "wmo": "94715",
+      "lat": -33.4,
+      "lon": 147.9
+    },
+    {
+      "name": "Girilambone",
+      "wmo": "94794",
+      "lat": -31.1,
+      "lon": 146.9
+    },
+    {
+      "name": "Grenfell",
+      "wmo": "94725",
+      "lat": -33.9,
+      "lon": 148.2
+    },
+    {
+      "name": "Lake Cargelligo",
+      "wmo": "95707",
+      "lat": -33.3,
+      "lon": 146.4
+    },
+    {
+      "name": "Parkes Airport",
+      "wmo": "95717",
+      "lat": -33.1,
+      "lon": 148.2
+    },
+    {
+      "name": "Peak Hill",
+      "wmo": "94721",
+      "lat": -32.7,
+      "lon": 148.2
+    },
+    {
+      "name": "Temora",
+      "wmo": "95722",
+      "lat": -34.4,
+      "lon": 147.5
+    },
+    {
+      "name": "Trangie",
+      "wmo": "95710",
+      "lat": -32.0,
+      "lon": 147.9
+    },
+    {
+      "name": "Wellington",
+      "wmo": "94723",
+      "lat": -32.6,
+      "lon": 149.0
+    },
+    {
+      "name": "West Wyalong",
+      "wmo": "95709",
+      "lat": -33.9,
+      "lon": 147.2
+    },
+    {
+      "name": "Cootamundra",
+      "wmo": "94714",
+      "lat": -34.6,
+      "lon": 148.0
+    },
+    {
+      "name": "Khancoban",
+      "wmo": "94919",
+      "lat": -36.2,
+      "lon": 148.1
+    },
+    {
+      "name": "Tumbarumba",
+      "wmo": "94918",
+      "lat": -35.8,
+      "lon": 148.0
+    },
+    {
+      "name": "Young",
+      "wmo": "94712",
+      "lat": -34.2,
+      "lon": 148.2
+    },
+    {
+      "name": "Albury",
+      "wmo": "95896",
+      "lat": -36.1,
+      "lon": 147.0
+    },
+    {
+      "name": "Deniliquin",
+      "wmo": "95869",
+      "lat": -35.6,
+      "lon": 144.9
+    },
+    {
+      "name": "Griffith",
+      "wmo": "95704",
+      "lat": -34.2,
+      "lon": 146.1
+    },
+    {
+      "name": "Hay Airport",
+      "wmo": "94702",
+      "lat": -34.5,
+      "lon": 144.8
+    },
+    {
+      "name": "Hume Reservoir",
+      "wmo": "94901",
+      "lat": -36.1,
+      "lon": 147.0
+    },
+    {
+      "name": "Kapooka (Defence)",
+      "wmo": "94944",
+      "lat": -35.1,
+      "lon": 147.3
+    },
+    {
+      "name": "Narrandera Airport",
+      "wmo": "95706",
+      "lat": -34.7,
+      "lon": 146.5
+    },
+    {
+      "name": "Swan Hill",
+      "wmo": "94843",
+      "lat": -35.4,
+      "lon": 143.5
+    },
+    {
+      "name": "Wagga Wagga",
+      "wmo": "94910",
+      "lat": -35.2,
+      "lon": 147.5
+    },
+    {
+      "name": "Yanco",
+      "wmo": "95705",
+      "lat": -34.6,
+      "lon": 146.4
+    },
+    {
+      "name": "Yarrawonga",
+      "wmo": "94862",
+      "lat": -36.0,
+      "lon": 146.0
+    },
+    {
+      "name": "Broken Hill Airport",
+      "wmo": "94691",
+      "lat": -32.0,
+      "lon": 141.5
+    },
+    {
+      "name": "Ivanhoe Airport",
+      "wmo": "95697",
+      "lat": -32.9,
+      "lon": 144.3
+    },
+    {
+      "name": "Lake Victoria",
+      "wmo": "94692",
+      "lat": -34.0,
+      "lon": 141.3
+    },
+    {
+      "name": "Menindee",
+      "wmo": "94694",
+      "lat": -32.4,
+      "lon": 142.4
+    },
+    {
+      "name": "Mildura",
+      "wmo": "94693",
+      "lat": -34.2,
+      "lon": 142.1
+    },
+    {
+      "name": "Mount Hope",
+      "wmo": "95682",
+      "lat": -32.8,
+      "lon": 145.9
+    },
+    {
+      "name": "Pooncarie",
+      "wmo": "95692",
+      "lat": -33.4,
+      "lon": 142.6
+    },
+    {
+      "name": "Borrona Downs",
+      "wmo": "94407",
+      "lat": -29.8,
+      "lon": 143.1
+    },
+    {
+      "name": "Bourke",
+      "wmo": "94703",
+      "lat": -30.0,
+      "lon": 146.0
+    },
+    {
+      "name": "Brewarrina",
+      "wmo": "95512",
+      "lat": -30.0,
+      "lon": 146.9
+    },
+    {
+      "name": "Cobar",
+      "wmo": "94711",
+      "lat": -31.5,
+      "lon": 145.8
+    },
+    {
+      "name": "Cobar Airport",
+      "wmo": "94710",
+      "lat": -31.5,
+      "lon": 145.8
+    },
+    {
+      "name": "Delta",
+      "wmo": "95681",
+      "lat": -30.2,
+      "lon": 145.4
+    },
+    {
+      "name": "Fowlers Gap",
+      "wmo": "94686",
+      "lat": -31.1,
+      "lon": 141.7
+    },
+    {
+      "name": "Lightning Ridge",
+      "wmo": "94498",
+      "lat": -29.4,
+      "lon": 148.0
+    },
+    {
+      "name": "Noona",
+      "wmo": "94798",
+      "lat": -31.7,
+      "lon": 144.9
+    },
+    {
+      "name": "Smithville",
+      "wmo": "94796",
+      "lat": -30.1,
+      "lon": 141.0
+    },
+    {
+      "name": "Tibooburra Airport",
+      "wmo": "95485",
+      "lat": -29.4,
+      "lon": 142.1
+    },
+    {
+      "name": "White Cliffs AWS",
+      "wmo": "95699",
+      "lat": -30.9,
+      "lon": 143.1
+    },
+    {
+      "name": "Wilcannia Airport",
+      "wmo": "95695",
+      "lat": -31.5,
+      "lon": 143.4
+    },
+    {
+      "name": "Lord Howe Island",
+      "wmo": "94995",
+      "lat": -31.5,
+      "lon": 159.1
+    },
+    {
+      "name": "Lord Howe Island Windy Point",
+      "wmo": "95995",
+      "lat": -31.5,
+      "lon": 159.1
+    },
+    {
+      "name": "Norfolk Island",
+      "wmo": "94996",
+      "lat": -29.0,
+      "lon": 167.9
+    },
+    {
+      "name": "PORTABLE NPWS NSW02",
+      "wmo": "99999",
+      "lat": -33.1,
+      "lon": 150.1
+    },
+    {
+      "name": "PORTABLE NPWS NSW05",
+      "wmo": "99152",
+      "lat": -33.8,
+      "lon": 150.6
+    },
+    {
+      "name": "Tidbinbilla",
+      "wmo": "99762",
+      "lat": -35.5,
+      "lon": 148.9
+    },
+    {
+      "name": "Mullion",
+      "wmo": "99763",
+      "lat": -35.1,
+      "lon": 148.8
+    },
+    {
+      "name": "Kowen Forest",
+      "wmo": "99764",
+      "lat": -35.3,
+      "lon": 149.3
+    },
+    {
+      "name": "Gudgenby",
+      "wmo": "99765",
+      "lat": -35.7,
+      "lon": 149.0
+    },
+    {
+      "name": "ACT PCS1",
+      "wmo": "99145",
+      "lat": -35.2,
+      "lon": 149.1
+    },
+    {
+      "name": "ACT PCS2",
+      "wmo": "99146",
+      "lat": -35.4,
+      "lon": 149.0
+    },
+    {
+      "name": "ACT PCS3",
+      "wmo": "99946",
+      "lat": -35.4,
+      "lon": 149.3
+    },
+    {
+      "name": "PORTABLE RFSNSW01",
+      "wmo": "99071",
+      "lat": -33.6,
+      "lon": 151.0
+    },
+    {
+      "name": "PORTABLE RFSNSW02",
+      "wmo": "99072",
+      "lat": -34.7,
+      "lon": 148.8
+    },
+    {
+      "name": "PORTABLE RFSNSW09",
+      "wmo": "99118",
+      "lat": -32.0,
+      "lon": 152.0
+    },
+    {
+      "name": "Harden RF68 (RFS)",
+      "wmo": "99388",
+      "lat": -36.2,
+      "lon": 149.7
+    },
+    {
+      "name": "Balranald RF69 (RFS)",
+      "wmo": "99389",
+      "lat": -34.6,
+      "lon": 143.6
+    },
+    {
+      "name": "Bellingen RF70 (RFS)",
+      "wmo": "99390",
+      "lat": -30.4,
+      "lon": 152.9
+    },
+    {
+      "name": "Belowra RF71 (RFS)",
+      "wmo": "99391",
+      "lat": -36.2,
+      "lon": 149.7
+    },
+    {
+      "name": "Bemboka RF72 (RFS)",
+      "wmo": "99392",
+      "lat": -36.6,
+      "lon": 149.5
+    },
+    {
+      "name": "Deer Vale RF73 (RFS)",
+      "wmo": "99393",
+      "lat": -30.4,
+      "lon": 152.5
+    },
+    {
+      "name": "Deua River RF74 (RFS)",
+      "wmo": "99394",
+      "lat": -35.8,
+      "lon": 150.0
+    },
+    {
+      "name": "PORTABLE RFSNSW11",
+      "wmo": "99753",
+      "lat": -29.6,
+      "lon": 152.5
+    },
+    {
+      "name": "PORTABLE RFSNSW15",
+      "wmo": "99786",
+      "lat": -29.1,
+      "lon": 152.5
+    },
+    {
+      "name": "PORTABLE RFSNSW21",
+      "wmo": "99134",
+      "lat": -36.7,
+      "lon": 149.9
+    },
+    {
+      "name": "Henty RF51 (RFS)",
+      "wmo": "99998",
+      "lat": -35.5,
+      "lon": 147.0
+    },
+    {
+      "name": "Bidgeemia RF52 (RFS)",
+      "wmo": "99791",
+      "lat": -35.4,
+      "lon": 146.4
+    },
+    {
+      "name": "Ardlethan RF53 (RFS)",
+      "wmo": "99792",
+      "lat": -34.5,
+      "lon": 146.9
+    },
+    {
+      "name": "PORTABLE RFSNSW54",
+      "wmo": "99793",
+      "lat": -28.9,
+      "lon": 153.1
+    },
+    {
+      "name": "PORTABLE RFSNSW58",
+      "wmo": "99825",
+      "lat": -34.1,
+      "lon": 149.6
+    },
+    {
+      "name": "PORTABLE RFSNSW59",
+      "wmo": "99598",
+      "lat": -35.7,
+      "lon": 148.0
+    },
+    {
+      "name": "Tumut RF60 (RFS)",
+      "wmo": "99597",
+      "lat": -35.3,
+      "lon": 148.2
+    },
+    {
+      "name": "PORTABLE WN01 (Water NSW)",
+      "wmo": "99129",
+      "lat": -34.3,
+      "lon": 150.6
+    }
+  ]
+}

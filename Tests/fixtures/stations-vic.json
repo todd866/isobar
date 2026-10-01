@@ -1,0 +1,629 @@
+{
+  "product": "IDV60801",
+  "stations": [
+    {
+      "name": "Charlton",
+      "wmo": "94839",
+      "lat": -36.3,
+      "lon": 143.3
+    },
+    {
+      "name": "Hopetoun Airport",
+      "wmo": "94838",
+      "lat": -35.7,
+      "lon": 142.4
+    },
+    {
+      "name": "Kerang",
+      "wmo": "94844",
+      "lat": -35.7,
+      "lon": 143.9
+    },
+    {
+      "name": "Kerang Airport",
+      "wmo": "94107",
+      "lat": -35.7,
+      "lon": 143.9
+    },
+    {
+      "name": "Mildura",
+      "wmo": "94693",
+      "lat": -34.2,
+      "lon": 142.1
+    },
+    {
+      "name": "Ouyen",
+      "wmo": "94831",
+      "lat": -35.1,
+      "lon": 142.3
+    },
+    {
+      "name": "Swan Hill",
+      "wmo": "94843",
+      "lat": -35.4,
+      "lon": 143.5
+    },
+    {
+      "name": "Walpeup",
+      "wmo": "95831",
+      "lat": -35.1,
+      "lon": 142.0
+    },
+    {
+      "name": "Edenhope",
+      "wmo": "95832",
+      "lat": -37.0,
+      "lon": 141.3
+    },
+    {
+      "name": "Horsham",
+      "wmo": "95839",
+      "lat": -36.7,
+      "lon": 142.2
+    },
+    {
+      "name": "Longerenong",
+      "wmo": "95835",
+      "lat": -36.7,
+      "lon": 142.3
+    },
+    {
+      "name": "Nhill Aerodrome",
+      "wmo": "94827",
+      "lat": -36.3,
+      "lon": 141.6
+    },
+    {
+      "name": "Stawell",
+      "wmo": "94836",
+      "lat": -37.1,
+      "lon": 142.7
+    },
+    {
+      "name": "Warracknabeal Airport",
+      "wmo": "94920",
+      "lat": -36.3,
+      "lon": 142.4
+    },
+    {
+      "name": "Ararat",
+      "wmo": "94834",
+      "lat": -37.3,
+      "lon": 143.0
+    },
+    {
+      "name": "Ben Nevis",
+      "wmo": "94835",
+      "lat": -37.2,
+      "lon": 143.2
+    },
+    {
+      "name": "Cape Nelson",
+      "wmo": "94826",
+      "lat": -38.4,
+      "lon": 141.5
+    },
+    {
+      "name": "Cape Otway",
+      "wmo": "94842",
+      "lat": -38.9,
+      "lon": 143.5
+    },
+    {
+      "name": "Casterton",
+      "wmo": "95825",
+      "lat": -37.6,
+      "lon": 141.3
+    },
+    {
+      "name": "Dartmoor",
+      "wmo": "95822",
+      "lat": -37.9,
+      "lon": 141.3
+    },
+    {
+      "name": "Hamilton",
+      "wmo": "94829",
+      "lat": -37.6,
+      "lon": 142.1
+    },
+    {
+      "name": "Mortlake",
+      "wmo": "94840",
+      "lat": -38.1,
+      "lon": 142.8
+    },
+    {
+      "name": "Mount Gellibrand",
+      "wmo": "95845",
+      "lat": -38.2,
+      "lon": 143.8
+    },
+    {
+      "name": "Mount William",
+      "wmo": "94833",
+      "lat": -37.3,
+      "lon": 142.6
+    },
+    {
+      "name": "Port Fairy",
+      "wmo": "94830",
+      "lat": -38.4,
+      "lon": 142.2
+    },
+    {
+      "name": "Portland Airport",
+      "wmo": "94828",
+      "lat": -38.3,
+      "lon": 141.5
+    },
+    {
+      "name": "Portland Harbour",
+      "wmo": "95826",
+      "lat": -38.3,
+      "lon": 141.6
+    },
+    {
+      "name": "Warrnambool",
+      "wmo": "94837",
+      "lat": -38.3,
+      "lon": 142.5
+    },
+    {
+      "name": "Westmere",
+      "wmo": "95840",
+      "lat": -37.7,
+      "lon": 142.9
+    },
+    {
+      "name": "Aireys Inlet",
+      "wmo": "94846",
+      "lat": -38.5,
+      "lon": 144.1
+    },
+    {
+      "name": "Avalon",
+      "wmo": "94854",
+      "lat": -38.0,
+      "lon": 144.5
+    },
+    {
+      "name": "Ballarat",
+      "wmo": "94852",
+      "lat": -37.5,
+      "lon": 143.8
+    },
+    {
+      "name": "Cerberus",
+      "wmo": "94898",
+      "lat": -38.4,
+      "lon": 145.2
+    },
+    {
+      "name": "Coldstream",
+      "wmo": "94864",
+      "lat": -37.7,
+      "lon": 145.4
+    },
+    {
+      "name": "Essendon Airport",
+      "wmo": "95866",
+      "lat": -37.7,
+      "lon": 144.9
+    },
+    {
+      "name": "Fawkner Beacon",
+      "wmo": "95872",
+      "lat": -37.9,
+      "lon": 144.9
+    },
+    {
+      "name": "Ferny Creek",
+      "wmo": "94872",
+      "lat": -37.9,
+      "lon": 145.3
+    },
+    {
+      "name": "Frankston (Ballam Park)",
+      "wmo": "94876",
+      "lat": -38.2,
+      "lon": 145.2
+    },
+    {
+      "name": "Frankston Beach",
+      "wmo": "94871",
+      "lat": -38.1,
+      "lon": 145.1
+    },
+    {
+      "name": "Geelong Racecourse",
+      "wmo": "94857",
+      "lat": -38.2,
+      "lon": 144.4
+    },
+    {
+      "name": "Laverton",
+      "wmo": "94865",
+      "lat": -37.9,
+      "lon": 144.8
+    },
+    {
+      "name": "Melbourne Airport",
+      "wmo": "94866",
+      "lat": -37.7,
+      "lon": 144.8
+    },
+    {
+      "name": "Melbourne (Olympic Park)",
+      "wmo": "95936",
+      "lat": -37.8,
+      "lon": 145.0
+    },
+    {
+      "name": "Moorabbin Airport",
+      "wmo": "94870",
+      "lat": -38.0,
+      "lon": 145.1
+    },
+    {
+      "name": "Point Cook",
+      "wmo": "95941",
+      "lat": -37.9,
+      "lon": 144.8
+    },
+    {
+      "name": "Point Wilson",
+      "wmo": "94847",
+      "lat": -38.1,
+      "lon": 144.5
+    },
+    {
+      "name": "Pound Creek",
+      "wmo": "94886",
+      "lat": -38.6,
+      "lon": 145.8
+    },
+    {
+      "name": "Rhyll",
+      "wmo": "94892",
+      "lat": -38.5,
+      "lon": 145.3
+    },
+    {
+      "name": "She Oaks",
+      "wmo": "94863",
+      "lat": -37.9,
+      "lon": 144.1
+    },
+    {
+      "name": "South Channel Island",
+      "wmo": "94853",
+      "lat": -38.3,
+      "lon": 144.8
+    },
+    {
+      "name": "St Kilda Harbour RMYS",
+      "wmo": "95864",
+      "lat": -37.9,
+      "lon": 145.0
+    },
+    {
+      "name": "Viewbank",
+      "wmo": "95874",
+      "lat": -37.7,
+      "lon": 145.1
+    },
+    {
+      "name": "Wonthaggi",
+      "wmo": "95881",
+      "lat": -38.6,
+      "lon": 145.6
+    },
+    {
+      "name": "Bendigo",
+      "wmo": "94855",
+      "lat": -36.7,
+      "lon": 144.3
+    },
+    {
+      "name": "Echuca",
+      "wmo": "94861",
+      "lat": -36.2,
+      "lon": 144.8
+    },
+    {
+      "name": "Kyabram",
+      "wmo": "95833",
+      "lat": -36.3,
+      "lon": 145.1
+    },
+    {
+      "name": "Mangalore",
+      "wmo": "94874",
+      "lat": -36.9,
+      "lon": 145.2
+    },
+    {
+      "name": "Redesdale",
+      "wmo": "94859",
+      "lat": -37.0,
+      "lon": 144.5
+    },
+    {
+      "name": "Shepparton",
+      "wmo": "94875",
+      "lat": -36.4,
+      "lon": 145.4
+    },
+    {
+      "name": "Tatura",
+      "wmo": "95836",
+      "lat": -36.4,
+      "lon": 145.3
+    },
+    {
+      "name": "Yarrawonga",
+      "wmo": "94862",
+      "lat": -36.0,
+      "lon": 146.0
+    },
+    {
+      "name": "Albury",
+      "wmo": "95896",
+      "lat": -36.1,
+      "lon": 147.0
+    },
+    {
+      "name": "Benalla",
+      "wmo": "94884",
+      "lat": -36.6,
+      "lon": 146.0
+    },
+    {
+      "name": "Falls Creek",
+      "wmo": "94903",
+      "lat": -36.9,
+      "lon": 147.3
+    },
+    {
+      "name": "Hunters Hill",
+      "wmo": "94878",
+      "lat": -36.2,
+      "lon": 147.5
+    },
+    {
+      "name": "Mount Buller",
+      "wmo": "94894",
+      "lat": -37.1,
+      "lon": 146.4
+    },
+    {
+      "name": "Mount Hotham Airport",
+      "wmo": "94905",
+      "lat": -37.0,
+      "lon": 147.3
+    },
+    {
+      "name": "Mount Hotham",
+      "wmo": "94906",
+      "lat": -37.0,
+      "lon": 147.1
+    },
+    {
+      "name": "Rutherglen",
+      "wmo": "95837",
+      "lat": -36.1,
+      "lon": 146.5
+    },
+    {
+      "name": "Wangaratta",
+      "wmo": "94889",
+      "lat": -36.4,
+      "lon": 146.3
+    },
+    {
+      "name": "Eildon Fire Tower",
+      "wmo": "94881",
+      "lat": -37.2,
+      "lon": 145.8
+    },
+    {
+      "name": "Kilmore Gap",
+      "wmo": "94860",
+      "lat": -37.4,
+      "lon": 145.0
+    },
+    {
+      "name": "Lake Eildon",
+      "wmo": "94882",
+      "lat": -37.2,
+      "lon": 145.9
+    },
+    {
+      "name": "Maryborough",
+      "wmo": "94849",
+      "lat": -37.1,
+      "lon": 143.7
+    },
+    {
+      "name": "Puckapunyal-Lyon Hill (Defence)",
+      "wmo": "94858",
+      "lat": -36.9,
+      "lon": 145.1
+    },
+    {
+      "name": "Puckapunyal West (Defence)",
+      "wmo": "94856",
+      "lat": -37.0,
+      "lon": 144.9
+    },
+    {
+      "name": "East Sale Airport",
+      "wmo": "95907",
+      "lat": -38.1,
+      "lon": 147.1
+    },
+    {
+      "name": "Hogan Island",
+      "wmo": "94949",
+      "lat": -39.2,
+      "lon": 147.0
+    },
+    {
+      "name": "Latrobe Valley",
+      "wmo": "94891",
+      "lat": -38.2,
+      "lon": 146.5
+    },
+    {
+      "name": "Mount Baw Baw",
+      "wmo": "95901",
+      "lat": -37.8,
+      "lon": 146.3
+    },
+    {
+      "name": "Mount Moornapa",
+      "wmo": "95913",
+      "lat": -37.7,
+      "lon": 147.1
+    },
+    {
+      "name": "Warragul (Nilma North)",
+      "wmo": "99806",
+      "lat": -38.1,
+      "lon": 146.0
+    },
+    {
+      "name": "Wilsons Promontory",
+      "wmo": "94893",
+      "lat": -39.1,
+      "lon": 146.4
+    },
+    {
+      "name": "Yarram Airport",
+      "wmo": "95890",
+      "lat": -38.6,
+      "lon": 146.7
+    },
+    {
+      "name": "Bairnsdale",
+      "wmo": "94912",
+      "lat": -37.9,
+      "lon": 147.6
+    },
+    {
+      "name": "Combienbar",
+      "wmo": "94914",
+      "lat": -37.3,
+      "lon": 149.0
+    },
+    {
+      "name": "Gabo Island",
+      "wmo": "94933",
+      "lat": -37.6,
+      "lon": 149.9
+    },
+    {
+      "name": "Gelantipy",
+      "wmo": "94913",
+      "lat": -37.2,
+      "lon": 148.3
+    },
+    {
+      "name": "Lakes Entrance",
+      "wmo": "95904",
+      "lat": -37.9,
+      "lon": 148.0
+    },
+    {
+      "name": "Mallacoota",
+      "wmo": "94935",
+      "lat": -37.6,
+      "lon": 149.7
+    },
+    {
+      "name": "Mount Nowa Nowa",
+      "wmo": "94930",
+      "lat": -37.7,
+      "lon": 148.1
+    },
+    {
+      "name": "Omeo",
+      "wmo": "94908",
+      "lat": -37.1,
+      "lon": 147.6
+    },
+    {
+      "name": "Orbost",
+      "wmo": "95918",
+      "lat": -37.7,
+      "lon": 148.5
+    },
+    {
+      "name": "Cressy (CFA)",
+      "wmo": "99813",
+      "lat": -38.0,
+      "lon": 143.6
+    },
+    {
+      "name": "Wycheproof (CFA)",
+      "wmo": "99815",
+      "lat": -36.1,
+      "lon": 143.2
+    },
+    {
+      "name": "Victoria Portable AWS G (CFA)",
+      "wmo": "99819",
+      "lat": -37.6,
+      "lon": 144.4
+    },
+    {
+      "name": "Ballan (CFA)",
+      "wmo": "99820",
+      "lat": -37.6,
+      "lon": 144.2
+    },
+    {
+      "name": "Trentham East (CFA)",
+      "wmo": "99821",
+      "lat": -37.4,
+      "lon": 144.4
+    },
+    {
+      "name": "Glenburn (CFA)",
+      "wmo": "99822",
+      "lat": -37.3,
+      "lon": 145.5
+    },
+    {
+      "name": "Gerangamete (CFA)",
+      "wmo": "99826",
+      "lat": -38.4,
+      "lon": 143.7
+    },
+    {
+      "name": "Mt Burnett (CFA)",
+      "wmo": "99827",
+      "lat": -38.0,
+      "lon": 145.5
+    },
+    {
+      "name": "Victoria Portable AWS M (CFA)",
+      "wmo": "99900",
+      "lat": -36.4,
+      "lon": 146.3
+    },
+    {
+      "name": "Victoria Portable AWS N (CFA)",
+      "wmo": "99901",
+      "lat": -36.0,
+      "lon": 144.1
+    },
+    {
+      "name": "O'Shannassy Catchment (Melbourne Water)",
+      "wmo": "99828",
+      "lat": -37.6,
+      "lon": 145.8
+    }
+  ]
+}

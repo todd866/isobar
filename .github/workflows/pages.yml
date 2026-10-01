@@ -1,0 +1,98 @@
+name: Publish site
+on:
+  push:
+    branches: [main]
+    paths: ['site/**', 'tools/own-chart.m', 'tools/export-site.*', 'tools/check-site-movies.*', 'tools/public-weather.py', 'tools/test-site.mjs', 'Sources/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+  workflow_run:
+    workflows: ['Collect public weather']
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: macos-15
+    timeout-minutes: 90
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Download public weather snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COLLECTION_RUN: ${{ github.event.workflow_run.id }}
+        run: |
+          mkdir -p build/incoming
+          if test -z "$COLLECTION_RUN"; then
+            COLLECTION_RUN=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow collect-weather.yml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          fi
+          if test -n "$COLLECTION_RUN"; then
+            [[ "$COLLECTION_RUN" =~ ^[0-9]+$ ]]
+            gh run download "$COLLECTION_RUN" --repo "$GITHUB_REPOSITORY" --name public-weather --dir build/incoming || rm -f build/incoming/public-weather.tar.gz
+          fi
+          if ! test -s build/incoming/public-weather.tar.gz; then
+            gh release download weather-bootstrap --repo "$GITHUB_REPOSITORY" --pattern public-weather.tar.gz --dir build/incoming
+          fi
+          python3 tools/public-weather.py import build/incoming/public-weather.tar.gz build/web-weather --max-age-hours 36
+      - name: Identify render window
+        id: window
+        run: python3 -c 'import os,time; open(os.environ["GITHUB_OUTPUT"],"a").write("slot="+str(int(time.time()//10800))+"\n")'
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        id: movies
+        with:
+          path: build/site-data
+          key: site-movies-v1-${{ steps.window.outputs.slot }}-${{ hashFiles('build/incoming/public-weather.tar.gz', 'Sources/**', 'Resources/**', 'tools/own-chart.m', 'tools/export-site.*') }}
+      - name: Render website movies
+        if: steps.movies.outputs.cache-hit != 'true'
+        run: |
+          ./tools/export-site.sh build/web-weather build/site-data
+          ./tools/check-site-movies.sh build/site-data/current.json
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        if: steps.movies.outputs.cache-hit != 'true'
+        with:
+          path: build/site-data
+          key: ${{ steps.movies.outputs.cache-primary-key }}
+      - name: Prepare website
+        run: |
+          ./tools/check-site-movies.sh build/site-data/current.json
+          rm -rf site/data
+          cp -R build/site-data site/data
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          release = Path('site/release.json')
+          if release.exists():
+              pointer = Path('site/data/current.json')
+              manifest = json.loads(pointer.read_text())
+              manifest['release'] = json.loads(release.read_text())
+              pointer.write_text(json.dumps(manifest))
+          PY
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - name: Verify website
+        run: |
+          npm install --prefix "$RUNNER_TEMP/isobar-browser" playwright
+          "$RUNNER_TEMP/isobar-browser/node_modules/.bin/playwright" install chromium
+          ISOBAR_ANIMATION_MP4=$(python3 -c 'import json; print("site/data/" + json.load(open("site/data/current.json"))["animations"]["pressure"]["src"])')
+          export ISOBAR_ANIMATION_MP4
+          ISOBAR_RELEASE_QA=1 PLAYWRIGHT_MODULE="$RUNNER_TEMP/isobar-browser/node_modules/playwright" node tools/test-site.mjs
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

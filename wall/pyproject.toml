@@ -1,0 +1,9 @@
+[project]
+name = "isobar-wall"
+version = "0.1.0"
+description = "Portable local wall renderer for Isobar"
+requires-python = ">=3.10"
+dependencies = ["Pillow>=10"]
+
+[tool.pytest.ini_options]
+testpaths = ["."]

@@ -1,0 +1,306 @@
+{
+  "observations": {
+    "notice": [
+      {
+        "copyright": "Copyright Commonwealth of Australia 2026, Bureau of Meteorology. For more information see: http://www.bom.gov.au/other/copyright.shtml http://www.bom.gov.au/other/disclaimer.shtml",
+        "copyright_url": "http://www.bom.gov.au/other/copyright.shtml",
+        "disclaimer_url": "http://www.bom.gov.au/other/disclaimer.shtml",
+        "feedback_url": "http://www.bom.gov.au/other/feedback"
+      }
+    ],
+    "header": [
+      {
+        "refresh_message": "Issued at  4:21 pm WST Friday 25 September 2026",
+        "ID": "IDW60901",
+        "main_ID": "IDW60900",
+        "name": "Perth",
+        "state_time_zone": "WA",
+        "time_zone": "WST",
+        "product_name": "Capital City Observations",
+        "state": "Western Australia"
+      }
+    ],
+    "data": [
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260926080000",
+        "air_temp": 19.6,
+        "wind_dir": "SSE",
+        "wind_spd_kmh": 17,
+        "gust_kmh": 28,
+        "press_msl": 1021.2,
+        "press": 1021.2,
+        "wind_spd_kt": 9,
+        "gust_kt": 15,
+        "lat": -31.9,
+        "lon": 115.9,
+        "rain_trace": "0.0"
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260926070000",
+        "air_temp": 19.2,
+        "wind_dir": "SSE",
+        "wind_spd_kmh": 16,
+        "gust_kmh": 26,
+        "press_msl": 1020.9,
+        "press": 1020.9
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260926060000",
+        "air_temp": 18.6,
+        "wind_dir": "SSE",
+        "wind_spd_kmh": 15,
+        "gust_kmh": 24,
+        "press_msl": 1020.6,
+        "press": 1020.6
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260926050000",
+        "air_temp": 18.1,
+        "wind_dir": "SE",
+        "wind_spd_kmh": 14,
+        "gust_kmh": 22,
+        "press_msl": 1020.4,
+        "press": 1020.4
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260926040000",
+        "air_temp": 17.6,
+        "wind_dir": "SE",
+        "wind_spd_kmh": 13,
+        "gust_kmh": 22,
+        "press_msl": 1020.2,
+        "press": 1020.2
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260926030000",
+        "air_temp": 17.2,
+        "wind_dir": "SE",
+        "wind_spd_kmh": 12,
+        "gust_kmh": 20,
+        "press_msl": 1019.9,
+        "press": 1019.9
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260926020000",
+        "air_temp": 16.8,
+        "wind_dir": "E",
+        "wind_spd_kmh": 11,
+        "gust_kmh": 18,
+        "press_msl": 1019.6,
+        "press": 1019.6
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260926010000",
+        "air_temp": 16.5,
+        "wind_dir": "E",
+        "wind_spd_kmh": 10,
+        "gust_kmh": 16,
+        "press_msl": 1019.3,
+        "press": 1019.3
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260926000000",
+        "air_temp": 16.4,
+        "wind_dir": "ESE",
+        "wind_spd_kmh": 9,
+        "gust_kmh": 15,
+        "press_msl": 1019.0,
+        "press": 1019.0
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260925230000",
+        "air_temp": 16.6,
+        "wind_dir": "S",
+        "wind_spd_kmh": 12,
+        "gust_kmh": 18,
+        "press_msl": 1018.8,
+        "press": 1018.8
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260925220000",
+        "air_temp": 17.0,
+        "wind_dir": "S",
+        "wind_spd_kmh": 14,
+        "gust_kmh": 22,
+        "press_msl": 1018.8,
+        "press": 1018.8
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260925210000",
+        "air_temp": 17.4,
+        "wind_dir": "SSW",
+        "wind_spd_kmh": 16,
+        "gust_kmh": 26,
+        "press_msl": 1019.0,
+        "press": 1019.0
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260925200000",
+        "air_temp": 17.8,
+        "wind_dir": "SW",
+        "wind_spd_kmh": 20,
+        "gust_kmh": 32,
+        "press_msl": 1019.4,
+        "press": 1019.4
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260925190000",
+        "air_temp": 18.4,
+        "wind_dir": "SW",
+        "wind_spd_kmh": 22,
+        "gust_kmh": 36,
+        "press_msl": 1019.8,
+        "press": 1019.8
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260925180000",
+        "air_temp": 19.0,
+        "wind_dir": "SW",
+        "wind_spd_kmh": 24,
+        "gust_kmh": 39,
+        "press_msl": 1020.2,
+        "press": 1020.2
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260925170000",
+        "air_temp": 19.6,
+        "wind_dir": "WSW",
+        "wind_spd_kmh": 22,
+        "gust_kmh": 36,
+        "press_msl": 1020.6,
+        "press": 1020.6
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260925160000",
+        "air_temp": 20.2,
+        "wind_dir": "W",
+        "wind_spd_kmh": 20,
+        "gust_kmh": 33,
+        "press_msl": 1020.9,
+        "press": 1020.9
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260925150000",
+        "air_temp": 20.6,
+        "wind_dir": "W",
+        "wind_spd_kmh": 18,
+        "gust_kmh": 30,
+        "press_msl": 1021.2,
+        "press": 1021.2
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260925140000",
+        "air_temp": 20.8,
+        "wind_dir": "WSW",
+        "wind_spd_kmh": 16,
+        "gust_kmh": 26,
+        "press_msl": 1021.5,
+        "press": 1021.5
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260925130000",
+        "air_temp": 20.4,
+        "wind_dir": "SW",
+        "wind_spd_kmh": 18,
+        "gust_kmh": 30,
+        "press_msl": 1021.8,
+        "press": 1021.8
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260925120000",
+        "air_temp": 19.8,
+        "wind_dir": "SW",
+        "wind_spd_kmh": 22,
+        "gust_kmh": 36,
+        "press_msl": 1022.0,
+        "press": 1022.0
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260925110000",
+        "air_temp": 19.2,
+        "wind_dir": "SSW",
+        "wind_spd_kmh": 18,
+        "gust_kmh": 28,
+        "press_msl": 1022.2,
+        "press": 1022.2
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260925100000",
+        "air_temp": 18.4,
+        "wind_dir": "S",
+        "wind_spd_kmh": 14,
+        "gust_kmh": 22,
+        "press_msl": 1022.4,
+        "press": 1022.4
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260925090000",
+        "air_temp": 17.6,
+        "wind_dir": "SE",
+        "wind_spd_kmh": 12,
+        "gust_kmh": 18,
+        "press_msl": 1022.5,
+        "press": 1022.5
+      },
+      {
+        "wmo": 94608,
+        "name": "Perth",
+        "local_date_time_full": "20260925080000",
+        "air_temp": 16.8,
+        "wind_dir": "ESE",
+        "wind_spd_kmh": 11,
+        "gust_kmh": 16,
+        "press_msl": 1022.6,
+        "press": 1022.6
+      }
+    ]
+  }
+}

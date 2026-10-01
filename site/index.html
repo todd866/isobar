@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Isobar</title><meta name="description" content="A map-first weather viewer for Perth coastal conditions.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar"><a class="wordmark" href="./">isobar</a><div class="top-actions"><a class="app-link" id="download-link" href="#download">Download</a><a href="https://github.com/todd866/isobar">Source</a><button class="icon-button" id="layers-button" type="button" aria-expanded="false" aria-controls="layers-menu">Layers <span aria-hidden="true">⌄</span></button></div></header>
+  <main class="viewer" aria-label="Isobar weather viewer">
+    <section class="map-panel"><div class="map-head"><div><p class="kicker">Australia · Perth coastal</p><h1 id="map-title">Mean sea-level pressure</h1><p class="kicker" id="map-note" hidden></p></div><p class="updated" id="updated">Loading forecast…</p></div><div class="map-frame" id="map-frame"><img id="map-image" alt="Mean sea-level pressure forecast map" decoding="async"><video id="map-video" aria-label="Animated mean sea-level pressure forecast" muted playsinline preload="none" hidden></video><div class="map-state" id="map-state">Preparing the map…</div><button class="retry" id="retry" type="button" hidden>Retry</button></div><div class="timeline"><button id="play-toggle" class="play-toggle" type="button" aria-label="Play forecast animation" disabled>Play</button><input id="time" type="range" min="0" max="0" value="0" aria-label="Forecast time"><output id="time-label" for="time">—</output></div><div class="times" id="times" aria-hidden="true"></div><div class="detail-tabs" role="toolbar" aria-label="Forecast detail layers"><button class="detail-tab" data-layer="rain" type="button" aria-pressed="false"><i class="dot rain-dot"></i>Rain</button><button class="detail-tab" data-layer="temperature" type="button" aria-pressed="false"><i class="dot temp-dot"></i>Temperature</button><button class="detail-tab" data-layer="wind" type="button" aria-pressed="false"><i class="dot wind-dot"></i>Kite</button><button class="detail-tab" data-layer="surf" type="button" aria-pressed="false"><i class="dot surf-dot"></i>Surf</button></div></section>
+    <aside class="detail-panel" id="detail-panel" aria-label="Forecast detail" hidden><div class="chart-wrap"><canvas id="chart" aria-label="Forecast detail chart"></canvas><div class="chart-empty" id="chart-empty">No detail in this forecast</div></div><div class="detail-reading" id="detail-reading"></div></aside>
+  </main>
+  <footer class="sources" id="sources"></footer>
+  <div class="layers-menu" id="layers-menu" hidden><div class="menu-title">Map overlay</div><label><input type="radio" name="map-overlay" value="none" checked> None</label><label><input type="radio" name="map-overlay" value="temperature"> Temperature</label><label><input type="radio" name="map-overlay" value="rain"> Rain</label><label><input type="radio" name="map-overlay" value="wind"> Wind</label></div>
+  <dialog id="download" class="download-dialog" aria-labelledby="download-title">
+    <button class="dialog-close" type="button" aria-label="Close">×</button>
+    <h2 id="download-title">Isobar for Mac</h2>
+    <p id="download-copy">Download is being prepared.</p>
+    <a class="download-button" id="dialog-download" href="#" hidden>Download Isobar</a>
+    <ol id="install-steps" hidden><li id="install-open">Open the downloaded disk image.</li><li>Drag Isobar into Applications.</li><li>Open Isobar. Look for the temperature in your menu bar.</li></ol>
+    <p id="download-ready" hidden>The first forecast downloads when you open the app.</p>
+    <a class="source-link" href="https://github.com/todd866/isobar">View source on GitHub →</a>
+  </dialog>
+  <script src="app.js" defer></script>
+</body></html>

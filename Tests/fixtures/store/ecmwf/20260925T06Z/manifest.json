@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "run": "2026-09-25T06:00:00Z",
+  "generated": "2026-09-25T12:00:00Z",
+  "attribution": "ECMWF Open Data",
+  "grid": {
+    "west": 95.0,
+    "east": 170,
+    "north": 0.0,
+    "south": -50,
+    "step": 1.0,
+    "nx": 76,
+    "ny": 51,
+    "dtype": "float32",
+    "endian": "little",
+    "order": "time, north-to-south, west-to-east"
+  },
+  "times": [
+    "2026-09-26T00:00:00Z",
+    "2026-09-26T12:00:00Z"
+  ],
+  "variables": {
+    "msl": {
+      "file": "msl.f32",
+      "units": "hPa"
+    },
+    "t850": {
+      "file": "t850.f32",
+      "units": "C"
+    },
+    "t2m": {
+      "file": "t2m.f32",
+      "units": "C"
+    },
+    "rain24": {
+      "file": "rain24.f32",
+      "units": "mm"
+    },
+    "u10": {
+      "file": "u10.f32",
+      "units": "m/s"
+    },
+    "v10": {
+      "file": "v10.f32",
+      "units": "m/s"
+    }
+  }
+}

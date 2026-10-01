@@ -1,0 +1,18 @@
+{
+  "_fixture": "Synthetic Swanbourne observations for the coastal default; pressure is supplied by nearby Perth.",
+  "observations": {
+    "header": [{"name": "Swanbourne", "state_time_zone": "WA", "ID": "IDW60901"}],
+    "data": [{
+      "wmo": 94614,
+      "name": "Swanbourne",
+      "local_date_time_full": "20260926080000",
+      "lat": -32.0,
+      "lon": 115.8,
+      "air_temp": 15.9,
+      "wind_dir": "ESE",
+      "wind_spd_kmh": 19,
+      "gust_kmh": 35,
+      "rain_trace": "0.0"
+    }]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "updated": "2026-09-26T00:00:00Z",
+  "sources": [
+    {
+      "id": "ecmwf-ifs",
+      "ok": true,
+      "run": "2026-09-25T18:00:00Z",
+      "label": "ECMWF 18Z \u00b7 6 h ago",
+      "detail": ""
+    }
+  ]
+}

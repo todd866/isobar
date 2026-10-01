@@ -1,0 +1,881 @@
+{
+  "product": "IDW60801",
+  "stations": [
+    {
+      "name": "Adele Island",
+      "wmo": "94210",
+      "lat": -15.5,
+      "lon": 123.2
+    },
+    {
+      "name": "Broome",
+      "wmo": "94203",
+      "lat": -17.9,
+      "lon": 122.2
+    },
+    {
+      "name": "Broome Port",
+      "wmo": "95202",
+      "lat": -18.0,
+      "lon": 122.2
+    },
+    {
+      "name": "Curtin",
+      "wmo": "94204",
+      "lat": -17.6,
+      "lon": 123.8
+    },
+    {
+      "name": "Derby",
+      "wmo": "95205",
+      "lat": -17.4,
+      "lon": 123.7
+    },
+    {
+      "name": "Doongan",
+      "wmo": "94215",
+      "lat": -15.4,
+      "lon": 126.3
+    },
+    {
+      "name": "Fitzroy Crossing",
+      "wmo": "94206",
+      "lat": -18.2,
+      "lon": 125.6
+    },
+    {
+      "name": "Halls Creek",
+      "wmo": "94212",
+      "lat": -18.2,
+      "lon": 127.7
+    },
+    {
+      "name": "Kalumburu",
+      "wmo": "94100",
+      "lat": -14.3,
+      "lon": 126.6
+    },
+    {
+      "name": "Koolan Island / Koolan Central",
+      "wmo": "99200",
+      "lat": -16.1,
+      "lon": 123.7
+    },
+    {
+      "name": "Kununurra Airport",
+      "wmo": "94216",
+      "lat": -15.8,
+      "lon": 128.7
+    },
+    {
+      "name": "Lombadina",
+      "wmo": "99206",
+      "lat": -16.5,
+      "lon": 122.9
+    },
+    {
+      "name": "Mandora",
+      "wmo": "94200",
+      "lat": -19.7,
+      "lon": 120.8
+    },
+    {
+      "name": "Rowley Shoals",
+      "wmo": "94207",
+      "lat": -17.5,
+      "lon": 119.0
+    },
+    {
+      "name": "Troughton Island",
+      "wmo": "94102",
+      "lat": -13.8,
+      "lon": 126.1
+    },
+    {
+      "name": "Truscott",
+      "wmo": "95101",
+      "lat": -14.1,
+      "lon": 126.4
+    },
+    {
+      "name": "Wyndham Airport",
+      "wmo": "95214",
+      "lat": -15.5,
+      "lon": 128.2
+    },
+    {
+      "name": "Yampi Sound (Defence)",
+      "wmo": "95208",
+      "lat": -16.8,
+      "lon": 124.0
+    },
+    {
+      "name": "Barimunya",
+      "wmo": "99313",
+      "lat": -22.7,
+      "lon": 119.2
+    },
+    {
+      "name": "Barrow Island",
+      "wmo": "95304",
+      "lat": -20.9,
+      "lon": 115.4
+    },
+    {
+      "name": "Bedout Island",
+      "wmo": "94310",
+      "lat": -19.6,
+      "lon": 119.1
+    },
+    {
+      "name": "Boolgeeda",
+      "wmo": "99310",
+      "lat": -22.5,
+      "lon": 117.3
+    },
+    {
+      "name": "Christmas Creek",
+      "wmo": "99737",
+      "lat": -22.4,
+      "lon": 119.6
+    },
+    {
+      "name": "Coondewanna",
+      "wmo": "99312",
+      "lat": -23.0,
+      "lon": 118.8
+    },
+    {
+      "name": "Eliwana Airport",
+      "wmo": "99593",
+      "lat": -22.4,
+      "lon": 116.9
+    },
+    {
+      "name": "Fortescue Dave Forrest",
+      "wmo": "99736",
+      "lat": -22.3,
+      "lon": 119.4
+    },
+    {
+      "name": "Iron Bridge Mine",
+      "wmo": "99366",
+      "lat": -21.3,
+      "lon": 118.9
+    },
+    {
+      "name": "Karijini North",
+      "wmo": "94330",
+      "lat": -22.3,
+      "lon": 118.4
+    },
+    {
+      "name": "Karratha",
+      "wmo": "95307",
+      "lat": -20.7,
+      "lon": 116.8
+    },
+    {
+      "name": "Gudai-Darri Mine",
+      "wmo": "99594",
+      "lat": -22.5,
+      "lon": 119.1
+    },
+    {
+      "name": "Learmonth",
+      "wmo": "94302",
+      "lat": -22.2,
+      "lon": 114.1
+    },
+    {
+      "name": "Legendre Island",
+      "wmo": "94307",
+      "lat": -20.4,
+      "lon": 116.8
+    },
+    {
+      "name": "Marble Bar",
+      "wmo": "95317",
+      "lat": -21.2,
+      "lon": 119.7
+    },
+    {
+      "name": "Mardie",
+      "wmo": "94306",
+      "lat": -21.2,
+      "lon": 116.0
+    },
+    {
+      "name": "Newman Airport",
+      "wmo": "94317",
+      "lat": -23.4,
+      "lon": 119.8
+    },
+    {
+      "name": "Onslow Airport",
+      "wmo": "95305",
+      "lat": -21.7,
+      "lon": 115.1
+    },
+    {
+      "name": "Paraburdoo",
+      "wmo": "94316",
+      "lat": -23.2,
+      "lon": 117.7
+    },
+    {
+      "name": "Port Hedland",
+      "wmo": "94312",
+      "lat": -20.4,
+      "lon": 118.6
+    },
+    {
+      "name": "Roebourne Airport",
+      "wmo": "94308",
+      "lat": -20.8,
+      "lon": 117.2
+    },
+    {
+      "name": "Solomon Airport",
+      "wmo": "99217",
+      "lat": -22.3,
+      "lon": 117.8
+    },
+    {
+      "name": "Telfer",
+      "wmo": "94319",
+      "lat": -21.7,
+      "lon": 122.2
+    },
+    {
+      "name": "Thevenard Island",
+      "wmo": "94303",
+      "lat": -21.5,
+      "lon": 115.0
+    },
+    {
+      "name": "Varanus Island",
+      "wmo": "95303",
+      "lat": -20.7,
+      "lon": 115.6
+    },
+    {
+      "name": "West Angelas",
+      "wmo": "99314",
+      "lat": -23.1,
+      "lon": 118.7
+    },
+    {
+      "name": "Carnarvon",
+      "wmo": "94300",
+      "lat": -24.9,
+      "lon": 113.7
+    },
+    {
+      "name": "Bulga Downs",
+      "wmo": "94444",
+      "lat": -28.5,
+      "lon": 119.7
+    },
+    {
+      "name": "Golden Grove",
+      "wmo": "99401",
+      "lat": -28.8,
+      "lon": 117.0
+    },
+    {
+      "name": "Meekatharra",
+      "wmo": "94430",
+      "lat": -26.6,
+      "lon": 118.5
+    },
+    {
+      "name": "Mount Magnet Airport",
+      "wmo": "94429",
+      "lat": -28.1,
+      "lon": 117.8
+    },
+    {
+      "name": "Murchison",
+      "wmo": "94422",
+      "lat": -26.9,
+      "lon": 116.0
+    },
+    {
+      "name": "Paynes Find",
+      "wmo": "94404",
+      "lat": -29.3,
+      "lon": 117.7
+    },
+    {
+      "name": "Shark Bay Airport",
+      "wmo": "95402",
+      "lat": -25.9,
+      "lon": 113.6
+    },
+    {
+      "name": "Kalgoorlie-Boulder",
+      "wmo": "94637",
+      "lat": -30.8,
+      "lon": 121.5
+    },
+    {
+      "name": "Laverton",
+      "wmo": "94449",
+      "lat": -28.6,
+      "lon": 122.4
+    },
+    {
+      "name": "Leinster",
+      "wmo": "95448",
+      "lat": -27.8,
+      "lon": 120.7
+    },
+    {
+      "name": "Leonora Airport",
+      "wmo": "94450",
+      "lat": -28.9,
+      "lon": 121.3
+    },
+    {
+      "name": "Mount Keith",
+      "wmo": "99434",
+      "lat": -27.3,
+      "lon": 120.6
+    },
+    {
+      "name": "Norseman Airport",
+      "wmo": "95642",
+      "lat": -32.2,
+      "lon": 121.8
+    },
+    {
+      "name": "Wiluna Airport",
+      "wmo": "95439",
+      "lat": -26.6,
+      "lon": 120.2
+    },
+    {
+      "name": "Eucla",
+      "wmo": "94647",
+      "lat": -31.7,
+      "lon": 128.9
+    },
+    {
+      "name": "Forrest",
+      "wmo": "95646",
+      "lat": -30.8,
+      "lon": 128.1
+    },
+    {
+      "name": "Red Rocks Point",
+      "wmo": "94644",
+      "lat": -32.2,
+      "lon": 127.5
+    },
+    {
+      "name": "Carnegie",
+      "wmo": "94451",
+      "lat": -25.8,
+      "lon": 123.0
+    },
+    {
+      "name": "Giles*",
+      "wmo": "94461",
+      "lat": -25.0,
+      "lon": 128.3
+    },
+    {
+      "name": "Warburton",
+      "wmo": "94457",
+      "lat": -26.1,
+      "lon": 126.6
+    },
+    {
+      "name": "West Musgrave Airport",
+      "wmo": "99015",
+      "lat": -26.1,
+      "lon": 127.7
+    },
+    {
+      "name": "Christmas Island",
+      "wmo": "96995",
+      "lat": -10.5,
+      "lon": 105.7
+    },
+    {
+      "name": "Cocos Island",
+      "wmo": "96996",
+      "lat": -12.2,
+      "lon": 96.8
+    },
+    {
+      "name": "Badgingarra",
+      "wmo": "94603",
+      "lat": -30.3,
+      "lon": 115.5
+    },
+    {
+      "name": "Geraldton Airport",
+      "wmo": "94403",
+      "lat": -28.8,
+      "lon": 114.7
+    },
+    {
+      "name": "Jurien Bay",
+      "wmo": "95600",
+      "lat": -30.3,
+      "lon": 115.0
+    },
+    {
+      "name": "Kalbarri",
+      "wmo": "94401",
+      "lat": -27.7,
+      "lon": 114.2
+    },
+    {
+      "name": "Morawa Airport",
+      "wmo": "94417",
+      "lat": -29.2,
+      "lon": 116.0
+    },
+    {
+      "name": "Mullewa",
+      "wmo": "94411",
+      "lat": -28.5,
+      "lon": 115.5
+    },
+    {
+      "name": "North Island",
+      "wmo": "94405",
+      "lat": -28.3,
+      "lon": 113.6
+    },
+    {
+      "name": "Armament Jetty",
+      "wmo": "99254",
+      "lat": -32.2,
+      "lon": 115.7
+    },
+    {
+      "name": "Bickley",
+      "wmo": "95610",
+      "lat": -32.0,
+      "lon": 116.1
+    },
+    {
+      "name": "Colpoys Point",
+      "wmo": "99255",
+      "lat": -32.2,
+      "lon": 115.7
+    },
+    {
+      "name": "Dwellingup",
+      "wmo": "94620",
+      "lat": -32.7,
+      "lon": 116.1
+    },
+    {
+      "name": "Garden Island",
+      "wmo": "95607",
+      "lat": -32.2,
+      "lon": 115.7
+    },
+    {
+      "name": "Gingin Airport",
+      "wmo": "95612",
+      "lat": -31.5,
+      "lon": 115.9
+    },
+    {
+      "name": "Gooseberry Hill",
+      "wmo": "94615",
+      "lat": -31.9,
+      "lon": 116.1
+    },
+    {
+      "name": "Hillarys Point Boat Harbour",
+      "wmo": "95605",
+      "lat": -31.8,
+      "lon": 115.7
+    },
+    {
+      "name": "Jandakot",
+      "wmo": "94609",
+      "lat": -32.1,
+      "lon": 115.9
+    },
+    {
+      "name": "Karnet",
+      "wmo": "95614",
+      "lat": -32.4,
+      "lon": 116.1
+    },
+    {
+      "name": "Lancelin (Defence)",
+      "wmo": "95609",
+      "lat": -30.8,
+      "lon": 115.2
+    },
+    {
+      "name": "Mandurah",
+      "wmo": "94605",
+      "lat": -32.5,
+      "lon": 115.7
+    },
+    {
+      "name": "Melville Water",
+      "wmo": "95620",
+      "lat": -32.0,
+      "lon": 115.8
+    },
+    {
+      "name": "Millendon (Swan Valley)",
+      "wmo": "94795",
+      "lat": -31.8,
+      "lon": 116.0
+    },
+    {
+      "name": "Pearce",
+      "wmo": "94612",
+      "lat": -31.7,
+      "lon": 116.0
+    },
+    {
+      "name": "Perth",
+      "wmo": "94608",
+      "lat": -31.9,
+      "lon": 115.9
+    },
+    {
+      "name": "Perth Airport",
+      "wmo": "94151",
+      "lat": -31.9,
+      "lon": 116.0
+    },
+    {
+      "name": "Rottnest Island",
+      "wmo": "94602",
+      "lat": -32.0,
+      "lon": 115.5
+    },
+    {
+      "name": "Swanbourne",
+      "wmo": "94614",
+      "lat": -32.0,
+      "lon": 115.8
+    },
+    {
+      "name": "Bunbury",
+      "wmo": "94604",
+      "lat": -33.4,
+      "lon": 115.6
+    },
+    {
+      "name": "Busselton Airport",
+      "wmo": "95611",
+      "lat": -33.7,
+      "lon": 115.4
+    },
+    {
+      "name": "Busselton Jetty",
+      "wmo": "95602",
+      "lat": -33.6,
+      "lon": 115.3
+    },
+    {
+      "name": "Cape Leeuwin",
+      "wmo": "94601",
+      "lat": -34.4,
+      "lon": 115.1
+    },
+    {
+      "name": "Cape Naturaliste",
+      "wmo": "94600",
+      "lat": -33.5,
+      "lon": 115.0
+    },
+    {
+      "name": "Collie East",
+      "wmo": "95621",
+      "lat": -33.4,
+      "lon": 116.2
+    },
+    {
+      "name": "Jarrahwood",
+      "wmo": "95623",
+      "lat": -33.8,
+      "lon": 115.7
+    },
+    {
+      "name": "Manjimup",
+      "wmo": "94617",
+      "lat": -34.3,
+      "lon": 116.1
+    },
+    {
+      "name": "Shannon",
+      "wmo": "95617",
+      "lat": -34.6,
+      "lon": 116.3
+    },
+    {
+      "name": "Walpole North",
+      "wmo": "95647",
+      "lat": -34.9,
+      "lon": 116.7
+    },
+    {
+      "name": "Windy Harbour",
+      "wmo": "94640",
+      "lat": -34.8,
+      "lon": 116.0
+    },
+    {
+      "name": "Witchcliffe West",
+      "wmo": "95641",
+      "lat": -34.0,
+      "lon": 115.1
+    },
+    {
+      "name": "Albany",
+      "wmo": "94801",
+      "lat": -35.0,
+      "lon": 117.9
+    },
+    {
+      "name": "Albany Airport",
+      "wmo": "94802",
+      "lat": -34.9,
+      "lon": 117.8
+    },
+    {
+      "name": "Mount Barker",
+      "wmo": "94630",
+      "lat": -34.6,
+      "lon": 117.6
+    },
+    {
+      "name": "Jacup",
+      "wmo": "95636",
+      "lat": -33.9,
+      "lon": 119.1
+    },
+    {
+      "name": "Ongerup",
+      "wmo": "95628",
+      "lat": -34.0,
+      "lon": 118.5
+    },
+    {
+      "name": "Rocky Gully South",
+      "wmo": "94631",
+      "lat": -34.6,
+      "lon": 117.0
+    },
+    {
+      "name": "Esperance",
+      "wmo": "94638",
+      "lat": -33.8,
+      "lon": 121.9
+    },
+    {
+      "name": "Esperance Airport",
+      "wmo": "95638",
+      "lat": -33.7,
+      "lon": 121.8
+    },
+    {
+      "name": "Esperance Harbour",
+      "wmo": "95648",
+      "lat": -33.9,
+      "lon": 121.9
+    },
+    {
+      "name": "Hopetoun North",
+      "wmo": "95635",
+      "lat": -33.9,
+      "lon": 120.1
+    },
+    {
+      "name": "Munglinup West",
+      "wmo": "95644",
+      "lat": -33.6,
+      "lon": 120.7
+    },
+    {
+      "name": "Ravensthorpe",
+      "wmo": "94636",
+      "lat": -33.6,
+      "lon": 120.0
+    },
+    {
+      "name": "Salmon Gums RS",
+      "wmo": "95639",
+      "lat": -33.0,
+      "lon": 121.6
+    },
+    {
+      "name": "Brookton",
+      "wmo": "94625",
+      "lat": -32.4,
+      "lon": 117.0
+    },
+    {
+      "name": "Corrigin",
+      "wmo": "94633",
+      "lat": -32.3,
+      "lon": 117.9
+    },
+    {
+      "name": "Hyden",
+      "wmo": "95627",
+      "lat": -32.4,
+      "lon": 118.9
+    },
+    {
+      "name": "Katanning RS",
+      "wmo": "94641",
+      "lat": -33.7,
+      "lon": 117.6
+    },
+    {
+      "name": "Lake Grace",
+      "wmo": "95637",
+      "lat": -33.1,
+      "lon": 118.5
+    },
+    {
+      "name": "Narrogin",
+      "wmo": "94627",
+      "lat": -32.9,
+      "lon": 117.2
+    },
+    {
+      "name": "Newdegate",
+      "wmo": "94628",
+      "lat": -33.1,
+      "lon": 118.8
+    },
+    {
+      "name": "Wagin",
+      "wmo": "95618",
+      "lat": -33.3,
+      "lon": 117.3
+    },
+    {
+      "name": "Wandering",
+      "wmo": "95640",
+      "lat": -32.7,
+      "lon": 116.7
+    },
+    {
+      "name": "Beverley",
+      "wmo": "95615",
+      "lat": -32.1,
+      "lon": 116.9
+    },
+    {
+      "name": "Cunderdin Airport",
+      "wmo": "95625",
+      "lat": -31.6,
+      "lon": 117.2
+    },
+    {
+      "name": "Dalwallinu",
+      "wmo": "95629",
+      "lat": -30.3,
+      "lon": 116.7
+    },
+    {
+      "name": "Goomalling",
+      "wmo": "95631",
+      "lat": -31.3,
+      "lon": 116.8
+    },
+    {
+      "name": "Northam",
+      "wmo": "94621",
+      "lat": -31.7,
+      "lon": 116.7
+    },
+    {
+      "name": "Southern Cross Airport",
+      "wmo": "95634",
+      "lat": -31.2,
+      "lon": 119.4
+    },
+    {
+      "name": "Wongan Hills",
+      "wmo": "94622",
+      "lat": -30.9,
+      "lon": 116.7
+    },
+    {
+      "name": "York",
+      "wmo": "94623",
+      "lat": -31.9,
+      "lon": 116.8
+    },
+    {
+      "name": "PORTABLE BTSA (DFES)",
+      "wmo": "99150",
+      "lat": -26.4,
+      "lon": 114.5
+    },
+    {
+      "name": "PORTABLE BTSD (DFES)",
+      "wmo": "99459",
+      "lat": -31.2,
+      "lon": 120.3
+    },
+    {
+      "name": "PORTABLE BTSF (DFES)",
+      "wmo": "99404",
+      "lat": -26.2,
+      "lon": 121.6
+    },
+    {
+      "name": "PORTABLE BTSG (DFES)",
+      "wmo": "99405",
+      "lat": -29.6,
+      "lon": 115.1
+    },
+    {
+      "name": "PORTABLE BTSH (DFES)",
+      "wmo": "99798",
+      "lat": -32.0,
+      "lon": 126.1
+    },
+    {
+      "name": "PORTABLE BTSJ (DFES)",
+      "wmo": "99013",
+      "lat": -32.5,
+      "lon": 115.8
+    },
+    {
+      "name": "PORTABLE BTSL (DFES)",
+      "wmo": "99360",
+      "lat": -32.4,
+      "lon": 123.6
+    },
+    {
+      "name": "PORTABLE BTSM (DFES)",
+      "wmo": "99359",
+      "lat": -24.7,
+      "lon": 119.6
+    },
+    {
+      "name": "PORTABLE BTSN (DFES)",
+      "wmo": "99358",
+      "lat": -28.0,
+      "lon": 119.3
+    },
+    {
+      "name": "PORTABLE BTSO (DFES)",
+      "wmo": "99363",
+      "lat": -33.3,
+      "lon": 116.1
+    }
+  ]
+}

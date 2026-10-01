@@ -1,0 +1,56 @@
+name: Collect public weather
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '40 7,19 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: public-weather
+  cancel-in-progress: false
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: todd866/isobar-data
+          ref: f92b79ee1d967d580ded0df4cd992e6b342173ce
+          path: collector-source
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: build/web-weather/products
+          key: public-products-v1-f92b79ee-${{ hashFiles('tools/public-weather.py') }}-${{ github.run_id }}
+          restore-keys: public-products-v1-f92b79ee-${{ hashFiles('tools/public-weather.py') }}-
+      - name: Seed an empty archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! test -f build/web-weather/products/grids/ecmwf_ifs025/current.json; then
+            mkdir -p build/incoming
+            gh release download weather-bootstrap --repo "$GITHUB_REPOSITORY" --pattern public-weather.tar.gz --dir build/incoming
+            python3 tools/public-weather.py import build/incoming/public-weather.tar.gz build/web-weather
+          fi
+      - name: Collect public weather
+        env:
+          ISOBAR_FREE_SPACE_FLOOR_GB: '4'
+        run: |
+          python3 -m pip install ./collector-source pytest
+          python3 -m pytest -q Tests/test_public_weather.py
+          isobar-data run --config collector-source/config/isobar.toml --profile public-web --data-dir build/web-weather
+          python3 tools/public-weather.py export build/web-weather build/public-weather.tar.gz --max-age-hours 36
+          python3 tools/public-weather.py import build/public-weather.tar.gz build/cache-weather
+          rm -rf build/web-weather/products
+          mv build/cache-weather/products build/web-weather/products
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: public-weather
+          path: build/public-weather.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7

@@ -1,0 +1,161 @@
+#import <Foundation/Foundation.h>
+#import <sqlite3.h>
+#import "archive.h"
+#import "pure.h"
+
+static int failures;
+static void Check(BOOL value, NSString *message) { if (!value) { fprintf(stderr, "FAIL %s\n", message.UTF8String); failures++; } }
+static id Decode(NSData *data) { return data.length ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil; }
+
+int main(void) {
+    @autoreleasepool {
+        NSString *root = [NSTemporaryDirectory() stringByAppendingPathComponent:[[NSUUID UUID] UUIDString]];
+        NSFileManager *fm = NSFileManager.defaultManager;
+        [fm createDirectoryAtPath:[root stringByAppendingPathComponent:@"products/points/ecmwf_ifs/runs/2026-09-26T000000Z"] withIntermediateDirectories:YES attributes:nil error:nil];
+        [fm createDirectoryAtPath:[root stringByAppendingPathComponent:@"products/kite/runs/2026-09-26T000000Z"] withIntermediateDirectories:YES attributes:nil error:nil];
+        NSData *pointer = [NSJSONSerialization dataWithJSONObject:@{@"latest": @"2026-09-26T000000Z"} options:0 error:nil];
+        [pointer writeToFile:[root stringByAppendingPathComponent:@"products/points/ecmwf_ifs/current.json"] atomically:YES];
+        [pointer writeToFile:[root stringByAppendingPathComponent:@"products/kite/current.json"] atomically:YES];
+        NSDictionary *point = @{@"id": @"near", @"latitude": @-31.96, @"longitude": @115.78, @"units": @{@"wind_speed_10m": @"kn", @"wind_gusts_10m": @"kn"}, @"time": @[@"2026-09-26T09:00", @"2026-09-26T12:00"], @"daily": @{@"sunrise": @[@"2026-09-25T22:01"], @"sunset": @[@"2026-09-26T10:15"]}, @"hourly": @{@"wind_speed_10m": @[@10, @11], @"wind_direction_10m": @[@270, @270], @"wind_gusts_10m": @[@12, @12], @"temperature_2m": @[@20, @21], @"weather_code": @[@61, @95]}};
+        NSData *pointData = [NSJSONSerialization dataWithJSONObject:point options:0 error:nil];
+        [pointData writeToFile:[root stringByAppendingPathComponent:@"products/points/ecmwf_ifs/runs/2026-09-26T000000Z/near.json"] atomically:YES];
+        [pointData writeToFile:[root stringByAppendingPathComponent:@"products/points/ecmwf_ifs/runs/2026-09-26T000000Z/cottesloe.json"] atomically:YES];
+        NSDictionary *kite = @{@"id": @"cottesloe", @"onshore_from_deg": @270, @"hours": @[]};
+        [[NSJSONSerialization dataWithJSONObject:kite options:0 error:nil] writeToFile:[root stringByAppendingPathComponent:@"products/kite/runs/2026-09-26T000000Z/cottesloe.json"] atomically:YES];
+        NSString *obsDir = [root stringByAppendingPathComponent:@"products/obs"];
+        [fm createDirectoryAtPath:obsDir withIntermediateDirectories:YES attributes:nil error:nil];
+        sqlite3 *db = NULL;
+        NSString *dbPath = [obsDir stringByAppendingPathComponent:@"obs.sqlite"];
+        Check(sqlite3_open(dbPath.UTF8String, &db) == SQLITE_OK, @"create observation database");
+        sqlite3_exec(db, "PRAGMA journal_mode=WAL", NULL, NULL, NULL);
+        sqlite3_exec(db, "CREATE TABLE obs (wmo INTEGER, aifstime_utc TEXT, product_id TEXT, name TEXT, lat REAL, lon REAL, air_temp REAL, wind_dir TEXT, wind_dir_deg REAL, wind_spd_kmh REAL, gust_kmh REAL, wind_spd_kt REAL, gust_kt REAL, press_msl REAL, press_tend TEXT, rain_trace TEXT, cloud_base_m REAL, vis_km REAL)", NULL, NULL, NULL);
+        sqlite3_exec(db, "INSERT INTO obs VALUES (94614,'20260926103000','IDW60910','Swanbourne',-32,115.8,20,'W',270,18.52,22,10,12,1015,'-','0.0',NULL,NULL)", NULL, NULL, NULL);
+        sqlite3_exec(db, "INSERT INTO obs VALUES (94614,'20260926110000','IDW60910','Swanbourne',-32,115.8,21,'W',270,20,24,11,13,1015,'-','0.0',NULL,NULL)", NULL, NULL, NULL);
+        sqlite3_exec(db, "COMMIT", NULL, NULL, NULL);
+        NSDate *fixtureNow = [[NSISO8601DateFormatter new] dateFromString:@"2026-09-26T12:00:00Z"];
+        NSDictionary *observations = ArchiveObservationFilesAtDate(root, fixtureNow);
+        NSDictionary *obsRoot = Decode(observations[@"94614"]);
+        Check([obsRoot[@"observations"][@"data"] count] == 2, @"observation sqlite conversion");
+        Check([ParseLatestObservation(observations[@"94614"])[@"airTemp"] doubleValue] == 21, @"latest observation row");
+        sqlite3_close(db);
+        NSData *mainBeforeIdle = [NSData dataWithContentsOfFile:dbPath];
+        NSDictionary *idleObservations = ArchiveObservationFilesAtDate(root, fixtureNow);
+        Check([idleObservations[@"94614"] length] > 0, @"idle database fallback");
+        Check([[NSData dataWithContentsOfFile:dbPath] isEqual:mainBeforeIdle], @"idle fallback leaves main database unchanged");
+        NSData *legacy = ArchivePointFile(root, @{@"latitude": @-31.96, @"longitude": @115.78});
+        NSDictionary *decoded = Decode(legacy); Check([decoded[@"hourly"] count] == 2, @"point conversion"); Check(fabs([decoded[@"hourly"][0][@"wind_speed_kmh"] doubleValue] - 18.52) < 0.01, @"knots conversion");
+        Check([decoded[@"hourly"][0][@"is_day"] boolValue] && ![decoded[@"hourly"][1][@"is_day"] boolValue], @"cross-midnight daylight");
+        Check([StorePointSeries(legacy)[0][@"temp"] doubleValue] == 20, @"legacy temperature key");
+        Check([StorePointSeries(legacy)[0][@"weatherCode"] integerValue] == 61 && [StorePointSeries(legacy)[1][@"weatherCode"] integerValue] == 95, @"weather codes survive archive and series conversion");
+        double degrees = 0; Check(WindFromDegrees(StorePointSeries(legacy)[0][@"windDir"], &degrees) && fabs(degrees - 270) < 0.1, @"compass wind direction");
+        Check(ArchivePointFile(root, @{@"latitude": @-32.4, @"longitude": @115.2}) == nil, @"far point rejected");
+        [@"{\"bad\":true}" writeToFile:[root stringByAppendingPathComponent:@"products/points/ecmwf_ifs/runs/2026-09-26T000000Z/bad.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        [fm removeItemAtPath:[root stringByAppendingPathComponent:@"products/points/ecmwf_ifs/runs/2026-09-26T000000Z/near.json"] error:nil];
+        [fm removeItemAtPath:[root stringByAppendingPathComponent:@"products/points/ecmwf_ifs/runs/2026-09-26T000000Z/cottesloe.json"] error:nil];
+        NSMutableDictionary *missingDaily = [point mutableCopy];
+        [missingDaily removeObjectForKey:@"daily"];
+        [[NSJSONSerialization dataWithJSONObject:missingDaily options:0 error:nil] writeToFile:[root stringByAppendingPathComponent:@"products/points/ecmwf_ifs/runs/2026-09-26T000000Z/nodaily.json"] atomically:YES];
+        NSDictionary *noDay = Decode(ArchivePointFile(root, @{@"latitude": @-31.96, @"longitude": @115.78}));
+        Check(![noDay[@"hourly"][0][@"is_day"] boolValue], @"missing daylight fails closed");
+        [fm removeItemAtPath:[root stringByAppendingPathComponent:@"products/points/ecmwf_ifs/runs/2026-09-26T000000Z/nodaily.json"] error:nil];
+        NSDictionary *wrongUnits = [point dictionaryWithValuesForKeys:point.allKeys];
+        wrongUnits = [wrongUnits mutableCopy];
+        ((NSMutableDictionary *)wrongUnits)[@"units"] = @{@"wind_speed_10m": @"m/s"};
+        [[NSJSONSerialization dataWithJSONObject:wrongUnits options:0 error:nil] writeToFile:[root stringByAppendingPathComponent:@"products/points/ecmwf_ifs/runs/2026-09-26T000000Z/near.json"] atomically:YES];
+        Check(ArchivePointFile(root, @{@"latitude": @-31.96, @"longitude": @115.78}) == nil, @"wrong units rejected");
+        Check(ArchiveKiteFile(root) != nil, @"kite conversion needs surface metadata");
+        NSString *marineBase=[root stringByAppendingPathComponent:@"products/points/marine"];
+        NSString *marineRun=[marineBase stringByAppendingPathComponent:@"runs/new"];
+        [fm createDirectoryAtPath:marineRun withIntermediateDirectories:YES attributes:nil error:nil];
+        [@"{\"latest\":\"new\"}" writeToFile:[marineBase stringByAppendingPathComponent:@"current.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        [@"{\"id\":\"cottesloe\",\"hourly\":{\"wave_height\":[1.2]}}" writeToFile:[marineRun stringByAppendingPathComponent:@"cottesloe.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        Check([ArchiveMarineProduct(root,@"cottesloe")[@"hourly"][@"wave_height"][0] doubleValue]==1.2,@"marine current snapshot uses exact beach ID");
+        [@"{\"id\":\"cottesloe\",\"schema_version\":2,\"contract\":\"isobar-data\"}" writeToFile:[marineRun stringByAppendingPathComponent:@"cottesloe.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        Check(!ArchiveMarineProduct(root,@"cottesloe"),@"future marine product contract is not silently misread");
+        [@"{\"id\":\"cottesloe\",\"schema_version\":1,\"contract\":\"isobar-data\",\"hourly\":{\"wave_height\":[1.2]}}" writeToFile:[marineRun stringByAppendingPathComponent:@"cottesloe.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        Check(ArchiveMarineProduct(root,@"cottesloe") != nil,@"current marine contract remains readable");
+        [@"{\"id\":\"cottesloe\",\"schema_version\":1,\"contract\":\"isobar-data\",\"family\":\"aviation\"}" writeToFile:[marineRun stringByAppendingPathComponent:@"cottesloe.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        Check(!ArchiveMarineProduct(root,@"cottesloe"),@"wrong product family is rejected");
+        [@"{\"id\":\"cottesloe\",\"schema_version\":1,\"contract\":\"isobar-data\",\"family\":\"points/marine\",\"hourly\":{\"wave_height\":[1.2]}}" writeToFile:[marineRun stringByAppendingPathComponent:@"cottesloe.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        Check(!ArchiveMarineProduct(root,@"missing"),@"uncollected beach remains missing");
+        Check(!ArchiveMarineProduct(root,@"../cottesloe"),@"marine ID traversal rejected");
+        [@"{\"latest\":\"new\",\"schema_version\":2,\"contract\":\"isobar-data\"}" writeToFile:[marineBase stringByAppendingPathComponent:@"current.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        Check(!ArchiveMarineProduct(root,@"cottesloe"),@"future pointer contract cannot select a run");
+        [@"{\"latest\":\"new\",\"schema_version\":1,\"contract\":\"isobar-data\",\"family\":\"aviation\"}" writeToFile:[marineBase stringByAppendingPathComponent:@"current.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        Check(!ArchiveMarineProduct(root,@"cottesloe"),@"wrong pointer family cannot select marine weather");
+        [@"{\"latest\":\"new\"}" writeToFile:[marineBase stringByAppendingPathComponent:@"current.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        [@"{\"id\":\"other\"}" writeToFile:[marineRun stringByAppendingPathComponent:@"cottesloe.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        Check(!ArchiveMarineProduct(root,@"cottesloe"),@"marine product must match selected beach");
+        [@"{\"latest\":\"../new\"}" writeToFile:[marineBase stringByAppendingPathComponent:@"current.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        Check(!ArchiveMarineProduct(root,@"cottesloe"),@"invalid marine pointer cannot revive previous data");
+        [pointData writeToFile:[root stringByAppendingPathComponent:@"products/points/ecmwf_ifs/runs/2026-09-26T000000Z/cottesloe.json"] atomically:YES];
+        Check([StoreKiteFile(ArchiveKiteFile(root))[@"spots"][0][@"archiveID"] isEqual:@"cottesloe"],@"marine beach identity survives native normalization");
+        // Bureau chart and warning readers follow the daemon's published
+        // generation pointers. A pointer makes an incomplete generation a
+        // hard failure; only an absent pointer permits legacy flat paths.
+        NSString *chartBase = [root stringByAppendingPathComponent:@"products/charts"];
+        NSString *legacyChart = [chartBase stringByAppendingPathComponent:@"IDG00073.pdf"];
+        NSString *legacyPrevious = [chartBase stringByAppendingPathComponent:@"previous/IDG00073.pdf"];
+        [fm createDirectoryAtPath:[legacyPrevious stringByDeletingLastPathComponent] withIntermediateDirectories:YES attributes:nil error:nil];
+        [@"legacy-current" writeToFile:legacyChart atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        [@"legacy-previous" writeToFile:legacyPrevious atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        Check([ArchiveChartPath(root, NO) isEqual:legacyChart], @"chart legacy fallback");
+        Check([ArchiveChartPath(root, YES) isEqual:legacyPrevious], @"previous chart legacy fallback");
+        NSString *runOld = [chartBase stringByAppendingPathComponent:@"runs/old"];
+        NSString *runSame = [chartBase stringByAppendingPathComponent:@"runs/same-pdf"];
+        NSString *runCurrent = [chartBase stringByAppendingPathComponent:@"runs/current"];
+        [fm createDirectoryAtPath:runOld withIntermediateDirectories:YES attributes:nil error:nil];
+        [fm createDirectoryAtPath:runSame withIntermediateDirectories:YES attributes:nil error:nil];
+        [fm createDirectoryAtPath:runCurrent withIntermediateDirectories:YES attributes:nil error:nil];
+        [@"older-pdf" writeToFile:[runOld stringByAppendingPathComponent:@"IDG00073.pdf"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        [@"current-pdf" writeToFile:[runSame stringByAppendingPathComponent:@"IDG00073.pdf"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        [@"current-pdf" writeToFile:[runCurrent stringByAppendingPathComponent:@"IDG00073.pdf"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        NSDictionary *chartPointer = @{@"latest": @"current", @"runs": @[@"old", @"same-pdf", @"current"]};
+        [[NSJSONSerialization dataWithJSONObject:chartPointer options:0 error:nil] writeToFile:[chartBase stringByAppendingPathComponent:@"current.json"] atomically:YES];
+        Check([ArchiveChartPath(root, NO) isEqual:[runCurrent stringByAppendingPathComponent:@"IDG00073.pdf"]], @"current chart follows pointer");
+        Check([ArchiveChartPath(root, YES) isEqual:[runOld stringByAppendingPathComponent:@"IDG00073.pdf"]], @"previous skips identical PDF generation");
+        [@"{\"latest\":\"current\",\"schema_version\":1,\"contract\":\"isobar-data\",\"family\":\"warnings\"}" writeToFile:[chartBase stringByAppendingPathComponent:@"current.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        Check(!ArchiveChartPath(root, NO), @"warning-family pointer cannot select a chart");
+        [@"{\"latest\":\"../current\",\"runs\":[\"current\"]}" writeToFile:[chartBase stringByAppendingPathComponent:@"current.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        Check(!ArchiveChartPath(root, NO) && !ArchiveChartPath(root, YES), @"invalid chart pointer fails closed");
+        [@"{\"latest\":\"current\",\"runs\":[\"current\"]}" writeToFile:[chartBase stringByAppendingPathComponent:@"current.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        [fm removeItemAtPath:[runCurrent stringByAppendingPathComponent:@"IDG00073.pdf"] error:nil];
+        Check(!ArchiveChartPath(root, NO), @"missing pointed chart fails closed instead of using stale flat chart");
+        NSString *warningBase = [root stringByAppendingPathComponent:@"products/warnings"];
+        NSString *warningRun = [warningBase stringByAppendingPathComponent:@"runs/current"];
+        [fm createDirectoryAtPath:warningRun withIntermediateDirectories:YES attributes:nil error:nil];
+        [@"legacy-warning" writeToFile:[warningBase stringByAppendingPathComponent:@"old.xml"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        [@"{\"latest\":\"current\"}" writeToFile:[warningBase stringByAppendingPathComponent:@"current.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        Check([ArchiveWarningDirectory(root) isEqual:warningRun], @"warnings follow pointer");
+        [@"{\"latest\":\"current\",\"schema_version\":1,\"contract\":\"isobar-data\",\"family\":\"charts\"}" writeToFile:[warningBase stringByAppendingPathComponent:@"current.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        Check(!ArchiveWarningDirectory(root), @"chart-family pointer cannot select warnings");
+        [@"{\"latest\":\"missing\"}" writeToFile:[warningBase stringByAppendingPathComponent:@"current.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        Check(!ArchiveWarningDirectory(root), @"missing warning run fails closed");
+        [fm removeItemAtPath:[warningBase stringByAppendingPathComponent:@"current.json"] error:nil];
+        Check([ArchiveWarningDirectory(root) isEqual:warningBase], @"warnings legacy fallback only without pointer");
+        NSString *upperBase=[root stringByAppendingPathComponent:@"products/points/ecmwf_ifs025_upper"];
+        NSString *upperRun=[upperBase stringByAppendingPathComponent:@"runs/current"];
+        [fm createDirectoryAtPath:upperRun withIntermediateDirectories:YES attributes:nil error:nil];
+        [@"{\"latest\":\"current\"}" writeToFile:[upperBase stringByAppendingPathComponent:@"current.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        [@"{\"id\":\"YPPH\",\"levels\":{\"700\":{\"height_m\":[3000]}}}" writeToFile:[upperRun stringByAppendingPathComponent:@"YPPH.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        Check([ArchiveAtmosphereProduct(root,@"YPPH")[@"levels"][@"700"][@"height_m"][0] intValue]==3000,@"upper air follows current snapshot and airport ID");
+        Check(!ArchiveAtmosphereProduct(root,@"YSSY") && !ArchiveAtmosphereProduct(root,@"../YPPH"),@"upper air never substitutes another airport or traverses paths");
+        [@"{\"latest\":\"missing\"}" writeToFile:[upperBase stringByAppendingPathComponent:@"current.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        Check(!ArchiveAtmosphereProduct(root,@"YPPH"),@"missing upper snapshot cannot revive stale profile");
+        NSString *av=[root stringByAppendingPathComponent:@"products/aviation"];
+        NSString *avRun=[av stringByAppendingPathComponent:@"runs/new"];
+        [fm createDirectoryAtPath:avRun withIntermediateDirectories:YES attributes:nil error:nil];
+        [@"{\"source\":\"legacy\"}" writeToFile:[av stringByAppendingPathComponent:@"notams.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        Check([ArchiveAviationProduct(root,@"notams.json")[@"source"] isEqual:@"legacy"],@"legacy aviation remains readable");
+        Check(!ArchiveAviationProduct(root,@"notams.json")[@"retrieved_at"],@"file time is not data freshness");
+        [@"{\"source\":\"new\"}" writeToFile:[avRun stringByAppendingPathComponent:@"notams.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        [@"{\"latest\":\"new\"}" writeToFile:[av stringByAppendingPathComponent:@"current.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        Check([ArchiveAviationProduct(root,@"notams.json")[@"source"] isEqual:@"new"],@"current aviation snapshot takes precedence");
+        Check(!ArchiveAviationProduct(root,@"sigmet.json"),@"missing snapshot file stays missing");
+        Check(!ArchiveAviationProduct(root,@"../notams.json"),@"reject aviation path traversal");
+        [@"{\"latest\":\"../bad\"}" writeToFile:[av stringByAppendingPathComponent:@"current.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        Check(!ArchiveAviationProduct(root,@"notams.json"),@"invalid pointer cannot resurrect stale notices");
+        [fm removeItemAtPath:root error:nil];
+    }
+    return failures ? 1 : 0;
+}
