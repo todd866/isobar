@@ -242,6 +242,11 @@ static void TestContours(void) {
     OwnLineSet none = OwnContours(bowl, n, n, 0, 0, 1, 1, &flatLevel, 1);
     check(none.count == 0, @"a flat field has no isobar");
     OwnLineSetFree(none);
+    for (int i = 0; i < n * n; i++) bowl[i] = (i * 7919) % 3 == 0 ? nextafter(1016.0, 0) : (i % 2 ? 1016 : nextafter(1016.0, 2000));
+    double plateau = 1016;
+    OwnLineSet noise = OwnContours(bowl, n, n, 0, 0, 1, 1, &plateau, 1);
+    check(noise.count == 0, [NSString stringWithFormat:@"rounding noise on a plateau at the level draws no isobar, got %d", noise.count]);
+    OwnLineSetFree(noise);
     double level = 1012;
     OwnLineSet huge = OwnContours((const double *)1, 100000, 100000, 0, 0, 1, 1, &level, 1);
     check(huge.count == 0 && huge.lines == NULL, @"an oversized field is refused before it is read");

@@ -10,6 +10,67 @@ static NSString *TempText(id value) {
     return number ? [NSString stringWithFormat:@"%.0f°", round(number.doubleValue)] : @"—";
 }
 
+static void AnnouncePolite(NSView *view, NSString *text) {
+    if (!text.length || !view.window) return;
+    NSAccessibilityPostNotificationWithUserInfo(view, NSAccessibilityAnnouncementRequestedNotification, @{
+        NSAccessibilityAnnouncementKey: text,
+        NSAccessibilityPriorityKey: @(NSAccessibilityPriorityLow),
+    });
+}
+
+double DayStripTemperatureAtDate(NSArray<NSDictionary *> *series, NSDate *date) {
+    if (![date isKindOfClass:NSDate.class] || ![series isKindOfClass:NSArray.class]) return NAN;
+    NSDate *prevTime = nil, *nextTime = nil;
+    double prev = NAN, next = NAN;
+    for (NSDictionary *row in series) {
+        if (![row isKindOfClass:NSDictionary.class]) continue;
+        NSDate *time = [row[@"time"] isKindOfClass:NSDate.class] ? row[@"time"] : nil;
+        NSNumber *value = Finite(row[@"temp"]);
+        if (!time || !value) continue;
+        NSComparisonResult order = [time compare:date];
+        if (order == NSOrderedSame) return value.doubleValue;
+        if (order == NSOrderedAscending) {
+            if (!prevTime || [time compare:prevTime] == NSOrderedDescending) {
+                prevTime = time;
+                prev = value.doubleValue;
+            }
+        } else if (!nextTime || [time compare:nextTime] == NSOrderedAscending) {
+            nextTime = time;
+            next = value.doubleValue;
+        }
+    }
+    if (!prevTime || !nextTime) return NAN;
+    double span = [nextTime timeIntervalSinceDate:prevTime];
+    if (!(span > 0)) return next;
+    double u = [date timeIntervalSinceDate:prevTime] / span;
+    return prev + (next - prev) * u;
+}
+
+NSDictionary *DayStripSampleAtDate(NSArray<NSDictionary *> *series, NSDate *date, NSTimeInterval limit) {
+    if (![date isKindOfClass:NSDate.class] || ![series isKindOfClass:NSArray.class] || !(limit > 0)) return nil;
+    NSDictionary *best = nil;
+    NSTimeInterval bestGap = limit;
+    for (NSDictionary *row in series) {
+        if (![row isKindOfClass:NSDictionary.class]) continue;
+        NSDate *time = [row[@"time"] isKindOfClass:NSDate.class] ? row[@"time"] : nil;
+        if (!time) continue;
+        NSTimeInterval gap = fabs([time timeIntervalSinceDate:date]);
+        if (gap < bestGap || (best && gap == bestGap && [time compare:best[@"time"]] == NSOrderedAscending)) {
+            bestGap = gap;
+            best = row;
+        }
+    }
+    return best;
+}
+
+static CGFloat TemperatureX(NSRect track, double temp, double weekMin, double weekMax) {
+    if (!(weekMax > weekMin) || !isfinite(temp)) return NSMidX(track);
+    double u = (temp - weekMin) / (weekMax - weekMin);
+    if (u < 0) u = 0;
+    if (u > 1) u = 1;
+    return NSMinX(track) + NSWidth(track) * u;
+}
+
 static NSColor *RangeColour(double t, double lo, double hi) {
     double u = hi > lo ? (t - lo) / (hi - lo) : .5;
     if (u < 0) u = 0;
@@ -18,10 +79,29 @@ static NSColor *RangeColour(double t, double lo, double hi) {
     return [NSColor colorWithSRGBRed:.42 + (.94 - .42) * u green:.68 + (.52 - .68) * u blue:.78 + (.30 - .78) * u alpha:1];
 }
 
+// A template symbol drawn with -drawInRect: is black in every appearance.
+static NSImageSymbolConfiguration *SymbolInk(void) {
+    return [NSImageSymbolConfiguration configurationWithHierarchicalColor:NSColor.labelColor];
+}
+
+static const CGFloat kRangeThickness = 3;
+
+// separatorColor is near-black at a low alpha. Forcing that alpha toward 1
+// paints a solid black rail. Composite the separator over the paper instead.
+static NSColor *RangeTrackColour(void) {
+    NSColor *paper = [NSColor.windowBackgroundColor colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+    NSColor *ink = [NSColor.separatorColor colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+    CGFloat pr = 1, pg = 1, pb = 1, ir = 0, ig = 0, ib = 0, ia = 1;
+    if (paper) [paper getRed:&pr green:&pg blue:&pb alpha:NULL];
+    if (ink) [ink getRed:&ir green:&ig blue:&ib alpha:&ia];
+    double mix = ia > 0 && ia < 0.95 ? MIN(0.45, ia) : 0.22;
+    return [NSColor colorWithSRGBRed:pr + (ir - pr) * mix green:pg + (ig - pg) * mix blue:pb + (ib - pb) * mix alpha:1];
+}
+
 static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, double weekMax, id dayMin, id dayMax) {
-    CGFloat thickness = NSHeight(track) >= 3.5 ? 3.5 : NSHeight(track);
+    CGFloat thickness = NSHeight(track) >= kRangeThickness ? kRangeThickness : NSHeight(track);
     track = NSMakeRect(NSMinX(track), NSMinY(track), NSWidth(track), thickness);
-    [[NSColor.separatorColor colorWithAlphaComponent:.95] setFill];
+    [RangeTrackColour() setFill];
     [[NSBezierPath bezierPathWithRoundedRect:track xRadius:thickness / 2 yRadius:thickness / 2] fill];
     NSNumber *min = Finite(dayMin), *max = Finite(dayMax);
     if (!hasWeek || !min || !max || !(weekMax > weekMin)) return;
@@ -49,6 +129,7 @@ static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, dou
 
 @implementation DayCell
 - (BOOL)isFlipped { return YES; }
+- (BOOL)isOpaque { return NO; }
 - (BOOL)canBecomeKeyView { return YES; }
 - (void)viewDidChangeEffectiveAppearance {
     [super viewDidChangeEffectiveAppearance];
@@ -86,7 +167,8 @@ static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, dou
     NSString *symbol = code ? WeatherCodeSymbol(code.integerValue, YES) : nil;
     NSImage *icon = symbol ? [NSImage imageWithSystemSymbolName:symbol accessibilityDescription:WeatherCodeLabel(code.integerValue)] : nil;
     if (icon) {
-        NSImageSymbolConfiguration *style = [NSImageSymbolConfiguration configurationWithPointSize:15 weight:NSFontWeightRegular];
+        NSImageSymbolConfiguration *style = [[NSImageSymbolConfiguration configurationWithPointSize:15 weight:NSFontWeightRegular]
+            configurationByApplyingConfiguration:SymbolInk()];
         icon = [icon imageWithSymbolConfiguration:style] ?: icon;
         BOOL snug = NSHeight(self.bounds) < 58;
         CGFloat side = snug ? 14 : 16;
@@ -111,7 +193,7 @@ static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, dou
     }
     CGFloat barY = NSHeight(self.bounds) - 8;
     if (barY < 34) { [self drawFocusRing]; return; }
-    DrawTemperatureRange(NSMakeRect(6, barY, MAX(4, width - 12), 3.5), self.hasWeek, self.weekMin, self.weekMax, day[@"min"], day[@"max"]);
+    DrawTemperatureRange(NSMakeRect(6, barY, MAX(4, width - 12), kRangeThickness), self.hasWeek, self.weekMin, self.weekMax, day[@"min"], day[@"max"]);
     [self drawFocusRing];
 }
 
@@ -138,7 +220,8 @@ static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, dou
     NSString *symbol = code ? WeatherCodeSymbol(code.integerValue, YES) : nil;
     NSImage *icon = symbol ? [NSImage imageWithSystemSymbolName:symbol accessibilityDescription:WeatherCodeLabel(code.integerValue)] : nil;
     if (icon) {
-        NSImageSymbolConfiguration *style = [NSImageSymbolConfiguration configurationWithPointSize:14 weight:NSFontWeightRegular];
+        NSImageSymbolConfiguration *style = [[NSImageSymbolConfiguration configurationWithPointSize:14 weight:NSFontWeightRegular]
+            configurationByApplyingConfiguration:SymbolInk()];
         icon = [icon imageWithSymbolConfiguration:style] ?: icon;
         [icon drawInRect:NSMakeRect((width - 16) / 2, 18, 16, 16)];
     }
@@ -155,20 +238,66 @@ static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, dou
         [rainText drawAtPoint:NSMakePoint(MAX(0, (width - rainW) / 2), 66) withAttributes:rainStyle];
     }
     if (NSHeight(self.bounds) > 72 && self.hasWeek)
-        DrawTemperatureRange(NSMakeRect(8, NSHeight(self.bounds) - 10, MAX(4, width - 16), 3.5), self.hasWeek, self.weekMin, self.weekMax, day[@"min"], day[@"max"]);
+        DrawTemperatureRange(NSMakeRect(8, NSHeight(self.bounds) - 10, MAX(4, width - 16), kRangeThickness), self.hasWeek, self.weekMin, self.weekMax, day[@"min"], day[@"max"]);
     [self drawFocusRing];
+}
+@end
+
+@interface DayPlayheadMark : NSView
+@end
+@implementation DayPlayheadMark
+- (BOOL)isFlipped { return YES; }
+- (BOOL)isOpaque { return NO; }
+- (NSView *)hitTest:(NSPoint)point { (void)point; return nil; }
+- (void)drawRect:(NSRect)dirty {
+    (void)dirty;
+    CGFloat amount = .16;
+    NSColor *paper = [NSColor.windowBackgroundColor colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+    NSColor *accent = [NSColor.controlAccentColor colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+    CGFloat pr = 1, pg = 1, pb = 1, ar = .2, ag = .45, ab = .95;
+    if (paper) [paper getRed:&pr green:&pg blue:&pb alpha:NULL];
+    if (accent) [accent getRed:&ar green:&ag blue:&ab alpha:NULL];
+    [[NSColor colorWithSRGBRed:pr + (ar - pr) * amount green:pg + (ag - pg) * amount blue:pb + (ab - pb) * amount alpha:1] setFill];
+    [[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds, 1, 1) xRadius:6 yRadius:6] fill];
+}
+@end
+
+@interface DayTempDot : NSView
+@end
+@implementation DayTempDot
+- (BOOL)isFlipped { return YES; }
+- (BOOL)isOpaque { return NO; }
+- (NSView *)hitTest:(NSPoint)point { (void)point; return nil; }
+- (void)drawRect:(NSRect)dirty {
+    (void)dirty;
+    NSRect mark = NSInsetRect(self.bounds, 1, 1);
+    [[NSColor.windowBackgroundColor colorWithAlphaComponent:.95] setFill];
+    [[NSBezierPath bezierPathWithOvalInRect:self.bounds] fill];
+    [NSColor.labelColor setFill];
+    [[NSBezierPath bezierPathWithOvalInRect:mark] fill];
 }
 @end
 
 @implementation DayStripView {
     NSMutableArray<DayCell *> *_cells;
     NSTextField *_hourLine;
+    DayPlayheadMark *_highlight;
+    DayTempDot *_dot;
+    double _weekMin, _weekMax;
+    BOOL _hasWeek;
+    NSInteger _highlightedDayIndex;
+    double _playheadTemperature;
+    NSInteger _hoverIndex;
+    NSCalendar *_calendar;
 }
 
 - (instancetype)initWithFrame:(NSRect)frame {
     self = [super initWithFrame:frame];
     if (!self) return nil;
     _selectedIndex = -1;
+    _highlightedDayIndex = -1;
+    _hoverIndex = -1;
+    _playheadTemperature = NAN;
     _cells = [NSMutableArray array];
     self.accessibilityIdentifier = @"hub.days";
     self.accessibilityLabel = @"Seven day forecast";
@@ -180,6 +309,23 @@ static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, dou
 - (void)viewDidChangeEffectiveAppearance {
     [super viewDidChangeEffectiveAppearance];
     self.needsDisplay = YES;
+    _highlight.needsDisplay = YES;
+    _dot.needsDisplay = YES;
+}
+
+- (NSInteger)highlightedDayIndex { return _highlightedDayIndex; }
+- (double)playheadTemperature { return _playheadTemperature; }
+- (NSInteger)hoverIndex { return _hoverIndex; }
+
+- (void)setSeries:(NSArray<NSDictionary *> *)series {
+    _series = [series copy] ?: @[];
+    [self placePlayhead];
+}
+
+- (void)setPlayhead:(NSDate *)playhead {
+    if (playhead == _playhead || [playhead isEqualToDate:_playhead]) return;
+    _playhead = playhead;
+    [self placePlayhead];
 }
 
 - (void)setDays:(NSArray<NSDictionary *> *)days {
@@ -194,7 +340,16 @@ static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, dou
 
 - (void)setTimeZone:(NSTimeZone *)timeZone {
     _timeZone = timeZone;
+    _calendar = nil;
     if (_cells.count || self.hours) [self rebuild];
+}
+
+- (NSCalendar *)dayCalendar {
+    if (!_calendar) {
+        _calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+        _calendar.timeZone = self.timeZone ?: [NSTimeZone timeZoneWithName:@"GMT"];
+    }
+    return _calendar;
 }
 
 - (void)setSelectedIndex:(NSInteger)selectedIndex {
@@ -244,15 +399,16 @@ static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, dou
     [_cells removeAllObjects];
     [_hourLine removeFromSuperview];
     _hourLine = nil;
-    double weekMin = 0, weekMax = 0; BOOL hasWeek = NO;
+    _weekMin = 0; _weekMax = 0; _hasWeek = NO;
     for (NSDictionary *day in self.days) {
         NSNumber *min = Finite(day[@"min"]), *max = Finite(day[@"max"]);
         if (!min && !max) continue;
         double lo = min ? min.doubleValue : max.doubleValue;
         double hi = max ? max.doubleValue : min.doubleValue;
-        if (!hasWeek) { weekMin = lo; weekMax = hi; hasWeek = YES; }
-        else { weekMin = MIN(weekMin, lo); weekMax = MAX(weekMax, hi); }
+        if (!_hasWeek) { _weekMin = lo; _weekMax = hi; _hasWeek = YES; }
+        else { _weekMin = MIN(_weekMin, lo); _weekMax = MAX(_weekMax, hi); }
     }
+    double weekMin = _weekMin, weekMax = _weekMax; BOOL hasWeek = _hasWeek;
     NSUInteger count = self.days.count;
     for (NSUInteger i = 0; i < count; i++) {
         DayCell *cell = [DayCell new];
@@ -268,6 +424,7 @@ static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, dou
         cell.state = (NSInteger)i == self.selectedIndex ? NSControlStateValueOn : NSControlStateValueOff;
         cell.accessibilityIdentifier = [NSString stringWithFormat:@"hub.day.%lu", (unsigned long)i];
         cell.accessibilityLabel = [self accessibilityLabelForDay:(NSInteger)i];
+        if ([cell.cell isKindOfClass:NSButtonCell.class]) ((NSButtonCell *)cell.cell).highlightsBy = NSNoCellMask;
         [_cells addObject:cell];
         [self addSubview:cell];
     }
@@ -292,7 +449,10 @@ static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, dou
         _hourLine.accessibilityLabel = parts.count ? [NSString stringWithFormat:@"Hourly forecast, %@", text] : text;
         [self addSubview:_hourLine];
     }
+    [self ensureChrome];
     [self layoutCells];
+    if (_highlight) [self addSubview:_highlight positioned:NSWindowBelow relativeTo:nil];
+    if (_dot) [self addSubview:_dot positioned:NSWindowAbove relativeTo:nil];
 }
 
 - (void)layout { [super layout]; [self layoutCells]; }
@@ -306,13 +466,131 @@ static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, dou
         CGFloat rowH = NSHeight(self.bounds) / count;
         for (NSUInteger i = 0; i < count; i++)
             _cells[i].frame = NSMakeRect(0, round(i * rowH), NSWidth(self.bounds), floor(rowH));
+    } else {
+        CGFloat rowH = detail ? MAX(36, NSHeight(self.bounds) - 22) : NSHeight(self.bounds);
+        CGFloat width = NSWidth(self.bounds) / count;
+        for (NSUInteger i = 0; i < count; i++)
+            _cells[i].frame = NSMakeRect(round(i * width), 0, floor(width), rowH);
+        if (_hourLine) _hourLine.frame = NSMakeRect(4, rowH, MAX(0, NSWidth(self.bounds) - 8), 18);
+    }
+    [self placePlayhead];
+}
+
+- (void)ensureChrome {
+    if (!_highlight) {
+        _highlight = [DayPlayheadMark new];
+        _highlight.hidden = YES;
+        _highlight.accessibilityElement = NO;
+        [self addSubview:_highlight positioned:NSWindowBelow relativeTo:nil];
+    }
+    if (!_dot) {
+        _dot = [DayTempDot new];
+        _dot.hidden = YES;
+        _dot.accessibilityElement = NO;
+        _dot.accessibilityIdentifier = @"hub.playheadDot";
+        [self addSubview:_dot positioned:NSWindowAbove relativeTo:nil];
+    }
+}
+
+- (NSInteger)dayIndexForDate:(NSDate *)date {
+    if (![date isKindOfClass:NSDate.class]) return -1;
+    NSCalendar *calendar = [self dayCalendar];
+    for (NSInteger i = 0; i < (NSInteger)self.days.count; i++) {
+        NSDate *day = [self.days[i][@"date"] isKindOfClass:NSDate.class] ? self.days[i][@"date"] : nil;
+        if (day && [calendar isDate:date inSameDayAsDate:day]) return i;
+    }
+    return -1;
+}
+
+- (NSRect)dotFrameForCell:(DayCell *)cell temperature:(double)temp {
+    if (!cell || !isfinite(temp) || !_hasWeek) return NSZeroRect;
+    BOOL stacked = NSHeight(cell.bounds) > NSWidth(cell.bounds) * 1.2;
+    NSRect track;
+    if (stacked) {
+        if (NSHeight(cell.bounds) <= 72) return NSZeroRect;
+        track = NSMakeRect(8, NSHeight(cell.bounds) - 10, MAX(4, NSWidth(cell.bounds) - 16), kRangeThickness);
+    } else {
+        CGFloat barY = NSHeight(cell.bounds) - 8;
+        if (barY < 34) return NSZeroRect;
+        track = NSMakeRect(6, barY, MAX(4, NSWidth(cell.bounds) - 12), kRangeThickness);
+    }
+    CGFloat x = NSMinX(cell.frame) + TemperatureX(track, temp, _weekMin, _weekMax);
+    CGFloat y = NSMinY(cell.frame) + NSMidY(track);
+    return NSMakeRect(x - 3.5, y - 3.5, 7, 7);
+}
+
+- (void)placePlayhead {
+    [self ensureChrome];
+    NSInteger index = [self dayIndexForDate:_playhead];
+    double temp = DayStripTemperatureAtDate(self.series, _playhead);
+    BOOL dayChanged = index != _highlightedDayIndex;
+    BOOL wasShown = !_highlight.hidden && _highlightedDayIndex >= 0;
+    _highlightedDayIndex = index;
+    _playheadTemperature = temp;
+    if (index < 0 || index >= (NSInteger)_cells.count) {
+        _highlight.hidden = YES;
+        _dot.hidden = YES;
         return;
     }
-    CGFloat rowH = detail ? MAX(36, NSHeight(self.bounds) - 22) : NSHeight(self.bounds);
-    CGFloat width = NSWidth(self.bounds) / count;
-    for (NSUInteger i = 0; i < count; i++)
-        _cells[i].frame = NSMakeRect(round(i * width), 0, floor(width), rowH);
-    if (_hourLine) _hourLine.frame = NSMakeRect(4, rowH, MAX(0, NSWidth(self.bounds) - 8), 18);
+    NSRect target = _cells[index].frame;
+    static NSTimeInterval reduceChecked;
+    static BOOL reduceMotion;
+    NSTimeInterval reduceNow = NSProcessInfo.processInfo.systemUptime;
+    if (reduceNow - reduceChecked > 0.5) {
+        reduceChecked = reduceNow;
+        reduceMotion = NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion;
+    }
+    BOOL reduce = reduceMotion;
+    BOOL slide = dayChanged && wasShown && self.window && !reduce;
+    _highlight.hidden = NO;
+    if (slide) {
+        [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
+            context.duration = 0.35;
+            context.allowsImplicitAnimation = YES;
+            self->_highlight.animator.frame = target;
+        } completionHandler:nil];
+    } else if (dayChanged || !NSEqualRects(_highlight.frame, target)) {
+        _highlight.frame = target;
+    }
+    NSRect dot = [self dotFrameForCell:_cells[index] temperature:temp];
+    _dot.hidden = NSIsEmptyRect(dot);
+    if (!_dot.hidden) _dot.frame = dot;
+}
+
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    for (NSTrackingArea *area in self.trackingAreas) [self removeTrackingArea:area];
+    NSTrackingArea *area = [[NSTrackingArea alloc] initWithRect:self.bounds
+        options:NSTrackingMouseMoved | NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways | NSTrackingInVisibleRect
+        owner:self userInfo:nil];
+    [self addTrackingArea:area];
+}
+
+- (NSInteger)dayIndexAtPoint:(NSPoint)point {
+    for (NSUInteger i = 0; i < _cells.count; i++)
+        if (NSPointInRect(point, _cells[i].frame)) return (NSInteger)i;
+    return -1;
+}
+
+- (void)hoverAtPoint:(NSPoint)point {
+    NSInteger index = [self dayIndexAtPoint:point];
+    if (index == _hoverIndex) return;
+    _hoverIndex = index;
+    if (self.onHover) self.onHover(index);
+    if (index >= 0) AnnouncePolite(self, [self accessibilityLabelForDay:index]);
+}
+
+- (void)mouseMoved:(NSEvent *)event {
+    [self hoverAtPoint:[self convertPoint:event.locationInWindow fromView:nil]];
+}
+
+- (void)mouseEntered:(NSEvent *)event { [self mouseMoved:event]; }
+
+- (void)mouseExited:(NSEvent *)event {
+    (void)event;
+    if (_hoverIndex < 0) return;
+    _hoverIndex = -1;
+    if (self.onHover) self.onHover(-1);
 }
 
 @end

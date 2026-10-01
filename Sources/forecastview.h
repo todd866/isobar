@@ -25,6 +25,7 @@ NSColor *KiteWindSpeedColour(double knots, double minKt, double maxKt);
 
 - (NSRect)windPlotRect;
 - (nullable NSString *)summaryAtPoint:(NSPoint)point;
+- (CGFloat)cursorXForDate:(nullable NSDate *)date;
 
 @end
 

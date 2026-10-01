@@ -75,3 +75,12 @@ typedef struct {
     double totalMs;
 } OwnRenderProfile;
 OwnRenderProfile OwnRenderProfileLast(void);
+// How far, in chart points, the most inland open-contour end sits from the
+// map edge on the last render. Ends where the model data stops (the grid edge
+// or a missing cell) do not count. Negative when no counted end is inside.
+double OwnRenderLastOpenInset(void);
+// Annotations of the last render on this thread, in chart points, y up, with
+// their drawn alpha. A label box is its stroke gap: the glyph plus 2.5 pt. A
+// centre box holds the cross, the H or L and the value.
+NSInteger OwnRenderLastLabelBoxes(CGRect *rects, double *alphas, NSInteger max);
+NSInteger OwnRenderLastCentreBoxes(CGRect *rects, double *alphas, NSInteger max);

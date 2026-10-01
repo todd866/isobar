@@ -37,6 +37,10 @@ static const double kHatchAlpha = 0.40;
 static _Thread_local OwnRenderProfile gRenderProfile;
 static _Thread_local double gProfileMark;
 static _Thread_local double gChaikinMs;
+static _Thread_local double gOpenInset;
+static _Thread_local CGRect gLabelBoxes[80], gCentreBoxes[24];
+static _Thread_local double gLabelAlpha[80], gCentreAlpha[24];
+static _Thread_local int gNLabelBoxes, gNCentreBoxes;
 
 static double ProfileNow(void) {
     return (double)clock_gettime_nsec_np(CLOCK_UPTIME_RAW) * 1e-6;
@@ -45,7 +49,32 @@ static double ProfileNow(void) {
 static void ProfileReset(void) {
     gRenderProfile = (OwnRenderProfile){0};
     gChaikinMs = 0;
+    gOpenInset = -1e9;
+    gNLabelBoxes = 0;
+    gNCentreBoxes = 0;
     gProfileMark = ProfileNow();
+}
+
+static NSInteger CopyBoxes(const CGRect *from, const double *fromAlpha, int count,
+    CGRect *rects, double *alphas, NSInteger max) {
+    NSInteger n = MIN(max, (NSInteger)count);
+    for (NSInteger i = 0; i < n; i++) {
+        if (rects) rects[i] = from[i];
+        if (alphas) alphas[i] = fromAlpha[i];
+    }
+    return n < 0 ? 0 : n;
+}
+
+NSInteger OwnRenderLastLabelBoxes(CGRect *rects, double *alphas, NSInteger max) {
+    return CopyBoxes(gLabelBoxes, gLabelAlpha, gNLabelBoxes, rects, alphas, max);
+}
+NSInteger OwnRenderLastCentreBoxes(CGRect *rects, double *alphas, NSInteger max) {
+    return CopyBoxes(gCentreBoxes, gCentreAlpha, gNCentreBoxes, rects, alphas, max);
+}
+
+// The cross, the letter above it and the value below.
+static CGRect CentreMarkBox(double x, double y) {
+    return CGRectMake(x - 16, y - 24, 32, 50);
 }
 
 static double ProfileLap(void) {
@@ -56,6 +85,7 @@ static double ProfileLap(void) {
 }
 
 OwnRenderProfile OwnRenderProfileLast(void) { return gRenderProfile; }
+double OwnRenderLastOpenInset(void) { return gOpenInset; }
 
 // Published runs are immutable between collector publications. Keep a few
 // parsed runs alive so a refresh that only changed the pointer does not decode
@@ -818,17 +848,33 @@ static double *SmoothedMSLP(Cube *cube, double hour, const uint8_t *land, uint8_
     return out;
 }
 
-// Contours only need the cells that can cross the drawn window. A one-cell
-// margin keeps a line that clips the frame the same shape it had on the full grid.
-static double *ContourWindow(const double *field, int nLon, int nLat,
+static BOOL PixelUnproject(OwnView view, double x, double yDown, double *latitude, double *longitude);
+
+// Contours only need the cells that can cross the drawn map. The Lambert
+// rectangle reaches past the view's lon/lat box at its corners, so the window
+// is the box around the unprojected map edge. Two cells of margin keep a line
+// that leaves the frame the same shape it had on the full grid, and its ends
+// outside the map.
+static double *ContourWindow(const double *field, int nLon, int nLat, OwnView view,
     int *outW, int *outH, double *originX, double *originY) {
     if (!field || nLon < 2 || nLat < 2) return NULL;
     double step = GStep();
     if (!(step > 0)) return NULL;
-    int i0 = (int)floor((kViewWest - GWest()) / step) - 1;
-    int i1 = (int)ceil((kViewEast - GWest()) / step) + 1;
-    int j0 = (int)floor((GNorth() - kViewNorth) / step) - 1;
-    int j1 = (int)ceil((GNorth() - kViewSouth) / step) + 1;
+    double west = kViewWest, east = kViewEast, south = kViewSouth, north = kViewNorth;
+    for (int k = 0; k <= 64; k++) {
+        double u = k / 64.0;
+        double edge[4][2] = {{u * kPanelW, 0}, {u * kPanelW, kMapH}, {0, u * kMapH}, {kPanelW, u * kMapH}};
+        for (int e = 0; e < 4; e++) {
+            double lat, lon;
+            if (!PixelUnproject(view, edge[e][0], edge[e][1], &lat, &lon)) continue;
+            west = fmin(west, lon); east = fmax(east, lon);
+            south = fmin(south, lat); north = fmax(north, lat);
+        }
+    }
+    int i0 = (int)floor((west - GWest()) / step) - 2;
+    int i1 = (int)ceil((east - GWest()) / step) + 2;
+    int j0 = (int)floor((GNorth() - north) / step) - 2;
+    int j1 = (int)ceil((GNorth() - south) / step) + 2;
     if (i0 < 0) i0 = 0;
     if (j0 < 0) j0 = 0;
     if (i1 > nLon - 1) i1 = nLon - 1;
@@ -1318,85 +1364,40 @@ static void StrokeLine(CGContextRef ctx, const OwnVec *pts, int count, int close
     }
 }
 
-static double InkCover(double x, double y, const OwnLabel *labels, const double *labelAlpha, int nLabels,
-    const OwnVec *centres, const double *centreAlpha, int nCentres) {
-    double cover = 0;
-    for (int i = 0; i < nLabels; i++) {
-        if (!labels || !labelAlpha || labelAlpha[i] <= 0) continue;
-        double hw = labels[i].halfW + 2.5, hh = labels[i].halfH + 2.5;
-        if (fabs(x - labels[i].x) <= hw && fabs(y - labels[i].y) <= hh)
-            cover = fmax(cover, labelAlpha[i]);
-    }
-    for (int i = 0; i < nCentres; i++) {
-        if (!centres || !centreAlpha || centreAlpha[i] <= 0) continue;
-        if (hypot(x - centres[i].x, y - centres[i].y) < 11)
-            cover = fmax(cover, centreAlpha[i]);
-    }
-    return cover > 1 ? 1 : cover;
+// A contour may stop where the model data stops: the grid edge, or a missing cell.
+static BOOL AtDataEdge(OwnView view, double x, double yUp, const double *field, int nLon, int nLat,
+    double originX, double originY) {
+    double lat, lon, step = GStep();
+    if (!field || !(step > 0) || !PixelUnproject(view, x, kMapH - yUp, &lat, &lon)) return YES;
+    double fi = (lon - originX) / step, fj = (originY - lat) / step;
+    if (fi < 1.5 || fj < 1.5 || fi > nLon - 2.5 || fj > nLat - 2.5) return YES;
+    int i0 = (int)floor(fi), j0 = (int)floor(fj);
+    for (int j = j0 - 1; j <= j0 + 2; j++)
+        for (int i = i0 - 1; i <= i0 + 2; i++)
+            if (!isfinite(field[(size_t)j * (size_t)nLon + (size_t)i])) return YES;
+    return NO;
 }
 
-static void EraseRun(CGContextRef ctx, const OwnVec *run, int nRun, double alpha) {
-    if (!run || nRun < 2 || alpha < 0.02) return;
-    CGContextSetRGBStrokeColor(ctx, 0, 0, 0, alpha > 1 ? 1 : alpha);
-    CGContextBeginPath(ctx);
-    CGContextMoveToPoint(ctx, run[0].x, run[0].y);
-    for (int i = 1; i < nRun; i++) CGContextAddLineToPoint(ctx, run[i].x, run[i].y);
-    CGContextStrokePath(ctx);
-}
-
-// One continuous stroke, then a destination-out pass under each fading label
-// or centre. The hole opens with the glyph instead of popping, and the ink
-// stays a single curve so it does not step between short caps.
-static void StrokeFadedContour(CGContextRef ctx, const OwnVec *pts, int count, int closed,
-    const OwnLabel *labels, const double *labelAlpha, int nLabels,
-    const OwnVec *centres, const double *centreAlpha, int nCentres,
-    double width, double red, double green, double blue, double lineAlpha) {
-    if (!pts || count < 2 || lineAlpha < 0.02) return;
-    StrokeLine(ctx, pts, count, closed, NULL, 0, 0, width, red, green, blue, lineAlpha);
-    BOOL any = NO;
-    for (int i = 0; i < nLabels && !any; i++) any = labelAlpha && labelAlpha[i] > 0.02;
-    for (int i = 0; i < nCentres && !any; i++) any = centreAlpha && centreAlpha[i] > 0.02;
-    if (!any) return;
-    int edges = closed ? count : count - 1;
-    int cap = edges * 2 + 8;
-    OwnVec *run = malloc((size_t)cap * sizeof(OwnVec));
-    if (!run) return;
-    int nRun = 0;
-    double runAlpha = -1;
-    CGContextSaveGState(ctx);
-    CGContextSetBlendMode(ctx, kCGBlendModeDestinationOut);
-    CGContextSetLineWidth(ctx, width + 2.0);
-    CGContextSetLineCap(ctx, kCGLineCapRound);
-    for (int e = 0; e < edges; e++) {
-        OwnVec a = pts[e], b = pts[(e + 1) % count];
-        double len = hypot(b.x - a.x, b.y - a.y);
-        int parts = (int)ceil(len / 6.0);
-        if (parts < 1) parts = 1;
-        for (int p = 0; p < parts; p++) {
-            double t0 = (double)p / parts, t1 = (double)(p + 1) / parts;
-            double mx = a.x + (b.x - a.x) * (t0 + t1) * 0.5;
-            double my = a.y + (b.y - a.y) * (t0 + t1) * 0.5;
-            double alpha = InkCover(mx, my, labels, labelAlpha, nLabels, centres, centreAlpha, nCentres);
-            OwnVec p0 = {a.x + (b.x - a.x) * t0, a.y + (b.y - a.y) * t0};
-            OwnVec p1 = {a.x + (b.x - a.x) * t1, a.y + (b.y - a.y) * t1};
-            if (nRun > 0 && fabs(alpha - runAlpha) > 0.03) {
-                EraseRun(ctx, run, nRun, runAlpha);
-                nRun = 0;
+// Most inland open end, in chart points, measured before a label cuts a gap.
+// Ends where the model data stops do not count.
+static void NoteOpenEnds(const OwnLineSet *lines, OwnView view, const double *field, int nLon, int nLat,
+    double originX, double originY) {
+    double worst = -1e9;
+    if (lines) {
+        for (int i = 0; i < lines->count; i++) {
+            const OwnLine *line = &lines->lines[i];
+            if (!line->pts || line->count < 2 || line->closed) continue;
+            OwnVec ends[2] = {line->pts[0], line->pts[line->count - 1]};
+            for (int e = 0; e < 2; e++) {
+                double inset = fmin(fmin(ends[e].x, ends[e].y),
+                    fmin(kPanelW - ends[e].x, kMapH - ends[e].y));
+                if (inset <= worst) continue;
+                if (inset > 0 && AtDataEdge(view, ends[e].x, ends[e].y, field, nLon, nLat, originX, originY)) continue;
+                worst = inset;
             }
-            if (nRun + 2 > cap) {
-                int next = cap * 2;
-                OwnVec *grown = realloc(run, (size_t)next * sizeof(OwnVec));
-                if (!grown) { CGContextRestoreGState(ctx); free(run); return; }
-                run = grown;
-                cap = next;
-            }
-            if (nRun == 0) { run[nRun++] = p0; runAlpha = alpha; }
-            run[nRun++] = p1;
         }
     }
-    EraseRun(ctx, run, nRun, runAlpha);
-    CGContextRestoreGState(ctx);
-    free(run);
+    gOpenInset = worst;
 }
 
 static void DrawText(CGContextRef ctx, NSString *text, NSFont *font, NSColor *color,
@@ -1412,23 +1413,22 @@ static void DrawText(CGContextRef ctx, NSString *text, NSFont *font, NSColor *co
 }
 
 // Glyph stroke in the fill under the label, then the ink. The same treatment
-// is used for stills and for movie frames.
+// is used for stills and for movie frames. A nil halo draws the ink alone.
 static void DrawHaloText(CGContextRef ctx, NSString *text, NSFont *font, NSColor *ink, NSColor *halo,
     double x, double y, double angle) {
     if (!text.length || !font) return;
-    NSDictionary *stroke = @{
-        NSFontAttributeName: font,
-        NSForegroundColorAttributeName: halo ?: ink,
-        NSStrokeColorAttributeName: halo ?: ink,
-        NSStrokeWidthAttributeName: @(24.0),
-    };
     NSDictionary *fill = @{NSFontAttributeName: font, NSForegroundColorAttributeName: ink};
     NSSize size = [text sizeWithAttributes:fill];
     CGContextSaveGState(ctx);
     CGContextTranslateCTM(ctx, x, y);
     CGContextRotateCTM(ctx, angle);
     NSPoint origin = NSMakePoint(-size.width / 2.0, -size.height / 2.0);
-    [text drawAtPoint:origin withAttributes:stroke];
+    if (halo) [text drawAtPoint:origin withAttributes:@{
+        NSFontAttributeName: font,
+        NSForegroundColorAttributeName: halo,
+        NSStrokeColorAttributeName: halo,
+        NSStrokeWidthAttributeName: @(24.0),
+    }];
     [text drawAtPoint:origin withAttributes:fill];
     CGContextRestoreGState(ctx);
 }
@@ -1774,7 +1774,7 @@ typedef struct {
 typedef struct {
     BOOL active;
     double level, x, y, angle, alpha;
-    int age, missing;
+    int age, missing, line;
 } MotionLabelSlot;
 
 typedef struct {
@@ -1783,18 +1783,10 @@ typedef struct {
     int age, missing;
 } MotionCentreSlot;
 
-typedef struct {
-    BOOL active;
-    double level, x, y, alpha;
-    OwnVec *pts;
-    int count, closed;
-} MotionLineSlot;
-
 @interface OwnMotionState () {
 @public
     MotionLabelSlot _motionLabels[128];
     MotionCentreSlot _motionCentres[24];
-    MotionLineSlot _motionLines[96];
     CGFloat _maxAlphaStep;
     NSInteger _labelSetChanges;
     OwnExtremum _cachedExtrema[48];
@@ -1804,9 +1796,6 @@ typedef struct {
     const void *_cachedExtremaCube;
     int _cachedExtremaNLon, _cachedExtremaNLat;
     BOOL _hasCachedExtrema;
-    OwnExtremum _heldCentres[12];
-    int _heldGrace[12];
-    int _nHeldCentres;
     NSInteger _motionFrame;
     CGFloat _maxLabelStep, _maxCentreStep;
 }
@@ -1825,9 +1814,6 @@ typedef struct {
         points[count++] = CGPointMake(_motionLabels[s].x, _motionLabels[s].y);
     }
     return count;
-}
-- (void)dealloc {
-    for (int s = 0; s < 96; s++) free(_motionLines[s].pts);
 }
 - (NSInteger)copyCentrePoints:(CGPoint *)points max:(NSInteger)max {
     NSInteger count = 0;
@@ -1893,216 +1879,6 @@ static BOOL LineCanHoldLabel(const OwnLine *line) {
     return PolyLength(line) >= 72;
 }
 
-static OwnVec *CopyVecs(const OwnVec *pts, int count) {
-    if (!pts || count < 1) return NULL;
-    OwnVec *out = malloc((size_t)count * sizeof(OwnVec));
-    if (out) memcpy(out, pts, (size_t)count * sizeof(OwnVec));
-    return out;
-}
-
-static double SegClosest(OwnVec a, OwnVec b, OwnVec p, OwnVec *at) {
-    double dx = b.x - a.x, dy = b.y - a.y;
-    double len2 = dx * dx + dy * dy;
-    double t = 0;
-    if (len2 > 1e-8) {
-        t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
-        if (t < 0) t = 0;
-        else if (t > 1) t = 1;
-    }
-    at->x = a.x + dx * t;
-    at->y = a.y + dy * t;
-    return hypot(p.x - at->x, p.y - at->y);
-}
-
-// Nearest point of `p` on the polyline. `hint` is a segment index from the
-// previous sample; the search stays there unless the line has jumped.
-static OwnVec PolyClosest(const OwnVec *pts, int count, int closed, OwnVec p, int *hint, double *dist) {
-    int segs = closed ? count : count - 1;
-    OwnVec bestAt = pts[0];
-    double best = 1e12;
-    int bestSeg = 0;
-    if (segs < 1) {
-        best = hypot(p.x - pts[0].x, p.y - pts[0].y);
-        bestAt = pts[0];
-    } else {
-        int origin = hint ? *hint : 0;
-        int small = segs < 48;
-        for (int n = 0; n < (small ? 1 : 2) && best > 16; n++) {
-            int from, to, stride;
-            if (n == 0 && !small) { from = origin - 10; to = origin + 22; stride = 1; }
-            else { from = 0; to = segs; stride = segs > 80 ? 4 : 1; }
-            for (int i = from; i < to; i += stride) {
-                int seg = i;
-                if (closed) { seg %= segs; if (seg < 0) seg += segs; }
-                else if (seg < 0 || seg >= segs) continue;
-                OwnVec at;
-                double d = SegClosest(pts[seg], pts[(seg + 1) % count], p, &at);
-                if (d < best) { best = d; bestAt = at; bestSeg = seg; }
-            }
-        }
-        if (!small) {
-            for (int i = bestSeg - 4; i < bestSeg + 5; i++) {
-                int seg = i;
-                if (closed) { seg %= segs; if (seg < 0) seg += segs; }
-                else if (seg < 0 || seg >= segs) continue;
-                OwnVec at;
-                double d = SegClosest(pts[seg], pts[(seg + 1) % count], p, &at);
-                if (d < best) { best = d; bestAt = at; bestSeg = seg; }
-            }
-        }
-    }
-    if (hint) *hint = bestSeg;
-    if (dist) *dist = best;
-    return bestAt;
-}
-
-static double MeanLineDistance(const OwnLine *line, const OwnVec *prev, int prevCount, int closed) {
-    if (!line || !line->pts || line->count < 2 || !prev || prevCount < 2) return 1e9;
-    double sum = 0;
-    int hint = 0;
-    for (int s = 0; s < 8; s++) {
-        int idx = (int)((long)s * (line->count - 1) / 7);
-        double d = 0;
-        PolyClosest(prev, prevCount, closed, line->pts[idx], &hint, &d);
-        sum += d;
-    }
-    return sum / 8.0;
-}
-
-// Keep last frame's vertices and walk them toward the new extraction. A
-// marching-squares kink can jump a grid cell; the drawn stroke cannot,
-// because every vertex moves at most `cap` from where it was.
-static void EaseLineFrom(OwnLine *line, const OwnVec *prev, int prevCount) {
-    if (!line || !line->pts || line->count < 2 || !prev || prevCount < 2) return;
-    OwnVec *drawn = malloc((size_t)prevCount * sizeof(OwnVec));
-    if (!drawn) return;
-    memcpy(drawn, prev, (size_t)prevCount * sizeof(OwnVec));
-    int hint = 0;
-    for (int i = 0; i < prevCount; i++) {
-        double dist = 0;
-        OwnVec q = PolyClosest(line->pts, line->count, line->closed, drawn[i], &hint, &dist);
-        double cap = 1.25;
-        if (dist <= cap) { drawn[i] = q; continue; }
-        double s = cap / dist;
-        drawn[i].x += (q.x - drawn[i].x) * s;
-        drawn[i].y += (q.y - drawn[i].y) * s;
-    }
-    free(line->pts);
-    line->pts = drawn;
-    line->count = prevCount;
-}
-
-static void StoreLineGeom(MotionLineSlot *slot, const OwnLine *line) {
-    if (!slot || !line) return;
-    OwnVec *copy = CopyVecs(line->pts, line->count);
-    if (!copy) return;
-    free(slot->pts);
-    slot->pts = copy;
-    slot->count = line->count;
-    slot->closed = line->closed;
-}
-
-// Open fragments fade instead of popping. A line that is already on the
-// chart fades out when it becomes a fragment; a fragment that grows into
-// an isobar fades in. A new long contour is drawn at full ink.
-static void MotionContourAlphas(OwnMotionState *state, OwnLine *lines, int nLines,
-    double *alphas) {
-    enum { kSlots = 96, kReach = 48 };
-    for (int i = 0; i < nLines; i++) alphas[i] = 1;
-    if (!state || !lines || nLines < 1) return;
-    for (int i = 0; i < nLines; i++) alphas[i] = 0;
-    char *lineTaken = calloc((size_t)nLines, 1);
-    typedef struct { int line, slot; double d; } Pair;
-    Pair *pairs = calloc((size_t)nLines * kSlots, sizeof(Pair));
-    int nPairs = 0;
-    if (!lineTaken || !pairs) {
-        free(lineTaken);
-        free(pairs);
-        for (int i = 0; i < nLines; i++) alphas[i] = MotionFragment(&lines[i]) ? 0 : 1;
-        return;
-    }
-    for (int i = 0; i < nLines; i++) {
-        const OwnLine *line = &lines[i];
-        if (!line->pts || line->count < 2) continue;
-        OwnVec mid = line->pts[line->count / 2];
-        for (int s = 0; s < kSlots; s++) {
-            MotionLineSlot *slot = &state->_motionLines[s];
-            if (!slot->active) continue;
-            if (fabs(slot->level - line->level) > 0.1) continue;
-            double d = (slot->pts && slot->count >= 2)
-                ? MeanLineDistance(line, slot->pts, slot->count, slot->closed)
-                : hypot(slot->x - mid.x, slot->y - mid.y);
-            if (d > (slot->pts ? 48.0 : kReach)) continue;
-            pairs[nPairs++] = (Pair){i, s, d};
-        }
-    }
-    for (int i = 1; i < nPairs; i++) {
-        Pair key = pairs[i];
-        int j = i;
-        while (j > 0 && pairs[j - 1].d > key.d) { pairs[j] = pairs[j - 1]; j--; }
-        pairs[j] = key;
-    }
-    char used[kSlots] = {0};
-    for (int p = 0; p < nPairs; p++) {
-        if (used[pairs[p].slot] || lineTaken[pairs[p].line]) continue;
-        used[pairs[p].slot] = 1;
-        lineTaken[pairs[p].line] = 1;
-        const OwnLine *line = &lines[pairs[p].line];
-        MotionLineSlot *slot = &state->_motionLines[pairs[p].slot];
-        if (slot->pts && slot->count >= 2)
-            EaseLineFrom((OwnLine *)line, slot->pts, slot->count);
-        StoreLineGeom(slot, line);
-        OwnVec mid = line->pts[line->count / 2];
-        BOOL keep = !MotionFragment(line);
-        double before = slot->alpha;
-        double target = keep ? 1 : 0;
-        if (slot->alpha < target) slot->alpha = MIN(target, slot->alpha + kMotionFade);
-        else slot->alpha = MAX(target, slot->alpha - kMotionFade);
-        MotionNoteAlpha(state, before, slot->alpha);
-        slot->x = mid.x;
-        slot->y = mid.y;
-        slot->level = line->level;
-        alphas[pairs[p].line] = slot->alpha;
-    }
-    for (int i = 0; i < nLines; i++) {
-        if (lineTaken[i] || !lines[i].pts || lines[i].count < 2) continue;
-        BOOL keep = !MotionFragment(&lines[i]);
-        // A split isobar is new to the matcher but still beside its parent.
-        // Ease it off that stroke so the piece does not pop into place.
-        double nearD = 48;
-        MotionLineSlot *near = NULL;
-        for (int s = 0; s < kSlots; s++) {
-            MotionLineSlot *slot = &state->_motionLines[s];
-            if (!slot->pts || slot->count < 2 || fabs(slot->level - lines[i].level) > 0.1) continue;
-            double d = MeanLineDistance(&lines[i], slot->pts, slot->count, slot->closed);
-            if (d < nearD) { nearD = d; near = slot; }
-        }
-        if (near && keep) EaseLineFrom(&lines[i], near->pts, near->count);
-        OwnVec mid = lines[i].pts[lines[i].count / 2];
-        int slotIndex = -1;
-        for (int s = 0; s < kSlots; s++) if (!state->_motionLines[s].active) { slotIndex = s; break; }
-        if (slotIndex >= 0) {
-            MotionLineSlot *slot = &state->_motionLines[slotIndex];
-            free(slot->pts);
-            *slot = (MotionLineSlot){YES, lines[i].level, mid.x, mid.y, keep ? 1 : 0, NULL, 0, 0};
-            StoreLineGeom(slot, &lines[i]);
-            used[slotIndex] = 1;
-        }
-        alphas[i] = keep ? 1 : 0;
-    }
-    for (int s = 0; s < kSlots; s++) {
-        if (used[s]) continue;
-        MotionLineSlot *slot = &state->_motionLines[s];
-        if (!slot->active) continue;
-        free(slot->pts);
-        slot->pts = NULL;
-        slot->count = 0;
-        slot->active = NO;
-    }
-    free(lineTaken);
-    free(pairs);
-}
-
 static int MotionUpdateCentres(OwnMotionState *state, const OwnExtremum *candidates, int nCandidates,
     OwnVec *visible, int cap) {
     if (!state) return 0;
@@ -2165,15 +1941,24 @@ static int MotionUpdateCentres(OwnMotionState *state, const OwnExtremum *candida
     return count;
 }
 
+static BOOL NearMotionCentre(double x, double y, double halfW, const OwnVec *centres, int nCentres) {
+    double gap = 6.0 * halfW;
+    if (!(gap > 0)) return NO;
+    for (int c = 0; c < nCentres; c++)
+        if (hypot(x - centres[c].x, y - centres[c].y) < gap) return YES;
+    return NO;
+}
+
 // A label stays on its isobar and glides at most 2 px a frame. It remains
 // until the contour leaves the map, shrinks below the label length, or a
-// collision forces it off. New and retiring labels fade over about a second;
-// the knockout uses the same alpha.
+// collision or an H/L marker forces it off. New and retiring labels fade
+// over about a second. The stroke gap is the label box, not a plate erase.
 static int MotionEaseLabels(OwnMotionState *state, const OwnLabel *desired, int nDesired,
-    const OwnLine *lines, int nLines, NSFont *font,
+    const OwnLine *lines, int nLines, const OwnVec *centres, int nCentres, NSFont *font,
     OwnLabel *out, double *outAlpha, int cap) {
     if (!state || !lines || !out || !outAlpha || cap <= 0 || !font) return 0;
     if (nDesired < 0 || !desired) nDesired = 0;
+    if (nCentres < 0 || !centres) nCentres = 0;
     double step = MotionFadeStep(state);
     double halfH = LabelHalfHeight(font);
     int attached[128];
@@ -2207,13 +1992,15 @@ static int MotionEaseLabels(OwnMotionState *state, const OwnLabel *desired, int 
         }
         if (best >= 0) {
             double glide = 0;
-            double capStep = 1.1;
+            double capStep = 2;
             MotionMoveVector(&slot->x, &slot->y, ax, ay, capStep, &glide);
             if (glide > state->_maxLabelStep) state->_maxLabelStep = (CGFloat)glide;
             slot->missing = 0;
             slot->age++;
+            slot->line = best;
             attached[s] = best;
-            hold[s] = 1;
+            double half = LabelHalf(slot->level, (__bridge void *)font);
+            hold[s] = NearMotionCentre(slot->x, slot->y, half, centres, nCentres) ? 0 : 1;
         }
     }
 
@@ -2232,11 +2019,12 @@ static int MotionEaseLabels(OwnMotionState *state, const OwnLabel *desired, int 
             if (hypot(slot->x - desired[c].x, slot->y - desired[c].y) < apart) taken = YES;
         }
         if (onLine >= 2 || (onLine >= 1 && PolyLength(&lines[lineNo]) < 260)) taken = YES;
+        if (NearMotionCentre(desired[c].x, desired[c].y, half, centres, nCentres)) taken = YES;
         if (taken) continue;
         for (int s = 0; s < 128; s++) {
             if (state->_motionLabels[s].active) continue;
             state->_motionLabels[s] = (MotionLabelSlot){YES, desired[c].level,
-                desired[c].x, desired[c].y, 0, 0, 1, 0};
+                desired[c].x, desired[c].y, 0, 0, 1, 0, lineNo};
             attached[s] = lineNo;
             hold[s] = 1;
             break;
@@ -2313,9 +2101,9 @@ static int MotionEaseLabels(OwnMotionState *state, const OwnLabel *desired, int 
         MotionLabelSlot *slot = &state->_motionLabels[s];
         if (!slot->active || slot->alpha < 0.02) continue;
         double half = LabelHalf(slot->level, (__bridge void *)font);
-        int line = attached[s];
-        out[n] = (OwnLabel){slot->x, slot->y, 0, half, halfH, 0, half + 2.5, slot->level,
-            line >= 0 ? line : -1};
+        int line = attached[s] >= 0 ? attached[s] : slot->line;
+        if (line < 0 || line >= nLines) line = -1;
+        out[n] = (OwnLabel){slot->x, slot->y, 0, half, halfH, 0, half + 2.5, slot->level, line};
         outAlpha[n] = slot->alpha;
         n++;
     }
@@ -2637,90 +2425,31 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
     if (mslp) {
         int winW = 0, winH = 0;
         double originX = GWest(), originY = GNorth();
-        double *window = ContourWindow(mslp, cube->nLon, cube->nLat, &winW, &winH, &originX, &originY);
+        double *window = ContourWindow(mslp, cube->nLon, cube->nLat, view, &winW, &winH, &originX, &originY);
         const double *contoured = window ? window : mslp;
         int cLon = window ? winW : cube->nLon;
         int cLat = window ? winH : cube->nLat;
         double lo = 0, hi = 0;
         FieldRange(contoured, cLon * cLat, &lo, &hi);
         double levels[56];
-        int nLevels = options.motionState ? 0 : OwnInteriorLevels(lo, hi, 4, levels, 56);
-        if (options.motionState) {
-            // Keep the fixed pressure lattice, but do not scan the entire
-            // grid for levels that cannot cross this frame's field.
-            for (double level = 880; level <= 1080.001; level += 4)
-                if (level >= lo && level <= hi) levels[nLevels++] = level;
-        }
+        int nLevels = OwnInteriorLevels(lo, hi, 4, levels, 56);
         OwnLineSet raw = OwnContours(contoured, cLon, cLat, originX, originY,
             GStep(), -GStep(), levels, nLevels);
         free(window);
         OwnPruneContours(&raw, 1.2, 0.45, 0.85);
-        OwnSimplifyContours(&raw, 0.6);
+        // No vertex simplification: which vertices survive flips between
+        // nearby instants, and playback would show the polygon kinking.
         DropSmallClosed(&raw, 3.0);
         gRenderProfile.contourMs += ProfileLap();
         int enclosed[48] = {0};
         if (nCand > 48) nCand = 48;
         OwnMarkEnclosedCentres(candidates, nCand, raw.lines, raw.count, 6.0,
             kViewWest, kViewSouth, kViewEast, kViewNorth, enclosed);
-        OwnExtremum previous[12];
-        int nPrev = 0;
-        if (options.motionState && options.motionState->_nHeldCentres > 0) {
-            nPrev = options.motionState->_nHeldCentres;
-            if (nPrev > 12) nPrev = 12;
-            memcpy(previous, options.motionState->_heldCentres, (size_t)nPrev * sizeof(OwnExtremum));
-        }
         // The two southern highs on the plate sit about 110 px apart at 2×,
-        // 730–800 km. Same-type centres inside 860 km collapse.
-        if (options.motionState) {
-            int nHold = options.motionState->_nHeldCentres;
-            if (nHold > 12) nHold = 12;
-            for (int h = 0; h < nHold && nCand < 48; h++) {
-                OwnExtremum held = options.motionState->_heldCentres[h];
-                BOOL near = NO;
-                for (int c = 0; c < nCand && !near; c++) {
-                    if (candidates[c].high != held.high) continue;
-                    if (hypot(candidates[c].x - held.x, candidates[c].y - held.y) < 2.5) near = YES;
-                }
-                if (near) continue;
-                candidates[nCand] = held;
-                candProm[nCand] = OwnRingProminence(mslp, cube->nLon, cube->nLat,
-                    GWest(), GNorth(), GStep(), -GStep(), held.x, held.y, 4.0);
-                nCand++;
-            }
-        }
-        // Unenclosed centres need a full isobar of relief. Hysteresis still
-        // lowers that bar for a centre already on the chart.
+        // 730–800 km. Same-type centres inside 860 km collapse. Marker
+        // hysteresis lives in the glyph tracker; the rings match a still.
         nExt = OwnSettleCentres(candidates, candProm, enclosed, nCand,
-            kOwnIsobarInterval, 0.5, 860.0, 500.0, 1, nPrev ? previous : NULL, nPrev, extrema, 8);
-        if (options.motionState) {
-            // A centre settle drops is remembered for one more frame, so the
-            // lower bar still applies if it returns. It is not drawn from here.
-            OwnExtremum nextHeld[12];
-            int nextGrace[12];
-            int nNext = 0;
-            for (int e = 0; e < nExt && nNext < 12; e++) {
-                nextHeld[nNext] = extrema[e];
-                nextGrace[nNext++] = 0;
-            }
-            for (int p = 0; p < nPrev && nNext < 12; p++) {
-                BOOL matched = NO;
-                for (int e = 0; e < nNext && !matched; e++) {
-                    if (nextHeld[e].high != previous[p].high) continue;
-                    double mid = (nextHeld[e].y + previous[p].y) * 0.5 * M_PI / 180.0;
-                    double dx = (nextHeld[e].x - previous[p].x) * 111.32 * cos(mid);
-                    double dy = (nextHeld[e].y - previous[p].y) * 110.57;
-                    if (hypot(dx, dy) <= 500.0) matched = YES;
-                }
-                if (matched) continue;
-                int grace = options.motionState->_heldGrace[p] + 1;
-                if (grace >= 2) continue;
-                nextHeld[nNext] = previous[p];
-                nextGrace[nNext++] = grace;
-            }
-            options.motionState->_nHeldCentres = nNext;
-            memcpy(options.motionState->_heldCentres, nextHeld, (size_t)nNext * sizeof(OwnExtremum));
-            memcpy(options.motionState->_heldGrace, nextGrace, (size_t)nNext * sizeof(int));
-        }
+            kOwnIsobarInterval, 0.5, 860.0, 500.0, 1, NULL, 0, extrema, 8);
         OwnDropStrayRings(&raw, extrema, nExt, 8.0);
         {
             int drawn = 0;
@@ -2740,8 +2469,10 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
             }
             nExt = drawn;
             nCenters = drawn;
-            if (options.motionState)
-                nCenters = MotionUpdateCentres(options.motionState, motionExtrema, nExt, centers, 48);
+            if (options.motionState) {
+                OwnVec glyphs[48];
+                MotionUpdateCentres(options.motionState, motionExtrema, nExt, glyphs, 48);
+            }
         }
         gRenderProfile.centreMs += ProfileLap();
         OwnLineSet lines = ProjectContours(raw, view, kMapH);
@@ -2751,11 +2482,7 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
         gChaikinMs = 0;
         OwnLineSetFree(raw);
         OwnPruneContours(&lines, 32, 500, 16);
-        double *lineAlpha = NULL;
-        if (options.motionState && lines.count > 0) {
-            lineAlpha = calloc((size_t)lines.count, sizeof(double));
-            if (lineAlpha) MotionContourAlphas(options.motionState, lines.lines, lines.count, lineAlpha);
-        }
+        NoteOpenEnds(&lines, view, mslp, cube->nLon, cube->nLat, GWest(), GNorth());
 
         NSFont *labelFont = [NSFont fontWithName:@"Helvetica-Bold" size:15] ?: [NSFont boldSystemFontOfSize:15];
         double labelHalfH = LabelHalfHeight(labelFont);
@@ -2774,8 +2501,16 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
         double drawnAlpha[80];
         int nDrawn = 0;
         if (options.motionState) {
+            OwnVec clear[72];
+            int nClear = 0;
+            for (int c = 0; c < nCenters && nClear < 48; c++) clear[nClear++] = centers[c];
+            for (int s = 0; s < 24 && nClear < 72; s++) {
+                MotionCentreSlot *slot = &options.motionState->_motionCentres[s];
+                if (!slot->active || slot->alpha < 0.15) continue;
+                clear[nClear++] = (OwnVec){slot->x, slot->y};
+            }
             nDrawn = MotionEaseLabels(options.motionState, labels, nLabels, lines.lines, lines.count,
-                labelFont, drawn, drawnAlpha, 80);
+                clear, nClear, labelFont, drawn, drawnAlpha, 80);
         } else {
             for (int L = 0; L < nLabels && nDrawn < 80; L++) {
                 drawn[nDrawn] = labels[L];
@@ -2790,60 +2525,55 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
             avoidPts[nAvoid++] = (OwnVec){drawn[L].x, drawn[L].y};
         gRenderProfile.labelMs += ProfileLap();
 
-        NSColor *inkColor = [NSColor colorWithSRGBRed:ink.red green:ink.green blue:ink.blue alpha:1];
-        OwnVec centrePts[24];
-        double centreAlpha[24];
-        int nFadeCentres = 0;
-        if (options.motionState) {
-            for (int s = 0; s < 24 && nFadeCentres < 24; s++) {
-                MotionCentreSlot *slot = &options.motionState->_motionCentres[s];
-                if (!slot->active || slot->alpha < 0.02) continue;
-                centrePts[nFadeCentres] = (OwnVec){slot->x, slot->y};
-                centreAlpha[nFadeCentres] = slot->alpha;
-                nFadeCentres++;
-            }
+        for (int L = 0; L < nDrawn && gNLabelBoxes < 80; L++) {
+            if (drawnAlpha[L] < 0.02) continue;
+            double hw = drawn[L].halfW + 2.5, hh = drawn[L].halfH + 2.5;
+            gLabelAlpha[gNLabelBoxes] = drawnAlpha[L];
+            gLabelBoxes[gNLabelBoxes++] = CGRectMake(drawn[L].x - hw, drawn[L].y - hh, hw * 2, hh * 2);
         }
+
+        NSColor *inkColor = [NSColor colorWithSRGBRed:ink.red green:ink.green blue:ink.blue alpha:1];
         for (int i = 0; i < lines.count; i++) {
             double width = OwnIsobarWidth(lines.lines[i].level);
-            if (options.motionState) {
-                double alpha = lineAlpha ? lineAlpha[i] : (MotionFragment(&lines.lines[i]) ? 0 : 1);
-                if (alpha < 0.02) continue;
-                StrokeFadedContour(ctx, lines.lines[i].pts, lines.lines[i].count, lines.lines[i].closed,
-                    drawn, drawnAlpha, nDrawn, centrePts, centreAlpha, nFadeCentres,
-                    width, ink.red, ink.green, ink.blue, alpha);
-                continue;
-            }
             OwnLabel mine[8];
+            double mineAlpha[8];
             int mineCount = 0;
             for (int L = 0; L < nDrawn && mineCount < 8; L++) {
-                if (drawn[L].line == i) mine[mineCount++] = drawn[L];
+                if (drawnAlpha[L] < 0.02 || drawn[L].line != i) continue;
+                mineAlpha[mineCount] = drawnAlpha[L];
+                mine[mineCount++] = drawn[L];
             }
             if (mineCount == 0) {
                 StrokeLine(ctx, lines.lines[i].pts, lines.lines[i].count, lines.lines[i].closed,
                     centers, nCenters, 11, width, ink.red, ink.green, ink.blue, 1);
-            } else {
-                // The gap list is the list drawn just below. A hole is never left bare.
-                OwnLineSet parts = OwnCutGaps(lines.lines[i].pts, lines.lines[i].count,
-                    lines.lines[i].closed, mine, mineCount);
-                for (int p = 0; p < parts.count; p++) {
-                    if (PolyLength(&parts.lines[p]) < 22) continue;
-                    StrokeLine(ctx, parts.lines[p].pts, parts.lines[p].count, 0,
-                        centers, nCenters, 11, width, ink.red, ink.green, ink.blue, 1);
-                }
-                OwnLineSetFree(parts);
+                continue;
+            }
+            // The gap is the label box: the stroke is cut, the plate stays.
+            OwnLineSet parts = OwnCutGaps(lines.lines[i].pts, lines.lines[i].count,
+                lines.lines[i].closed, mine, mineCount);
+            for (int p = 0; p < parts.count; p++) {
+                if (PolyLength(&parts.lines[p]) < 22) continue;
+                StrokeLine(ctx, parts.lines[p].pts, parts.lines[p].count, 0,
+                    centers, nCenters, 11, width, ink.red, ink.green, ink.blue, 1);
+            }
+            OwnLineSetFree(parts);
+            // A fading label's gap closes with it.
+            for (int L = 0; L < mineCount; L++) {
+                if (mineAlpha[L] > 0.98) continue;
+                double hw = mine[L].halfW + 2.5, hh = mine[L].halfH + 2.5;
+                CGContextSaveGState(ctx);
+                CGContextClipToRect(ctx, CGRectMake(mine[L].x - hw, mine[L].y - hh, hw * 2, hh * 2));
+                StrokeLine(ctx, lines.lines[i].pts, lines.lines[i].count, lines.lines[i].closed,
+                    centers, nCenters, 11, width, ink.red, ink.green, ink.blue, 1 - mineAlpha[L]);
+                CGContextRestoreGState(ctx);
             }
         }
-        free(lineAlpha);
         for (int L = 0; L < nDrawn; L++) {
             double glyphAlpha = L < 80 ? drawnAlpha[L] : 1;
             if (glyphAlpha < 0.02) continue;
-            NSString *text = PressureText((int)llround(drawn[L].level));
-            NSColor *halo = HaloColour(view, drawn[L].x, drawn[L].y, landMask,
-                cube->nLon, cube->nLat, sea, land);
-            DrawHaloText(ctx, text, labelFont,
-                [inkColor colorWithAlphaComponent:glyphAlpha],
-                [halo colorWithAlphaComponent:glyphAlpha],
-                drawn[L].x, drawn[L].y, 0);
+            // The stroke gap is the knockout; the plate shows around the glyphs.
+            DrawHaloText(ctx, PressureText((int)llround(drawn[L].level)), labelFont,
+                [inkColor colorWithAlphaComponent:glyphAlpha], nil, drawn[L].x, drawn[L].y, 0);
         }
         NSFont *letterFont = [NSFont fontWithName:@"Helvetica-Bold" size:18] ?: [NSFont boldSystemFontOfSize:18];
         NSFont *valueFont = [NSFont fontWithName:@"Helvetica-Bold" size:11] ?: [NSFont boldSystemFontOfSize:11];
@@ -2853,6 +2583,10 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
                     cube->nLon, cube->nLat, sea, land);
                 DrawCentreMark(ctx, centers[e].x, centers[e].y, extrema[e].high, extrema[e].value,
                     letterFont, valueFont, inkColor, halo);
+                if (gNCentreBoxes < 24) {
+                    gCentreAlpha[gNCentreBoxes] = 1;
+                    gCentreBoxes[gNCentreBoxes++] = CentreMarkBox(centers[e].x, centers[e].y);
+                }
             }
         } else {
             for (int s = 0; s < 24; s++) {
@@ -2864,6 +2598,10 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
                     letterFont, valueFont,
                     [inkColor colorWithAlphaComponent:slot->alpha],
                     [halo colorWithAlphaComponent:slot->alpha]);
+                if (gNCentreBoxes < 24) {
+                    gCentreAlpha[gNCentreBoxes] = slot->alpha;
+                    gCentreBoxes[gNCentreBoxes++] = CentreMarkBox(slot->x, slot->y);
+                }
             }
         }
         if (getenv("ISOBAR_CHART_LOG")) {

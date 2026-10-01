@@ -31,4 +31,5 @@ AviationSceneGeometry AviationSceneLayout(NSRect rect, NSDictionary *period, dou
 - (NSString *)summaryAtDate:(NSDate *)date;
 - (NSArray<NSDictionary *> *)activePeriodsAtDate:(NSDate *)date;
 - (NSRect)timelineRect;
+- (CGFloat)cursorXForDate:(NSDate *)date;
 @end

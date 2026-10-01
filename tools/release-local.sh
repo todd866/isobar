@@ -22,8 +22,8 @@ ditto build/Isobar.app "$APP"
 ditto -c -k --keepParent "$APP" "$WORK/upload.zip"
 echo "== notarize"
 xcrun notarytool submit "$WORK/upload.zip" --keychain-profile "$PROFILE" --wait --output-format json > "$WORK/notary.json"
-status=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$WORK/notary.json")
-[[ "$status" == Accepted ]] || { cat "$WORK/notary.json"; echo "release: notarization $status" >&2; exit 1; }
+notary_status=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$WORK/notary.json")
+[[ "$notary_status" == Accepted ]] || { cat "$WORK/notary.json"; echo "release: notarization $notary_status" >&2; exit 1; }
 xcrun stapler staple "$APP" > /dev/null
 xcrun stapler validate "$APP" > /dev/null
 
@@ -31,7 +31,7 @@ echo "== quarantined Gatekeeper check"
 ditto -c -k --keepParent "$APP" "$WORK/download.zip"
 mkdir "$WORK/download"; ditto -x -k "$WORK/download.zip" "$WORK/download"
 xattr -w com.apple.quarantine "0081;$(printf %x "$(date +%s)");Safari;" "$WORK/download/Isobar.app"
-spctl -a -t exec "$WORK/download/Isobar.app" 2>&1 | grep -q 'accepted' || { spctl -a -vv -t exec "$WORK/download/Isobar.app"; exit 1; }
+spctl -a -t exec "$WORK/download/Isobar.app" || { spctl -a -vv -t exec "$WORK/download/Isobar.app"; exit 1; }
 python3 tools/check-bundle.py "$APP" > /dev/null
 
 mkdir -p build/release-app
@@ -47,7 +47,7 @@ pkill -x Isobar 2>/dev/null || true
 for i in {1..5}; do pgrep -xq Isobar || break; sleep 1; done
 [[ -e /Applications/Isobar.app ]] && trash /Applications/Isobar.app
 ditto "$APP" /Applications/Isobar.app
-spctl -a -t exec /Applications/Isobar.app 2>&1 | grep -q accepted
+spctl -a -t exec /Applications/Isobar.app
 open -g -a /Applications/Isobar.app
 sleep 2; pgrep -xq Isobar || { echo "release: Isobar did not start" >&2; exit 1; }
 echo "installed and running: v$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' /Applications/Isobar.app/Contents/Info.plist)"

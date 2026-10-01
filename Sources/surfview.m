@@ -1,5 +1,6 @@
 #import "surfview.h"
 #import "forecastview.h"
+#import "playheadcursor.h"
 #import "pure.h"
 #import <math.h>
 
@@ -83,6 +84,11 @@ static NSString *SFTime(NSDate *date, NSTimeZone *zone, NSDate *now) {
 static CGFloat SFX(NSDate *date, NSDate *start, NSRect plot, double horizon) { return NSMinX(plot)+NSWidth(plot)*SFClamp([date timeIntervalSinceDate:start]/(horizon*3600),0,1); }
 static CGFloat SFWaveY(double h, NSRect lane, double max) { return NSMaxY(lane)-NSHeight(lane)*SFClamp(h/MAX(0.1,max),0,1); }
 
+@interface SurfForecastView ()
+@property(nonatomic, strong) NSView *playheadCursor;
+@property(nonatomic, strong) NSDate *headlineTime;
+@end
+
 @implementation SurfForecastView
 - (instancetype)initWithFrame:(NSRect)frame { if ((self=[super initWithFrame:frame])) { _outlook=@{}; _windRows=@[]; _timeZone=[NSTimeZone timeZoneWithName:@"Australia/Perth"]; _horizonHours=48; } return self; }
 - (BOOL)isFlipped { return YES; }
@@ -96,7 +102,41 @@ static CGFloat SFWaveY(double h, NSRect lane, double max) { return NSMaxY(lane)-
 - (NSRect)plotRect { return NSMakeRect(34,12,MAX(1,NSWidth(self.bounds)-42),MAX(1,NSHeight(self.bounds)-30)); }
 - (void)setOutlook:(NSDictionary *)v { _outlook=[v isKindOfClass:NSDictionary.class]?[v copy]:@{}; [self setNeedsDisplay:YES]; }
 - (void)setWindRows:(NSArray *)v { _windRows=[v isKindOfClass:NSArray.class]?[v copy]:@[]; [self setNeedsDisplay:YES]; }
-- (void)setSelectedDate:(NSDate *)date { _selectedDate=date; [self setNeedsDisplay:YES]; }
+- (NSDate *)headlineTimeForSelection {
+    NSArray *rows = [self.outlook[@"rows"] isKindOfClass:NSArray.class] ? self.outlook[@"rows"] : @[];
+    NSDictionary *headline = nil;
+    if ([self.selectedDate isKindOfClass:NSDate.class]) {
+        for (NSDictionary *candidate in rows)
+            if ([candidate[@"time"] isKindOfClass:NSDate.class] && fabs([candidate[@"time"] timeIntervalSinceDate:self.selectedDate]) < 1801) {
+                headline = candidate; break;
+            }
+    }
+    if (!headline) headline = rows.firstObject;
+    return [headline[@"time"] isKindOfClass:NSDate.class] ? headline[@"time"] : nil;
+}
+- (void)setSelectedDate:(NSDate *)date {
+    if (date != _selectedDate && ![date isEqualToDate:_selectedDate]) _selectedDate = date;
+    [self placeCursor];
+    NSDate *headline = [self headlineTimeForSelection];
+    if (headline != _headlineTime && ![headline isEqualToDate:_headlineTime]) {
+        _headlineTime = headline;
+        self.needsDisplay = YES;
+    }
+}
+- (void)layout { [super layout]; [self placeCursor]; }
+- (void)viewDidChangeEffectiveAppearance { [super viewDidChangeEffectiveAppearance]; [self placeCursor]; [self setNeedsDisplay:YES]; }
+- (CGFloat)cursorXForDate:(NSDate *)date {
+    if (![date isKindOfClass:NSDate.class]) return NAN;
+    NSDate *start = [self startDate];
+    double horizon = self.horizonHours > 0 ? self.horizonHours : 48;
+    NSTimeInterval offset = [date timeIntervalSinceDate:start];
+    if (offset < 0 || offset > horizon * 3600) return NAN;
+    return SFX(date, start, [self plotRect], horizon);
+}
+- (void)placeCursor {
+    NSRect plot = [self plotRect];
+    PlaceVerticalCursor(self, &_playheadCursor, [self cursorXForDate:self.selectedDate], NSMinY(plot), NSHeight(plot));
+}
 - (void)setHorizonHours:(double)hours { _horizonHours=(isfinite(hours)&&hours>0)?hours:48; [self setNeedsDisplay:YES]; }
 - (NSString *)accessibilityRoleDescription { return @"surf forecast"; }
 - (NSString *)accessibilityLabel { return [NSString stringWithFormat:@"%.0f hour surf forecast with wave height, swell direction, period and wind", self.horizonHours > 0 ? self.horizonHours : 48]; }
@@ -214,12 +254,7 @@ static CGFloat SFWaveY(double h, NSRect lane, double max) { return NSMaxY(lane)-
         CGFloat x=SFClamp(SFX(date,start,plot,horizon)-textWidth/2,NSMinX(plot),NSMaxX(plot)-textWidth);
         [text drawAtPoint:NSMakePoint(x,timeY) withAttributes:small];
     }
-    if ([self.selectedDate isKindOfClass:NSDate.class] && [self.selectedDate timeIntervalSinceDate:start] >= 0 && [self.selectedDate timeIntervalSinceDate:start] <= horizon*3600) {
-        CGFloat x=SFX(self.selectedDate,start,plot,horizon);
-        [[[NSColor systemBlueColor] colorWithAlphaComponent:.55] setStroke];
-        NSBezierPath *cursor=[NSBezierPath bezierPath]; cursor.lineWidth=1.5;
-        [cursor moveToPoint:NSMakePoint(x,NSMinY(plot))]; [cursor lineToPoint:NSMakePoint(x,NSMaxY(plot))]; [cursor stroke];
-    }
+    [self placeCursor];
 }
 
 @end

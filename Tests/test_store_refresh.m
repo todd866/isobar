@@ -506,6 +506,12 @@ static void CheckSmoothPlayback(TestController *c) {
     Check(compared > 20 && maxMove <= 1.5 && maxTail <= 1.5 && maxLost < .05,
         @"isobars move at most 1.5px between displayed frames");
     Check(maxInk > 0 && maxInk <= 1.25, @"displayed frames are single isobar renders");
+    double worstInset = -INFINITY;
+    for (double index = 0; index < run.hours - 1; index += 0.37) { @autoreleasepool {
+        OwnRunRenderFraction(run, index, @"", layers, nil, 1);
+        worstInset = fmax(worstInset, OwnRenderLastOpenInset());
+    } }
+    Check(worstInset <= 2, [NSString stringWithFormat:@"open isobars end at the map edge or where the data stops (%.1f pt)", worstInset]);
     Check(maxLabel <= 2 && maxCentre <= 2, @"labels and centres glide at most 2px a frame");
     Check(advanced > expected * 0.8 && advanced < expected * 1.2, @"the playhead advances at the slow rate");
     Check(wrote && [[NSFileManager.defaultManager attributesOfItemAtPath:movie error:nil] fileSize] > 1000,
@@ -971,6 +977,312 @@ static void CheckQuarterDegree(NSString *fixtures) {
     Check(maxLabel <= 2 && maxCentre <= 2, @"0.25° labels and centres glide at most 2px a frame");
     Check(advanced > expected * 0.8 && advanced < expected * 1.2, @"0.25° playback keeps the slow rate");
     [player stopRendering];
+}
+
+// Each place's hours follow its own daily forecast: the minimum at 5 am and
+// the maximum at 3 pm local time, so the header, the dot and the day bar can
+// be checked against one another.
+static NSArray *TimeLensHours(NSDate *origin, NSArray *days, NSTimeZone *zone, NSString *windDir, NSInteger windKt) {
+    NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+    calendar.timeZone = zone;
+    NSMutableArray *rows = [NSMutableArray array];
+    for (NSInteger hour = 0; hour <= 96; hour++) {
+        NSDate *time = [origin dateByAddingTimeInterval:hour * 3600.0];
+        NSDictionary *day = nil;
+        for (NSDictionary *candidate in days)
+            if ([candidate[@"date"] isKindOfClass:NSDate.class] && [calendar isDate:time inSameDayAsDate:candidate[@"date"]]) day = candidate;
+        if (![day[@"min"] isKindOfClass:NSNumber.class] || ![day[@"max"] isKindOfClass:NSNumber.class]) continue;
+        double low = [day[@"min"] doubleValue], high = [day[@"max"] doubleValue];
+        NSDateComponents *parts = [calendar components:NSCalendarUnitHour | NSCalendarUnitMinute fromDate:time];
+        double local = parts.hour + parts.minute / 60.0;
+        double warmth = local >= 5 && local <= 15 ? 0.5 - 0.5 * cos(M_PI * (local - 5) / 10)
+            : 0.5 + 0.5 * cos(M_PI * fmod(local - 15 + 24, 24) / 14);
+        [rows addObject:@{
+            @"time": time,
+            @"temp": @(low + (high - low) * warmth),
+            @"windDir": windDir,
+            @"windKt": @(windKt),
+            @"weatherCode": @2,
+        }];
+    }
+    return rows;
+}
+
+static void SeekTimeLens(TestController *controller, NSDate *date) {
+    NSArray *times = [controller valueForKey:@"sequenceTimes"];
+    NSDate *first = times.firstObject, *last = times.lastObject;
+    double span = [last timeIntervalSinceDate:first];
+    double fraction = span > 0 ? [date timeIntervalSinceDate:first] / span : 0;
+    [controller inspectPopoverMovieFraction:fraction];
+}
+
+static NSString *ObservationSentence(NSDictionary *obs) {
+    id temp = [obs isKindOfClass:NSDictionary.class] ? obs[@"airTemp"] : nil;
+    NSString *base = ([temp isKindOfClass:NSNumber.class] && isfinite([temp doubleValue]))
+        ? [NSString stringWithFormat:@"%.0f° · now", round([temp doubleValue])] : @"— · now";
+    NSDictionary *wind = FooterWindModel(obs);
+    if (![wind[@"hasSpeed"] boolValue]) return base;
+    if ([wind[@"calm"] boolValue]) return [base stringByAppendingString:@" · Calm"];
+    NSString *speed = FooterWindSpeedLabel(wind);
+    NSString *direction = [wind[@"direction"] length] ? wind[@"direction"] : @"";
+    if (direction.length) return [NSString stringWithFormat:@"%@ · %@ %@", base, direction, speed];
+    return [NSString stringWithFormat:@"%@ · %@", base, speed];
+}
+
+static NSString *ForecastSentence(NSDate *date, NSTimeZone *zone, NSArray *series) {
+    NSDateFormatter *weekday = [NSDateFormatter new];
+    weekday.locale = [NSLocale localeWithLocaleIdentifier:@"en_AU_POSIX"];
+    weekday.timeZone = zone;
+    weekday.dateFormat = @"EEE";
+    double temp = DayStripTemperatureAtDate(series, date);
+    NSString *degrees = isfinite(temp) ? [NSString stringWithFormat:@"%.0f°", round(temp)] : @"—";
+    NSDictionary *row = series.firstObject;
+    return [NSString stringWithFormat:@"%@ %@ · %@ · %@ %@ kt",
+        [weekday stringFromDate:date] ?: @"", SituationClock(date, zone) ?: @"", degrees, row[@"windDir"], row[@"windKt"]];
+}
+
+static NSInteger LocalDayIndex(NSArray *days, NSDate *date, NSTimeZone *zone) {
+    NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+    calendar.timeZone = zone;
+    for (NSInteger i = 0; i < (NSInteger)days.count; i++) {
+        NSDate *day = [days[i][@"date"] isKindOfClass:NSDate.class] ? days[i][@"date"] : nil;
+        if (day && [calendar isDate:date inSameDayAsDate:day]) return i;
+    }
+    return -1;
+}
+
+static void SaveTimeLensFrame(NSView *view, NSString *name) {
+    NSString *directory = [NSString stringWithUTF8String:getenv("ISOBAR_TIMELENS_DIR") ?: "build/render-review/timelens2"];
+    [NSFileManager.defaultManager createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:nil];
+    // The scrub frame is delivered on the main queue after the seek.
+    for (NSInteger i = 0; i < 20; i++)
+        [NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.03]];
+    [view layoutSubtreeIfNeeded];
+    NSRect bounds = view.bounds;
+    NSInteger wide = (NSInteger)llround(NSWidth(bounds) * 2.0);
+    NSInteger high = (NSInteger)llround(NSHeight(bounds) * 2.0);
+    NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+        pixelsWide:wide pixelsHigh:high bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
+        colorSpaceName:NSCalibratedRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+    // Without a point size the rep is 1 pt per pixel and the view lands in one quarter.
+    rep.size = bounds.size;
+    NSGraphicsContext *context = rep ? [NSGraphicsContext graphicsContextWithBitmapImageRep:rep] : nil;
+    if (context) {
+        [NSGraphicsContext saveGraphicsState];
+        [NSGraphicsContext setCurrentContext:context];
+        [view displayRectIgnoringOpacity:bounds inContext:context];
+        [NSGraphicsContext restoreGraphicsState];
+    }
+    NSInteger inked[4] = {0}, cells[4] = {0};
+    const uint8_t *bytes = rep.bitmapData;
+    for (NSInteger y = 0; bytes && y < high; y += 4)
+        for (NSInteger x = 0; x < wide; x += 4) {
+            const uint8_t *p = bytes + y * rep.bytesPerRow + x * 4;
+            NSInteger quadrant = (y < high / 2 ? 0 : 2) + (x < wide / 2 ? 0 : 1);
+            cells[quadrant]++;
+            if (p[3] > 0) inked[quadrant]++;
+        }
+    double least = 1;
+    for (int q = 0; q < 4; q++) least = MIN(least, cells[q] ? (double)inked[q] / cells[q] : 0);
+    NSData *png = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+    Check(png.length > 1000 && least > 0.5 && [png writeToFile:[directory stringByAppendingPathComponent:name] atomically:YES],
+        [NSString stringWithFormat:@"Retina time lens %@ fills its %ldx%ld canvas (emptiest quarter %.0f%% drawn)",
+            name, (long)wide, (long)high, least * 100]);
+}
+
+static void CheckLensCursor(TestController *controller, NSString *toggle, NSDate *date) {
+    NSButton *button = (NSButton *)FindView(controller.popover.contentViewController.view, toggle);
+    [button performClick:nil];
+    NSView *graph = [controller valueForKey:@"forecastGraph"];
+    [graph layoutSubtreeIfNeeded];
+    CGFloat expected = [graph respondsToSelector:@selector(cursorXForDate:)] ? [(id)graph cursorXForDate:date] : NAN;
+    NSView *cursor = FindView(graph, @"playhead.cursor");
+    BOOL shown = cursor && !cursor.hidden && isfinite(expected) && fabs(NSMidX(cursor.frame) - expected) < 0.8;
+    BOOL outside = !isfinite(expected) && (!cursor || cursor.hidden);
+    Check(shown || outside, [NSString stringWithFormat:@"%@ cursor follows the playhead (x %.1f)", toggle, expected]);
+}
+
+static void CheckTimeLens(NSString *root) {
+    NSISO8601DateFormatter *iso = [NSISO8601DateFormatter new];
+    NSDate *now = [iso dateFromString:@"2026-09-26T00:30:00Z"];
+    TestController *controller = [TestController new];
+    controller.availableSize = NSMakeSize(1440, 900);
+    [controller replaceLocations:DefaultLocations()];
+    [controller setChartNow:now];
+    [controller reloadStoreAtPath:root];
+    for (NSDictionary *place in DefaultLocations()) {
+        BOOL perth = [place[@"name"] hasPrefix:@"Perth"];
+        NSArray *days = [controller packFor:place][@"daily"];
+        [controller noteGlanceForGeohash:place[@"geohash"] history:nil
+            series:TimeLensHours(now, days, ZoneForPlace(place), perth ? @"SW" : @"NE", perth ? 14 : 9)];
+    }
+    NSMutableDictionary *aheadHeaders = [NSMutableDictionary dictionary];
+    [controller setValue:@YES forKey:@"forecastPaused"];
+    [controller rebuildContent];
+    // The first seek moves the chart onto the model run and rebuilds once.
+    NSDate *primed = [now dateByAddingTimeInterval:30 * 3600.0];
+    SeekTimeLens(controller, primed);
+    NSArray *runTimes = [controller valueForKey:@"sequenceTimes"];
+    double primedFraction = [primed timeIntervalSinceDate:runTimes.firstObject] /
+        [runTimes.lastObject timeIntervalSinceDate:runTimes.firstObject];
+    Check([[controller valueForKey:@"sourceECMWF"] boolValue] &&
+        fabs([[controller valueForKey:@"scrubFraction"] doubleValue] - primedFraction) < 1e-6,
+        @"a seek that moves onto the model run keeps the chosen time");
+    for (NSString *placeName in @[@"Perth", @"Sydney"]) {
+        NSPopUpButton *places = (NSPopUpButton *)FindView(controller.popover.contentViewController.view, @"hub.place");
+        for (NSMenuItem *item in places.itemArray)
+            if ([item.title hasPrefix:placeName]) { [places selectItem:item]; break; }
+        [controller chooseHubPlace:places];
+        [controller setValue:@YES forKey:@"forecastPaused"];
+        NSTimeZone *zone = [controller placeZone];
+        NSArray *series = [controller packFor:[controller hubPlace]][@"series"];
+        NSArray *days = [controller packFor:[controller hubPlace]][@"daily"];
+        NSDictionary *obs = [controller packFor:[controller hubPlace]][@"obs"];
+        NSString *observation = ObservationSentence(obs);
+        NSView *rootView = controller.popover.contentViewController.view;
+        DayStripView *strip = (DayStripView *)FindView(rootView, @"hub.days");
+        NSButton *header = (NSButton *)FindView(rootView, @"popover.obs");
+        NSTextField *mark = (NSTextField *)FindView(rootView, @"hub.forecastMark");
+        NSView *keptCell = FindView(strip, @"hub.day.0");
+        NSRect headerFrame = header.frame, markFrame = mark.frame;
+        NSArray *offsets = @[
+            @[@0, @"now"],
+            @[@(30 * 3600.0), @"+30 h"],
+            @[@(72 * 3600.0), @"+3 d"],
+        ];
+        for (NSArray *step in offsets) {
+            NSDate *date = [now dateByAddingTimeInterval:[step[0] doubleValue]];
+            SeekTimeLens(controller, date);
+            rootView = controller.popover.contentViewController.view;
+            strip = (DayStripView *)FindView(rootView, @"hub.days");
+            header = (NSButton *)FindView(rootView, @"popover.obs");
+            mark = (NSTextField *)FindView(rootView, @"hub.forecastMark");
+            BOOL atNow = [step[0] doubleValue] < 1;
+            NSInteger day = LocalDayIndex(days, date, zone);
+            NSString *expected = atNow ? observation : ForecastSentence(date, zone, series);
+            double temp = DayStripTemperatureAtDate(series, date);
+            NSString *label = header.accessibilityLabel ?: @"";
+            Check(strip.highlightedDayIndex == day, [NSString stringWithFormat:@"%@ %@ highlights day %ld (got %ld)",
+                placeName, step[1], (long)day, (long)strip.highlightedDayIndex]);
+            Check(isfinite(temp) && fabs(strip.playheadTemperature - temp) < 1e-6,
+                [NSString stringWithFormat:@"%@ %@ dot is the hourly temperature %.1f (got %.1f)",
+                    placeName, step[1], temp, strip.playheadTemperature]);
+            Check([label isEqual:expected], [NSString stringWithFormat:@"%@ %@ header “%@” matches “%@”",
+                placeName, step[1], label, expected]);
+            if (!atNow) {
+                NSDictionary *today = day >= 0 && day < (NSInteger)days.count ? days[day] : nil;
+                double low = [today[@"min"] doubleValue], high = [today[@"max"] doubleValue];
+                NSString *degrees = [NSString stringWithFormat:@" · %.0f° · ", round(temp)];
+                Check(today && [label containsString:degrees] && temp >= low - 1e-9 && temp <= high + 1e-9,
+                    [NSString stringWithFormat:@"%@ %@ header temperature %.1f is the hourly value inside %.1f–%.1f",
+                        placeName, step[1], temp, low, high]);
+                aheadHeaders[[placeName stringByAppendingString:step[1]]] = label;
+            }
+            Check(atNow ? (mark.hidden && !mark.stringValue.length) : (!mark.hidden && [mark.stringValue isEqual:@"Forecast"]),
+                [NSString stringWithFormat:@"%@ %@ forecast mark follows the playhead", placeName, step[1]]);
+            NSColor *ink = [header.attributedTitle attribute:NSForegroundColorAttributeName atIndex:0 effectiveRange:NULL];
+            NSColor *treatment = atNow ? NSColor.labelColor : NSColor.secondaryLabelColor;
+            Check([ink isEqual:treatment], [NSString stringWithFormat:@"%@ %@ header uses the %@ treatment",
+                placeName, step[1], atNow ? @"observation" : @"forecast"]);
+        }
+        Check(FindView(strip, @"hub.day.0") == keptCell, @"seeking does not rebuild the day cells");
+        Check(NSEqualRects(header.frame, headerFrame) && NSEqualRects(mark.frame, markFrame),
+            @"the header keeps its frame as the playhead moves");
+        TimelineStrip *timeline = (TimelineStrip *)FindView(rootView, @"popover.timeline");
+        NSArray *bands = [timeline dayBandLabels];
+        BOOL aligned = bands.count >= 4;
+        for (NSUInteger i = 0; i < bands.count && i < strip.days.count; i++)
+            if (![bands[i] isEqual:strip.days[i][@"weekday"]]) aligned = NO;
+        Check(aligned && [bands.firstObject isEqual:@"Today"],
+            [NSString stringWithFormat:@"%@ timeline bands match the strip (%@)", placeName, [bands componentsJoinedByString:@", "]]);
+    }
+    for (NSString *step in @[@"+30 h", @"+3 d"]) {
+        NSString *perth = aheadHeaders[[@"Perth" stringByAppendingString:step]];
+        NSString *sydney = aheadHeaders[[@"Sydney" stringByAppendingString:step]];
+        NSArray *a = [perth componentsSeparatedByString:@" · "], *b = [sydney componentsSeparatedByString:@" · "];
+        Check(a.count > 1 && b.count > 1 && ![a[1] isEqual:b[1]],
+            [NSString stringWithFormat:@"%@ headers use each place's own forecast (%@ / %@)", step, perth, sydney]);
+    }
+    {
+        NSButton *narrow = (NSButton *)FindView(controller.popover.contentViewController.view, @"popover.obs");
+        NSTextField *mark = (NSTextField *)FindView(controller.popover.contentViewController.view, @"hub.forecastMark");
+        NSRect kept = narrow.frame;
+        [narrow setFrameSize:NSMakeSize(280, NSHeight(kept))];
+        NSDate *ahead = [now dateByAddingTimeInterval:30 * 3600.0];
+        SeekTimeLens(controller, ahead);
+        [controller applyTimeLensButton:narrow mark:mark date:ahead announce:NO];
+        NSFont *aheadFont = [narrow.attributedTitle attribute:NSFontAttributeName atIndex:0 effectiveRange:NULL];
+        BOOL fits = narrow.attributedTitle.size.width <= NSWidth(narrow.frame) - 4;
+        SeekTimeLens(controller, now);
+        [controller applyTimeLensButton:narrow mark:mark date:now announce:NO];
+        NSFont *nowFont = [narrow.attributedTitle attribute:NSFontAttributeName atIndex:0 effectiveRange:NULL];
+        Check(fits && aheadFont.pointSize >= 15 && nowFont.pointSize == 28,
+            [NSString stringWithFormat:@"a narrow header fits the forecast sentence (%.0f pt) and keeps the large observation (%.0f pt)",
+                aheadFont.pointSize, nowFont.pointSize]);
+        [narrow setFrameSize:kept.size];
+    }
+    SeekTimeLens(controller, now);
+    NSButton *back = (NSButton *)FindView(controller.popover.contentViewController.view, @"popover.obs");
+    NSString *perthNow = ObservationSentence([controller packFor:[controller hubPlace]][@"obs"]);
+    Check([[controller hubPlace][@"name"] hasPrefix:@"Sydney"] && [back.accessibilityLabel isEqual:perthNow],
+        @"returning to now restores the observation");
+    DayStripView *strip = (DayStripView *)FindView(controller.popover.contentViewController.view, @"hub.days");
+    [controller setValue:@NO forKey:@"forecastPaused"];
+    [controller setValue:@YES forKey:@"popoverPlaying"];
+    strip.onHover(2);
+    NSButton *hovered = (NSButton *)FindView(controller.popover.contentViewController.view, @"popover.obs");
+    Check([[controller valueForKey:@"timelinePreviewing"] boolValue] && strip.highlightedDayIndex == 2 &&
+        [hovered.accessibilityLabel containsString:@"12 pm"],
+        @"hovering a day holds playback on that day's midday");
+    strip.onHover(-1);
+    Check(![[controller valueForKey:@"timelinePreviewing"] boolValue] && strip.highlightedDayIndex == 2,
+        @"leaving the day resumes from the previewed midday");
+    [controller stopPopoverPlayback];
+    [controller setValue:@YES forKey:@"forecastPaused"];
+    NSDate *ahead = [now dateByAddingTimeInterval:30 * 3600.0];
+    SeekTimeLens(controller, ahead);
+    for (NSString *toggle in @[@"forecast.toggle.rain", @"forecast.toggle.temp", @"forecast.toggle.kite", @"forecast.toggle.surf", @"forecast.toggle.fly"])
+        CheckLensCursor(controller, toggle, ahead);
+    NSDate *soon = [now dateByAddingTimeInterval:6 * 3600.0];
+    SeekTimeLens(controller, soon);
+    NSView *fly = [controller valueForKey:@"forecastGraph"];
+    [fly layoutSubtreeIfNeeded];
+    CGFloat flyX = [fly respondsToSelector:@selector(cursorXForDate:)] ? [(id)fly cursorXForDate:soon] : NAN;
+    NSView *flyCursor = FindView(fly, @"playhead.cursor");
+    Check(isfinite(flyX) && flyCursor && !flyCursor.hidden && fabs(NSMidX(flyCursor.frame) - flyX) < 0.8,
+        @"the fly cursor is visible when the playhead is inside its time window");
+    NSButton *open = (NSButton *)FindView(controller.popover.contentViewController.view, @"forecast.toggle.fly");
+    if ([[controller valueForKey:@"forecastMode"] integerValue] >= 0) [open performClick:nil];
+    for (NSString *placeName in @[@"Perth", @"Sydney"]) {
+        NSPopUpButton *places = (NSPopUpButton *)FindView(controller.popover.contentViewController.view, @"hub.place");
+        for (NSMenuItem *item in places.itemArray)
+            if ([item.title hasPrefix:placeName]) { [places selectItem:item]; break; }
+        [controller chooseHubPlace:places];
+        [controller setValue:@YES forKey:@"forecastPaused"];
+        for (NSArray *step in @[@[@0, @"now"], @[@(30 * 3600.0), @"30h"], @[@(72 * 3600.0), @"3d"]]) {
+            SeekTimeLens(controller, [now dateByAddingTimeInterval:[step[0] doubleValue]]);
+            for (NSArray *appearance in @[
+                @[NSAppearanceNameAqua, @"light"],
+                @[NSAppearanceNameDarkAqua, @"dark"],
+            ]) {
+                NSView *view = controller.popover.contentViewController.view;
+                view.appearance = [NSAppearance appearanceNamed:appearance[0]];
+                CGFloat top = CGFLOAT_MAX, bottom = 0;
+                for (NSView *sub in view.subviews) {
+                    if (sub.hidden || NSIsEmptyRect(sub.frame)) continue;
+                    top = MIN(top, NSMinY(sub.frame));
+                    bottom = MAX(bottom, NSMaxY(sub.frame));
+                }
+                Check(view.isFlipped && NSEqualSizes(controller.popover.contentSize, view.frame.size) &&
+                    top <= 16 && bottom >= NSHeight(view.bounds) - 16,
+                    [NSString stringWithFormat:@"%@ popover content fills its %.0fx%.0f window (%.0f–%.0f)",
+                        placeName, NSWidth(view.bounds), NSHeight(view.bounds), top, bottom]);
+                SaveTimeLensFrame(view, [NSString stringWithFormat:@"%@-%@-%@.png",
+                    [placeName lowercaseString], appearance[1], step[1]]);
+            }
+        }
+    }
+    [controller stopPopoverPlayback];
 }
 
 int main(void) {
@@ -1464,6 +1776,8 @@ int main(void) {
             [c rebuildContent];
             Check(HasText(c.popover.contentViewController.view, @"ECMWF 18Z · 19 h ago · stale"),
                 @"an open surface ages into stale without waiting for another disk refresh");
+
+            CheckTimeLens(root);
 
             Check([fm removeItemAtPath:[root stringByAppendingPathComponent:@"products/obs"] error:nil],
                 @"remove observations from the disposable snapshot");

@@ -80,10 +80,9 @@ async function fillTime(locator, raw) {
   }, snapped);
   await locator.fill(kept);
 }
-function degreeText(value) {
-  const rounded = Math.round(value * 10) / 10;
-  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}°`;
-}
+function degreeText(value) { return `${Math.round(value)}°`; }
+function rainText(value) { return Number.isFinite(value) && value >= 1 ? `${Math.round(value)} mm` : ''; }
+const AUSTRALIAN_ABBREVIATION = /^(AWST|ACWST|ACST|ACDT|AEST|AEDT|LHST|LHDT)$/;
 function buildFixtureSite() {
   const dir = join(tmpdir(), `isobar-site-fixture-${process.pid}`);
   const data = join(dir, 'data');
@@ -411,9 +410,9 @@ async function testAnimation(browser, baseURL) {
     }, { value: 2.37, fps, hourFrom, hourTo, movieFrom: forecastFrom, movieTo: forecastTo });
     assert(Math.abs(seek.current - seek.expected) < .1, `fractional scrub mapped to ${seek.current.toFixed(3)}s, expected ${seek.expected.toFixed(3)}s`);
     assert(seek.snappedDate % 3600000 === 0, 'slider selection did not snap to a whole forecast hour');
-    const expectedLabel = await page.evaluate(({ snappedDate }) => new Intl.DateTimeFormat(undefined, {
-      weekday: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Australia/Perth', timeZoneName: 'short'
-    }).format(new Date(snappedDate)), { snappedDate: seek.snappedDate });
+    const expectedLabel = await page.evaluate(({ snappedDate }) => `${new Intl.DateTimeFormat(undefined, {
+      weekday: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Australia/Perth'
+    }).format(new Date(snappedDate))} AWST`, { snappedDate: seek.snappedDate });
     assert(seek.label === expectedLabel, `forecast label ${JSON.stringify(seek.label)} does not match ${JSON.stringify(expectedLabel)}`);
     let preservedTime = seek.current;
     await page.waitForTimeout(250);
@@ -785,6 +784,171 @@ async function testPlaces(browser, baseURL) {
   } finally { await timeoutPage.close(); }
 }
 
+// Empty panel either side of the map: frame inset plus any letterbox inside the media box.
+async function mapBands(page) {
+  return page.evaluate(() => {
+    const panel = document.querySelector('.map-panel'), frame = document.querySelector('#map-frame');
+    const media = [...frame.querySelectorAll('img, video')].find((el) => !el.hidden && Number(getComputedStyle(el).opacity) > 0);
+    const p = panel.getBoundingClientRect(), f = frame.getBoundingClientRect();
+    const innerLeft = p.left + panel.clientLeft, innerRight = innerLeft + panel.clientWidth;
+    if (!media) return { media: null, left: Infinity, right: Infinity, width: f.width, height: f.height };
+    const m = media.getBoundingClientRect();
+    const width = media.naturalWidth || media.videoWidth, height = media.naturalHeight || media.videoHeight;
+    const fit = getComputedStyle(media).objectFit;
+    const scale = fit === 'cover' ? Math.max(m.width / width, m.height / height) : fit === 'fill' ? m.width / width : fit === 'none' ? 1 : Math.min(m.width / width, m.height / height);
+    const letterbox = Math.max(0, (m.width - width * scale) / 2);
+    return {
+      media: media.tagName.toLowerCase(), fit, width: f.width, height: f.height,
+      left: (f.left - innerLeft) + (m.left - f.left) + letterbox,
+      right: (innerRight - f.right) + (f.right - m.right) + letterbox,
+    };
+  });
+}
+async function assertSingleLine(locator, label) {
+  const shape = await locator.evaluate((el) => {
+    const range = document.createRange(); range.selectNodeContents(el);
+    const lines = new Set([...range.getClientRects()].filter((rect) => rect.width > 0).map((rect) => Math.round(rect.top))).size;
+    return { lines, clipped: el.scrollWidth > el.clientWidth + 1, digits: getComputedStyle(el).fontVariantNumeric };
+  });
+  assert(shape.lines === 1, `${label} wraps onto ${shape.lines} lines`);
+  assert(!shape.clipped, `${label} is truncated`);
+  assert(shape.digits.includes('tabular-nums'), `${label} does not use tabular digits`);
+}
+function zoneOf(label) { return (label || '').trim().split(/\s+/).at(-1); }
+const forceOffsetZoneNames = () => {
+  const Original = Intl.DateTimeFormat;
+  const Patched = function (locale, options) { return new Original(locale === 'en-AU' ? 'en-US' : locale, options); };
+  Patched.prototype = Original.prototype;
+  Patched.supportedLocalesOf = Original.supportedLocalesOf;
+  Intl.DateTimeFormat = Patched;
+};
+
+async function testPolish(browser, baseURL) {
+  const manifest = await (await fetch(new URL('./data/current.json', baseURL))).json();
+  const places = manifest.places || [];
+  const perth = places.find((place) => place.name === 'Perth');
+  const secondary = places.filter((place) => place.name !== 'Perth' && place.name !== 'Sydney').map((place) => place.name);
+  for (const viewport of [{ name: 'phone', width: 390, height: 844 }, { name: 'desktop', width: 1280, height: 900 }]) {
+    const page = await browser.newPage({ viewport: { width: viewport.width, height: viewport.height } });
+    try {
+      await page.addInitScript(() => { try { localStorage.removeItem('isobar.place'); } catch { /* Perth is the default when storage is empty. */ } });
+      await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'light' });
+      await errorsFor(page, async () => { await page.goto(baseURL, { waitUntil: 'domcontentloaded' }); await waitReady(page); });
+
+      assert(await page.locator('#place-name').textContent() === 'Perth', `${viewport.name}: header does not name the selected place`);
+      assert(await page.locator('#current-temp').evaluate((temp) => {
+        const header = temp.closest('.now');
+        return !!header && header.contains(document.querySelector('#place-name')) && header.contains(document.querySelector('#current-condition'));
+      }), `${viewport.name}: the large temperature is not in the place header`);
+      assert((await page.locator('#current-condition').textContent()).trim().length > 0, `${viewport.name}: current condition is missing`);
+      const temps = await page.locator('#current-temp, .day-max, .day-min').allTextContents();
+      assert(temps.every((text) => /^-?\d+°$/.test(text)), `${viewport.name}: temperatures are not whole degrees: ${JSON.stringify(temps)}`);
+      assert(!/\d[.,]\d\s*°/.test(await page.locator('body').innerText()), `${viewport.name}: a temperature still shows a decimal`);
+      const maxima = await page.locator('.day-max').allTextContents();
+      assert(perth.daily.slice(0, maxima.length).every((day, index) => maxima[index] === degreeText(day.tempMax)), `${viewport.name}: day maxima ${JSON.stringify(maxima)} are not the rounded forecast`);
+
+      const rain = await page.locator('.day-rain').allTextContents();
+      const expectedRain = perth.daily.slice(0, rain.length).map((day) => rainText(day.rain));
+      assert(JSON.stringify(rain) === JSON.stringify(expectedRain), `${viewport.name}: rain ${JSON.stringify(rain)} expected ${JSON.stringify(expectedRain)}`);
+      assert(!rain.some((text) => /^0(\s|$)/.test(text)), `${viewport.name}: a dry day prints 0`);
+      const rainInk = await page.locator('.day-rain').first().evaluate((el) => getComputedStyle(el).color.match(/[\d.]+/g).slice(0, 3).map(Number));
+      assert(rainInk[2] > rainInk[0] + 40, `${viewport.name}: rain text is not blue (${rainInk})`);
+
+      const bars = await page.evaluate(() => [...document.querySelectorAll('.day-range')].map((track) => {
+        const bar = track.querySelector('.day-range-bar');
+        if (!bar) return null;
+        const t = track.getBoundingClientRect(), b = bar.getBoundingClientRect();
+        const rgb = (value) => (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+        return { image: getComputedStyle(bar).backgroundImage, trackHeight: t.height, left: b.left - t.left, right: t.right - b.right, from: rgb(bar.style.getPropertyValue('--from')), to: rgb(bar.style.getPropertyValue('--to')) };
+      }).filter(Boolean));
+      assert(bars.length >= 7, `${viewport.name}: day range bars are missing`);
+      assert(bars.every((bar) => bar.image.startsWith('linear-gradient') && bar.trackHeight <= 4), `${viewport.name}: range bars are not hairline gradient segments`);
+      assert(bars.some((bar) => bar.left <= 1) && bars.some((bar) => bar.right <= 1), `${viewport.name}: range bars are not scaled to the week's low and high`);
+      const coolest = perth.daily.slice(0, bars.length).reduce((best, day, index, days) => day.tempMin < days[best].tempMin ? index : best, 0);
+      const warmest = perth.daily.slice(0, bars.length).reduce((best, day, index, days) => day.tempMax > days[best].tempMax ? index : best, 0);
+      assert(bars[coolest].from[2] > bars[coolest].from[0], `${viewport.name}: the week's low is not cool (${bars[coolest].from})`);
+      assert(bars[warmest].to[0] > bars[warmest].to[2], `${viewport.name}: the week's high is not warm (${bars[warmest].to})`);
+
+      const label = await page.locator('#time-label').textContent();
+      assert(zoneOf(label) === 'AWST' && !/GMT|UTC/.test(label), `${viewport.name}: Perth time ${JSON.stringify(label)} lacks AWST`);
+      await assertSingleLine(page.locator('#time-label'), `${viewport.name}: time label`);
+      const ticks = page.locator('#times span:visible');
+      assert(await ticks.count() >= 2, `${viewport.name}: timeline ticks are missing`);
+      for (let index = 0; index < await ticks.count(); index += 1) {
+        assert(!/GMT|UTC/.test(await ticks.nth(index).textContent()), `${viewport.name}: tick shows a GMT offset`);
+        await assertSingleLine(ticks.nth(index), `${viewport.name}: tick ${index + 1}`);
+      }
+      assert(!/GMT[+-]/.test(await page.locator('body').innerText()), `${viewport.name}: page still prints a GMT offset`);
+
+      const topLevel = await page.locator('#place-switcher > .place').allTextContents();
+      assert(JSON.stringify(topLevel) === JSON.stringify(['Perth', 'Sydney']), `${viewport.name}: top-level places are ${JSON.stringify(topLevel)}`);
+      if (secondary.length) {
+        const more = page.getByRole('button', { name: 'More places' });
+        assert(await more.isVisible() && await more.getAttribute('aria-expanded') === 'false', `${viewport.name}: More places button is missing`);
+        assert(await page.locator('#place-menu').isHidden(), `${viewport.name}: More places menu starts open`);
+        await more.click();
+        assert(await page.locator('#place-menu').isVisible() && await more.getAttribute('aria-expanded') === 'true', `${viewport.name}: More places did not open`);
+        const options = await page.getByRole('menuitemradio').allTextContents();
+        assert(JSON.stringify([...options].sort()) === JSON.stringify([...secondary].sort()), `${viewport.name}: More places lists ${JSON.stringify(options)}`);
+        await page.keyboard.press('Escape');
+        assert(await page.locator('#place-menu').isHidden(), `${viewport.name}: Escape did not close More places`);
+        assert(await more.evaluate((button) => document.activeElement === button), `${viewport.name}: focus did not return to More places`);
+        await more.click();
+        await page.locator('.place-menu').screenshot({ path: `${outputDir}/polish-${viewport.name}-menu.png` });
+        await page.getByRole('menuitemradio', { name: secondary[0], exact: true }).click();
+        assert(await page.locator('#place-menu').isHidden(), `${viewport.name}: choosing a place left the menu open`);
+        assert(await page.locator('#place-name').textContent() === secondary[0], `${viewport.name}: header did not follow ${secondary[0]}`);
+        assert((await page.locator('#more-places').textContent()) === secondary[0] && await page.locator('#more-places').evaluate((button) => button.classList.contains('active')), `${viewport.name}: More places does not show the chosen spot`);
+        assert(await page.getByRole('button', { name: 'Perth', exact: true }).getAttribute('aria-pressed') === 'false', `${viewport.name}: Perth stayed selected`);
+        await page.getByRole('button', { name: 'Perth', exact: true }).click();
+        assert(await page.locator('#more-places').textContent() === 'More places', `${viewport.name}: More places kept a stale label`);
+      }
+
+      const bands = await mapBands(page);
+      assert(bands.media && bands.height >= 90, `${viewport.name}: map is not showing (${JSON.stringify(bands)})`);
+      assert(bands.left <= 4 && bands.right <= 4, `${viewport.name}: map leaves side bands ${bands.left.toFixed(1)}px / ${bands.right.toFixed(1)}px`);
+      await page.waitForTimeout(100);
+      await screenshot(page, `polish-${viewport.name}`);
+
+      await page.getByRole('button', { name: 'Sydney', exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('#place-name')?.textContent === 'Sydney');
+      assert(/^AE[SD]T$/.test(zoneOf(await page.locator('#time-label').textContent())), `${viewport.name}: Sydney time lacks AEST/AEDT`);
+      await assertSingleLine(page.locator('#time-label'), `${viewport.name}: Sydney time label`);
+    } finally { await page.close(); }
+  }
+
+  const fallback = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  try {
+    await fallback.addInitScript(() => { try { localStorage.removeItem('isobar.place'); } catch { /* Perth is the default when storage is empty. */ } });
+    await fallback.addInitScript(forceOffsetZoneNames);
+    await fallback.emulateMedia({ reducedMotion: 'reduce' });
+    await fallback.goto(baseURL, { waitUntil: 'domcontentloaded' }); await waitReady(fallback);
+    assert(zoneOf(await fallback.locator('#time-label').textContent()) === 'AWST', 'GMT+8 did not fall back to AWST');
+    await fallback.getByRole('button', { name: 'Sydney', exact: true }).click();
+    assert(/^AE[SD]T$/.test(zoneOf(await fallback.locator('#time-label').textContent())), 'GMT+10/11 did not fall back to AEST/AEDT');
+    assert(AUSTRALIAN_ABBREVIATION.test(zoneOf(await fallback.locator('#updated').textContent())), 'run time lacks an Australian zone');
+  } finally { await fallback.close(); }
+
+  for (const viewport of [{ name: 'phone', width: 390, height: 844 }, { name: 'desktop', width: 1280, height: 900 }]) {
+    const playing = await browser.newPage({ viewport: { width: viewport.width, height: viewport.height } });
+    try {
+      await playing.goto(baseURL, { waitUntil: 'domcontentloaded' }); await waitReady(playing);
+      await playing.waitForFunction(() => { const video = document.querySelector('#map-video'); return video && !video.hidden && video.videoWidth > 0; }, null, { timeout: 15000 });
+      await playing.waitForTimeout(200);
+      const bands = await mapBands(playing);
+      assert(bands.media === 'video', `${viewport.name}: the movie is not on screen (${JSON.stringify(bands)})`);
+      assert(bands.left <= 4 && bands.right <= 4, `${viewport.name}: playing map leaves side bands ${bands.left.toFixed(1)}px / ${bands.right.toFixed(1)}px`);
+      await screenshot(playing, `polish-${viewport.name}-playing`);
+    } finally { await playing.close(); }
+    const dark = await browser.newPage({ viewport: { width: viewport.width, height: viewport.height } });
+    try {
+      await dark.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+      await dark.goto(baseURL, { waitUntil: 'domcontentloaded' }); await waitReady(dark);
+      await screenshot(dark, `polish-${viewport.name}-dark`);
+    } finally { await dark.close(); }
+  }
+}
+
 const MOVIE_BUDGET = 10 * 1000 * 1000;
 
 function movieFile(manifest, layer) {
@@ -952,6 +1116,7 @@ async function run() {
       return;
     }
     await testPlaces(browser, server.url);
+    await testPolish(browser, server.url);
     for (const viewport of viewports) await testViewport(browser, server.url, viewport);
     await testAnimation(browser, server.url);
     await testStreamedPlayback(browser, server.url);
@@ -1046,7 +1211,7 @@ async function run() {
       assert((await missingRainPage.locator('#map-title').textContent()).startsWith('Rain ·'), 'available rain frame did not restore rain map');
     } finally { await missingRainPage.close(); }
     assert(!errors.length, `Runtime errors: ${errors.join('; ')}`);
-    console.log(`site harness passed: ${viewports.length} viewports, 7-day places, lenses, throttled playback, offline shell, timeout, dark mode, and overlay race`);
+    console.log(`site harness passed: ${viewports.length} viewports, 7-day places, whole degrees, rain, zone labels, More places, full-width map, lenses, throttled playback, offline shell, timeout, dark mode, and overlay race`);
   } finally { if (browser) await browser.close(); await server.close(); }
 }
 run().catch((error) => { console.error(`site harness failed: ${error.stack || error}`); process.exitCode = 1; });

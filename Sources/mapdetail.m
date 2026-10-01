@@ -1,4 +1,5 @@
 #import "mapdetail.h"
+#import "playheadcursor.h"
 #import <math.h>
 
 static BOOL Number(id n) {
@@ -71,11 +72,34 @@ void DrawMapDetails(NSArray<NSDictionary *> *records, NSRect bounds) {
     }
 }
 
+@interface TemperatureForecastView ()
+@property(nonatomic, strong) NSView *playheadCursor;
+@end
+
 @implementation TemperatureForecastView
 - (BOOL)isFlipped { return YES; }
 - (NSRect)plotRect { return NSMakeRect(34,18,MAX(1,NSWidth(self.bounds)-46),MAX(1,NSHeight(self.bounds)-42)); }
 - (NSDate *)startDate { NSDate *date=self.now ?: NSDate.date; return [NSDate dateWithTimeIntervalSince1970:floor(date.timeIntervalSince1970/3600)*3600]; }
-- (void)setSelectedDate:(NSDate *)date { _selectedDate=date; self.needsDisplay=YES; }
+- (void)setSelectedDate:(NSDate *)date {
+    if (date != _selectedDate && ![date isEqualToDate:_selectedDate]) _selectedDate = date;
+    [self placeCursor];
+}
+- (void)layout { [super layout]; [self placeCursor]; }
+- (void)viewDidChangeEffectiveAppearance { [super viewDidChangeEffectiveAppearance]; [self placeCursor]; self.needsDisplay = YES; }
+- (NSDate *)plotStart { NSDate *date = self.now ?: NSDate.date; return [NSDate dateWithTimeIntervalSince1970:floor(date.timeIntervalSince1970 / 3600) * 3600]; }
+- (CGFloat)cursorXForDate:(NSDate *)date {
+    if (![date isKindOfClass:NSDate.class]) return NAN;
+    double horizon = self.horizonHours > 0 ? self.horizonHours : 48;
+    NSDate *start = [self plotStart];
+    NSTimeInterval offset = [date timeIntervalSinceDate:start];
+    if (offset < 0 || offset > horizon * 3600) return NAN;
+    NSRect plot = [self plotRect];
+    return NSMinX(plot) + offset / (horizon * 3600) * NSWidth(plot);
+}
+- (void)placeCursor {
+    NSRect plot = [self plotRect];
+    PlaceVerticalCursor(self, &_playheadCursor, [self cursorXForDate:self.selectedDate], NSMinY(plot), NSHeight(plot));
+}
 - (void)setHorizonHours:(double)hours { _horizonHours=(isfinite(hours)&&hours>0)?hours:48; self.needsDisplay=YES; }
 - (NSArray<NSArray<NSDictionary *> *> *)segments {
     double horizon=self.horizonHours>0?self.horizonHours:48; NSDate *start=[self startDate], *end=[start dateByAddingTimeInterval:horizon*3600];
@@ -130,12 +154,7 @@ void DrawMapDetails(NSArray<NSDictionary *> *records, NSRect bounds) {
         if (NSWidth(plot)<460) { f.dateFormat=@"EEE ha"; text=[f stringFromDate:date]; w=[text sizeWithAttributes:attrs].width; }
         [text drawAtPoint:NSMakePoint(MIN(NSMaxX(plot)-w,MAX(NSMinX(plot),x(date)-w/2)),NSMaxY(plot)+6) withAttributes:attrs];
     }
-    if ([self.selectedDate isKindOfClass:NSDate.class] && [self.selectedDate timeIntervalSinceDate:start] >= 0 && [self.selectedDate timeIntervalSinceDate:start] <= horizon*3600) {
-        CGFloat cursorX=x(self.selectedDate);
-        [[[NSColor systemBlueColor] colorWithAlphaComponent:.55] setStroke];
-        NSBezierPath *cursor=[NSBezierPath bezierPath]; cursor.lineWidth=1.5;
-        [cursor moveToPoint:NSMakePoint(cursorX,NSMinY(plot))]; [cursor lineToPoint:NSMakePoint(cursorX,NSMaxY(plot))]; [cursor stroke];
-    }
+    [self placeCursor];
     NSColor *colour=NSColor.systemOrangeColor;
     for (NSArray *segment in segments) {
         NSBezierPath *line=[NSBezierPath bezierPath]; BOOL first=YES;

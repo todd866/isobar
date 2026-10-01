@@ -8,7 +8,7 @@
     chart: $('#chart'), empty: $('#chart-empty'), reading: $('#detail-reading'), detail: $('#detail-panel'), mapFrame: $('#map-frame'),
     layers: $('#layers-menu'), layersButton: $('#layers-button'), download: $('#download'),
     downloadLink: $('#download-link'), dialogDownload: $('#dialog-download'), downloadCopy: $('#download-copy'),
-    switcher: $('#place-switcher'), temp: $('#current-temp'), days: $('#day-strip')
+    switcher: $('#place-switcher'), temp: $('#current-temp'), days: $('#day-strip'), placeName: $('#place-name'), condition: $('#current-condition')
   };
   const state = { manifest: null, frames: [], index: 0, overlay: 'none', detail: null, images: new Map(), pending: new Map(), animation: null, videoCache: new Map(), playbackMode: 'manual', movieIntent: 0, place: null };
   const MAX_PRELOAD = 4;
@@ -63,33 +63,49 @@
     }
     return 'Australia/Perth';
   }
+  // Browsers in most locales print Australian zones as "GMT+8"; people read AWST.
+  const AUSTRALIAN_ZONES = { 480: 'AWST', 525: 'ACWST', 570: 'ACST', 600: 'AEST', 630: 'ACDT', 660: 'AEDT' };
+  function zonePart(date, locale, style) {
+    try {
+      return new Intl.DateTimeFormat(locale, { timeZone: zone(), timeZoneName: style }).formatToParts(date).find((part) => part.type === 'timeZoneName')?.value || '';
+    } catch { return ''; }
+  }
+  function zoneAbbreviation(date) {
+    const short = zonePart(date, 'en-AU', 'short');
+    if (/^[A-Z]{3,5}$/.test(short)) return short;
+    const offset = /^(?:GMT|UTC)([+-])(\d{1,2})(?::(\d{2}))?$/.exec(zonePart(date, 'en-US', 'shortOffset') || short);
+    const name = zone();
+    if (offset && name.startsWith('Australia/')) {
+      const minutes = (offset[1] === '-' ? -1 : 1) * (Number(offset[2]) * 60 + Number(offset[3] || 0));
+      if (name === 'Australia/Lord_Howe') return minutes === 660 ? 'LHDT' : 'LHST';
+      if (AUSTRALIAN_ZONES[minutes]) return AUSTRALIAN_ZONES[minutes];
+    }
+    return short || 'UTC';
+  }
   const formatTime = (value, withDay = true) => {
     const date = new Date(value);
     if (Number.isNaN(date.valueOf())) return '—';
-    return new Intl.DateTimeFormat(undefined, {
+    return `${new Intl.DateTimeFormat(undefined, {
       weekday: withDay ? 'short' : undefined,
-      day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
-      timeZone: zone(), timeZoneName: 'short'
-    }).format(date);
+      day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: zone()
+    }).format(date)} ${zoneAbbreviation(date)}`;
+  };
+  const hourDate = (value) => {
+    const timestamp = new Date(value).valueOf();
+    return Number.isNaN(timestamp) ? null : new Date(Math.round(timestamp / 3600000) * 3600000);
   };
   const formatHour = (value) => {
-    const timestamp = new Date(value).valueOf();
-    if (Number.isNaN(timestamp)) return '—';
-    const date = new Date(Math.round(timestamp / 3600000) * 3600000);
-    return new Intl.DateTimeFormat(undefined, {
-      weekday: 'short', hour: 'numeric', minute: '2-digit', timeZone: zone(), timeZoneName: 'short'
-    }).format(date);
+    const date = hourDate(value);
+    if (!date) return '—';
+    return `${new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit', timeZone: zone() }).format(date)} ${zoneAbbreviation(date)}`;
   };
-  const formatDegree = (value) => {
-    if (!isNumber(value)) return '—';
-    const rounded = Math.round(value * 10) / 10;
-    return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}°`;
+  const formatTick = (value) => {
+    const date = hourDate(value);
+    return date ? new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit', timeZone: zone() }).format(date) : '—';
   };
-  const formatRain = (value) => {
-    if (!isNumber(value)) return '—';
-    const rounded = Math.round(value * 10) / 10;
-    return Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1);
-  };
+  const formatDegree = (value) => isNumber(value) ? `${Math.round(value)}°` : '—';
+  // Below 1 mm a day reads as dry; the strip stays quiet rather than printing 0.
+  const formatRain = (value) => isNumber(value) && value >= 1 ? `${Math.round(value)} mm` : '';
   function storedPlace() {
     try { return localStorage.getItem(PLACE_KEY); }
     catch { return null; }
@@ -163,7 +179,13 @@
         icon.append(svg('circle', { cx: x, cy: y, r: heavy ? 1.15 : .9, fill: 'currentColor' }));
       });
     };
-    if (n === 0 || n === 1) sun(12, 12);
+    if (n === 0 || n === 1) {
+      icon.append(svg('circle', { cx: 12, cy: 12, r: '4', fill: 'currentColor' }));
+      for (let ray = 0; ray < 8; ray += 1) {
+        const a = ray * Math.PI / 4, x = Math.cos(a), y = Math.sin(a);
+        icon.append(svg('path', { d: `M${(12 + x * 6.4).toFixed(2)} ${(12 + y * 6.4).toFixed(2)}L${(12 + x * 8.6).toFixed(2)} ${(12 + y * 8.6).toFixed(2)}`, stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round' }));
+      }
+    }
     else if (n === 2) { sun(8, 8); cloud(); }
     else if (n === 45 || n === 48) [9, 12, 15].forEach((y) => icon.append(svg('path', { d: `M5 ${y}h14`, stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round' })));
     else if (n >= 95) { cloud(); icon.append(svg('path', { fill: 'currentColor', d: 'M13 14h-2l1 3h-2l3 5-1-4h2z' })); }
@@ -183,6 +205,11 @@
     const low = temps.length ? Math.min(...temps) : 0;
     const high = temps.length ? Math.max(...temps) : 1;
     const span = Math.max(.1, high - low);
+    // The Mac day strip's ramp: blue-green at the week's low, warm at its high.
+    const tint = (value) => {
+      const u = high > low ? Math.max(0, Math.min(1, (value - low) / (high - low))) : .5;
+      return `rgb(${Math.round(255 * (.42 + .52 * u))} ${Math.round(255 * (.68 - .16 * u))} ${Math.round(255 * (.78 - .48 * u))})`;
+    };
     els.days.replaceChildren();
     days.forEach((day) => {
       const item = document.createElement('li');
@@ -204,27 +231,69 @@
         const start = (day.tempMin - low) / span;
         const end = (day.tempMax - low) / span;
         bar.style.left = `${start * 100}%`;
-        bar.style.right = `${(1 - end) * 100}%`;
+        bar.style.width = `${Math.max(0, end - start) * 100}%`;
+        bar.style.setProperty('--from', tint(day.tempMin));
+        bar.style.setProperty('--to', tint(day.tempMax));
+        range.append(bar);
       }
-      range.append(bar);
       const rain = document.createElement('span');
       rain.className = 'day-rain';
       rain.textContent = formatRain(day.rain);
-      item.setAttribute('aria-label', `${name.textContent}, ${weatherLabel(day.weatherCode)}, high ${max.textContent}, low ${min.textContent}, rain ${rain.textContent} mm`);
-      item.append(name, weatherIcon(day.weatherCode), max, range, min, rain);
+      item.setAttribute('aria-label', `${name.textContent}, ${weatherLabel(day.weatherCode)}, high ${max.textContent}, low ${min.textContent}${rain.textContent ? `, rain ${rain.textContent}` : ''}`);
+      item.append(name, weatherIcon(day.weatherCode), min, range, max, rain);
       els.days.append(item);
     });
   }
+  function runStatus() {
+    const issue = state.manifest?.runAt;
+    if (!issue || !isTime(issue)) return 'ECMWF';
+    const aged = Date.now() - Date.parse(issue) > 24 * 3600000 ? ' · older run' : '';
+    return `ECMWF run ${formatTime(issue, false)}${aged}`;
+  }
   function renderPlace() {
     const place = state.place;
-    document.querySelectorAll('.place').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.place === place?.id)));
+    let secondary = false;
+    document.querySelectorAll('[data-place]').forEach((button) => {
+      const selected = button.dataset.place === place?.id;
+      if (button.classList.contains('place-option')) { button.setAttribute('aria-checked', String(selected)); secondary ||= selected; }
+      else button.setAttribute('aria-pressed', String(selected));
+    });
+    const more = $('#more-places');
+    if (more) {
+      more.textContent = secondary ? place.name : 'More places';
+      more.classList.toggle('active', secondary);
+      more.setAttribute('aria-label', secondary ? `More places, ${place.name} selected` : 'More places');
+    }
     const hour = readingNow(place);
+    const today = Array.isArray(place?.daily) ? place.daily[0] : null;
+    els.placeName.textContent = place?.name || '—';
     els.temp.textContent = formatDegree(hour?.temp);
+    els.condition.textContent = [
+      isNumber(hour?.weatherCode) ? weatherLabel(hour.weatherCode) : null,
+      isNumber(today?.tempMax) ? `H ${formatDegree(today.tempMax)}` : null,
+      isNumber(today?.tempMin) ? `L ${formatDegree(today.tempMin)}` : null
+    ].filter(Boolean).join(' · ');
     renderStrip(place);
+  }
+  // Perth and Sydney lead; the other configured points are kite and surf spots.
+  function primaryPlaces(places) {
+    const named = places.filter((place) => place.name === 'Perth' || place.name === 'Sydney');
+    return named.length ? named : places.slice(0, 2);
+  }
+  // A modal dialog sits in the top layer, so a scrolling summary cannot clip it.
+  function openPlaceMenu(menu, more) {
+    menu.showModal();
+    more.setAttribute('aria-expanded', 'true');
+    const anchor = more.getBoundingClientRect();
+    menu.style.top = `${Math.round(Math.min(anchor.bottom + 6, innerHeight - menu.offsetHeight - 8))}px`;
+    menu.style.left = `${Math.round(Math.max(8, Math.min(innerWidth - menu.offsetWidth - 8, anchor.right - menu.offsetWidth)))}px`;
+    (menu.querySelector('[aria-checked="true"]') || menu.querySelector('button'))?.focus();
   }
   function renderSwitcher() {
     els.switcher.replaceChildren();
-    placeList(state.manifest).forEach((place) => {
+    const places = placeList(state.manifest);
+    const primary = primaryPlaces(places);
+    primary.forEach((place) => {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'place';
@@ -234,6 +303,46 @@
       button.addEventListener('click', () => selectPlace(place.id, true));
       els.switcher.append(button);
     });
+    const others = places.filter((place) => !primary.includes(place));
+    if (!others.length) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'more-places';
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'place more-button';
+    more.id = 'more-places';
+    more.textContent = 'More places';
+    more.setAttribute('aria-haspopup', 'menu');
+    more.setAttribute('aria-expanded', 'false');
+    more.setAttribute('aria-controls', 'place-menu');
+    const menu = document.createElement('dialog');
+    menu.className = 'place-menu';
+    menu.id = 'place-menu';
+    const list = document.createElement('div');
+    list.setAttribute('role', 'menu');
+    list.setAttribute('aria-label', 'More places');
+    others.forEach((place) => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'place-option';
+      item.dataset.place = place.id;
+      item.textContent = place.name;
+      item.setAttribute('role', 'menuitemradio');
+      item.setAttribute('aria-checked', String(place.id === state.place?.id));
+      item.addEventListener('click', () => { menu.close(); selectPlace(place.id, true); });
+      list.append(item);
+    });
+    menu.append(list);
+    more.addEventListener('click', () => openPlaceMenu(menu, more));
+    menu.addEventListener('click', (event) => { if (event.target === menu) menu.close(); });
+    menu.addEventListener('close', () => { more.setAttribute('aria-expanded', 'false'); more.focus(); });
+    menu.addEventListener('keydown', (event) => {
+      const items = [...menu.querySelectorAll('button')];
+      const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
+      if (step) { event.preventDefault(); items[(items.indexOf(document.activeElement) + step + items.length) % items.length].focus(); }
+    });
+    wrap.append(more, menu);
+    els.switcher.append(wrap);
   }
   function selectPlace(id, persist) {
     const next = placeList(state.manifest).find((place) => place.id === id);
@@ -244,8 +353,7 @@
     const when = Number.isFinite(state.forecastTime) ? state.forecastTime : Date.parse(readingNow(next)?.time);
     if (state.animation) syncTimeline(when);
     else setForecastTime(when);
-    const issue = state.manifest?.runAt;
-    els.updated.textContent = `${next.name} · ${els.temp.textContent}${issue && isTime(issue) ? ` · ECMWF · ${formatTime(issue, false)}` : ''}`;
+    els.updated.textContent = runStatus();
   }
   const assetURL = (path) => {
     if (typeof path !== 'string' || !path) return null;
@@ -288,6 +396,7 @@
       if (els.video !== video || !current?.ready || !current.playing) return;
       syncTimeline(movieDate(current, video.currentTime));
     };
+    video.addEventListener('loadedmetadata', () => { if (els.video === video) fitMap(video.videoWidth, video.videoHeight); });
     video.addEventListener('timeupdate', sync);
     video.addEventListener('seeked', sync);
     video.addEventListener('ended', () => {
@@ -335,6 +444,11 @@
     }
     setStaticMapVisible(true); updatePlayButton();
   }
+  // The panel is sized from the map's own aspect so the map fills it edge to edge.
+  function fitMap(width, height) {
+    if (!(width >= 64 && height >= 64) || width / height < .5 || width / height > 3) return;
+    document.documentElement.style.setProperty('--map-aspect', (width / height).toFixed(4));
+  }
   function setStaticMapVisible(visible) {
     els.image.hidden = !visible; els.video.hidden = visible;
   }
@@ -378,7 +492,7 @@
     for (let tick = 0; tick < count; tick += 1) {
       const stamp = bounds.from + bounds.span * tick / (count - 1);
       const label = document.createElement('span');
-      label.textContent = formatHour(stamp);
+      label.textContent = formatTick(stamp);
       if (Math.abs(stamp - date) <= bounds.span / (count - 1) / 2) label.className = 'current';
       els.times.append(label);
     }
@@ -506,9 +620,10 @@
     try {
       const image = await imageFor(frameURL(frame));
       if (revision !== mapRevision) return;
-      if (els.image !== image) { els.image.replaceWith(image); els.image = image; image.id = 'map-image'; }
+      if (els.image !== image) { image.hidden = els.image.hidden; els.image.replaceWith(image); els.image = image; image.id = 'map-image'; }
       els.image.alt = `${label} forecast map for ${formatTime(frame.time)}`;
       els.image.classList.add('ready');
+      fitMap(image.naturalWidth, image.naturalHeight);
       els.state.hidden = true;
       preload(state.frames.map((_, index) => index));
       if (!navigator.connection?.saveData) {
@@ -649,9 +764,7 @@
       state.place = places.find((place) => place.id === stored) || places.find((place) => place.name === 'Perth') || places[0] || null;
       renderSwitcher();
       renderPlace();
-      const issue = manifest.runAt;
-      const aged = issue && Date.now() - new Date(issue) > 24 * 3600000 ? ' · older run' : '';
-      els.updated.textContent = [state.place?.name, els.temp.textContent, issue && isTime(issue) ? `ECMWF · ${formatTime(issue, false)}${aged}` : 'ECMWF'].filter(Boolean).join(' · ');
+      els.updated.textContent = runStatus();
       const sources = $('#sources'); sources.replaceChildren();
       for (const source of manifest.attribution || []) {
         if (!/^https:\/\//.test(source.url)) continue;

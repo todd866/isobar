@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install test tools
-        timeout-minutes: 4
+        timeout-minutes: 12
         run: |
           # ffmpeg's recommends pull pocketsphinx-en-us (~27 MB) and stalled the
           # first 1.9 run until the job was cancelled. The encoder is a dependency.

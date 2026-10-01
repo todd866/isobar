@@ -1,4 +1,5 @@
 #import "aviationview.h"
+#import "playheadcursor.h"
 #import "solar.h"
 #import <math.h>
 
@@ -124,6 +125,7 @@ static void AVImage(NSImage *image, NSRect rect, CGFloat opacity) {
 @property(nonatomic) double lightFromElevation, lightToElevation;
 @property(nonatomic) NSTimeInterval lightTransitionStart;
 @property(nonatomic) BOOL draggingTimeline;
+@property(nonatomic, strong) NSView *playheadCursor;
 @end
 
 @implementation AviationForecastView
@@ -195,12 +197,34 @@ static void AVImage(NSImage *image, NSRect rect, CGFloat opacity) {
     [self setNeedsDisplayInRect:NSMakeRect(0,0,NSWidth(self.bounds),NSMinY(self.timelineRect))];
 }
 - (void)setSelectedDate:(NSDate *)date {
-    if ([_selectedDate isEqualToDate:date]) return;
-    // Reuse the same sky transition path while keeping the map-selected time
-    // separate from the short-lived local pointer inspection.
-    self.inspectedDate=_selectedDate;
-    _selectedDate=date;
-    [self inspectDate:nil];
+    BOOL same = date == _selectedDate || [date isEqualToDate:_selectedDate];
+    if (!same) {
+        NSDate *old = _selectedDate;
+        NSArray *before = [self activePeriodsAtDate:old ?: self.now];
+        NSArray *after = [self activePeriodsAtDate:date ?: self.now];
+        if (![before isEqualToArray:after]) {
+            // Same sky transition as a pointer move between TAF periods.
+            self.inspectedDate = old;
+            _selectedDate = date;
+            [self inspectDate:nil];
+        } else {
+            _selectedDate = date;
+            if (NSHeight(self.timelineRect) > 1) [self setNeedsDisplayInRect:self.timelineRect];
+        }
+    }
+    [self placeCursor];
+}
+- (void)layout { [super layout]; [self placeCursor]; }
+- (CGFloat)cursorXForDate:(NSDate *)date {
+    if (![date isKindOfClass:NSDate.class] || !self.start || !self.end) return NAN;
+    if ([date compare:self.start] == NSOrderedAscending || [date compare:self.end] == NSOrderedDescending) return NAN;
+    return [self x:date];
+}
+- (void)placeCursor {
+    NSRect band = self.timelineRect;
+    if (NSHeight(band) < 8)
+        band = NSMakeRect(0, MAX(0, NSHeight(self.bounds) - 20), NSWidth(self.bounds), MIN(20, NSHeight(self.bounds)));
+    PlaceVerticalCursor(self, &_playheadCursor, [self cursorXForDate:self.selectedDate], NSMinY(band), NSHeight(band));
 }
 - (void)setNow:(NSDate *)now {
     _now=now; self.lightToElevation=NAN; self.needsDisplay=YES;
@@ -677,8 +701,8 @@ static void AVImage(NSImage *image, NSRect rect, CGFloat opacity) {
     NSDate *selected=self.inspectedDate?:self.selectedDate?:self.now?:self.start;
     CGFloat x=[self x:selected];
     BOOL inRange=[selected compare:self.start]!=NSOrderedAscending && [selected compare:self.end]!=NSOrderedDescending;
-    if (inRange) { [accent setFill]; [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(x-7,y-7,14,14)] fill]; }
     NSRect selectedLabel=NSMakeRect(MAX(6,MIN(right-82,x-41)),y+10,82,16);
+    [self placeCursor];
     CGFloat previous=-CGFLOAT_MAX;
     for (NSDate *date=self.start;[date compare:self.end]!=NSOrderedDescending;date=[date dateByAddingTimeInterval:3*3600]) {
         CGFloat tx=[self x:date]; NSRect label=NSMakeRect(MAX(left,MIN(right-54,tx-27)),y+10,54,16);

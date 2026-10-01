@@ -1,4 +1,5 @@
 #import "rainview.h"
+#import "playheadcursor.h"
 #import <math.h>
 
 static NSDate *RVDate(id value) { return [value isKindOfClass:NSDate.class] ? value : nil; }
@@ -44,6 +45,7 @@ static void RVGap(CGFloat x0, CGFloat x1, CGFloat top, CGFloat height) {
 @property(nonatomic, copy) NSString *cachedAppearanceName;
 @property(nonatomic, strong) NSDateFormatter *summaryFormatter;
 @property(nonatomic, strong) NSCalendar *summaryCalendar;
+@property(nonatomic, strong) NSView *playheadCursor;
 - (void)invalidateRenderCache;
 - (void)prepareCachedData;
 - (void)rebuildTracking;
@@ -96,7 +98,21 @@ static void RVGap(CGFloat x0, CGFloat x1, CGFloat top, CGFloat height) {
     self.cachedHoursByStart = byStart.copy;
 }
 - (void)setHorizonHours:(double)hours { _horizonHours=isfinite(hours)?MIN(120,MAX(6,hours)):24; [self invalidateRenderCache]; self.needsDisplay=YES; [self rebuildTracking]; }
-- (void)setSelectedDate:(NSDate *)date { _selectedDate=date; self.needsDisplay=YES; }
+- (void)setSelectedDate:(NSDate *)date {
+    if (date != _selectedDate && ![date isEqualToDate:_selectedDate]) _selectedDate = date;
+    [self placeCursor];
+}
+- (void)layout { [super layout]; [self placeCursor]; }
+- (CGFloat)cursorXForDate:(NSDate *)date {
+    if (![date isKindOfClass:NSDate.class]) return NAN;
+    if ([date compare:[self startDate]] == NSOrderedAscending || [date compare:[self endDate]] == NSOrderedDescending) return NAN;
+    return [self xForDate:date];
+}
+- (void)placeCursor {
+    CGFloat x = [self cursorXForDate:self.selectedDate];
+    CGFloat top = 12, baseline = MAX(top + 20, NSHeight(self.bounds) - 25);
+    PlaceVerticalCursor(self, &_playheadCursor, x, top, baseline - top);
+}
 - (BOOL)isFlipped { return YES; }
 - (BOOL)acceptsFirstResponder { return YES; }
 - (BOOL)isAccessibilityElement { return YES; }
@@ -104,7 +120,11 @@ static void RVGap(CGFloat x0, CGFloat x1, CGFloat top, CGFloat height) {
 - (void)setNow:(NSDate *)now { _now = now ?: NSDate.date; [self invalidateRenderCache]; [self setNeedsDisplay:YES]; [self rebuildTracking]; }
 - (void)setTimeZone:(NSTimeZone *)timeZone { _timeZone = timeZone ?: NSTimeZone.localTimeZone; [self invalidateRenderCache]; [self setNeedsDisplay:YES]; [self rebuildTracking]; }
 - (void)setReferenceNow:(NSDate *)referenceNow { _referenceNow = referenceNow; self.cachedGraphImage=nil; self.cachedAppearanceName=nil; [self setNeedsDisplay:YES]; }
-- (void)viewDidChangeEffectiveAppearance { [super viewDidChangeEffectiveAppearance]; self.cachedGraphImage=nil; self.cachedAppearanceName=nil; [self setNeedsDisplay:YES]; }
+- (void)viewDidChangeEffectiveAppearance {
+    [super viewDidChangeEffectiveAppearance];
+    self.cachedGraphImage=nil; self.cachedAppearanceName=nil; [self setNeedsDisplay:YES];
+    [self placeCursor];
+}
 - (CGFloat)renderBackingScale {
     if (self.renderScaleOverride > 0) return self.renderScaleOverride;
     CGFloat scale = self.window ? self.window.backingScaleFactor : 1.0;
@@ -358,9 +378,7 @@ static void RVGap(CGFloat x0, CGFloat x1, CGFloat top, CGFloat height) {
     }
     [self.cachedGraphImage drawInRect:self.bounds fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1.0 respectFlipped:YES hints:nil];
     CGFloat top = 12, baseline = MAX(top + 20, NSHeight(self.bounds) - 25);
-    NSColor *blue = NSColor.systemBlueColor;
-    if (self.selectedDate && [self.selectedDate compare:self.startDate]!=NSOrderedAscending && [self.selectedDate compare:self.endDate]!=NSOrderedDescending)
-        RVLine(NSMakePoint([self xForDate:self.selectedDate],top),NSMakePoint([self xForDate:self.selectedDate],baseline),blue,1,YES);
     if (self.inspectedDate && [self summaryAtDate:self.inspectedDate]) RVLine(NSMakePoint([self xForDate:self.inspectedDate], top), NSMakePoint([self xForDate:self.inspectedDate], baseline), [NSColor.labelColor colorWithAlphaComponent:.7], 1, YES);
+    [self placeCursor];
 }
 @end

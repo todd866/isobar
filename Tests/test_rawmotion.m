@@ -102,11 +102,122 @@ static void CheckLabelFade(void) {
     check(state.labelSetChanges <= 8, @"the set of labels changes rarely across playback frames");
 }
 
+typedef struct { CGRect rects[104]; double alpha[104]; NSInteger count; } Boxes;
+
+static Boxes LastBoxes(void) {
+    Boxes boxes = {0};
+    boxes.count = OwnRenderLastLabelBoxes(boxes.rects, boxes.alpha, 80);
+    boxes.count += OwnRenderLastCentreBoxes(boxes.rects + boxes.count, boxes.alpha + boxes.count, 24);
+    return boxes;
+}
+
+static BOOL InBoxes(const Boxes *boxes, double x, double y, double pad) {
+    for (NSInteger i = 0; i < boxes->count; i++)
+        if (CGRectContainsPoint(CGRectInset(boxes->rects[i], -pad, -pad), CGPointMake(x, y))) return YES;
+    return NO;
+}
+
+// Every live frame strokes the same contours as a still of that instant.
+// Only the annotations, and the gaps they cut, may differ.
+static void CheckExactStrokes(OwnRun *run, NSString *name, double start, double hoursPerIndex) {
+    OwnLayerOptions ink = {.bare = 1, .inkOnly = 1};
+    OwnMotionState *state = [OwnMotionState new];
+    const CGFloat scale = 2;
+    double worst = 0, worstInset = -1e9;
+    NSUInteger strokes = 0, mismatched = 0;
+    for (int frame = 0; frame < 24; frame++) { @autoreleasepool {
+        double index = start + frame * (90.0 / 3600.0) / hoursPerIndex;
+        NSData *live = Pixels(OwnRunRenderMotion(run, index, @"", ink, nil, scale, state));
+        worstInset = fmax(worstInset, OwnRenderLastOpenInset());
+        Boxes liveBoxes = LastBoxes();
+        NSData *still = Pixels(OwnRunRenderFraction(run, index, @"", ink, nil, scale));
+        worstInset = fmax(worstInset, OwnRenderLastOpenInset());
+        Boxes stillBoxes = LastBoxes();
+        if (!live || live.length != still.length) { worst = 1; continue; }
+        const uint8_t *a = live.bytes, *b = still.bytes;
+        int width = (int)(580 * scale), height = (int)(live.length / 4 / width);
+        NSUInteger differ = 0, inked = 0;
+        for (int row = 0; row < height; row++) for (int col = 0; col < width; col++) {
+            double x = (col + .5) / scale, y = (height - row - .5) / scale;
+            if (InBoxes(&liveBoxes, x, y, 2) || InBoxes(&stillBoxes, x, y, 2)) continue;
+            size_t p = ((size_t)row * width + col) * 4 + 3;
+            BOOL inkA = a[p] > 96, inkB = b[p] > 96;
+            if (inkA || inkB) inked++;
+            if (inkA != inkB) differ++;
+        }
+        strokes += inked;
+        mismatched += differ;
+        if (inked) worst = fmax(worst, (double)differ / inked);
+    }}
+    double overall = strokes ? (double)mismatched / strokes : 1;
+    fprintf(stderr, "%s live-vs-still stroke mismatch %.5f (worst frame %.5f) open inset %.2f\n",
+        name.UTF8String, overall, worst, worstInset);
+    // A label beside a line end drops the short stub it leaves, so a frame
+    // whose label sits elsewhere can differ by that stub.
+    check(strokes > 20000 && overall < 0.003 && worst < 0.01,
+        [NSString stringWithFormat:@"%@ live strokes match a still of the same instant outside the annotations", name]);
+    check(worstInset <= 2,
+        [NSString stringWithFormat:@"%@ open isobars end at the map edge or where the data stops (%.1f pt)", name, worstInset]);
+}
+
+// A label gap removes isobar ink only. Under the gap the plate shows,
+// never the backing, and no label sits on an H or L.
+static void CheckKnockouts(OwnRun *run, NSString *name, double start, double hoursPerIndex) {
+    OwnLayerOptions full = {.bare = 1}, ink = {.bare = 1, .inkOnly = 1}, plate = {.bare = 1, .plateOnly = 1};
+    OwnMotionState *fullState = [OwnMotionState new], *inkState = [OwnMotionState new];
+    const CGFloat scale = 2;
+    NSUInteger examined = 0, punched = 0, clashes = 0, boxed = 0;
+    for (int frame = 0; frame < 12; frame++) { @autoreleasepool {
+        double index = start + frame * (90.0 / 3600.0) / hoursPerIndex;
+        NSData *frameInk = Pixels(OwnRunRenderMotion(run, index, @"", ink, nil, scale, inkState));
+        NSData *composed = Pixels(OwnRunRenderMotion(run, index, @"", full, nil, scale, fullState));
+        CGRect labels[80], centres[24];
+        double labelAlpha[80], centreAlpha[24];
+        NSInteger nLabels = OwnRenderLastLabelBoxes(labels, labelAlpha, 80);
+        NSInteger nCentres = OwnRenderLastCentreBoxes(centres, centreAlpha, 24);
+        for (NSInteger l = 0; l < nLabels; l++) for (NSInteger c = 0; c < nCentres; c++)
+            if (labelAlpha[l] >= .5 && centreAlpha[c] >= .5 && CGRectIntersectsRect(labels[l], centres[c])) clashes++;
+        NSData *under = Pixels(OwnRunRenderFraction(run, index, @"", plate, nil, scale));
+        if (!composed || composed.length != under.length || composed.length != frameInk.length) { punched++; continue; }
+        const uint8_t *f = composed.bytes, *p = under.bytes, *k = frameInk.bytes;
+        int width = (int)(580 * scale), height = (int)(composed.length / 4 / width);
+        for (NSInteger l = 0; l < nLabels; l++) {
+            CGRect box = labels[l];
+            for (int row = 0; row < height; row++) for (int col = 0; col < width; col++) {
+                double x = (col + .5) / scale, y = (height - row - .5) / scale;
+                if (!CGRectContainsPoint(box, CGPointMake(x, y))) continue;
+                size_t at = ((size_t)row * width + col) * 4;
+                if (labelAlpha[l] >= .98) boxed++;
+                if (k[at + 3] != 0) continue;
+                if (labelAlpha[l] >= .98) examined++;
+                else continue;
+                if (abs(f[at] - p[at]) + abs(f[at+1] - p[at+1]) + abs(f[at+2] - p[at+2]) > 6 || f[at+3] != p[at+3]) punched++;
+            }
+        }
+    }}
+    double open = boxed ? (double)examined / boxed : 0;
+    fprintf(stderr, "%s knockout pixels %lu of %lu (%.0f%%) off-plate %lu label/centre clashes %lu\n",
+        name.UTF8String, (unsigned long)examined, (unsigned long)boxed, open * 100, (unsigned long)punched, (unsigned long)clashes);
+    // Only the glyphs cover the plate; a painted halo would fill most of the box.
+    check(examined > 200 && punched == 0 && open > .6,
+        [NSString stringWithFormat:@"%@ label knockouts show the plate beneath", name]);
+    check(clashes == 0, [NSString stringWithFormat:@"%@ labels keep clear of H and L marks", name]);
+}
+
 int main(void) { @autoreleasepool {
     CheckLabelFade();
+    {
+        OwnRun *quarter = OwnRunLoad(@"Tests/fixtures/grid025", @"Resources/ownchart-coast.bin", NULL);
+        if (quarter.hours >= 3) {
+            CheckExactStrokes(quarter, @"0.25°", 0.35, 3);
+            CheckKnockouts(quarter, @"0.25°", 0.35, 3);
+        } else check(NO, @"0.25° fixture loads for the stroke checks");
+    }
     NSString *directory = [NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
     @try {
         OwnRun *run = SyntheticRun(directory);
+        CheckExactStrokes(run, @"wide grid", 0.1, 3);
+        CheckKnockouts(run, @"wide grid", 0.1, 3);
         OwnLayerOptions pressure = {.bare = 1};
         NSData *start = Pixels(OwnRunRenderFraction(run, 0, @"", pressure, nil, 1));
         NSData *middle = Pixels(OwnRunRenderFraction(run, .5, @"", pressure, nil, 1));
@@ -205,6 +316,9 @@ int main(void) { @autoreleasepool {
             check(published && published.hours > 32,
                 [NSString stringWithFormat:@"published scrub benchmark loads (%@)",loadError ?: @""]);
             if (published && published.hours > 32) {
+                double gridHours = [[published timeAtIndex:1] timeIntervalSinceDate:[published timeAtIndex:0]] / 3600.0;
+                CheckExactStrokes(published, @"published", 10.35, gridHours);
+                CheckKnockouts(published, @"published", 10.35, gridHours);
                 OwnLayerOptions active = {.bare=1,.rain=1,.barbs=1};
                 IsobarScrubRenderer *live=[[IsobarScrubRenderer alloc] initWithRun:published layers:active scale:1];
                 __block NSUInteger frames=0;

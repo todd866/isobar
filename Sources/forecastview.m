@@ -1,4 +1,5 @@
 #import "forecastview.h"
+#import "playheadcursor.h"
 #import "pure.h"
 
 static CGFloat clampf(CGFloat x, CGFloat lo, CGFloat hi) {
@@ -82,6 +83,10 @@ static CGFloat YForSpeed(double kt, CGFloat windTop, CGFloat windBottom, double 
     return windBottom - (windBottom - windTop) * clampf(kt / maxSpeed, 0, 1);
 }
 
+@interface HourlyForecastView ()
+@property(nonatomic, strong) NSView *playheadCursor;
+@end
+
 @implementation HourlyForecastView
 
 - (instancetype)initWithFrame:(NSRect)frame {
@@ -100,7 +105,26 @@ static CGFloat YForSpeed(double kt, CGFloat windTop, CGFloat windBottom, double 
 - (void)setWindRows:(NSArray<NSDictionary *> *)rows { _windRows = [rows copy] ?: @[]; [self setNeedsDisplay:YES]; }
 - (void)setRainRows:(NSArray<NSDictionary *> *)rows { _rainRows = [rows copy] ?: @[]; [self setNeedsDisplay:YES]; }
 - (void)setNow:(NSDate *)now { _now = now; [self setNeedsDisplay:YES]; }
-- (void)setSelectedDate:(NSDate *)date { _selectedDate = date; [self setNeedsDisplay:YES]; }
+- (void)setSelectedDate:(NSDate *)date {
+    if (date != _selectedDate && ![date isEqualToDate:_selectedDate]) _selectedDate = date;
+    [self placeCursor];
+}
+- (void)layout { [super layout]; [self placeCursor]; }
+- (void)viewDidChangeEffectiveAppearance { [super viewDidChangeEffectiveAppearance]; [self placeCursor]; [self setNeedsDisplay:YES]; }
+- (CGFloat)cursorXForDate:(NSDate *)date {
+    if (![date isKindOfClass:NSDate.class]) return NAN;
+    NSDate *start = FloorHour(self.now ?: NSDate.date, self.timeZone);
+    double horizon = self.horizonHours > 0 ? self.horizonHours : 48;
+    NSTimeInterval offset = [date timeIntervalSinceDate:start];
+    if (offset < 0 || offset > horizon * 3600) return NAN;
+    NSRect plot = [self windPlotRect];
+    return XForDate(date, start, NSMinX(plot), NSWidth(plot), horizon);
+}
+- (void)placeCursor {
+    NSRect plot = [self windPlotRect];
+    CGFloat top = NSMinY(plot), bottom = NSHeight(self.bounds) - 17;
+    PlaceVerticalCursor(self, &_playheadCursor, [self cursorXForDate:self.selectedDate], top, MAX(1, bottom - top));
+}
 - (void)setHorizonHours:(double)hours { _horizonHours = (isfinite(hours) && hours > 0) ? hours : 48; [self setNeedsDisplay:YES]; }
 - (void)setTimeZone:(NSTimeZone *)tz { _timeZone = tz; [self setNeedsDisplay:YES]; }
 
@@ -309,13 +333,7 @@ static CGFloat YForSpeed(double kt, CGFloat windTop, CGFloat windBottom, double 
             arrow.lineWidth=.75; arrow.lineJoinStyle=NSLineJoinStyleRound; [arrow stroke];
         }
     }
-    if ([self.selectedDate isKindOfClass:NSDate.class] &&
-        [self.selectedDate compare:start] != NSOrderedAscending && [self.selectedDate compare:end] != NSOrderedDescending) {
-        CGFloat x = XForDate(self.selectedDate, start, left, plotW, horizon);
-        [[[NSColor systemBlueColor] colorWithAlphaComponent:.55] setStroke];
-        NSBezierPath *cursor = [NSBezierPath bezierPath]; cursor.lineWidth = 1.5;
-        [cursor moveToPoint:NSMakePoint(x, windTop)]; [cursor lineToPoint:NSMakePoint(x, rainBase)]; [cursor stroke];
-    }
+    [self placeCursor];
     [NSGraphicsContext restoreGraphicsState];
 }
 

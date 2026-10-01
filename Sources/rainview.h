@@ -12,4 +12,6 @@
 @property(nonatomic, copy) void (^onInspect)(NSString *summary);
 - (void)inspectDate:(NSDate *)date;
 - (NSString *)summaryAtDate:(NSDate *)date;
+// Horizontal position of the shared playhead. NAN when `date` is outside the plot.
+- (CGFloat)cursorXForDate:(NSDate *)date;
 @end

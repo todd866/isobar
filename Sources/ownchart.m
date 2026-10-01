@@ -461,8 +461,11 @@ OwnLineSet OwnContours(const double *field, int nLon, int nLat,
                     field[(size_t)(j + 1) * (size_t)nLon + (size_t)i],
                 };
                 if (!isfinite(v[0]) || !isfinite(v[1]) || !isfinite(v[2]) || !isfinite(v[3])) continue;
-                // Nudge a node that sits on the level so the edge still has a crossing.
-                for (int c = 0; c < 4; c++) if (v[c] == level) v[c] = nextafter(v[c], INFINITY);
+                // A node on the level counts as above it. Interpolation and smoothing
+                // leave a flat field a few ulps either side of its value; reading that
+                // noise as crossings would trace contours across the plateau.
+                double onLevel = 1e-9 * fmax(1, fabs(level));
+                for (int c = 0; c < 4; c++) if (fabs(v[c] - level) <= onLevel) v[c] = level + onLevel;
                 int mask = 0;
                 if (v[0] >= level) mask |= 1;
                 if (v[1] >= level) mask |= 2;
@@ -652,32 +655,44 @@ static int CutDetour(OwnVec **pts, int n, int closed, int i, int step) {
 static int ExciseLoops(OwnVec **pts, int n, int closed, double minArea, double pinch, double maxAlong) {
     if (!pts || !*pts || n < 4 || !(pinch > 0) || !(minArea > 0)) return n;
     for (int guard = 0; guard < 8; guard++) {
+        int span = closed ? 2 * n : n;
+        double *cum = malloc((size_t)(span + 1) * 2 * sizeof(double));
+        if (!cum) break;
+        double *cross = cum + span + 1;
+        cum[0] = cross[0] = 0;
+        for (int k = 1; k < (closed ? span + 1 : n); k++) {
+            OwnVec a = (*pts)[(k - 1) % n], b = (*pts)[k % n];
+            cum[k] = cum[k - 1] + SegLen(a, b);
+            cross[k] = cross[k - 1] + a.x * b.y - b.x * a.y;
+        }
         int cutI = -1, cutStep = 0;
         for (int i = 0; i < n && cutI < 0; i++) {
-            double along = 0;
             int limit = closed ? n / 2 : n - 1 - i;
             for (int step = 2; step <= limit; step++) {
-                int prev = closed ? (i + step - 1) % n : i + step - 1;
                 int j = closed ? (i + step) % n : i + step;
-                along += SegLen((*pts)[prev], (*pts)[j]);
+                double along = cum[i + step] - cum[i + 1];
                 if (along > maxAlong) break;
                 if (!closed && j == n - 1) continue;
-                double chord = SegLen((*pts)[i], (*pts)[j]);
-                if (chord > pinch) continue;
-                if (chord > 1e-4 && along < chord * 2.5) continue;
-                double area = 0;
-                int m = step + 1;
-                for (int k = 0; k < m; k++) {
-                    int ia = closed ? (i + k) % n : i + k;
-                    int ib = closed ? (i + (k + 1) % m) % n : i + (k + 1) % m;
-                    area += (*pts)[ia].x * (*pts)[ib].y - (*pts)[ib].x * (*pts)[ia].y;
+                OwnVec pi = (*pts)[i], pj = (*pts)[j];
+                double chord = sqrt((pj.x - pi.x) * (pj.x - pi.x) + (pj.y - pi.y) * (pj.y - pi.y));
+                // After a further run d the chord is at least chord − d. No
+                // vertex can pass both tests until d reaches `skip`.
+                double skip = chord > pinch ? chord - pinch : 0;
+                if (chord > 1e-3 && along < chord * 2.5) skip = fmax(skip, (chord * 2.5 - along) / 3.5);
+                if (skip > 0) {
+                    double need = cum[i + step] + skip;
+                    while (step < limit && cum[i + step + 1] < need) step++;
+                    continue;
                 }
+                if (chord > 1e-4 && along < chord * 2.5) continue;
+                double area = cross[i + step] - cross[i] + pj.x * pi.y - pi.x * pj.y;
                 if (fabs(0.5 * area) >= minArea) continue;
                 cutI = i;
                 cutStep = step;
                 break;
             }
         }
+        free(cum);
         if (cutI < 0) break;
         int next = CutDetour(pts, n, closed, cutI, cutStep);
         if (next == n) break;

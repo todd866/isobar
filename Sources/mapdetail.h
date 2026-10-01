@@ -18,6 +18,7 @@ NSRect MapDetailsRect(NSUInteger count, NSRect bounds);
 - (NSRect)plotRect;
 - (NSArray<NSArray<NSDictionary *> *> *)segments;
 - (nullable NSString *)summaryAtPoint:(NSPoint)point;
+- (CGFloat)cursorXForDate:(nullable NSDate *)date;
 @end
 
 NS_ASSUME_NONNULL_END

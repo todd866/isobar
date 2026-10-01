@@ -1026,6 +1026,53 @@ static id LiveLayerContents(NSImage *image, NSSize viewSize, CGFloat *scaleOut) 
 }
 @end
 
+static const NSTimeInterval kTimeLensNow = 90;
+
+static void AnnouncePolite(NSView *view, NSString *text) {
+    if (!text.length || !view.window) return;
+    NSAccessibilityPostNotificationWithUserInfo(view, NSAccessibilityAnnouncementRequestedNotification, @{
+        NSAccessibilityAnnouncementKey: text,
+        NSAccessibilityPriorityKey: @(NSAccessibilityPriorityLow),
+    });
+}
+
+static NSString *ForecastWindPhrase(NSDictionary *row) {
+    if (![row isKindOfClass:NSDictionary.class]) return @"";
+    NSString *dir = [row[@"windDir"] isKindOfClass:NSString.class] ? [row[@"windDir"] uppercaseString] : @"";
+    if (!dir.length) {
+        id deg = row[@"windFrom"];
+        if ([deg isKindOfClass:NSNumber.class] && isfinite([deg doubleValue]) && [deg doubleValue] >= 0 && [deg doubleValue] <= 360) {
+            static NSString *const names[] = {@"N", @"NE", @"E", @"SE", @"S", @"SW", @"W", @"NW"};
+            double wrapped = fmod([deg doubleValue], 360.0);
+            if (wrapped < 0) wrapped += 360.0;
+            int idx = (int)lround(wrapped / 45.0) % 8;
+            if (idx < 0) idx += 8;
+            dir = names[idx];
+        }
+    }
+    id kt = row[@"windKt"];
+    if (![kt isKindOfClass:NSNumber.class] || !isfinite([kt doubleValue]) || [kt doubleValue] < 0) return @"";
+    if ([kt doubleValue] < 0.5) return @"Calm";
+    if (!dir.length) return [NSString stringWithFormat:@"%.0f kt", round([kt doubleValue])];
+    return [NSString stringWithFormat:@"%@ %.0f kt", dir, round([kt doubleValue])];
+}
+
+static NSString *StripDayLabel(NSDate *date, NSDate *now, NSTimeZone *zone) {
+    NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+    calendar.timeZone = zone ?: [NSTimeZone timeZoneWithName:@"GMT"];
+    if (now && date && [calendar isDate:date inSameDayAsDate:now]) return @"Today";
+    static NSDateFormatter *format;
+    static NSString *formatZone;
+    if (!format) {
+        format = [NSDateFormatter new];
+        format.locale = [NSLocale localeWithLocaleIdentifier:@"en_AU_POSIX"];
+        format.dateFormat = @"EEE";
+    }
+    NSString *name = calendar.timeZone.name ?: @"GMT";
+    if (![formatZone isEqual:name]) { format.timeZone = calendar.timeZone; formatZone = name; }
+    return date ? ([format stringFromDate:date] ?: @"") : @"";
+}
+
 static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
     if (!date) return @"";
     if (now && fabs([date timeIntervalSinceDate:now])<1800) return @"Now";
@@ -1055,6 +1102,9 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
 @property (nonatomic, copy) void (^onSeek)(double fraction);
 @property (nonatomic, copy) void (^onPreview)(double fraction);
 @property (nonatomic, strong) NSTimeZone *timeZone;
+// Local day of "now". Bands use the same midnight and the same Today/weekday labels as the day strip.
+@property (nonatomic, strong) NSDate *now;
+- (NSArray<NSString *> *)dayBandLabels;
 @end
 
 @implementation TimelineStrip
@@ -1070,6 +1120,7 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
     CGFloat _rulerWidth;
     NSDateFormatter *_selectionFormatter;
     NSString *_rulerZone;
+    NSTimeInterval _rulerNow;
 }
 - (instancetype)initWithFrame:(NSRect)frame {
     self = [super initWithFrame:frame];
@@ -1271,11 +1322,24 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
     self.needsDisplay = YES;
     if (self.onHover) self.onHover(-1);
 }
+- (void)setNow:(NSDate *)now {
+    if (now == _now || [now isEqualToDate:_now]) return;
+    _now = now;
+    _rulerDays = nil;
+    self.needsDisplay = YES;
+}
+- (NSArray<NSString *> *)dayBandLabels {
+    [self prepareRuler];
+    NSMutableArray *labels = [NSMutableArray array];
+    for (NSDictionary *day in _rulerDays) if ([day[@"label"] isKindOfClass:NSString.class]) [labels addObject:day[@"label"]];
+    return labels;
+}
 - (void)prepareRuler {
     CGFloat width=NSWidth([self trackRect]);
     NSTimeZone *zone=self.timeZone ?: [NSTimeZone timeZoneWithName:@"GMT"];
-    if (_rulerDays && _rulerWidth==width && [_rulerTimes isEqualToArray:self.times] && [_rulerZone isEqual:zone.name]) return;
-    _rulerWidth=width; _rulerTimes=[self.times copy]; _rulerZone=zone.name;
+    NSTimeInterval anchor = self.now.timeIntervalSince1970;
+    if (_rulerDays && _rulerWidth==width && [_rulerTimes isEqualToArray:self.times] && [_rulerZone isEqual:zone.name] && _rulerNow==anchor) return;
+    _rulerWidth=width; _rulerTimes=[self.times copy]; _rulerZone=zone.name; _rulerNow=anchor;
     NSDate *first=self.times.firstObject, *last=self.times.lastObject;
     NSTimeInterval span=[last timeIntervalSinceDate:first];
     NSMutableArray *days=[NSMutableArray array], *hours=[NSMutableArray array];
@@ -1285,9 +1349,9 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
         format.locale=[NSLocale localeWithLocaleIdentifier:@"en_AU_POSIX"];
         for (NSDate *date=[cal startOfDayForDate:first]; [date compare:last]==NSOrderedAscending;) {
             NSDate *next=[cal dateByAddingUnit:NSCalendarUnitDay value:1 toDate:date options:0];
-            format.dateFormat=@"EEE";
             [days addObject:@{@"left":@(MAX(0,[date timeIntervalSinceDate:first]/span)),
-                @"right":@(MIN(1,[next timeIntervalSinceDate:first]/span)),@"label":[format stringFromDate:date]}];
+                @"right":@(MIN(1,[next timeIntervalSinceDate:first]/span)),
+                @"label":StripDayLabel(date, self.now, zone) ?: @""}];
             date=next;
         }
         NSInteger step=width/(span/3600/6)>=46?6:12;
@@ -2213,6 +2277,18 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     NSInteger _hubDayIndex;
     DayStripView *_dayStrip;
     DayStripView *_fullscreenDays;
+    NSButton *_timeLensButton;
+    NSTextField *_forecastMark;
+    NSButton *_fullscreenLens;
+    NSString *_timeLensText;
+    NSString *_timeLensHash;
+    BOOL _timeLensForecast;
+    NSTimeInterval _timeLensAnnouncedAt;
+    NSInteger _timeLensDay;
+    NSInteger _timeLensStamp;
+    NSInteger _timeLensShown;
+    NSTimeInterval _timeLensHeaderAt;
+    NSTimeInterval _timeLensChromeAt;
     NSTimer *_refreshTimer;
     BOOL _watchingAppearance;
     BOOL _prognosisUndated;
@@ -2247,6 +2323,9 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     // Forecasts are a disclosure from the map, not a saved landing page.
     _forecastMode = -1;
     _hubDayIndex = -1;
+    _timeLensDay = -1;
+    _timeLensStamp = NSIntegerMin;
+    _timeLensShown = NSIntegerMin;
     _mapDetailModes = [NSMutableSet set];
     _mapDetailCache = [NSMutableDictionary dictionary];
     // Lenses are a session disclosure. A previous launch must not reopen them as map chips.
@@ -2560,6 +2639,205 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     return MIN(168, hours);
 }
 
+- (BOOL)timeLensIsNow:(NSDate *)date {
+    NSDate *now = _chartNow ?: NSDate.date;
+    if (![date isKindOfClass:NSDate.class]) return YES;
+    if (fabs([date timeIntervalSinceDate:now]) < kTimeLensNow) return YES;
+    // A seek or a moving playhead leaves the observation. The resting chart
+    // stays on it even when the current frame is a step off the clock.
+    if (_timelinePreviewing || _scrubHasFraction || _motionPendingFraction) return NO;
+    if (_live.playing || _live.holding || _live.seaming || _live.baseImage) return NO;
+    return YES;
+}
+
+// A resting chart reads as now, so playback from it starts at now rather
+// than at the nearest frame.
+- (NSDate *)playbackStartDate {
+    NSDate *selected = [self selectedForecastDate];
+    return selected && ![self timeLensIsNow:selected] ? selected : (_chartNow ?: NSDate.date);
+}
+
+- (NSString *)timeLensTextForDate:(NSDate *)date {
+    NSDictionary *pack = [self packFor:[self hubPlace]];
+    if ([self timeLensIsNow:date]) {
+        NSDictionary *obs = [pack[@"obs"] isKindOfClass:NSDictionary.class] ? pack[@"obs"] : nil;
+        id temp = obs[@"airTemp"];
+        NSString *base = ([temp isKindOfClass:NSNumber.class] && isfinite([temp doubleValue]))
+            ? [NSString stringWithFormat:@"%.0f° · now", round([temp doubleValue])] : @"— · now";
+        NSDictionary *wind = FooterWindModel(obs);
+        if (![wind[@"hasSpeed"] boolValue]) return base;
+        if ([wind[@"calm"] boolValue]) return [base stringByAppendingString:@" · Calm"];
+        NSString *speed = FooterWindSpeedLabel(wind);
+        NSString *direction = [wind[@"direction"] length] ? wind[@"direction"] : @"";
+        if (direction.length) return [NSString stringWithFormat:@"%@ · %@ %@", base, direction, speed];
+        return [NSString stringWithFormat:@"%@ · %@", base, speed];
+    }
+    NSTimeZone *zone = [self placeZone];
+    NSString *day = StripDayLabel(date, nil, zone) ?: @"";
+    NSString *clock = SituationClock(date, zone) ?: @"";
+    NSString *when = clock.length ? [NSString stringWithFormat:@"%@ %@", day, clock] : day;
+    double temp = DayStripTemperatureAtDate(pack[@"series"], date);
+    NSString *tempText = isfinite(temp) ? [NSString stringWithFormat:@"%.0f°", round(temp)] : @"—";
+    NSString *wind = ForecastWindPhrase(DayStripSampleAtDate(pack[@"series"], date, 90 * 60));
+    if (wind.length) return [NSString stringWithFormat:@"%@ · %@ · %@", when, tempText, wind];
+    return [NSString stringWithFormat:@"%@ · %@", when, tempText];
+}
+
+- (void)applyTimeLensButton:(NSButton *)button mark:(NSTextField *)mark date:(NSDate *)date announce:(BOOL)announce {
+    if (!button) return;
+    BOOL forecast = ![self timeLensIsNow:date];
+    NSString *plain = [self timeLensTextForDate:date] ?: @"";
+    NSDictionary *sample = forecast ? DayStripSampleAtDate([self packFor:[self hubPlace]][@"series"], date, 90 * 60) : nil;
+    NSNumber *code = [sample[@"weatherCode"] isKindOfClass:NSNumber.class] ? sample[@"weatherCode"] : nil;
+    NSString *symbol = code ? WeatherCodeSymbol(code.integerValue, YES) : nil;
+    // Wide headers use a smaller tabular face so the forecast sentence stays on one line.
+    // The compact fullscreen face stays at 28 so the toolbar temperature does not shrink.
+    CGFloat size = 13;
+    if (NSHeight(button.frame) >= 52 && NSWidth(button.frame) >= 300) size = 15;
+    else if (NSHeight(button.frame) >= 52) size = 28;
+    else if (NSHeight(button.frame) >= 40) size = 16;
+    // The popover header's large face steps down rather than truncate a
+    // forecast sentence; the allowance covers the inline weather icon.
+    while (forecast && mark && size > 15 && [plain sizeWithAttributes:@{NSFontAttributeName:
+        [NSFont monospacedDigitSystemFontOfSize:size weight:NSFontWeightMedium]}].width + size * 1.4 > NSWidth(button.frame) - 8)
+        size -= 1;
+    NSFont *font = [NSFont monospacedDigitSystemFontOfSize:size weight:NSFontWeightMedium];
+    NSColor *ink = forecast ? NSColor.secondaryLabelColor : NSColor.labelColor;
+    NSMutableParagraphStyle *style = [NSMutableParagraphStyle new];
+    style.alignment = NSTextAlignmentLeft;
+    style.lineBreakMode = NSLineBreakByTruncatingTail;
+    NSDictionary *attrs = @{
+        NSFontAttributeName: font,
+        NSForegroundColorAttributeName: ink,
+        NSParagraphStyleAttributeName: style,
+    };
+    NSMutableAttributedString *title = [NSMutableAttributedString new];
+    NSRange split = [plain rangeOfString:@" · "];
+    NSString *head = split.location == NSNotFound ? plain : [plain substringToIndex:split.location];
+    NSString *tail = split.location == NSNotFound ? @"" : [plain substringFromIndex:split.location];
+    [title appendAttributedString:[[NSAttributedString alloc] initWithString:head attributes:attrs]];
+    NSDictionary *obsWind = nil;
+    if (!forecast) {
+        NSDictionary *obs = [[self packFor:[self hubPlace]][@"obs"] isKindOfClass:NSDictionary.class]
+            ? [self packFor:[self hubPlace]][@"obs"] : nil;
+        obsWind = FooterWindModel(obs);
+        if (![obsWind[@"hasDirection"] boolValue] && ![obsWind[@"hasSpeed"] boolValue]) obsWind = nil;
+    }
+    NSImage *icon = nil;
+    NSRect iconBounds = NSMakeRect(0, round(-size * 0.18), size * 0.85, size * 0.85);
+    if (obsWind) {
+        icon = FooterWindImage(obsWind);
+        iconBounds = NSMakeRect(0, round(-size * 0.15), 22, 16);
+    } else if (symbol.length) {
+        static NSString *cachedSymbol;
+        static CGFloat cachedSize;
+        static NSImage *cachedIcon;
+        if ([symbol isEqual:cachedSymbol] && fabs(cachedSize - size) < 0.1) icon = cachedIcon;
+        else {
+            icon = [NSImage imageWithSystemSymbolName:symbol accessibilityDescription:WeatherCodeLabel(code.integerValue) ?: @""];
+            NSImageSymbolConfiguration *config = [NSImageSymbolConfiguration configurationWithPointSize:MAX(11, size - 6) weight:NSFontWeightRegular];
+            if (config) icon = [icon imageWithSymbolConfiguration:config] ?: icon;
+            cachedSymbol = symbol;
+            cachedSize = size;
+            cachedIcon = icon;
+        }
+    }
+    if (icon) {
+        NSTextAttachment *attachment = [NSTextAttachment new];
+        attachment.image = icon;
+        attachment.bounds = iconBounds;
+        [title appendAttributedString:[[NSAttributedString alloc] initWithString:@" " attributes:attrs]];
+        [title appendAttributedString:[NSAttributedString attributedStringWithAttachment:attachment]];
+    }
+    if (tail.length) [title appendAttributedString:[[NSAttributedString alloc] initWithString:tail attributes:attrs]];
+    button.attributedTitle = title;
+    button.accessibilityLabel = plain;
+    button.toolTip = plain;
+    if (mark) {
+        mark.stringValue = forecast ? @"Forecast" : @"";
+        mark.hidden = !forecast;
+        mark.accessibilityElement = forecast;
+        mark.accessibilityLabel = forecast ? @"Forecast" : nil;
+    }
+    if (!announce) {
+        _timeLensText = plain;
+        _timeLensForecast = forecast;
+        return;
+    }
+    BOOL changed = ![_timeLensText isEqual:plain];
+    BOOL modeChanged = forecast != _timeLensForecast || !_timeLensText;
+    _timeLensText = plain;
+    _timeLensForecast = forecast;
+    if (!changed || !button.window) return;
+    BOOL inspecting = _timelinePreviewing || _scrubHasFraction || _dayStrip.hoverIndex >= 0 || _fullscreenDays.hoverIndex >= 0;
+    BOOL playing = _live.playing && !inspecting;
+    NSTimeInterval stamp = NSProcessInfo.processInfo.systemUptime;
+    if ((modeChanged || stamp - _timeLensAnnouncedAt > 1.5) && (!playing || modeChanged)) {
+        _timeLensAnnouncedAt = stamp;
+        AnnouncePolite(button, forecast ? [plain stringByAppendingString:@", forecast"] : plain);
+    }
+}
+
+- (void)syncTimeLens:(NSDate *)date {
+    if (![date isKindOfClass:NSDate.class]) date = [self selectedForecastDate];
+    NSInteger previous = _timeLensDay;
+    BOOL playing = _live.playing && !_timelinePreviewing && !_scrubHasFraction;
+    NSTimeInterval uptime = NSProcessInfo.processInfo.systemUptime;
+    // The dot eases across the day cell. A few moves a second is smooth, and
+    // a move on every display tick dirties the strip often enough to miss the
+    // playback budget.
+    if (!playing || uptime - _timeLensChromeAt >= 0.2) {
+        if (_dayStrip) _dayStrip.playhead = date;
+        if (_fullscreenDays) _fullscreenDays.playhead = date;
+        _timeLensChromeAt = uptime;
+    }
+    NSInteger day = _dayStrip ? _dayStrip.highlightedDayIndex : (_fullscreenDays ? _fullscreenDays.highlightedDayIndex : -1);
+    BOOL forecast = ![self timeLensIsNow:date];
+    NSString *hash = [self hubPlace][@"geohash"] ?: @"";
+    BOOL headerReady = _timeLensButton.attributedTitle.length > 0 && (!_fullscreenLens || _fullscreenLens.attributedTitle.length > 0);
+    BOOL held = playing && headerReady && forecast == _timeLensForecast && [hash isEqual:_timeLensHash ?: @""] &&
+        uptime - _timeLensHeaderAt < 0.5;
+    NSInteger stamp = _timeLensStamp;
+    NSInteger shown = _timeLensShown;
+    if (!held && forecast) {
+        stamp = (NSInteger)floor(date.timeIntervalSince1970 / 60.0);
+        double shownTemp = DayStripTemperatureAtDate([self packFor:[self hubPlace]][@"series"], date);
+        shown = isfinite(shownTemp) ? (NSInteger)lround(shownTemp) : NSIntegerMin;
+    } else if (!held) {
+        NSDictionary *obs = [[self packFor:[self hubPlace]][@"obs"] isKindOfClass:NSDictionary.class]
+            ? [self packFor:[self hubPlace]][@"obs"] : nil;
+        id temp = obs[@"airTemp"];
+        shown = [temp isKindOfClass:NSNumber.class] && isfinite([temp doubleValue]) ? (NSInteger)lround([temp doubleValue]) : NSIntegerMin;
+        NSDictionary *wind = FooterWindModel(obs);
+        NSString *direction = [wind[@"direction"] isKindOfClass:NSString.class] ? wind[@"direction"] : @"";
+        NSInteger speed = [wind[@"hasSpeed"] boolValue] ? (NSInteger)lround([wind[@"speedKt"] doubleValue]) : -1;
+        unichar initial = direction.length ? [direction characterAtIndex:0] : 0;
+        stamp = speed + (NSInteger)direction.length * 1000 + initial;
+    }
+    BOOL headerSame = headerReady && _timeLensText && forecast == _timeLensForecast && stamp == _timeLensStamp &&
+        shown == _timeLensShown && [hash isEqual:_timeLensHash ?: @""];
+    if (!headerSame && !held) {
+        [self applyTimeLensButton:_timeLensButton mark:_forecastMark date:date announce:YES];
+        [self applyTimeLensButton:_fullscreenLens mark:nil date:date announce:NO];
+        _timeLensStamp = stamp;
+        _timeLensShown = shown;
+        _timeLensHash = hash;
+        _timeLensHeaderAt = uptime;
+    }
+    // A lens cursor tracks the playhead. During play it moves a fraction of a
+    // point per frame, so a few updates a second stay smooth without redrawing
+    // the graph on every tick.
+    if ((!playing || uptime - _timeLensChromeAt < 0.05) &&
+        [_forecastGraph respondsToSelector:@selector(setSelectedDate:)])
+        [(id)_forecastGraph setSelectedDate:date];
+    BOOL hovering = _dayStrip.hoverIndex >= 0 || _fullscreenDays.hoverIndex >= 0;
+    if (!hovering && previous >= 0 && day >= 0 && day != previous) {
+        DayStripView *voice = _dayStrip.window ? _dayStrip : _fullscreenDays;
+        AnnouncePolite(voice, [voice accessibilityLabelForDay:day]);
+    }
+    _timeLensDay = day;
+}
+
 - (void)updateForecastInspection:(NSDate *)date {
     if (!date || !_forecastGraph) return;
     NSTimeZone *zone=(_forecastMode==1)?[self aviationTimeZone]:ZoneForPlace((_forecastMode==0 || _forecastMode==3)?[self windPlace]:[self rainPlace]);
@@ -2701,7 +2979,10 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (void)applyLiveFrame {
-    if (!_live.baseImage || _timelinePreviewing || _scrubHasFraction) return;
+    if (_timelinePreviewing || _scrubHasFraction) return;
+    if (_live.playhead && NSProcessInfo.processInfo.systemUptime - _timeLensChromeAt >= 0.2)
+        [self syncTimeLens:_live.playhead];
+    if (!_live.baseImage) return;
     _liveDisplayTicks++;
     [[self timelineChart] setLiveFrames:_live.baseImage next:_live.nextImage opacity:_live.nextOpacity];
     NSDate *date = _live.playhead;
@@ -2979,7 +3260,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     _motionStartIndex = (!_sourceECMWF && _hasAnalysisSlot) ? 1 : 0;
     NSMutableArray<NSDictionary *> *specs = [NSMutableArray array];
     if (_sourceECMWF) {
-        [self startLivePlaybackFromDate:[self selectedForecastDate] ?: (_chartNow ?: NSDate.date)];
+        [self startLivePlaybackFromDate:[self playbackStartDate]];
         return;
     }
     NSData *pdf = [_chartPDFDrawn copy];
@@ -3116,8 +3397,12 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     _timelinePreviewing = NO;
     _evolutionOnOpenPending = NO;
     if (_ownRun.hours < 2) { [self seekPopoverMovieFraction:fraction]; return; }
+    // The fraction is along the strip the pointer touched; keep its time if
+    // the seek moves the chart onto the model run's sequence.
+    NSDate *wanted = _sourceECMWF ? nil : [self dateForMotionFraction:fraction];
     [self useRawForecastForMotion];
     if (_sequenceTimes.count < 2) return;
+    if (wanted) fraction = [self motionFractionForDate:wanted];
     fraction = MIN(1, MAX(0, fraction));
     _motionResetToNow = NO;
     _motionPendingFraction = nil;
@@ -3150,6 +3435,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
         [self placePopoverChart:[self timelineChart] index:index frame:[self timelineChart].frame in:[self timelineChart].superview];
         [self updateTimelineHeading:_sequenceTimes[index]];
         [self updateForecastInspection:_sequenceTimes[index]];
+        [self syncTimeLens:target];
         return;
     }
     // Raw fields render quickly enough to track the pointer. Random video
@@ -3174,6 +3460,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
         _scrubKey = key;
     }
     _scrubHasFraction = YES; _scrubFraction = fraction;
+    [self syncTimeLens:target];
     if (!_timelinePreviewing) {
         _pair = (ChartPair){index, MIN(index+1, (NSInteger)_sequenceTimes.count-1), YES};
         _pairPinned = YES; _shownLeft = index;
@@ -3272,7 +3559,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
         if (self.popover.shown) [self rebuildContent];
     }
     if ([self livePlaybackAvailable]) {
-        [self startLivePlaybackFromDate:[self selectedForecastDate]];
+        [self startLivePlaybackFromDate:[self playbackStartDate]];
         return;
     }
     [self stopChartLoop];
@@ -4400,10 +4687,28 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     strip.days = [days isKindOfClass:NSArray.class] ? days : @[];
     if (hours && _hubDayIndex >= 0 && _hubDayIndex < (NSInteger)strip.days.count)
         strip.hours = [self hubHoursForDay:strip.days[_hubDayIndex]] ?: @[];
+    strip.series = [self packFor:[self hubPlace]][@"series"] ?: @[];
     strip.selectedIndex = _hubDayIndex;
+    strip.playhead = [self selectedForecastDate];
     __weak Controller *weak = self;
     strip.onSelect = ^(NSInteger index) { [weak selectHubDay:index]; };
+    strip.onHover = ^(NSInteger index) { [weak previewHubDay:index]; };
     return strip;
+}
+
+- (void)previewHubDay:(NSInteger)index {
+    if (index < 0) {
+        [self previewPopoverMovieFraction:NAN];
+        return;
+    }
+    NSArray *days = [self packFor:[self hubPlace]][@"daily"];
+    if (![days isKindOfClass:NSArray.class] || index >= (NSInteger)days.count) return;
+    NSDate *date = [days[index][@"date"] isKindOfClass:NSDate.class] ? days[index][@"date"] : nil;
+    NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+    calendar.timeZone = [self placeZone];
+    NSDate *noon = date ? [calendar dateBySettingHour:12 minute:0 second:0 ofDate:date options:0] : nil;
+    if (!noon || _sequenceTimes.count < 2) return;
+    [self previewPopoverMovieFraction:[self motionFractionForDate:noon]];
 }
 
 - (void)rebuildContent {
@@ -4506,8 +4811,17 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     hubPlaces.target = self;
     hubPlaces.action = @selector(chooseHubPlace:);
     [root addSubview:hubPlaces];
-    NSButton *hubObs = [self observationButtonForPlace:hub index:0 frame:NSMakeRect(obsX, y, obsW, headerH) identifier:@"popover.obs"];
+    CGFloat markW = obsW >= 168 ? 56 : 0;
+    CGFloat textW = markW ? obsW - markW - 6 : obsW;
+    NSButton *hubObs = [self observationButtonForPlace:hub index:0 frame:NSMakeRect(obsX, y, textW, headerH) identifier:@"popover.obs"];
     [root addSubview:hubObs];
+    _timeLensButton = hubObs;
+    NSTextField *forecastMark = [self label:@"" font:[NSFont systemFontOfSize:11 weight:NSFontWeightMedium]
+        color:NSColor.secondaryLabelColor frame:NSMakeRect(obsX + textW + 4, y + (headerH - 16) / 2, markW, 16)];
+    forecastMark.accessibilityIdentifier = @"hub.forecastMark";
+    forecastMark.hidden = YES;
+    [root addSubview:forecastMark];
+    _forecastMark = forecastMark;
     if (warned) {
         NSButton *badge = [NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"exclamationmark.triangle.fill" accessibilityDescription:@"Warning"] target:self action:@selector(showHubWarning:)];
         badge.bordered = NO;
@@ -4696,6 +5010,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
         MAX(40,width-2*pad-2*buttonW-playW-nowW),timelineH);
     _popoverTimeline = strip;
     strip.timeZone = [self placeZone];
+    strip.now = now;
     strip.times = _sequenceTimes;
     strip.labels = ticks;
     strip.clocks = clocks;
@@ -4740,6 +5055,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     if (self.popover.contentViewController.view!=root) self.popover.contentViewController.view=root;
     strip.preservesInteraction=NO;
     if (keepLive) [self applyLiveFrame];
+    [self syncTimeLens:leftWhen];
     if (!_expandedMap && (_live.playing || _live.holding)) [self scheduleLiveResize];
     else if (_timelinePreviewing) [self showStaticTimelineFraction:_timelinePreviewFraction];
     else if (_scrubHasFraction) [self showStaticTimelineFraction:_scrubFraction];
@@ -4763,6 +5079,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     // hover capture, the decoder and its presentation layer undisturbed.
     if (self.popover.shown) {
         NSDate *date=[self selectedForecastDate];
+        [self syncTimeLens:date];
         [self updateForecastInspection:date];
         _leftTitle.attributedStringValue=[self popoverHeadingText:ForecastDay(date,_chartNow ?: NSDate.date,[self placeZone])
             clock:SituationClock(date,[self placeZone]) kind:nil];
@@ -4863,62 +5180,15 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
 }
 
 - (NSButton *)observationButtonForPlace:(NSDictionary *)place index:(NSInteger)index frame:(NSRect)frame identifier:(NSString *)identifier {
-    CGFloat cardW=NSWidth(frame);
-    NSDictionary *pack = [self packFor:place];
-    NSDictionary *observation = [pack[@"obs"] isKindOfClass:NSDictionary.class] ? pack[@"obs"] : nil;
-    NSDictionary *windModel = FooterWindModel(observation);
-    NSString *temp = @"—";
-    if ([observation[@"airTemp"] isKindOfClass:NSNumber.class])
-        temp = [NSString stringWithFormat:@"%.0f°", round([observation[@"airTemp"] doubleValue])];
-    else if (NSHeight(frame) >= 40) {
-        NSDate *moment = _chartNow ?: NSDate.date;
-        double nearest = DBL_MAX, model = 0; BOOL found = NO;
-        for (NSDictionary *row in pack[@"series"]) {
-            NSDate *time = [row[@"time"] isKindOfClass:NSDate.class] ? row[@"time"] : nil;
-            id value = row[@"temp"];
-            if (!time || ![value isKindOfClass:NSNumber.class] || !isfinite([value doubleValue])) continue;
-            double gap = fabs([time timeIntervalSinceDate:moment]);
-            if (gap < nearest) { nearest = gap; model = [value doubleValue]; found = YES; }
-        }
-        if (found) temp = [NSString stringWithFormat:@"%.0f°", round(model)];
-    }
-    BOOL hasSpeed = [windModel[@"hasSpeed"] boolValue];
-    NSString *speed = FooterWindSpeedLabel(windModel);
-    NSString *warningMark = [pack[@"warnings"] count] ? @"  ⚠" : @"";
-    NSString *title = [NSString stringWithFormat:@"%@  %@  %@%@  ›", place[@"name"] ?: @"", temp, speed, warningMark];
-    NSButton *button = [NSButton buttonWithTitle:title target:self action:@selector(showObservation:)];
+    (void)place;
+    NSButton *button = [NSButton buttonWithTitle:@"" target:self action:@selector(showObservation:)];
     button.bordered = NO;
     button.alignment = NSTextAlignmentLeft;
-    button.font = [NSFont systemFontOfSize:12];
-    BOOL hero = NSHeight(frame) >= 40;
-    NSMutableAttributedString *attributed=[[NSMutableAttributedString alloc] initWithString:
-        [NSString stringWithFormat:@"%@  ",temp]
-        attributes:@{NSFontAttributeName:[NSFont monospacedDigitSystemFontOfSize:hero ? (NSHeight(frame) >= 52 ? 40 : 34) : 22 weight:hero ? NSFontWeightLight : NSFontWeightSemibold],NSForegroundColorAttributeName:NSColor.labelColor}];
-    if (!hero) [attributed appendAttributedString:[[NSAttributedString alloc] initWithString:
-        [NSString stringWithFormat:@"%@ · now  ",place[@"name"] ?: @""]
-        attributes:@{NSFontAttributeName:[NSFont systemFontOfSize:12 weight:NSFontWeightMedium],NSForegroundColorAttributeName:NSColor.secondaryLabelColor}]];
-    NSImage *windImage = FooterWindImage(windModel);
-    if (cardW>=230 && observation && ([windModel[@"hasDirection"] boolValue] || hasSpeed)) {
-        NSTextAttachment *attachment = [NSTextAttachment new];
-        attachment.image = windImage;
-        attachment.bounds = NSMakeRect(0, -3, 22, 18);
-        [attributed appendAttributedString:[NSAttributedString attributedStringWithAttachment:attachment]];
-    }
-    [attributed appendAttributedString:[[NSAttributedString alloc] initWithString:
-        cardW>=230?[NSString stringWithFormat:@"  %@%@  ›", speed, warningMark]:warningMark
-        attributes:@{NSFontAttributeName: button.font, NSForegroundColorAttributeName: NSColor.labelColor}]];
-    button.attributedTitle = attributed;
+    button.lineBreakMode = NSLineBreakByTruncatingTail;
+    button.font = [NSFont monospacedDigitSystemFontOfSize:NSHeight(frame) >= 52 ? 22 : 16 weight:NSFontWeightMedium];
     button.frame = frame;
     button.tag = index;
     button.accessibilityIdentifier = identifier;
-    NSString *direction = [windModel[@"calm"] boolValue] ? @"Calm"
-        : ([windModel[@"hasDirection"] boolValue]
-            ? ([windModel[@"direction"] length] ? windModel[@"direction"] : @"Wind")
-            : (hasSpeed ? @"Direction unavailable" : @"Wind unavailable"));
-    NSString *warning = [pack[@"warnings"] count] ? @", warning" : @"";
-    button.toolTip = [NSString stringWithFormat:@"%@ · %@ now · %@%@. Observations and warnings.",
-        place[@"name"] ?: @"Weather",temp, hasSpeed ? [NSString stringWithFormat:@"%@ %.0f kt", direction, [windModel[@"speedKt"] doubleValue]] : direction, warning];
-    button.accessibilityLabel = button.toolTip;
     return button;
 }
 
@@ -5116,11 +5386,13 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     CGFloat cursor = NSMaxX(places.frame) + 8;
     CGFloat tempW = MIN(168, rightLimit - cursor - 8);
     CGFloat tempH = MIN(52, height - 4);
+    _fullscreenLens = nil;
     if (tempW >= 72) {
         NSButton *temperature = [self observationButtonForPlace:hub index:0
             frame:NSMakeRect(cursor, floor((height - tempH) / 2), tempW, tempH)
             identifier:@"fullscreen.temperature"];
         [_chartToolbar addSubview:temperature];
+        _fullscreenLens = temperature;
         cursor = NSMaxX(temperature.frame) + 8;
     }
     NSTextField *title = [self timeTitleField];
@@ -5173,6 +5445,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
         [tips addObject:SituationOffset(date,_chartNow ?: NSDate.date) ?: @""];
     }
     _chartTimeline.timeZone=[self placeZone];
+    _chartTimeline.now=_chartNow ?: NSDate.date;
     _chartTimeline.labels=labels; _chartTimeline.clocks=clocks;
     _chartTimeline.dayKeys=days; _chartTimeline.tips=tips;
     _chartTimeline.leftIndex=_panelIndex; _chartTimeline.rightIndex=_panelIndex;
@@ -5215,9 +5488,12 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     NSArray *days = [self packFor:[self hubPlace]][@"daily"];
     _fullscreenDays.days = [days isKindOfClass:NSArray.class] ? days : @[];
     _fullscreenDays.hours = nil;
+    _fullscreenDays.series = [self packFor:[self hubPlace]][@"series"] ?: @[];
     _fullscreenDays.selectedIndex = _hubDayIndex;
+    _fullscreenDays.playhead = [self selectedForecastDate];
     __weak Controller *weakDays = self;
     _fullscreenDays.onSelect = ^(NSInteger index) { [weakDays selectHubDay:index]; };
+    _fullscreenDays.onHover = ^(NSInteger index) { [weakDays previewHubDay:index]; };
     if (_fullscreenDays.superview != root) [root addSubview:_fullscreenDays];
     if (scroll.documentView!=panel) scroll.documentView=panel;
     NSSize mapSize=NSMakeSize(fitted.width*MAX(1,_panelZoom),fitted.height*MAX(1,_panelZoom));
@@ -5239,6 +5515,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     }
     if (hasLive) [self applyLiveFrame];
     else if (!_comparing && _scrubHasFraction) [self updateTimelineHeading:[self selectedForecastDate]];
+    [self syncTimeLens:[self selectedForecastDate]];
     if (_compareNote.superview) [root addSubview:_compareNote];
     if (_live.playing || _live.holding) [self scheduleLiveResize];
 }
@@ -5445,7 +5722,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
 
 - (void)presentChartWindowInFrame:(NSRect)frame {
     if (![self chartsReady]) return;
-    NSDate *selected=[self selectedForecastDate];
+    NSDate *selected=[self playbackStartDate];
     double fraction=[self motionFractionForDate:selected];
     BOOL playing=[self timelinePlaying];
     // AppKit may deliver the popover close notification after performClose:

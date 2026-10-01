@@ -19,43 +19,49 @@
   </header>
   <main class="viewer" aria-label="Isobar weather viewer">
     <section class="summary" aria-label="Place forecast">
-      <div class="summary-main">
-        <div class="place-switcher" id="place-switcher" role="group" aria-label="Place"></div>
+      <div class="place-switcher" id="place-switcher" role="group" aria-label="Place"></div>
+      <header class="now">
+        <h1 class="place-name" id="place-name">—</h1>
         <p class="current-temp" id="current-temp">—</p>
-      </div>
+        <div class="now-detail">
+          <p class="condition" id="current-condition"></p>
+          <p class="updated" id="updated" role="status" aria-live="polite">Loading forecast…</p>
+        </div>
+      </header>
       <ol class="day-strip" id="day-strip" aria-label="Seven day forecast"></ol>
     </section>
-    <section class="map-panel">
-      <div class="map-head">
-        <div>
-          <h1 id="map-title">Mean sea-level pressure</h1>
-          <p class="kicker" id="map-note" hidden></p>
+    <div class="stage">
+      <section class="map-panel">
+        <div class="map-head">
+          <div class="map-heading">
+            <h2 id="map-title">Mean sea-level pressure</h2>
+            <p class="kicker" id="map-note" hidden></p>
+          </div>
+          <div class="detail-tabs" role="toolbar" aria-label="Forecast lenses">
+            <button class="detail-tab" data-layer="rain" type="button" aria-pressed="false"><i class="dot rain-dot"></i>Rain</button>
+            <button class="detail-tab" data-layer="temperature" type="button" aria-pressed="false"><i class="dot temp-dot"></i>Temperature</button>
+            <button class="detail-tab" data-layer="wind" type="button" aria-pressed="false"><i class="dot wind-dot"></i>Kite</button>
+            <button class="detail-tab" data-layer="surf" type="button" aria-pressed="false"><i class="dot surf-dot"></i>Surf</button>
+          </div>
         </div>
-        <p class="updated" id="updated" role="status" aria-live="polite">Loading forecast…</p>
+        <div class="map-frame" id="map-frame">
+          <img id="map-image" alt="Mean sea-level pressure forecast map" decoding="async">
+          <video id="map-video" aria-label="Animated mean sea-level pressure forecast" muted playsinline preload="none" hidden></video>
+          <div class="map-state" id="map-state">Preparing the map…</div>
+        </div>
+        <button class="retry" id="retry" type="button" hidden>Retry</button>
+      </section>
+      <aside class="detail-panel" id="detail-panel" aria-label="Forecast detail" hidden>
+        <div class="chart-wrap"><canvas id="chart" aria-label="Forecast detail chart"></canvas><div class="chart-empty" id="chart-empty">No detail in this forecast</div></div>
+        <div class="detail-reading" id="detail-reading"></div>
+      </aside>
+      <div class="timeline">
+        <button id="play-toggle" class="play-toggle" type="button" aria-label="Play forecast animation" disabled>Play</button>
+        <input id="time" type="range" min="0" max="0" value="0" aria-label="Forecast time">
+        <output id="time-label" for="time">—</output>
       </div>
-      <div class="map-frame" id="map-frame">
-        <img id="map-image" alt="Mean sea-level pressure forecast map" decoding="async">
-        <video id="map-video" aria-label="Animated mean sea-level pressure forecast" muted playsinline preload="none" hidden></video>
-        <div class="map-state" id="map-state">Preparing the map…</div>
-      </div>
-      <button class="retry" id="retry" type="button" hidden>Retry</button>
-      <div class="detail-tabs" role="toolbar" aria-label="Forecast lenses">
-        <button class="detail-tab" data-layer="rain" type="button" aria-pressed="false"><i class="dot rain-dot"></i>Rain</button>
-        <button class="detail-tab" data-layer="temperature" type="button" aria-pressed="false"><i class="dot temp-dot"></i>Temperature</button>
-        <button class="detail-tab" data-layer="wind" type="button" aria-pressed="false"><i class="dot wind-dot"></i>Kite</button>
-        <button class="detail-tab" data-layer="surf" type="button" aria-pressed="false"><i class="dot surf-dot"></i>Surf</button>
-      </div>
-    </section>
-    <aside class="detail-panel" id="detail-panel" aria-label="Forecast detail" hidden>
-      <div class="chart-wrap"><canvas id="chart" aria-label="Forecast detail chart"></canvas><div class="chart-empty" id="chart-empty">No detail in this forecast</div></div>
-      <div class="detail-reading" id="detail-reading"></div>
-    </aside>
-    <div class="timeline">
-      <button id="play-toggle" class="play-toggle" type="button" aria-label="Play forecast animation" disabled>Play</button>
-      <input id="time" type="range" min="0" max="0" value="0" aria-label="Forecast time">
-      <output id="time-label" for="time">—</output>
+      <div class="times" id="times" aria-hidden="true"></div>
     </div>
-    <div class="times" id="times" aria-hidden="true"></div>
   </main>
   <footer class="sources" id="sources"></footer>
   <dialog class="layers-menu" id="layers-menu" aria-labelledby="layers-title">
