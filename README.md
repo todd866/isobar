@@ -4,19 +4,20 @@ A moving weather map for Australia, with the details you need when you need them
 Watch pressure systems develop, scrub to a day and hour, then explore the rain,
 temperature, wind, surf or flying conditions underneath.
 
-**[Open Isobar in your browser](https://todd866.github.io/isobar/)** ·
-**[Download for Mac](https://github.com/todd866/isobar/releases/download/v1.9.0/Isobar-1.9.0-macOS-arm64.dmg)** · [Run your own website](docs/hosting.md)
+**[Open Isobar in your browser](https://isobar.md)** ·
+**[Mac v1.9.0 release](https://github.com/todd866/isobar/releases/tag/v1.9.0)** ·
+[Run your own website](docs/hosting.md)
 
-Isobar 1.9.0 is a signed, Apple-notarized, self-contained download for
-**Apple silicon (M1 or newer), macOS 15+**. Open the disk image, drag Isobar
-to Applications, then open it from there. [Installation guide](docs/install.md).
-The browser version is also available.
+The current Mac release is **v1.9.0** for **Apple silicon (M1 or newer),
+macOS 15+**. The signed, Apple-notarized download covers Australia. Open the
+disk image, drag Isobar to Applications, then open it from there.
+[Installation guide](docs/install.md).
 
 ## Start with the weather
 
-One map, one timeline. Let the forecast play, hover to preview a time, or drag
-to hold it. Click the map to return to now and keep playing. Layers let you add
-what matters and clear the rest.
+One map, one timeline. Let the forecast play or choose a time on the timeline.
+The current Mac release returns to now when you click the map. Its lenses add
+detail for the activity you are planning:
 
 - **Rain:** when it arrives, how much to expect, and the hourly breakdown.
 - **Temperature:** a clear current reading, hourly forecasts and optional map colour.
@@ -28,9 +29,12 @@ what matters and clear the rest.
 
 ## Web and Mac
 
-The **[web app](https://todd866.github.io/isobar/)** runs in a browser with no
-account or installation. It shows ECMWF pressure maps and Perth coastal rain,
-temperature, wind and surf forecasts.
+The **[web app](https://isobar.md)** runs in a browser with no account or
+installation. It has an interactive ECMWF pressure map with rain, wind and
+temperature fields, plus [ATPL practice](https://isobar.md/train), an
+[E6-B computer](https://isobar.md/e6b) and an [instrument lab](https://isobar.md/lab).
+The web and Mac apps have different feature sets; web Kite and Surf lenses
+are still unavailable.
 
 The **Mac app** adds Bureau charts, local observations and warnings, airport
 weather, aviation notices, and an illustrated atmosphere view. Its menu bar
@@ -73,9 +77,9 @@ and animation details.
 
 ## Run your own
 
-The website is static HTML, CSS and JavaScript. Fork it, choose your public
-forecast point and host it yourself. The [hosting guide](docs/hosting.md)
-covers local previews, fresh weather exports and GitHub Pages deployment.
+The current web app runs at [isobar.md](https://isobar.md). This repository
+also contains the earlier static site in `site/`; its [hosting guide](docs/hosting.md)
+covers local previews, weather exports and GitHub Pages deployment.
 
 Isobar can also generate weather movies for a wall display. See
 [wall rendering](wall/README.md) for export and playback.
@@ -86,8 +90,18 @@ Bug reports and pull requests are welcome. For a visual or interaction bug,
 include the window size, selected layer and a screenshot if possible.
 
 See [maintenance priorities](docs/maintenance.md) for the structural work.
-Next: [making Isobar useful outside Australia](docs/design/international/README.md),
-with a place-first UX study. Worldwide coverage is not in the current release.
+
+## In development
+
+Worldwide coverage is being prepared with a shared global forecast data
+contract. A new test harness compares forecast values, map controls, layout
+and release identity across Mac and web deployments. Worldwide rendering and
+data loading are being tested; these changes have not been released.
+
+The next map interaction contract is also under development: hold the map to
+freeze time and release to resume if it was playing, click-drag to pan, pinch or two-finger
+scroll to zoom, and use the Now button for an explicit return to now. These
+changes are not part of the current v1.9.0 Mac release.
 
 GitHub builds the native app and runs its tests on pushes and pull requests.
 The CI build skips the bundled collector; release packaging has separate checks
