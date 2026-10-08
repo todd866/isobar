@@ -5,10 +5,10 @@ Watch pressure systems develop, scrub to a day and hour, then explore the rain,
 temperature, wind, surf or flying conditions underneath.
 
 **[Open Isobar in your browser](https://isobar.md)** ·
-**[Mac v1.9.0 release](https://github.com/todd866/isobar/releases/tag/v1.9.0)** ·
+**[Mac v1.10.2 release](https://github.com/todd866/isobar/releases/tag/v1.10.2)** ·
 [Run your own website](docs/hosting.md)
 
-The current Mac release is **v1.9.0** for **Apple silicon (M1 or newer),
+The current Mac release is **v1.10.2** for **Apple silicon (M1 or newer),
 macOS 15+**. The signed, Apple-notarized download covers Australia. Open the
 disk image, drag Isobar to Applications, then open it from there.
 [Installation guide](docs/install.md).
@@ -98,10 +98,9 @@ contract. A new test harness compares forecast values, map controls, layout
 and release identity across Mac and web deployments. Worldwide rendering and
 data loading are being tested; these changes have not been released.
 
-The next map interaction contract is also under development: hold the map to
-freeze time and release to resume if it was playing, click-drag to pan, pinch or two-finger
-scroll to zoom, and use the Now button for an explicit return to now. These
-changes are not part of the current v1.9.0 Mac release.
+The map covers the whole world. Hold it to freeze time and release to resume
+if it was playing; click-drag pans; pinch or two-finger scroll zooms; Now returns
+to the present. A zoomed-in view draws 2 hPa isobars and names the nearby towns.
 
 GitHub builds the native app and runs its tests on pushes and pull requests.
 The CI build skips the bundled collector; release packaging has separate checks
