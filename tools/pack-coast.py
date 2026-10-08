@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
-"""Crop Natural Earth 1:50m land to the Australian chart window.
+"""Pack Natural Earth 1:50m land for Australian or worldwide charts.
 
 Source GeoJSON is public domain (Natural Earth). The output is a little-endian
 blob: magic OCST, uint16 version, uint16 ring count, then each ring as uint16
 count and int16 longitude/latitude in hundredths of a degree.
 
-Rings whose bounding box is wider or taller than 80° are skipped. That drops
+By default, rings whose bounding box is wider or taller than 80° are skipped. That drops
 the Eurasia and Antarctica polygons, which only graze this window, while
 keeping Australia, Tasmania, New Guinea, New Zealand and the nearby islands.
+Use --global to retain every world ring without regional clipping.
 """
 
+import argparse
 import json
+import math
 import struct
-import sys
 
 WEST, EAST, SOUTH, NORTH = 96.0, 172.0, -52.0, 8.0
 MAX_SPAN = 80.0
@@ -31,6 +33,8 @@ def rings_of(geometry):
 def quantize(ring):
     out = []
     for lon, lat in ring:
+        if not math.isfinite(lon) or not math.isfinite(lat) or not -180 <= lon <= 180 or not -90 <= lat <= 90:
+            raise ValueError("coast coordinate outside world bounds")
         pair = (int(round(lon * 100.0)), int(round(lat * 100.0)))
         if not out or out[-1] != pair:
             out.append(pair)
@@ -40,7 +44,12 @@ def quantize(ring):
 
 
 def main():
-    src, dest = sys.argv[1], sys.argv[2]
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("source")
+    parser.add_argument("destination")
+    parser.add_argument("--global", dest="world", action="store_true", help="Keep every land ring, including Eurasia and Antarctica")
+    args = parser.parse_args()
+    src, dest = args.source, args.destination
     with open(src) as handle:
         collection = json.load(handle)
     packed = []
@@ -50,13 +59,17 @@ def main():
             lats = [point[1] for point in ring]
             min_lon, max_lon = min(lons), max(lons)
             min_lat, max_lat = min(lats), max(lats)
-            if max_lon < WEST or min_lon > EAST or max_lat < SOUTH or min_lat > NORTH:
+            if not args.world and (max_lon < WEST or min_lon > EAST or max_lat < SOUTH or min_lat > NORTH):
                 continue
-            if (max_lon - min_lon) > MAX_SPAN or (max_lat - min_lat) > MAX_SPAN:
+            if not args.world and ((max_lon - min_lon) > MAX_SPAN or (max_lat - min_lat) > MAX_SPAN):
                 continue
             points = quantize(ring)
             if len(points) >= 3:
+                if len(points) > 65535:
+                    raise ValueError("coast ring exceeds OCST v1 point capacity")
                 packed.append(points)
+    if len(packed) > 65535:
+        raise ValueError("coast exceeds OCST v1 ring capacity")
     blob = bytearray()
     blob += b"OCST"
     blob += struct.pack("<HH", 1, len(packed))

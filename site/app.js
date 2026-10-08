@@ -400,7 +400,8 @@
     video.addEventListener('timeupdate', sync);
     video.addEventListener('seeked', sync);
     video.addEventListener('ended', () => {
-      if (els.video !== video || !state.animation) return;
+      // Seeking a paused movie to its last frame also fires ended; only a playing forecast loops to now.
+      if (els.video !== video || !state.animation?.playing) return;
       if (Date.now() < state.animation.validTo) { resetToNow(); return; }
       state.animation.playing = false; updatePlayButton();
     });
@@ -731,11 +732,17 @@
     drawChart();
   }
 
+  // A map layer swaps the movie; a playing forecast keeps playing from the same instant.
   function setOverlay(overlay) {
+    const leaving = state.animation;
+    const resume = Boolean(leaving && (leaving.playing || leaving.playPending));
+    const mode = state.playbackMode;
+    const at = resume && leaving.ready ? movieDate(leaving, els.video.currentTime) : null;
     state.overlay = overlay;
     selectAnimation();
     document.querySelectorAll('[name="map-overlay"]').forEach((input) => { input.checked = input.value === overlay; });
     renderMap();
+    if (resume && state.animation) startAnimation(mode, at);
   }
 
   function manifestSignal(controller) {

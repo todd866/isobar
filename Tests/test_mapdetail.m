@@ -25,6 +25,31 @@ int main(void) { @autoreleasepool {
     NSRect plot=[view plotRect];
     Check([[view summaryAtPoint:NSMakePoint(NSMinX(plot)+NSWidth(plot)/48,NSMidY(plot))] containsString:@"0.0°C"],@"zero Celsius is a valid reading");
     view.rows=@[row(0,@(NAN))]; Check([view segments].count==0,@"NaN remains unavailable");
+    view.rows=@[row(0,@18),row(24,@19),row(48,@20),row(72,@21),row(96,@22)];
+    view.horizonHours=120;
+    view.frame=NSMakeRect(0,0,900,136);
+    NSArray *wide=[view dayLabels];
+    view.frame=NSMakeRect(0,0,180,136);
+    NSArray *narrow=[view dayLabels];
+    BOOL spaced=YES, weekdays=YES;
+    CGFloat previous=-1e9;
+    for (NSDictionary *label in wide) {
+        NSString *text=label[@"text"];
+        if (text.length<2 || [text containsString:@" "] ||
+            [text rangeOfCharacterFromSet:NSCharacterSet.decimalDigitCharacterSet].location!=NSNotFound) weekdays=NO;
+        CGFloat x=[label[@"x"] doubleValue], w=[label[@"width"] doubleValue];
+        if (previous>-1e8 && x<previous+8) spaced=NO;
+        previous=x+w;
+    }
+    previous=-1e9;
+    for (NSDictionary *label in narrow) {
+        CGFloat x=[label[@"x"] doubleValue], w=[label[@"width"] doubleValue];
+        if (previous>-1e8 && x<previous+8) spaced=NO;
+        previous=x+w;
+    }
+    Check(weekdays && wide.count>=3 && narrow.count>=1 && narrow.count<wide.count && spaced,
+        [NSString stringWithFormat:@"noon labels skip when closer than the label plus 8 px (wide %lu narrow %lu)",
+            (unsigned long)wide.count,(unsigned long)narrow.count]);
     for (NSNumber *height in @[@150,@175,@234,@400]) {
         NSRect bounds=NSMakeRect(0,0,314,height.doubleValue), card=MapDetailsRect(5,bounds);
         Check(!NSIsEmptyRect(card) && NSContainsRect(bounds,card),@"all five layer readings fit the smallest supported chart");

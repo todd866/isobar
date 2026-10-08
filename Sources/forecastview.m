@@ -64,17 +64,6 @@ static NSString *ShortDayTime(NSDate *date, NSTimeZone *tz, NSDate *now) {
     return [NSString stringWithFormat:@"%@ %@", [day stringFromDate:date], [f stringFromDate:date]];
 }
 
-static NSString *AxisTime(NSDate *date, NSTimeZone *tz) {
-    NSDateFormatter *f = [NSDateFormatter new];
-    f.locale = [NSLocale localeWithLocaleIdentifier:@"en_AU"];
-    f.timeZone = tz ?: NSTimeZone.localTimeZone;
-    NSCalendar *cal = [[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian];
-    cal.timeZone = f.timeZone;
-    NSInteger hour = [cal component:NSCalendarUnitHour fromDate:date];
-    f.dateFormat = hour == 0 ? @"EEE" : @"HH:mm";
-    return [f stringFromDate:date];
-}
-
 static CGFloat XForDate(NSDate *date, NSDate *start, CGFloat left, CGFloat plotW, double horizon) {
     return left + plotW * clampf([date timeIntervalSinceDate:start] / (horizon * 3600.0), 0, 1);
 }
@@ -130,7 +119,7 @@ static CGFloat YForSpeed(double kt, CGFloat windTop, CGFloat windBottom, double 
 
 - (NSRect)windPlotRect {
     // Half an arrow fits beyond both time endpoints and above the speed scale.
-    return NSMakeRect(54, 14, MAX(1, NSWidth(self.bounds)-70), MAX(1, NSHeight(self.bounds)-63));
+    return NSMakeRect(54, 14, MAX(1, NSWidth(self.bounds)-70), MAX(1, NSHeight(self.bounds)-43));
 }
 
 - (NSString *)summaryAtPoint:(NSPoint)point {
@@ -188,13 +177,40 @@ static CGFloat YForSpeed(double kt, CGFloat windTop, CGFloat windBottom, double 
     return YES;
 }
 
+- (NSArray<NSDictionary *> *)dayLabels {
+    NSDate *start = FloorHour(self.now ?: NSDate.date, self.timeZone);
+    double horizon = self.horizonHours > 0 ? self.horizonHours : 48;
+    NSDate *end = [start dateByAddingTimeInterval:horizon*3600];
+    NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+    calendar.timeZone = self.timeZone ?: NSTimeZone.localTimeZone;
+    NSDateFormatter *formatter = [NSDateFormatter new];
+    formatter.timeZone = calendar.timeZone; formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_AU_POSIX"];
+    formatter.dateFormat = @"EEE";
+    NSRect plot = [self windPlotRect];
+    NSMutableArray *labels = [NSMutableArray array];
+    CGFloat previousRight = -CGFLOAT_MAX;
+    NSDictionary *attrs = @{NSFontAttributeName:[NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightRegular]};
+    for (NSDate *day = [calendar startOfDayForDate:start]; [day compare:end] != NSOrderedDescending;
+         day = [calendar dateByAddingUnit:NSCalendarUnitDay value:1 toDate:day options:0]) {
+        NSDate *noon = [calendar dateBySettingHour:12 minute:0 second:0 ofDate:day options:0];
+        if (!noon || [noon compare:start] == NSOrderedAscending || [noon compare:end] == NSOrderedDescending) continue;
+        NSString *text = [formatter stringFromDate:noon];
+        CGFloat width = ceil([text sizeWithAttributes:attrs].width);
+        CGFloat x = clampf(XForDate(noon,start,NSMinX(plot),NSWidth(plot),horizon)-width/2,NSMinX(plot),NSMaxX(plot)-width);
+        if (x < previousRight+8) continue;
+        [labels addObject:@{@"text":text,@"date":noon,@"width":@(width),@"origin":[NSValue valueWithPoint:NSMakePoint(x,NSHeight(self.bounds)-14)]}];
+        previousRight = x+width;
+    }
+    return labels;
+}
+
 - (void)drawRect:(NSRect)dirtyRect {
     (void)dirtyRect;
     [NSGraphicsContext saveGraphicsState];
     [[NSBezierPath bezierPathWithRect:self.bounds] addClip];
     CGFloat w = NSWidth(self.bounds), h = NSHeight(self.bounds);
     NSRect plot = [self windPlotRect];
-    CGFloat left = NSMinX(plot), right = w-NSMaxX(plot), rainTop = h-35, rainBase = h-17, bottom = h-15;
+    CGFloat left = NSMinX(plot), right = w-NSMaxX(plot), bottom = h-23;
     CGFloat plotW = NSWidth(plot), windBottom = NSMaxY(plot), windTop = NSMinY(plot);
     NSColor *secondary = NSColor.secondaryLabelColor;
     NSColor *grid = [secondary colorWithAlphaComponent:0.16];
@@ -226,7 +242,7 @@ static CGFloat YForSpeed(double kt, CGFloat windTop, CGFloat windBottom, double 
         BOOL known = row[@"isDay"] != nil && row[@"isDay"] != NSNull.null;
         BOOL day = known ? [row[@"isDay"] boolValue] : YES;
         if (known && !day) {
-            NSRect band = NSMakeRect(left + plotW*i/horizon, windTop, plotW/horizon, rainTop-windTop+2);
+            NSRect band = NSMakeRect(left + plotW*i/horizon, windTop, plotW/horizon, bottom-windTop);
             [night set]; NSRectFillUsingOperation(band, NSCompositingOperationSourceOver);
         }
     }
@@ -243,41 +259,8 @@ static CGFloat YForSpeed(double kt, CGFloat windTop, CGFloat windBottom, double 
     NSDictionary *attrs = @{NSFontAttributeName:[NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightRegular], NSForegroundColorAttributeName:secondary};
     for (NSInteger kt = 10; kt < maxSpeed; kt += maxSpeed > 60 ? 20 : 10) [[NSString stringWithFormat:@"%ld",(long)kt] drawAtPoint:NSMakePoint(4, YForSpeed(kt, windTop, windBottom, maxSpeed)-6) withAttributes:attrs];
     [[NSString stringWithFormat:@"kt"] drawAtPoint:NSMakePoint(4, windTop-1) withAttributes:attrs];
-    [[NSString stringWithFormat:@"mm"] drawAtPoint:NSMakePoint(4, rainTop+6) withAttributes:attrs];
-    double neededHours=horizon*54/MAX(1,plotW);
-    NSInteger labelStep=neededHours>12?24:(neededHours>6?12:6);
-    CGFloat labelRight=-CGFLOAT_MAX;
-    for (NSInteger i = 0; i <= ceil(horizon); i++) {
-        NSDate *d = [start dateByAddingTimeInterval:i*3600];
-        if (i>0 && [axisCal component:NSCalendarUnitHour fromDate:d] % labelStep != 0) continue;
-        NSString *s = AxisTime(d, self.timeZone);
-        CGFloat labelW=[s sizeWithAttributes:attrs].width;
-        CGFloat labelX=clampf(left+plotW*i/horizon-labelW/2,left,w-right-labelW);
-        if (labelX<labelRight+8) continue;
-        [s drawAtPoint:NSMakePoint(labelX,h-12) withAttributes:attrs]; labelRight=labelX+labelW;
-    }
-
-    // Rain is a separate hourly strip, sharing the x axis with wind.
-    CGFloat maxRain = 1;
-    for (NSDictionary *r in self.rainRows) {
-        NSDate *d = r[@"time"]; double mm = 0;
-        if (![d isKindOfClass:NSDate.class] || [d compare:start] != NSOrderedDescending || [d compare:end] == NSOrderedDescending || ![self row:r number:@"rainMm" value:&mm] || mm < 0) continue;
-        maxRain = MAX(maxRain, mm);
-    }
-    NSDictionary *rainAttrs = @{NSFontAttributeName:[NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightRegular], NSForegroundColorAttributeName:secondary};
-    [[NSString stringWithFormat:@"%.1f", maxRain] drawAtPoint:NSMakePoint(4, rainTop - 6) withAttributes:rainAttrs];
-    for (NSDictionary *r in self.rainRows) {
-        NSDate *d = r[@"time"]; double mm=0;
-        if (![d isKindOfClass:NSDate.class] || ![self row:r number:@"rainMm" value:&mm] || mm < 0) continue;
-        // Open-Meteo precipitation timestamps mark the end of the preceding hour.
-        // Keep the value on the interval it describes, while wind stays at d.
-        NSDate *rainStart = [d dateByAddingTimeInterval:-3600];
-        if ([d compare:start] != NSOrderedDescending || [rainStart compare:end] != NSOrderedAscending) continue;
-        CGFloat x = XForDate(rainStart, start, left, plotW, horizon), bw = MAX(1.5, plotW/horizon - 1);
-        CGFloat bh = 22 * clampf(mm/maxRain, 0, 1);
-        NSColor *blue = [NSColor systemBlueColor];
-        [[blue colorWithAlphaComponent:clampf(0.28 + mm/maxRain*0.62, 0.28, 0.9)] set];
-        NSRectFillUsingOperation(NSMakeRect(x, rainBase-bh, bw, bh), NSCompositingOperationSourceOver);
+    for (NSDictionary *label in [self dayLabels]) {
+        [label[@"text"] drawAtPoint:[label[@"origin"] pointValue] withAttributes:attrs];
     }
 
     // Quiet traces underneath the direction marks; gaps remain gaps.
@@ -312,6 +295,7 @@ static CGFloat YForSpeed(double kt, CGFloat windTop, CGFloat windBottom, double 
     NSInteger stride=MAX(1,(NSInteger)ceil(18.0/hourWidth));
     CGFloat length=clampf(hourWidth*stride*.92,20,25);
     CGFloat lastArrowX=-CGFLOAT_MAX;
+    NSDate *lastArrowDate=nil;
     for (NSDictionary *row in self.windRows) {
         NSDate *date=row[@"time"]; double kt=0, from=0;
         if (![date isKindOfClass:NSDate.class] || [date compare:start] == NSOrderedAscending ||
@@ -322,11 +306,11 @@ static CGFloat YForSpeed(double kt, CGFloat windTop, CGFloat windBottom, double 
             [secondary setStroke];
             NSBezierPath *calm=[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(centre.x-3,centre.y-3,6,6)];
             calm.lineWidth=1.2; [calm stroke];
-        } else if (!Direction(row,&from) || centre.x-lastArrowX < 18) {
+        } else if (!Direction(row,&from) || centre.x-lastArrowX < 27 || (lastArrowDate && [date timeIntervalSinceDate:lastArrowDate] < 3*3600)) {
             [colour setFill];
             [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(centre.x-1.8,centre.y-1.8,3.6,3.6)] fill];
         } else {
-            lastArrowX=centre.x;
+            lastArrowX=centre.x; lastArrowDate=date;
             NSBezierPath *arrow=KiteWindArrowPath(centre,from,length);
             [colour setFill]; [arrow fill];
             [[NSColor colorWithSRGBRed:.15 green:.17 blue:.14 alpha:.8] setStroke];
@@ -337,9 +321,9 @@ static CGFloat YForSpeed(double kt, CGFloat windTop, CGFloat windBottom, double 
     [NSGraphicsContext restoreGraphicsState];
 }
 
-- (NSString *)accessibilityRoleDescription { return @"wind and rain forecast"; }
+- (NSString *)accessibilityRoleDescription { return @"wind forecast"; }
 - (NSString *)accessibilityLabel {
-    return [NSString stringWithFormat:@"%.0f hour wind and rain forecast. Arrows point downwind. Amber is lighter than the chosen kite range, green is inside it, red is stronger. Dashed lines show gusts, and rain is below.", self.horizonHours > 0 ? self.horizonHours : 48];
+    return [NSString stringWithFormat:@"%.0f hour wind forecast. Arrows point downwind. Amber is lighter than the chosen kite range, green is inside it, red is stronger. Dashed lines show gusts.", self.horizonHours > 0 ? self.horizonHours : 48];
 }
 
 @end

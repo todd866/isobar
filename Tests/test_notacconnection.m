@@ -14,6 +14,18 @@ static void check(BOOL ok, NSString *message) { fprintf(stderr, "%s %s\n", ok ? 
 - (BOOL)removeToken:(NSError **)error { self.token = nil; return YES; }
 @end
 
+// A locked login Keychain: the key may exist but cannot be read.
+@interface LockedKeychain : NSObject <IsobarNotacKeychain>
+@end
+@implementation LockedKeychain
+- (BOOL)saveToken:(NSString *)token error:(NSError **)error { (void)token; (void)error; return NO; }
+- (NSString *)loadToken:(NSError **)error {
+    if (error) *error = [NSError errorWithDomain:IsobarNotacErrorDomain code:1 userInfo:@{NSLocalizedDescriptionKey: @"The NOTAC key could not be read"}];
+    return nil;
+}
+- (BOOL)removeToken:(NSError **)error { (void)error; return NO; }
+@end
+
 int main(void) {
     @autoreleasepool {
         check(IsobarNotacTokenIsValid(@"lb_0123456789abcdef0123456789ABCDEF01234567"), @"accepts a NOTAC key");
@@ -54,6 +66,16 @@ int main(void) {
         [connection fetchWithDataDirectory:root executableURL:[NSURL fileURLWithPath:errorScript] completion:^(BOOL ok, NSString *status) { success=ok; message=status; dispatch_semaphore_signal(done); }];
         dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC));
         check(!success && [message isEqual:@"NOTAC rejected this key"] && ![message containsString:token], @"invalid-key diagnostic is useful without echoing credentials");
+        IsobarNotacConnection *locked = [[IsobarNotacConnection alloc] initWithService:@"test" account:@"test" keychain:[LockedKeychain new]];
+        done=dispatch_semaphore_create(0); success=YES; message=nil;
+        [locked fetchWithDataDirectory:root executableURL:[NSURL fileURLWithPath:script] completion:^(BOOL ok, NSString *status) { success=ok; message=status; dispatch_semaphore_signal(done); }];
+        dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC));
+        check(!success && [message isEqual:@"The NOTAC key could not be read"], @"a locked Keychain is not reported as a missing key");
+        [connection removeToken:nil];
+        done=dispatch_semaphore_create(0); success=YES; message=nil;
+        [connection fetchWithDataDirectory:root executableURL:[NSURL fileURLWithPath:script] completion:^(BOOL ok, NSString *status) { success=ok; message=status; dispatch_semaphore_signal(done); }];
+        dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC));
+        check(!success && [message isEqual:@"No NOTAC key is saved"], @"a missing key is reported as missing");
         unsetenv("ISOBAR_PARENT_SENTINEL");
         [[NSFileManager defaultManager] removeItemAtPath:root error:nil];
     }

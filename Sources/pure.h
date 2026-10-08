@@ -169,6 +169,8 @@ NSDictionary *SunEvents(double latitude, double longitude, NSDate *instant, NSTi
 NSArray<NSDictionary *> *HourlyStrip(NSArray<NSDictionary *> *hours, NSDate *sunrise, NSDate *sunset, NSInteger limit);
 
 NSArray<NSDictionary *> *DefaultLocations(void);
+// The place's IANA zone, else its state's zone, else Perth.
+NSTimeZone *ZoneForPlace(NSDictionary *place);
 NSString *ArchiveLocations(NSArray *locations);
 NSArray<NSDictionary *> *UnarchiveLocations(NSString *json);
 NSArray *LocationListByAdding(NSArray *locations, NSDictionary *place);
@@ -196,6 +198,9 @@ NSString *AnalysisLocalValidText(NSData *pdf);
 extern NSString * const UndatedPanelLabel;
 NSArray<NSDate *> *BureauPanelTimes(NSArray *parsed, BOOL documentLoaded, BOOL *undated);
 NSArray<NSDate *> *PrognosisValidTimes(NSData *pdf);
+// One zlib stream inflated whole, or nil when it is empty, malformed, truncated
+// or would expand past 64 MB. A cached chart must not expand without a ceiling.
+NSData *PDFInflate(NSData *raw);
 // Analysis first, then the prognosis times in order.
 NSArray<NSDate *> *ChartSequenceTimes(NSDate *analysis, NSArray<NSDate *> *prognosis);
 
@@ -338,8 +343,8 @@ NSString *StoreRunStatusLine(NSDate *run, NSDate *now);
 NSString *StoreRunCompareTitle(NSDate *run, NSDate *previous);
 
 // Indices into `times` for one run. The anchor is the latest time at or before now (a model step of slack).
-// Prefer the anchor and every later time on a 12-hour ladder through +96 h. When that ladder is not what
-// the store holds, use the frames present from the anchor through +96 h.
+// Prefer the anchor and every later time on a 12-hour ladder through +168 h. When that ladder is not what
+// the store holds, use the frames present from the anchor through +168 h.
 NSArray<NSNumber *> *StoreFrameIndices(NSArray<NSDate *> *times, NSDate *now);
 // Lexicographic previous run id (YYYYMMDDTHHZ), or nil.
 NSString *StorePreviousRunID(NSArray<NSString *> *runIDs, NSString *current);
@@ -428,6 +433,9 @@ NSDictionary *StoreKiteFile(NSData *json);
 NSArray<NSDictionary *> *GlancePlaces(NSArray<NSDictionary *> *locations, NSArray<NSDictionary *> *spots, BOOL include);
 // One tag per title. Title is sentence case. Text is the warning body.
 NSArray<NSDictionary *> *WarningTags(NSArray<NSDictionary *> *warnings);
+// Compact Bureau warning badge: text, severity ("advisory" or "severe"),
+// SF Symbol glyph, and a newline-separated title tooltip. Invalid records are ignored.
+NSDictionary *WarningBadgeModel(NSArray<NSDictionary *> *warnings);
 
 // Strings and traces for one card. shoreNormal nil means not a kite spot.
 // obs is a ParseLatestObservation dictionary. history and forecast may be empty.
@@ -452,7 +460,7 @@ NSString *ShoreFacingName(double degrees);
 NSArray<NSDictionary *> *KnownAerodromes(void);
 NSDictionary *AerodromeForCode(NSString *code);
 // Primary capital aerodrome for a state abbreviation. Nil when the state is unknown.
-// YPPH and YSSY include runways; other capitals are code and time zone only.
+// YPPH and YSSY include runways. Other capitals have a name and position, no runways.
 NSString *PrimaryAerodromeCode(NSString *state);
 NSDictionary *AerodromeForState(NSString *state);
 

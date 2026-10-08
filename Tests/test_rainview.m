@@ -1,6 +1,10 @@
 #import <Cocoa/Cocoa.h>
 #import "rain.h"
 #import "rainview.h"
+@interface RainForecastView (LensCardTests)
+- (NSArray<NSDictionary *> *)dayLabels;
+@end
+
 static int failures;
 static void Check(BOOL ok, NSString *why) { if (!ok) { fprintf(stderr,"FAIL %s\n",why.UTF8String); failures++; } }
 static void CheckGraphOrientation(NSBitmapImageRep *rep, CGFloat scale) {
@@ -49,9 +53,30 @@ static NSEvent *Key(unsigned short code) {
     return [NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint modifierFlags:0 timestamp:0
         windowNumber:0 context:nil characters:@"" charactersIgnoringModifiers:@"" isARepeat:NO keyCode:code];
 }
+static void TestSevenDayAxis(void) {
+    NSDate *start=[NSDate dateWithTimeIntervalSince1970:1790467200];
+    for (NSNumber *width in @[@300,@460,@900]) {
+        RainForecastView *view=[[RainForecastView alloc] initWithFrame:NSMakeRect(0,0,width.doubleValue,180)];
+        view.now=start; view.horizonHours=168; view.timeZone=[NSTimeZone timeZoneWithName:@"Australia/Sydney"];
+        NSCalendar *calendar=[NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian]; calendar.timeZone=view.timeZone;
+        Check(view.horizonHours==168 && isfinite([view cursorXForDate:[start dateByAddingTimeInterval:168*3600]]),@"rain preserves the full seven-day map horizon");
+        Check(isnan([view cursorXForDate:[start dateByAddingTimeInterval:169*3600]]),@"rain cursor never stretches beyond the map");
+        CGFloat lastRight=-INFINITY;
+        for (NSDictionary *label in [view dayLabels]) {
+            NSRect rect=[label[@"rect"] rectValue];
+            Check(NSMinX(rect)>=lastRight+8 && NSContainsRect(view.bounds,rect),@"rain weekday labels fit without overlap or ellipsis");
+            Check([calendar component:NSCalendarUnitHour fromDate:label[@"date"]]==12 && ![label[@"text"] containsString:@":"],@"rain weekdays use local noon");
+            lastRight=NSMaxX(rect);
+        }
+        view.outlook=@{@"hours":@[@{@"start":start,@"end":[start dateByAddingTimeInterval:3600],@"known":@YES,@"mm":@2}]};
+        Check([view summaryAtDate:[start dateByAddingTimeInterval:3600*150]]==nil,@"missing late rain remains unavailable instead of dry");
+    }
+}
+
 int main(void) {
     @autoreleasepool {
         [NSApplication sharedApplication];
+        TestSevenDayAxis();
         [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
         NSDate *now=[[NSISO8601DateFormatter new] dateFromString:@"2026-09-26T22:30:00Z"];
         NSDate *start=[now dateByAddingTimeInterval:-1800];

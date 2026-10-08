@@ -3,6 +3,9 @@
 // Read-only adapters from the daemon's published products to the legacy app shapes.
 NSDictionary<NSString *, NSData *> *ArchiveObservationFiles(NSString *root);
 NSDictionary<NSString *, NSData *> *ArchiveObservationFilesAtDate(NSString *root, NSDate *now);
+// A Bureau "yyyyMMddHHmmss" UTC stamp as the state's wall-clock time in the same
+// format (unknown states use Perth), or nil when it is not a real time. Any thread.
+NSString *ArchiveLocalStamp(NSString *utc, NSString *state);
 NSData *ArchivePointFile(NSString *root, NSDictionary *place);
 NSData *ArchiveKiteFile(NSString *root);
 NSDictionary *ArchiveAviationProduct(NSString *root, NSString *name);

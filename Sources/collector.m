@@ -3,13 +3,28 @@
 
 static const NSTimeInterval kCollectorStopGrace = 2;
 
-static NSDictionary *SubprocessEnvironment(void) {
+// PyInstaller onedir keeps certifi next to the executable. OpenSSL and
+// Requests only see it when the path is in the environment; the system
+// trust store is not the one the frozen interpreter uses.
+static NSString *BundledCACertificate(NSURL *executable) {
+    NSString *directory = executable.path.stringByDeletingLastPathComponent;
+    if (!directory.length) return nil;
+    NSString *cert = [[directory stringByAppendingPathComponent:@"_internal/certifi/cacert.pem"] stringByStandardizingPath];
+    return [NSFileManager.defaultManager fileExistsAtPath:cert] ? cert : nil;
+}
+
+static NSDictionary *SubprocessEnvironment(NSURL *executable) {
     NSDictionary *parent = NSProcessInfo.processInfo.environment;
     NSMutableDictionary *env = [NSMutableDictionary dictionary];
     env[@"PATH"] = @"/usr/bin:/bin:/usr/sbin:/sbin";
     for (NSString *key in @[@"HOME", @"LANG", @"TMPDIR"]) {
         NSString *value = parent[key];
         if ([value isKindOfClass:NSString.class] && value.length) env[key] = value;
+    }
+    NSString *cert = BundledCACertificate(executable);
+    if (cert.length) {
+        env[@"SSL_CERT_FILE"] = cert;
+        env[@"REQUESTS_CA_BUNDLE"] = cert;
     }
     return env;
 }
@@ -42,7 +57,7 @@ static NSDictionary *SubprocessEnvironment(void) {
     NSTask *task=[NSTask new]; task.executableURL=_executable;
     task.arguments=@[@"run", @"--data-dir", _store.path];
     task.currentDirectoryURL=_store;
-    task.environment=SubprocessEnvironment();
+    task.environment=SubprocessEnvironment(_executable);
     task.standardInput=NSFileHandle.fileHandleWithNullDevice;
     task.standardOutput=_log ?: NSFileHandle.fileHandleWithNullDevice;
     task.standardError=task.standardOutput;

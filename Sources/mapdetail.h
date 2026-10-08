@@ -17,6 +17,9 @@ NSRect MapDetailsRect(NSUInteger count, NSRect bounds);
 @property(nonatomic, strong, nullable) NSTimeZone *timeZone;
 - (NSRect)plotRect;
 - (NSArray<NSArray<NSDictionary *> *> *)segments;
+// One weekday label per local noon. Each dictionary has text, x, y and width.
+// A noon closer than the label width plus 8 px to the previous label is omitted.
+- (NSArray<NSDictionary<NSString *, id> *> *)dayLabels;
 - (nullable NSString *)summaryAtPoint:(NSPoint)point;
 - (CGFloat)cursorXForDate:(nullable NSDate *)date;
 @end

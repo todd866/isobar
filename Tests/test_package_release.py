@@ -121,14 +121,43 @@ class PackageReleaseTests(unittest.TestCase):
                 output / "Isobar-1.8.1-macOS-arm64-checksums.txt",
             })
 
-    def test_notarized_mode_requires_real_validation(self):
+    def test_release_packaging_requires_notarization_by_default(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            app = self.app(Path(temporary))
+            with patch.object(package_release, "command", side_effect=self.lipo), \
+                 patch.object(package_release, "validate_bundle"), \
+                 patch.object(package_release, "validate_notarized") as notarized:
+                package_release.package(app, Path(temporary) / "release", {"zip"}, dry_run=True)
+            notarized.assert_called_once_with(app)
+
+    def test_development_candidate_skips_notarization_and_says_so(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            app = self.app(Path(temporary))
+            with patch.object(package_release, "command", side_effect=self.lipo), \
+                 patch.object(package_release, "validate_bundle"), \
+                 patch.object(package_release, "validate_notarized") as notarized:
+                paths = package_release.package(app, Path(temporary) / "release", {"zip", "dmg"},
+                                                development=True, dry_run=True)
+            notarized.assert_not_called()
+            self.assertEqual(paths["zip"].name, "Isobar-1.8.1-macOS-arm64-development.zip")
+            self.assertEqual(paths["dmg"].name, "Isobar-1.8.1-macOS-arm64-development.dmg")
+            self.assertEqual(paths["checksums"].name, "Isobar-1.8.1-macOS-arm64-development-checksums.txt")
+
+    def test_unsigned_packaging_needs_development(self):
         with tempfile.TemporaryDirectory() as temporary:
             app = self.app(Path(temporary))
             with patch.object(package_release, "command", side_effect=self.lipo), \
                  patch.object(package_release, "validate_bundle"):
-                with self.assertRaisesRegex(package_release.PackageError, "cannot be combined"):
+                with self.assertRaisesRegex(package_release.PackageError, "--development"):
                     package_release.package(app, Path(temporary) / "release", {"zip"},
-                                            allow_unsigned=True, notarized=True, dry_run=True)
+                                            allow_unsigned=True, dry_run=True)
+
+    def test_notarized_flag_conflicts_with_development(self):
+        with patch.object(package_release, "package") as package, \
+             patch("sys.stderr"):
+            with self.assertRaises(SystemExit):
+                package_release.main(["Isobar.app", "release", "--notarized", "--development"])
+        package.assert_not_called()
 
     def test_notarization_rejection_prevents_outputs(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -140,7 +169,7 @@ class PackageReleaseTests(unittest.TestCase):
                  patch.object(package_release, "validate_notarized",
                               side_effect=package_release.PackageError("staple rejected")):
                 with self.assertRaisesRegex(package_release.PackageError, "staple rejected"):
-                    package_release.package(app, output, {"zip"}, notarized=True)
+                    package_release.package(app, output, {"zip"})
             self.assertFalse(output.exists())
 
     def test_spctl_assess_has_a_timeout(self):

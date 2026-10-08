@@ -10,3 +10,5 @@ private/
 # Generated public weather assets are deployment artifacts.
 site/data/
 node_modules/
+training/dist/
+.playwright-mcp/

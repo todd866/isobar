@@ -3,11 +3,9 @@
 // Ambient forecast playback. Frames are rendered locally, just ahead of the
 // playhead. The Mac UI does not encode an H.264 movie.
 extern const NSUInteger kIsobarLiveCacheBudget; // bytes
-// Forecast seconds between ink frames when a frame is cheap. Ninety seconds
-// keeps the stroke near a pixel per frame at the default speed and leaves
-// the core budget intact. IsobarLiveFrameSpacing widens this when a render
-// would use more than 15% of one core, and never asks for more than 30 new
-// frames a real second.
+// Initial forecast seconds between ink frames. The player calibrates this from
+// render cost after three samples, keeping a minimum cadence of 10/20/30 fps
+// at 1x/2x/4x, 8x, 16x, 32x, 64x, 128x and 256x speed and never asking for more than 30 new frames/sec.
 extern const NSTimeInterval kIsobarLiveFrameStep;
 NSTimeInterval IsobarLiveFrameSpacing(double renderSeconds, double hoursPerSecond);
 extern const NSTimeInterval kIsobarLiveSeamDuration; // real seconds, end of run back to now
@@ -27,11 +25,18 @@ extern const NSTimeInterval kIsobarLiveDisplayTick;
 @end
 
 typedef NS_ENUM(NSInteger, IsobarLiveSpeed) {
-    IsobarLiveSpeedSlow = 0,   // 1 forecast hour per 20 real seconds
-    IsobarLiveSpeedMedium = 1, // 1 forecast hour per 5 real seconds
-    IsobarLiveSpeedFast = 2,   // 1 forecast hour per real second
+    IsobarLiveSpeed1x = 1,     // 1 forecast minute per real second
+    IsobarLiveSpeed2x = 2,     // 2 forecast minutes per real second
+    IsobarLiveSpeed4x = 4,     // 4 forecast minutes per real second
+    IsobarLiveSpeed8x = 8,     // 8 forecast minutes per real second
+    IsobarLiveSpeed16x = 16,   // 16 forecast minutes per real second
+    IsobarLiveSpeed32x = 32,   // 32 forecast minutes per real second
+    IsobarLiveSpeed64x = 64,   // 64 forecast minutes per real second
+    IsobarLiveSpeed128x = 128, // 128 forecast minutes per real second
+    IsobarLiveSpeed256x = 256, // 256 forecast minutes per real second
 };
 
+BOOL IsobarLiveSpeedIsValid(IsobarLiveSpeed speed);
 double IsobarLiveHoursPerSecond(IsobarLiveSpeed speed);
 
 typedef double (^IsobarLiveModelIndex)(NSDate *date);
@@ -48,6 +53,17 @@ typedef double (^IsobarLiveModelIndex)(NSDate *date);
 @property (nonatomic, readonly) NSUInteger rendersInFlight;
 @property (nonatomic, readonly) NSUInteger completedRenders;
 @property (nonatomic, readonly) NSUInteger displayTicks;
+// The one forecast timeline. A display link samples `modelIndexAtTime:` at
+// its target timestamp; it does not keep a second clock. `playheadRate` is
+// forecast hours per real second: the playing speed, 0 while paused or held,
+// and negative while the seam runs back to now. Each push (tick, seek, hold,
+// pause, seam) re-anchors. Forward play does not step backwards across a push.
+@property (nonatomic, readonly) NSTimeInterval playheadAnchorTime;
+@property (nonatomic, readonly) double playheadAnchorHours;
+@property (nonatomic, readonly) double playheadRate;
+@property (nonatomic, readonly) NSUInteger playheadEpoch;
+- (double)forecastHoursAtTime:(NSTimeInterval)time;
+- (double)modelIndexAtTime:(NSTimeInterval)time;
 // Label and centre positions of the frame on screen, in chart points.
 @property (nonatomic, readonly, copy) NSArray<NSValue *> *labelPositions;
 @property (nonatomic, readonly, copy) NSArray<NSValue *> *centrePositions;
@@ -67,8 +83,8 @@ typedef double (^IsobarLiveModelIndex)(NSDate *date);
 - (void)pause;
 - (void)holdAtDate:(NSDate *)date;
 - (void)tick:(NSTimeInterval)seconds;
-// The frame on screen. Steady play shows one fine render. The seam blends the
-// last frame back to now.
+// The frame on screen. Steady play shows one pressure render at a time. The
+// seam passes through the cached flat plate between the last frame and now.
 - (NSImage *)displayedImage;
 // Drops cached frames except the one on screen and ignores in-flight renders.
 - (void)stopRendering;

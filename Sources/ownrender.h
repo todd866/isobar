@@ -4,12 +4,13 @@
 
 double OwnChartPanelAspect(void);
 double OwnChartMapAspect(void);
-// Bureau rain key. Hatching is the 24 h to the chart time at or above 1 mm.
+// Model rain key. The wash is the 24 h total ending at chart time.
 NSString *OwnRainLegendText(void);
 
 typedef struct {
     int temperature; // 0 off, 1 the 850 hPa field, 2 the 2 m field
     int barbs;
+    int windFill; // smooth wind-speed colour wash; barbs remain independent
     int rain;
     int observed; // station dots, and no model hatch
     int bare;     // map only; the popover draws its own heading
@@ -23,16 +24,37 @@ typedef NS_ENUM(NSInteger, OwnRunField) {
     OwnRunFieldWindSpeed, OwnRunFieldWindDirection, OwnRunFieldRain
 };
 
+// The run's own grid. Row 0 is the northern edge. Not the chart's Lambert window.
+typedef struct {
+    double west;
+    double north;
+    double step;
+    int nLon;
+    int nLat;
+    BOOL wrapsLongitude;
+} OwnRunGeo;
+
 @interface OwnRun : NSObject
 @property (nonatomic, readonly) NSInteger hours;
 @property (nonatomic, readonly) NSDate *runDate;
 @property (nonatomic, readonly) NSDate *generated;
 @property (nonatomic, readonly, copy) NSString *attribution;
+- (OwnRunGeo)geo;
 - (NSDate *)timeAtIndex:(NSInteger)index;
 - (BOOL)hasRainAtIndex:(NSInteger)index;
 - (double)valueAtPointIndex:(NSInteger)point field:(OwnRunField)field hour:(NSInteger)hour;
 - (double)valueAtPointIndex:(NSInteger)point field:(OwnRunField)field fractionalHour:(double)hour;
+// Land-mixed MSLP for one model hour, the field the chart contours. Caller
+// frees the return and, when roughOut is set, that mask. A rough cell is land
+// whose pressure disagrees with the wide smooth by more than 1.8 hPa: the
+// chart's stand-in for high terrain, because the store has no orography.
+// Nil when the hour or the coastline is missing.
+- (double *)screenedMslpAtHour:(NSInteger)hour rough:(uint8_t **)roughOut;
 @end
+
+// Fraction of the chart PNG (origin top-left, title included) for a geographic
+// point inside the drawn Australia window. NO when the point is outside it.
+BOOL OwnChartImagePoint(double latitude, double longitude, double *xFraction, double *yFraction);
 
 // Per-sequence state used by the motion renderer. Keep one instance for the
 // complete movie so annotations do not get re-selected independently per

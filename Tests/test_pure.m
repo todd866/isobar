@@ -9,13 +9,13 @@ static void check(BOOL cond, NSString *msg) {
     if (!cond) failures++;
 }
 
-static NSData *InflateBombPDF(void) {
+static NSData *DeflatedZeros(size_t count) {
     z_stream strm = {0};
     if (deflateInit(&strm, Z_BEST_SPEED) != Z_OK) return nil;
     NSMutableData *compressed = [NSMutableData data];
     uint8_t zeros[1 << 16] = {0};
     uint8_t out[1 << 16];
-    size_t left = 70ull << 20;
+    size_t left = count;
     int rc;
     do {
         if (!strm.avail_in && left) {
@@ -30,7 +30,12 @@ static NSData *InflateBombPDF(void) {
         if (sizeof out > strm.avail_out) [compressed appendBytes:out length:sizeof out - strm.avail_out];
     } while (rc == Z_OK);
     deflateEnd(&strm);
-    if (rc != Z_STREAM_END) return nil;
+    return rc == Z_STREAM_END ? compressed : nil;
+}
+
+static NSData *InflateBombPDF(void) {
+    NSData *compressed = DeflatedZeros(70ull << 20);
+    if (!compressed) return nil;
     NSMutableData *pdf = [NSMutableData dataWithData:[@"stream\n" dataUsingEncoding:NSASCIIStringEncoding]];
     [pdf appendData:compressed];
     [pdf appendData:[@"\nendstream" dataUsingEncoding:NSASCIIStringEncoding]];
@@ -1002,6 +1007,14 @@ int main(void) {
         NSArray<NSNumber *> *continuous = StoreFrameIndices(threeHourly, [run dateByAddingTimeInterval:2*3600]);
         check(continuous.firstObject.integerValue == 0, @"the time range contains now even when the next sample is closer");
         check(continuous.lastObject.integerValue == 10, @"the slider reaches the final hour off the 12-hour ladder");
+        NSMutableArray *week = [NSMutableArray array];
+        for (int lead = 0; lead <= 144; lead += 3) [week addObject:[run dateByAddingTimeInterval:lead * 3600]];
+        for (int lead = 150; lead <= 168; lead += 6) [week addObject:[run dateByAddingTimeInterval:lead * 3600]];
+        NSArray<NSNumber *> *weekFrames = StoreFrameIndices(week, [run dateByAddingTimeInterval:18 * 3600]);
+        NSDate *weekEnd = week[weekFrames.lastObject.integerValue];
+        check(weekFrames.firstObject.integerValue == 6 && week.count == 53 &&
+              fabs([weekEnd timeIntervalSinceDate:run] - 168 * 3600) < 1,
+            @"a 168 h ladder runs from the frame at now through the last listed hour");
         NSISO8601DateFormatter *iso = [NSISO8601DateFormatter new];
         iso.formatOptions = NSISO8601DateFormatWithInternetDateTime;
         iso.timeZone = [NSTimeZone timeZoneWithName:@"UTC"];
@@ -1017,9 +1030,9 @@ int main(void) {
         NSDate *anchor = bureau[0];
         for (NSNumber *index in present) {
             NSTimeInterval lead = [bureau[index.integerValue] timeIntervalSinceDate:anchor];
-            if (lead > 96 * 3600 + 60) onLadder = NO;
+            if (lead > 168 * 3600 + 60) onLadder = NO;
         }
-        check(onLadder, @"present frames stay inside +96 h");
+        check(onLadder, @"present frames stay inside +168 h");
         check([StorePreviousRunID(@[@"20260925T18Z", @"20260925T06Z", @"20260924T18Z"], @"20260925T18Z") isEqual:@"20260925T06Z"],
             @"the previous run is the next older cycle");
 
@@ -1433,6 +1446,16 @@ int main(void) {
         NSDate *bombStarted = [NSDate date];
         check(PrognosisValidTimes(InflateBombPDF()).count == 0 && -[bombStarted timeIntervalSinceNow] < 8,
             @"an inflate bomb does not expand without a ceiling");
+        NSData *megabyte = DeflatedZeros(1u << 20);
+        NSData *plainMegabyte = PDFInflate(megabyte);
+        check(plainMegabyte.length == (1u << 20) && ((const uint8_t *)plainMegabyte.bytes)[12345] == 0,
+            @"a normal zlib stream inflates whole");
+        check(PDFInflate([megabyte subdataWithRange:NSMakeRange(0, megabyte.length / 2)]) == nil,
+            @"a truncated zlib stream is refused");
+        check(PDFInflate(nil) == nil && PDFInflate([NSData data]) == nil, @"an empty stream is refused");
+        NSDate *capStarted = [NSDate date];
+        check(PDFInflate(DeflatedZeros(70ull << 20)) == nil && -[capStarted timeIntervalSinceNow] < 8,
+            @"a stream past the 64 MB ceiling is refused");
         BOOL undated = NO;
         NSDate *datedPanel = [NSDate dateWithTimeIntervalSince1970:1000];
         check([BureauPanelTimes(@[datedPanel], YES, &undated) count] == 1 && !undated, @"parsed panel times stay dated");
@@ -1447,8 +1470,10 @@ int main(void) {
         check([AerodromeForState(@"NSW")[@"runways"] count] > 0 && [AerodromeForState(@"WA")[@"code"] isEqual:@"YPPH"],
             @"Sydney and Perth keep their runway configuration");
         check([AerodromeForState(@"VIC")[@"code"] isEqual:@"YMML"] && [AerodromeForState(@"VIC")[@"runways"] count] == 0
-            && [AerodromeForState(@"VIC")[@"timeZone"] isEqual:@"Australia/Melbourne"],
-            @"Melbourne is named without invented runways");
+            && [AerodromeForState(@"VIC")[@"timeZone"] isEqual:@"Australia/Melbourne"]
+            && [AerodromeForState(@"VIC")[@"name"] isEqual:@"Melbourne Airport"]
+            && fabs([AerodromeForState(@"VIC")[@"latitude"] doubleValue] + 37.6733) < 0.01,
+            @"Melbourne is named and positioned without invented runways");
 
         NSDate *naiveNine = WeatherInstant(@"2026-09-26T09:00");
         NSDate *zuluNine = WeatherInstant(@"2026-09-26T09:00:00Z");

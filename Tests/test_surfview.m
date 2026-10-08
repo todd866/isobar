@@ -1,6 +1,15 @@
 #import <Cocoa/Cocoa.h>
 #import "../Sources/surfview.h"
 
+@interface SurfForecastView (LensCardTests)
+- (BOOL)marineReadingIsDimmed;
+@end
+@interface SurfPaintProbe : SurfForecastView
+@property(nonatomic) NSUInteger invalidations;
+@end
+@implementation SurfPaintProbe
+- (void)setNeedsDisplay:(BOOL)flag { if(flag) self.invalidations++; [super setNeedsDisplay:flag]; }
+@end
 static int failures;
 static void Check(BOOL ok, NSString *message) { fprintf(stderr,"%s %s\n",ok?"ok  ":"FAIL",message.UTF8String); if(!ok) failures++; }
 static NSDate *Date(NSString *s) { return [[NSISO8601DateFormatter new] dateFromString:[s hasSuffix:@"Z"]?s:[s stringByAppendingString:@"Z"]]; }
@@ -45,9 +54,26 @@ int main(void) {
         Check([SurfOutlook(@{},now)[@"status"] isEqual:@"unavailable"] && [SurfOutlook(nil,now)[@"rows"] count]==0,@"missing products are compactly unavailable");
         NSMutableDictionary *stale=[Product() mutableCopy]; stale[@"time"]=@[@"2026-09-26T00:00"]; stale[@"hourly"]=[stale[@"hourly"] mutableCopy]; stale[@"hourly"][@"wave_height"]=@[@1]; stale[@"hourly"][@"swell_wave_height"]=@[@.5]; stale[@"hourly"][@"swell_wave_period"]=@[@10]; stale[@"hourly"][@"swell_wave_direction"]=@[@0]; stale[@"hourly"][@"sea_surface_temperature"]=@[@20];
         Check([SurfOutlook(stale,now)[@"status"] isEqual:@"stale"],@"old forecast is marked stale");
-        SurfForecastView *view=[[SurfForecastView alloc] initWithFrame:NSMakeRect(0,0,420,160)]; view.now=now; view.timeZone=[NSTimeZone timeZoneWithName:@"Australia/Perth"]; view.outlook=out; view.windRows=@[@{@"time":now,@"windKt":@12,@"windFrom":@270}];
+        SurfPaintProbe *view=[[SurfPaintProbe alloc] initWithFrame:NSMakeRect(0,0,420,160)]; view.now=now; view.timeZone=[NSTimeZone timeZoneWithName:@"Australia/Perth"]; view.outlook=out; view.windRows=@[@{@"time":now,@"windKt":@12,@"windFrom":@270}];
         Check(NSWidth(view.plotRect)>350 && NSHeight(view.plotRect)>120,@"compact plot uses the available wall-display surface");
         Check([[view summaryAtPoint:NSMakePoint(NSMinX(view.plotRect)+1,NSMidY(view.plotRect))] containsString:@"Swell"],@"point summary includes surf readings");
+        Check(fabs([[view marineDataEndDate] timeIntervalSinceDate:Date(@"2026-09-27T02:00:00Z")])<1,@"marine data end is the last actual wave timestamp");
+        view.selectedDate=Date(@"2026-09-28T00:00:00Z");
+        Check(fabs([[view nearestMarineDateForSelection] timeIntervalSinceDate:Date(@"2026-09-27T02:00:00Z")])<1,@"selection outside marine coverage uses the nearest actual reading");
+        Check(![[view summaryAtPoint:NSMakePoint(NSMinX(view.plotRect)+1,NSMidY(view.plotRect))] containsString:@"No forecast"],@"marine reading remains available outside its end");
+        Check(NSHeight(view.plotRect)>=118 && NSHeight(view.bounds)>=160,@"plot reserves a useful wave lane and separate wind/axis lanes");
+        Check(NSMaxY(view.wavePlotRect)<=NSMinY(view.windLaneRect) && NSMaxY(view.windLaneRect)<=NSMinY(view.timeLaneRect),@"wave, wind, and time lanes do not overlap");
+        Check([view.accessibilityLabel containsString:@"10:00"],@"accessibility exposes the exact nearest marine reading time");
+        Check([view marineReadingIsDimmed] && [[view summaryAtPoint:NSMakePoint(50,5)] containsString:@"Nearest marine reading"],@"out-of-range legend is dimmed and names the actual reading time");
+        view.selectedDate=[view marineDataEndDate]; NSUInteger invalidations=view.invalidations;
+        view.selectedDate=[[view marineDataEndDate] dateByAddingTimeInterval:3600];
+        Check(view.invalidations>invalidations && [view marineReadingIsDimmed],@"crossing coverage repaints even when the nearest sample is unchanged");
+        for (NSNumber *height in @[@160,@180,@230]) {
+            [view setFrameSize:NSMakeSize(420,height.doubleValue)];
+            CGFloat numberBottom=NSMinY(view.windLaneRect)+20+14;
+            Check(numberBottom+4<=NSMinY(view.timeLaneRect)+4,@"painted wind numbers fit above painted weekday labels");
+        }
+        view.selectedDate=now;
         view.windRows=@[@{ @"time":now, @"windKt":@-4, @"windFrom":@270 }];
         Check(![[view summaryAtPoint:NSMakePoint(NSMinX(view.plotRect)+1,NSMidY(view.plotRect))] containsString:@"Wind"],@"invalid wind does not create a zero-knot tooltip");
         for (NSString *appearance in @[NSAppearanceNameAqua,NSAppearanceNameDarkAqua]) for (NSNumber *width in @[@420,@360]) {
@@ -55,6 +81,19 @@ int main(void) {
             // Offscreen caching adopts the attached display's 1x/2x scale.
             CGFloat scale=rep.pixelsWide/width.doubleValue;
             Check(scale>=1 && rep.pixelsHigh==160*scale,[NSString stringWithFormat:@"%@ %.0fpt offscreen surf render",appearance,width.doubleValue]);
+            CGFloat endX=NSMinX(view.plotRect)+NSWidth(view.plotRect)*2/48;
+            NSRect waves=view.wavePlotRect; NSInteger endInk=0, stretchedInk=0;
+            for (NSInteger py=ceil((NSMinY(waves)+18)*scale);py<floor((NSMaxY(waves)-4)*scale);py++) {
+                for (NSInteger px=floor((endX-1)*scale);px<=ceil((endX+1)*scale);px++) {
+                    NSColor *colour=[[rep colorAtX:px y:py] colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
+                    if (colour.alphaComponent>.1 && fabs(colour.redComponent-colour.greenComponent)<.1 && fabs(colour.greenComponent-colour.blueComponent)<.1) endInk++;
+                }
+                for (NSInteger px=ceil((endX+8)*scale);px<floor(NSMaxX(waves)*scale);px++) {
+                    NSColor *colour=[[rep colorAtX:px y:py] colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
+                    if (colour.alphaComponent>.4 && colour.blueComponent-colour.redComponent>.25) stretchedInk++;
+                }
+            }
+            Check(endInk>10 && stretchedInk==0,@"rendered marine endpoint is marked and blue waves never stretch beyond it");
             Capture(view,[NSString stringWithFormat:@"surf-%.0fx160-%@.png",width.doubleValue,appearance]);
         }
         view.outlook=SurfOutlook(@{},now); Check([[view summaryAtPoint:NSMakePoint(200,80)] containsString:@"unavailable"],@"empty graph exposes a useful short state");

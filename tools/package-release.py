@@ -2,8 +2,10 @@
 """Prepare a versioned Isobar Mac release without publishing it.
 
 This tool only creates local zip/DMG artifacts. It never submits to Apple or
-publishes to GitHub. --notarized invokes local macOS validation tools, which
-may consult Apple's services, only after the app has been notarized and stapled.
+publishes to GitHub. By default it requires a notarized, stapled app that
+Gatekeeper accepts (local validation tools, which may consult Apple's services).
+--development packages an unnotarized local candidate whose file names say
+"development", so it can never pass for a release.
 """
 
 from __future__ import annotations
@@ -100,10 +102,10 @@ def validate_notarized(app: Path) -> None:
             raise PackageError(detail) from error
 
 
-def outputs_for(info: dict, output: Path, formats: set[str]) -> dict[str, Path]:
+def outputs_for(info: dict, output: Path, formats: set[str], development: bool = False) -> dict[str, Path]:
     version = str(info["CFBundleShortVersionString"])
     architecture = str(info["_architecture"])
-    stem = f"Isobar-{version}-macOS-{architecture}"
+    stem = f"Isobar-{version}-macOS-{architecture}" + ("-development" if development else "")
     paths = {kind: output / f"{stem}.{kind}" for kind in formats}
     paths["checksums"] = output / f"{stem}-checksums.txt"
     return paths
@@ -131,26 +133,26 @@ def write_dmg_root(root: Path, app: Path) -> None:
     )
 
 
-def package(app: Path, output: Path, formats: set[str], *, allow_unsigned: bool = False,
-            notarized: bool = False, dry_run: bool = False) -> dict[str, Path]:
+def package(app: Path, output: Path, formats: set[str], *, development: bool = False,
+            allow_unsigned: bool = False, dry_run: bool = False) -> dict[str, Path]:
     info, _ = bundle_info(app)
-    if notarized and allow_unsigned:
-        raise PackageError("--notarized cannot be combined with --allow-unsigned")
+    if allow_unsigned and not development:
+        raise PackageError("--allow-unsigned needs --development; a release must be signed and notarized")
     validate_bundle(app, allow_unsigned=allow_unsigned)
-    if notarized:
+    if not development:
         validate_notarized(app)
     if not output.parent.is_dir():
         raise PackageError(f"output parent does not exist: {output.parent}")
     if os.path.lexists(output):
         raise PackageError(f"refusing to overwrite existing output directory: {output}")
-    paths = outputs_for(info, output, formats)
+    paths = outputs_for(info, output, formats, development)
     if dry_run:
         return paths
     with tempfile.TemporaryDirectory(prefix=f".{output.name}-work-", dir=output.parent) as work_temporary, \
          tempfile.TemporaryDirectory(prefix=f".{output.name}-artifacts-", dir=output.parent) as artifacts_temporary:
         root = Path(work_temporary)
         artifact_root = Path(artifacts_temporary)
-        staged = outputs_for(info, artifact_root, formats)
+        staged = outputs_for(info, artifact_root, formats, development)
         if "zip" in formats:
             zip_root = root / "zip"
             zip_root.mkdir()
@@ -176,10 +178,13 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("app", type=Path, help="built Isobar.app bundle")
     result.add_argument("output", type=Path, help="new release output directory")
     result.add_argument("--format", choices=("zip", "dmg", "both"), default="both")
+    mode = result.add_mutually_exclusive_group()
+    mode.add_argument("--notarized", action="store_true",
+                      help="the default: require stapler validate and spctl acceptance (kept for older scripts)")
+    mode.add_argument("--development", action="store_true",
+                      help="package an unnotarized local candidate; file names say -development")
     result.add_argument("--allow-unsigned", action="store_true",
-                        help="skip codesign verification for a local development candidate")
-    result.add_argument("--notarized", action="store_true",
-                        help="require stapler validate and spctl acceptance before packaging")
+                        help="with --development, skip codesign verification")
     result.add_argument("--dry-run", action="store_true", help="validate and print planned outputs")
     return result
 
@@ -189,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
     formats = {"zip", "dmg"} if args.format == "both" else {args.format}
     try:
         paths = package(args.app.resolve(), args.output.resolve(), formats,
-                        allow_unsigned=args.allow_unsigned, notarized=args.notarized,
+                        development=args.development, allow_unsigned=args.allow_unsigned,
                         dry_run=args.dry_run)
     except (PackageError, OSError, subprocess.CalledProcessError) as error:
         print(f"package-release: error: {error}", file=sys.stderr)

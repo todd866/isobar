@@ -39,8 +39,10 @@ python3 tools/package-release.py build/release-app/Isobar.app build/releases/1.8
 
 This checks the standalone collector, signatures, stapled ticket and Gatekeeper
 acceptance, then produces a versioned DMG, ZIP and SHA-256 checksums. It never
-submits to Apple or publishes to GitHub. Without `--notarized`, it can prepare
-local candidates for testing; those are not ready for a public download.
+submits to Apple or publishes to GitHub. Notarization is required by default
+(`--notarized` is accepted for older scripts). `--development` packages a local
+test candidate without it; its file names end in `-development`, and it is
+never a public download.
 
 Verify the DMG with `hdiutil verify`, mount it read-only without opening Finder,
 and check its app and Applications shortcut. Extract the ZIP into a fresh folder

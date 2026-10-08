@@ -1,0 +1,155 @@
+{
+  "schema": "isobar.training.samples/v1",
+  "written": "2026-10-06",
+  "notice": "Situational awareness only. Not a flight briefing.",
+  "store": {
+    "root": "~/Data/isobar",
+    "aviation_run": "6a887bcd939d97fd2553",
+    "sigmet_retrieved": "2026-10-06T08:47:48Z",
+    "grid_run": "2026-10-06T00:00:00Z",
+    "grid_valid": "2026-10-06T09:00:00Z",
+    "point_run": "2026-10-06T00:00:00Z"
+  },
+  "products": {
+    "aviation-YPPH": "d36ea66490d98bda517dae4bc9ac93162def845c19e394e2db528bc6f37b077b",
+    "aviation-YSSY": "3cefc41984585be66f78cf8cae844444de1a151b293860774d53739521eadb18",
+    "aviation-sigmet": "1373c3589efb14c4fe5fd3a34aeb4202e564ec9db0f9f97d8991ff2d8119756c",
+    "grid-mslp-20261006T00Z-valid-09Z": "b77414596704eec91d76b43801a16f0f99a9384f3ab587d4472eaeee46ba46d6",
+    "grid-u10-20261006T00Z-valid-09Z": "a515670983c8398fac8848d594fa4e115d3d2aed1a8865c9db96a0b6507b3d96",
+    "grid-v10-20261006T00Z-valid-09Z": "3f08839c39a6d6521970b8020bfeb84dec195a8cee86ecf1f5f8eea99266e544",
+    "grid-mucape-20261006T00Z-valid-09Z": "cf454ff582c53a4356ab8aec8468f732a1af22368c3040554f4b938038e63611",
+    "points-perth-airport": "41d5c636586784ee51eded4828c20ee74b52fc14c538f483b47a20b543e53d68",
+    "points-yssy": "b6fe0755555017a64d1d1ebcc646d068077ac35d5b72a04b2a7f6d05438d05e8"
+  },
+  "live": [
+    {
+      "id": "L1",
+      "template": "taf-first-below-threshold",
+      "concept": "fpl.taf-threshold",
+      "difficulty": "medium",
+      "threshold": {"ceiling_ft": 1500, "visibility_m": 8000, "tempo_counts": true, "inter_counts": true},
+      "answer": {"icao": "YSSY", "group": "TEMPO", "start": "2026-10-06T12:00:00Z", "end": "2026-10-06T18:00:00Z", "ceiling_ft": 1000, "visibility_m": 3000},
+      "ypph_lowest_ceiling_ft": 2500,
+      "ypph_group": "FM070900 BKN025",
+      "trap": "FM061200 at YSSY is BKN020, which is above 1,500 ft. FM061800 at YPPH is SCT008, which is not a ceiling."
+    },
+    {
+      "id": "L2",
+      "template": "metar-best-headwind",
+      "concept": "fpl.wind-component",
+      "difficulty": "easy",
+      "metar": "METAR YSSY 060830Z AUTO 25015KT 9999 // NCD 24/06 Q1016",
+      "answer": {"ends": ["25"], "headwind_kt": 15.0, "crosswind_kt": -1.0}
+    },
+    {
+      "id": "L3",
+      "template": "taf-steady-headwind",
+      "concept": "fpl.wind-component",
+      "difficulty": "medium",
+      "group": "FM061200 18028G38KT",
+      "speed_used_kt": 28,
+      "answer": {"ends": ["16L", "16R"], "headwind_kt": 27.4, "crosswind_kt": 5.8, "heading_true": 168}
+    },
+    {
+      "id": "L4",
+      "template": "mslp-geostrophic-max",
+      "concept": "met.gradient-wind",
+      "difficulty": "hard",
+      "answer": {
+        "lat": -39.25,
+        "lon": 148.75,
+        "geostrophic_kt": 53,
+        "from_deg": 219,
+        "gradient_hpa_per_100km": 3.1,
+        "screen": "land-mix spike, chart rough threshold 1.8 hPa"
+      },
+      "artefact": {
+        "lat": -37.0,
+        "lon": 147.5,
+        "geostrophic_kt": 131,
+        "from_deg": 90,
+        "mslp_hpa": 1023.0,
+        "wind10_kt": 6,
+        "gradient_hpa_per_100km": 7.2,
+        "why": "MSL reduction over high terrain"
+      }
+    },
+    {
+      "id": "L5",
+      "template": "wind10-max",
+      "concept": "met.surface-friction",
+      "difficulty": "medium",
+      "answer": {"lat": -38.0, "lon": 149.75, "wind10_kt": 37.5}
+    },
+    {
+      "id": "L6",
+      "template": "mslp-high-centre",
+      "concept": "met.pressure-systems",
+      "difficulty": "easy",
+      "answer": {"mslp_hpa": 1029.0, "lat": -37.5, "lon_from": 135.0, "lon_to": 136.0}
+    },
+    {
+      "id": "L7",
+      "template": "sigmet-versus-cape",
+      "concept": "met.thunderstorm",
+      "difficulty": "hard",
+      "sigmet": "YBBB SIGMET I02 VALID 060730/060930 FRQ TSGR",
+      "answer": {
+        "inside_j_per_kg": 1753,
+        "inside_lat": -25.0,
+        "inside_lon": 148.75,
+        "kimberley_j_per_kg": 2932,
+        "kimberley_lat": -17.0,
+        "kimberley_lon": 123.75,
+        "storm_is": "the SIGMET polygon, not the Kimberley CAPE maximum"
+      }
+    },
+    {
+      "id": "L8",
+      "template": "density-altitude-pair",
+      "concept": "perf.density-altitude",
+      "difficulty": "medium",
+      "inputs": {
+        "YPPH": {"elev_m": 12.0, "oat_c": 27, "qnh_hpa": 1015},
+        "YSSY": {"elev_m": -1.0, "oat_c": 24, "qnh_hpa": 1016}
+      },
+      "answer": {"higher": "YPPH", "ypph_ft": 1424, "yssy_ft": 974}
+    },
+    {
+      "id": "L9",
+      "template": "freezing-level-lower",
+      "concept": "met.icing",
+      "difficulty": "easy",
+      "answer": {"lower": "YSSY", "yssy_m": 3352, "ypph_m": 3485},
+      "upper_air_check_m": {"YSSY": 3354, "YPPH": 3511}
+    },
+    {
+      "id": "L10",
+      "template": "point-visibility-first-below",
+      "concept": "met.taf-groups",
+      "difficulty": "medium",
+      "threshold_m": 8000,
+      "authority": "IFS 9 km point visibility, not the TAF",
+      "answer": {
+        "first": "yssy",
+        "time": "2026-10-06T12:00:00Z",
+        "visibility_m": 3700,
+        "perth_airport_first": "2026-10-07T18:00:00Z",
+        "perth_airport_visibility_m": 3420
+      },
+      "taf_disagrees": "The YPPH TAF in this run never goes below 9999 m."
+    }
+  ],
+  "physics": [
+    {"id": "P1", "concept": "met.geostrophic", "difficulty": "medium"},
+    {"id": "P2", "concept": "met.thunderstorm", "difficulty": "medium"},
+    {"id": "P3", "concept": "met.stability", "difficulty": "medium"},
+    {"id": "P4", "concept": "perf.density-altitude", "difficulty": "easy"},
+    {"id": "P5", "concept": "aero.lift", "difficulty": "medium"},
+    {"id": "P6", "concept": "aero.induced-drag", "difficulty": "hard"},
+    {"id": "P7", "concept": "aero.load-factor", "difficulty": "medium"},
+    {"id": "P8", "concept": "sys.pitot-static", "difficulty": "hard"},
+    {"id": "P9", "concept": "hum.hypoxia", "difficulty": "easy"},
+    {"id": "P10", "concept": "met.surface-friction", "difficulty": "hard"}
+  ]
+}

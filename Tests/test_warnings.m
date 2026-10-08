@@ -53,6 +53,31 @@ int main(void) {
               @"external entity declarations are rejected");
         NSString *legacy = @"<warnings><warning><id>IDW20100</id><title>Marine Wind Warning</title><phase>active</phase><text>Strong wind.</text></warning></warnings>";
         check(ParseWarningXML(XML(legacy)).count == 1, @"legacy fixture schema remains supported");
+
+        NSDictionary *badge = WarningBadgeModel(@[
+            @{ @"title": @"Sheep Graziers Warning" },
+            @{ @"title": @"Frost Warning" },
+        ]);
+        check([badge[@"text"] isEqual:@"2 warnings"], @"badge uses compact plural count");
+        check([badge[@"severity"] isEqual:@"advisory"], @"sheep graziers and frost stay advisory");
+        check([badge[@"glyph"] isEqual:@"exclamationmark.circle"], @"advisory badge uses circle glyph");
+        check([badge[@"tooltip"] isEqual:@"Sheep Graziers Warning\nFrost Warning"], @"badge tooltip lists titles");
+
+        badge = WarningBadgeModel(@[@{ @"title": @"Severe Thunderstorm Warning" }, @{ @"title": @"Marine Wind Warning" }]);
+        check([badge[@"text"] isEqual:@"2 warnings"], @"badge count includes mixed active warnings");
+        check([badge[@"severity"] isEqual:@"severe"], @"severe thunderstorm promotes mixed badge");
+        check([badge[@"glyph"] isEqual:@"exclamationmark.triangle"], @"severe badge uses triangle glyph");
+
+        for (NSString *title in @[@"Severe Weather Warning", @"Fire Weather Warning", @"Major Flood Warning", @"Tsunami Warning"]) {
+            badge = WarningBadgeModel(@[@{@"title":title}]);
+            check([badge[@"severity"] isEqual:@"severe"], [NSString stringWithFormat:@"%@ uses severe tint", title]);
+        }
+
+        badge = WarningBadgeModel(@[@{ @"title": @"Marine Wind Warning", @"shortTitle": @"Marine wind", @"text": @"For cyclone information see the separate bulletin." }]);
+        check([badge[@"severity"] isEqual:@"advisory"] && [badge[@"tooltip"] isEqual:@"Marine Wind Warning"], @"severity uses the warning type, tooltip keeps full titles");
+        badge = WarningBadgeModel(@[@{ @"title": @"Cyclone Warning" }]);
+        check([badge[@"text"] isEqual:@"1 warning"] && [badge[@"severity"] isEqual:@"severe"], @"singular cyclone badge is severe");
+        check([WarningBadgeModel(@[])[@"text"] isEqual:@""], @"empty warning array has no badge text");
     }
     return failures ? 1 : 0;
 }

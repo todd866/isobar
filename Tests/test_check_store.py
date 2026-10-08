@@ -45,27 +45,62 @@ def make_store(tmp_path, *, daemon_run="20260926T00Z", old_run="20260926T00Z", t
     return store
 
 
-def make_native_store(tmp_path, *, truncated=False, missing_observation_column=None):
+def make_native_store(tmp_path, *, truncated=False, missing_observation_column=None, schema=1, drop_lead=None):
     store = tmp_path / "native-store"
     run = "20260926T00Z"
     run_dir = store / "products/grids/ecmwf_ifs025/runs" / run
-    write_json(store / "products/grids/ecmwf_ifs025/current.json", {"latest": run, "runs": [run]})
+    issued = datetime(2026, 9, 26, tzinfo=timezone.utc)
+    if schema == 2:
+        leads = list(range(0, 145, 3)) + list(range(150, 169, 6))
+        pointer = {
+            "latest": run, "runs": [run], "schema_version": 2, "contract": "isobar-data",
+            "family": "grids/ecmwf_ifs025", "forecast_hours": leads, "horizon_hours": 168,
+            "uniform_step_hours": None,
+        }
+        write_json(run_dir / "manifest.json", {
+            "schema_version": 2, "contract": "isobar-data", "family": "grids/ecmwf_ifs025",
+            "forecast_hours": leads, "horizon_hours": 168, "uniform_step_hours": None,
+            "run": "2026-09-26T00:00:00Z",
+        })
+    elif schema == 3:
+        leads = list(range(0, 97, 3))
+        pointer = {
+            "latest": run, "runs": [run], "schema_version": 3, "contract": "isobar-data",
+            "family": "grids/ecmwf_ifs025",
+        }
+    else:
+        leads = list(range(0, 97, 3))
+        pointer = {"latest": run, "runs": [run]}
+    write_json(store / "products/grids/ecmwf_ifs025/current.json", pointer)
     write_json(store / "status.json", {"sources": [{"id": "ecmwf-open-data", "ok": True}]})
     units = {"mslp": "hPa", "t850": "degC", "t2m": "degC", "u10": "m/s", "v10": "m/s", "tp": "mm"}
+    params = {"mslp": "msl", "t850": "t", "t2m": "2t", "u10": "10u", "v10": "10v", "tp": "tp"}
     for variable, unit in units.items():
-        for lead in range(0, 97, 3):
-            day = 26 + lead // 24
-            hour = lead % 24
-            valid = f"202609{day:02d}T{hour:02d}Z"
+        for lead in leads:
+            if schema == 2 and drop_lead == lead:
+                continue
+            valid_at = issued + timedelta(hours=lead)
+            if schema == 1:
+                day = 26 + lead // 24
+                hour = lead % 24
+                valid = f"202609{day:02d}T{hour:02d}Z"
+                valid_time = f"2026-09-{day:02d}T{hour:02d}:00:00Z"
+            else:
+                valid = valid_at.strftime("%Y%m%dT%HZ")
+                valid_time = valid_at.strftime("%Y-%m-%dT%H:%M:%SZ")
             sidecar = {
                 "ny": 2, "nx": 2, "units": unit, "run": "2026-09-26T00:00:00Z",
-                "valid_time": f"2026-09-{day:02d}T{hour:02d}:00:00Z",
+                "valid_time": valid_time,
                 "dtype": "float16", "endian": "little",
                 "order": "north-to-south, west-to-east",
                 "lat0": 0.0, "lon0": 95.0, "dlat": -0.25, "dlon": 0.25,
-                "fill": -32768, "native_step_hours": 3,
-                "param": {"mslp": "msl", "t850": "t", "t2m": "2t", "u10": "10u", "v10": "10v", "tp": "tp"}[variable],
+                "fill": -32768,
+                "param": params[variable],
             }
+            if schema == 2:
+                sidecar["lead_hours"] = lead
+            else:
+                sidecar["native_step_hours"] = 3
             write_json(run_dir / variable / f"{valid}.json", sidecar)
             size = 8 - (1 if truncated and variable == "mslp" and lead == 0 else 0)
             # 1024 hPa is an in-range little-endian float16 sample. Zeros are not.
@@ -233,6 +268,25 @@ class CheckStoreTests(unittest.TestCase):
         store = self.store()
         write_json(store / "status.json", {"sources": [{"id": "ecmwf-ifs", "ok": True}]})
         self.assertTrue(check_store.preflight(store, NOW)["ok"])
+
+    def test_schema2_week_ladder_is_ready(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        report = check_store.preflight(make_native_store(Path(self.tempdir.name), schema=2), NOW)
+        self.assertTrue(report["ok"], report["errors"])
+        self.assertEqual(report["ecmwf"]["native_pointer"]["schema"], 2)
+        self.assertEqual(report["ecmwf"]["fields"]["mslp"], 53)
+
+    def test_schema3_fails_closed(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        report = check_store.preflight(make_native_store(Path(self.tempdir.name), schema=3), NOW)
+        self.assertFalse(report["ok"])
+        self.assertTrue(any("unsupported schema_version 3" in item for item in report["errors"]))
+
+    def test_schema2_missing_listed_hour_fails(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        report = check_store.preflight(make_native_store(Path(self.tempdir.name), schema=2, drop_lead=168), NOW)
+        self.assertFalse(report["ok"])
+        self.assertTrue(any("168" in item or "20261003T00Z" in item for item in report["errors"]))
 
     def test_native_published_store_is_ready_without_legacy_files(self):
         self.tempdir = tempfile.TemporaryDirectory()

@@ -89,10 +89,196 @@ static void MakeFloatRun(NSString *root, int nx, int ny, float offset) {
     for (NSString *name in names) [values writeToFile:[dir stringByAppendingPathComponent:name] atomically:YES];
 }
 
+static void MarkSchema2Sidecar(NSString *root, NSString *run, NSString *var, int lead) {
+    NSString *path = [[[[[root stringByAppendingPathComponent:@"products/grids/ecmwf_ifs025/runs"]
+        stringByAppendingPathComponent:run] stringByAppendingPathComponent:var]
+        stringByAppendingPathComponent:RunID(run, lead)] stringByAppendingPathExtension:@"json"];
+    NSMutableDictionary *side = [[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:path] options:0 error:nil] mutableCopy];
+    [side removeObjectForKey:@"native_step_hours"];
+    side[@"lead_hours"] = @(lead);
+    [[NSJSONSerialization dataWithJSONObject:side options:0 error:nil] writeToFile:path atomically:YES];
+}
+
+static NSArray<NSNumber *> *WeekHours(void) {
+    NSMutableArray *hours = [NSMutableArray array];
+    for (int lead = 0; lead <= 144; lead += 3) [hours addObject:@(lead)];
+    for (int lead = 150; lead <= 168; lead += 6) [hours addObject:@(lead)];
+    return hours;
+}
+
+static void WriteWeekRun(NSString *root, NSString *run, NSArray<NSNumber *> *hours) {
+    NSArray *vars = @[@[@"mslp",@"msl",@"hPa"], @[@"t850",@"t",@"degC"], @[@"t2m",@"2t",@"degC"],
+        @[@"u10",@"10u",@"m/s"], @[@"v10",@"10v",@"m/s"], @[@"tp",@"tp",@"mm"]];
+    double rainScale = [[run substringWithRange:NSMakeRange(9, 2)] intValue] == 12 ? 1.1 : 1.0;
+    for (NSNumber *lead in hours) for (NSArray *item in vars) {
+        float base = 1;
+        if ([item[0] isEqual:@"mslp"]) base = 1000 + lead.floatValue;
+        else if ([item[0] isEqual:@"tp"]) base = lead.floatValue * rainScale;
+        else if ([item[0] isEqual:@"t850"]) base = 10;
+        WriteField(root, run, item[0], item[1], item[2], lead.intValue, base, nil, NO);
+        MarkSchema2Sidecar(root, run, item[0], lead.intValue);
+    }
+    NSDictionary *manifest = @{
+        @"schema_version": @2, @"schema": @2, @"contract": @"isobar-data",
+        @"family": @"grids/ecmwf_ifs025", @"forecast_hours": hours,
+        @"horizon_hours": hours.lastObject, @"uniform_step_hours": NSNull.null,
+        @"run": RunDateString(run, 0),
+    };
+    NSString *dir = [[root stringByAppendingPathComponent:@"products/grids/ecmwf_ifs025/runs"] stringByAppendingPathComponent:run];
+    [[NSJSONSerialization dataWithJSONObject:manifest options:0 error:nil]
+        writeToFile:[dir stringByAppendingPathComponent:@"manifest.json"] atomically:YES];
+}
+
+static void WriteWeekPointer(NSString *root, NSArray<NSString *> *runs, NSArray<NSNumber *> *hours) {
+    NSString *family = [root stringByAppendingPathComponent:@"products/grids/ecmwf_ifs025"];
+    [[NSFileManager defaultManager] createDirectoryAtPath:family withIntermediateDirectories:YES attributes:nil error:nil];
+    NSDictionary *pointer = @{
+        @"latest": runs.lastObject, @"runs": runs, @"schema_version": @2,
+        @"contract": @"isobar-data", @"family": @"grids/ecmwf_ifs025",
+        @"forecast_hours": hours, @"horizon_hours": hours.lastObject,
+        @"uniform_step_hours": NSNull.null,
+    };
+    [[NSJSONSerialization dataWithJSONObject:pointer options:0 error:nil]
+        writeToFile:[family stringByAppendingPathComponent:@"current.json"] atomically:YES];
+}
+
+static NSInteger LeadIndex(OwnRun *run, NSString *runID, int lead) {
+    NSDateFormatter *in = [NSDateFormatter new];
+    in.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    in.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
+    in.dateFormat = @"yyyyMMdd'T'HH'Z'";
+    NSDate *when = [[in dateFromString:runID] dateByAddingTimeInterval:lead * 3600.0];
+    for (NSInteger i = 0; i < run.hours; i++) {
+        NSDate *time = [run timeAtIndex:i];
+        if (time && fabs([time timeIntervalSinceDate:when]) < 1) return i;
+    }
+    return -1;
+}
+
+static void TestWeekLadder(NSString *coast) {
+    NSString *root = [NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+    @try {
+        NSArray<NSNumber *> *hours = WeekHours();
+        // The adjacent -12 h cycle cannot cover the complete window ending at
+        // the new run's first frame. The -24 h cycle can, and must be selected.
+        WriteWeekRun(root, @"20261006T00Z", hours);
+        WriteWeekRun(root, @"20261006T12Z", hours);
+        WriteWeekRun(root, @"20261007T00Z", hours);
+        WriteField(root, @"20261007T00Z", @"mslp", @"msl", @"hPa", 147, 1147, nil, NO);
+        MarkSchema2Sidecar(root, @"20261007T00Z", @"mslp", 147);
+        WriteWeekPointer(root, @[@"20261006T00Z", @"20261006T12Z", @"20261007T00Z"], hours);
+        NSString *error = nil;
+        OwnRun *run = OwnRunLoadPublished(root, NO, coast, &error);
+        check(run != nil && run.hours == 53, [NSString stringWithFormat:@"schema 2 loads 53 frames (%ld, %@)", (long)run.hours, error ?: @""]);
+        NSInteger at144 = LeadIndex(run, @"20261007T00Z", 144);
+        NSInteger at150 = LeadIndex(run, @"20261007T00Z", 150);
+        NSInteger at168 = LeadIndex(run, @"20261007T00Z", 168);
+        NSInteger at147 = LeadIndex(run, @"20261007T00Z", 147);
+        check(at144 >= 0 && at150 == at144 + 1 && at168 == 52 && at147 < 0,
+            @"150 h follows 144 h and an unlisted 147 h file is not a frame");
+        NSDate *end = [run timeAtIndex:run.hours - 1];
+        NSDateFormatter *in = [NSDateFormatter new];
+        in.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+        in.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
+        in.dateFormat = @"yyyyMMdd'T'HH'Z'";
+        NSDate *issued = [in dateFromString:@"20261007T00Z"];
+        check(end && fabs([end timeIntervalSinceDate:issued] - 168 * 3600) < 1, @"the last frame is +168 h");
+        double mid = [run valueAtPointIndex:0 field:OwnRunFieldMSLP fractionalHour:at144 + 0.5];
+        double left = [run valueAtPointIndex:0 field:OwnRunFieldMSLP hour:at144];
+        double right = [run valueAtPointIndex:0 field:OwnRunFieldMSLP hour:at150];
+        check(fabs(mid - (left + right) / 2) < 0.2, [NSString stringWithFormat:@"the 144–150 h midpoint blends the listed frames (%.2f)", mid]);
+        double rain = [run valueAtPointIndex:0 field:OwnRunFieldRain hour:at150];
+        check([run hasRainAtIndex:at150] && fabs(rain - 24) < 0.2 && fabs(rain - 27) > 1,
+            [NSString stringWithFormat:@"150 h rain pairs with 126 h, not eight frames back (%.2f mm)", rain]);
+        NSInteger at12 = LeadIndex(run, @"20261007T00Z", 12);
+        NSInteger at0 = LeadIndex(run, @"20261007T00Z", 0);
+        check(at12 >= 0 && [run hasRainAtIndex:at12] && fabs([run valueAtPointIndex:0 field:OwnRunFieldRain hour:at12] - 26.4) < 0.2,
+            @"an early lead uses the newest complete older cycle's 24 h window");
+        check(at0 >= 0 && [run hasRainAtIndex:at0] && fabs([run valueAtPointIndex:0 field:OwnRunFieldRain hour:at0] - 24) < 0.2,
+            @"the newest earlier cycle with a complete 24 h window supplies the first frame");
+        NSInteger at21 = LeadIndex(run, @"20261007T00Z", 21);
+        NSInteger at24 = LeadIndex(run, @"20261007T00Z", 24);
+        double rain21 = [run valueAtPointIndex:0 field:OwnRunFieldRain hour:at21];
+        double rain24 = [run valueAtPointIndex:0 field:OwnRunFieldRain hour:at24];
+        double rainMid = [run valueAtPointIndex:0 field:OwnRunFieldRain fractionalHour:at21 + 0.5];
+        check(at21 >= 0 && at24 == at21 + 1 && fabs(rain21 - 26.4) < 0.2 && fabs(rain24 - 24) < 0.2,
+            @"the fallback rain meets the current run at the first paired frame");
+        check(fabs(rainMid - (rain21 + rain24) / 2) < 0.2,
+            [NSString stringWithFormat:@"fractional rain blends across the fallback seam (%.2f)", rainMid]);
+        double justBefore = [run valueAtPointIndex:0 field:OwnRunFieldRain fractionalHour:at24 - 1e-5];
+        double justAfter = [run valueAtPointIndex:0 field:OwnRunFieldRain fractionalHour:at24 + 1e-5];
+        check(isfinite(justBefore) && isfinite(justAfter) && fabs(justBefore - justAfter) < 0.001,
+            @"different cycles meet continuously at 24 h without a field jump");
+        WriteField(root, @"20261006T12Z", @"tp", @"tp", @"mm", 24, 0, @[@-32768, @-32768, @-32768, @-32768], NO);
+        MarkSchema2Sidecar(root, @"20261006T12Z", @"tp", 24);
+        OwnRun *emptyNewer = OwnRunLoadPublished(root, NO, coast, &error);
+        check(emptyNewer && fabs([emptyNewer valueAtPointIndex:0 field:OwnRunFieldRain hour:at12] - 24) < 0.2,
+            @"an entirely missing newer window falls back to the older valid cycle");
+        WriteField(root, @"20261006T12Z", @"tp", @"tp", @"mm", 24, 26.4, nil, NO);
+        MarkSchema2Sidecar(root, @"20261006T12Z", @"tp", 24);
+        NSString *adjacentManifest = [[[root stringByAppendingPathComponent:@"products/grids/ecmwf_ifs025/runs"]
+            stringByAppendingPathComponent:@"20261006T12Z"] stringByAppendingPathComponent:@"manifest.json"];
+        NSMutableDictionary *malformed = [[NSJSONSerialization JSONObjectWithData:
+            [NSData dataWithContentsOfFile:adjacentManifest] options:NSJSONReadingMutableContainers error:nil] mutableCopy];
+        malformed[@"schema_version"] = @3;
+        [[NSJSONSerialization dataWithJSONObject:malformed options:0 error:nil]
+            writeToFile:adjacentManifest atomically:YES];
+        error = nil;
+        OwnRun *skippingMalformed = OwnRunLoadPublished(root, NO, coast, &error);
+        NSInteger skippingMalformedAt12 = LeadIndex(skippingMalformed, @"20261007T00Z", 12);
+        check(skippingMalformed && skippingMalformedAt12 >= 0 &&
+              fabs([skippingMalformed valueAtPointIndex:0 field:OwnRunFieldRain hour:skippingMalformedAt12] - 24) < 0.2,
+            @"malformed newer fallback is skipped in favour of the older valid window");
+        NSString *oldStart = [[[[[root stringByAppendingPathComponent:@"products/grids/ecmwf_ifs025/runs"]
+            stringByAppendingPathComponent:@"20261006T00Z"] stringByAppendingPathComponent:@"tp"]
+            stringByAppendingPathComponent:@"20261006T00Z"] stringByAppendingPathExtension:@"f16"];
+        [[NSFileManager defaultManager] removeItemAtPath:oldStart error:nil];
+        [[NSFileManager defaultManager] removeItemAtPath:[oldStart.stringByDeletingPathExtension stringByAppendingPathExtension:@"json"] error:nil];
+        error = nil;
+        OwnRun *withoutWindow = OwnRunLoadPublished(root, NO, coast, &error);
+        NSInteger withoutWindowAt0 = LeadIndex(withoutWindow, @"20261007T00Z", 0);
+        check(withoutWindow && withoutWindowAt0 >= 0 && ![withoutWindow hasRainAtIndex:withoutWindowAt0],
+            @"an early frame stays missing when no retained run covers the complete window");
+        NSString *missing = [[[[[root stringByAppendingPathComponent:@"products/grids/ecmwf_ifs025/runs"]
+            stringByAppendingPathComponent:@"20261007T00Z"] stringByAppendingPathComponent:@"mslp"]
+            stringByAppendingPathComponent:@"20261014T00Z"] stringByAppendingPathExtension:@"f16"];
+        [[NSFileManager defaultManager] removeItemAtPath:missing error:nil];
+        [[NSFileManager defaultManager] removeItemAtPath:[missing.stringByDeletingPathExtension stringByAppendingPathExtension:@"json"] error:nil];
+        error = nil;
+        check(OwnRunLoadPublished(root, NO, coast, &error) == nil && [error containsString:@"168"],
+            [NSString stringWithFormat:@"a missing listed hour fails closed (%@)", error ?: @""]);
+    } @finally { [[NSFileManager defaultManager] removeItemAtPath:root error:nil]; }
+}
+
 static NSData *RenderedBytes(OwnRun *run, CGFloat scale, int temperature) {
     OwnLayerOptions layers = {.bare = 1, .barbs = 1, .temperature = temperature};
     NSImage *image = OwnRunRender(run, 0, @"", layers, @[], scale);
     return [image TIFFRepresentation];
+}
+
+// Labelled renders share the isobar label caches across render threads.
+static void TestConcurrentLabelledRenders(void) {
+    NSString *root = [NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+    @try {
+        MakeFloatRun(root, 40, 30, 1203);
+        NSString *error = nil;
+        OwnRun *run = OwnRunLoad([root stringByAppendingPathComponent:@"run"], @"Resources/ownchart-coast.bin", &error);
+        OwnLayerOptions layers = {0};
+        NSData *(^render)(CGFloat) = ^NSData *(CGFloat scale) { return [OwnRunRender(run, 0, @"", layers, @[], scale) TIFFRepresentation]; };
+        // Concurrent renders first, so they are the first to fill the label caches.
+        NSMutableArray *concurrent = [NSMutableArray array];
+        for (int i = 0; i < 16; i++) [concurrent addObject:NSNull.null];
+        NSLock *lock = [NSLock new];
+        dispatch_apply(16, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^(size_t i) {
+            NSData *bytes = render(i % 2 ? 2 : 1) ?: [NSData data];
+            [lock lock]; concurrent[i] = bytes; [lock unlock];
+        });
+        NSData *serial1 = render(1), *serial2 = render(2);
+        NSUInteger mismatches = 0;
+        for (NSUInteger i = 0; i < concurrent.count; i++) if (![concurrent[i] isEqual:i % 2 ? serial2 : serial1]) mismatches++;
+        check(run != nil && serial1.length && mismatches == 0,
+            [NSString stringWithFormat:@"concurrent labelled renders match serial renders (%lu differ%@)", (unsigned long)mismatches, error ? [@"; " stringByAppendingString:error] : @""]);
+    } @finally { [[NSFileManager defaultManager] removeItemAtPath:root error:nil]; }
 }
 
 static void TestConcurrentDifferentGrids(void) {
@@ -139,12 +325,20 @@ int main(void) {
         OwnRun *sameRun = OwnRunLoadPublished(root, NO, coast, &error);
         check(sameRun == run, @"unchanged published run reuses the parsed cube");
         NSDictionary *futurePointer = @{@"latest":@"20260926T00Z", @"runs":@[@"20260925T12Z",@"20260926T00Z"],
-                                        @"schema_version":@2, @"contract":@"isobar-data"};
+                                        @"schema_version":@3, @"contract":@"isobar-data"};
         [[NSJSONSerialization dataWithJSONObject:futurePointer options:0 error:nil]
             writeToFile:[family stringByAppendingPathComponent:@"current.json"] atomically:YES];
         error = nil;
         check(OwnRunLoadPublished(root, NO, coast, &error) == nil && [error containsString:@"unsupported contract"],
-            @"future grid contract fails before cached weather is reused");
+            @"schema 3 fails before cached weather is reused");
+        NSDictionary *bareSchema2 = @{@"latest":@"20260926T00Z", @"runs":@[@"20260925T12Z",@"20260926T00Z"],
+                                      @"schema_version":@2, @"contract":@"isobar-data", @"family":@"grids/ecmwf_ifs025"};
+        [[NSJSONSerialization dataWithJSONObject:bareSchema2 options:0 error:nil]
+            writeToFile:[family stringByAppendingPathComponent:@"current.json"] atomically:YES];
+        error = nil;
+        OwnRun *withoutHours = OwnRunLoadPublished(root, NO, coast, &error);
+        check(withoutHours == nil && withoutHours != run && [error containsString:@"forecast_hours"],
+            [NSString stringWithFormat:@"schema 2 without forecast_hours fails closed (%@)", error ?: @""]);
         NSDictionary *wrongFamily = @{@"latest":@"20260926T00Z", @"runs":@[@"20260925T12Z",@"20260926T00Z"],
                                       @"schema_version":@1, @"contract":@"isobar-data", @"family":@"points/marine"};
         [[NSJSONSerialization dataWithJSONObject:wrongFamily options:0 error:nil]
@@ -228,5 +422,7 @@ int main(void) {
         check(OwnRunLoad(hugeDir, coast, &error) == nil, @"a big-endian run grid is refused");
     } @finally { [[NSFileManager defaultManager] removeItemAtPath:root error:nil]; }
     TestConcurrentDifferentGrids();
+    TestConcurrentLabelledRenders();
+    TestWeekLadder(coast);
     return failures ? 1 : 0;
 }

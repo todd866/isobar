@@ -25,7 +25,10 @@ DEFAULT_PLACES = (
 REQUIRED_VARIABLES = ("msl", "t850", "t2m", "rain24", "u10", "v10")
 NATIVE_VARIABLES = ("mslp", "t850", "t2m", "u10", "v10", "tp")
 NATIVE_LEADS = tuple(range(0, 97, 3))
+# 00Z/12Z: every 3 h through 144 h, then the published 6 h steps through 168 h.
+WEEK_LEADS = tuple([*range(0, 145, 3), *range(150, 169, 6)])
 NATIVE_GRID = {"lat0": 0.0, "lon0": 95.0, "dlat": -0.25, "dlon": 0.25, "fill": -32768, "native_step_hours": 3}
+WEEK_GRID = {"lat0": 0.0, "lon0": 95.0, "dlat": -0.25, "dlon": 0.25, "fill": -32768}
 NATIVE_UNITS = {"mslp": "hPa", "t850": "degC", "t2m": "degC", "u10": "m/s", "v10": "m/s", "tp": "mm"}
 NATIVE_PARAMS = {"mslp": "msl", "t850": "t", "t2m": "2t", "u10": "10u", "v10": "10v", "tp": "tp"}
 POINT_MAX_AGE_HOURS = 36
@@ -249,6 +252,21 @@ def check_manifest(store: Path, errors: list[str], warnings: list[str], now: dat
     return result
 
 
+def native_schema(pointer: dict) -> int:
+    """Schema 1 is the 33-frame grid, including a pointer with no marker.
+
+    Schema 2 lists forecast_hours. Any other marker fails closed.
+    """
+    if "schema_version" not in pointer:
+        return 1
+    version = pointer.get("schema_version")
+    if type(version) is not int:
+        raise ValueError(f"schema_version is {version!r}")
+    if version not in (1, 2):
+        raise ValueError(f"unsupported schema_version {version}")
+    return version
+
+
 def check_native_grid(store: Path, errors: list[str], warnings: list[str], now: datetime) -> dict[str, Any]:
     pointer_path = store / "products/grids/ecmwf_ifs025/current.json"
     result: dict[str, Any] = {"mode": "native", "native_pointer": None, "consumable": False}
@@ -260,10 +278,34 @@ def check_native_grid(store: Path, errors: list[str], warnings: list[str], now: 
             raise ValueError("pointer must name latest and include it in runs")
         if "/" in latest or "\\" in latest or ".." in latest or Path(latest).is_absolute():
             raise ValueError("unsafe latest run")
-        result["native_pointer"] = {"latest": latest, "runs": len(runs), "path": str(pointer_path.relative_to(store))}
+        schema = native_schema(pointer)
+        leads = NATIVE_LEADS
+        grid_expect = NATIVE_GRID
+        if schema == 2:
+            if pointer.get("forecast_hours") != list(WEEK_LEADS):
+                raise ValueError("schema 2 forecast_hours is not the 168 h ladder")
+            if pointer.get("uniform_step_hours") is not None:
+                raise ValueError("schema 2 claims a uniform step")
+            if pointer.get("contract") not in (None, "isobar-data"):
+                raise ValueError("schema 2 contract is not isobar-data")
+            if pointer.get("family") not in (None, "grids/ecmwf_ifs025"):
+                raise ValueError("schema 2 family is not the ECMWF grid")
+            leads = WEEK_LEADS
+            grid_expect = WEEK_GRID
+        result["native_pointer"] = {"latest": latest, "runs": len(runs), "schema": schema, "path": str(pointer_path.relative_to(store))}
         run_dir = store / "products/grids/ecmwf_ifs025/runs" / latest
         run = datetime.strptime(latest, "%Y%m%dT%HZ").replace(tzinfo=timezone.utc)
         result["loaded_run"] = latest
+        if schema == 2:
+            manifest = read_json(run_dir / "manifest.json")
+            if not isinstance(manifest, dict) or manifest.get("schema_version") != 2:
+                raise ValueError("schema 2 run manifest is missing")
+            if manifest.get("forecast_hours") != list(WEEK_LEADS):
+                raise ValueError("run manifest forecast_hours does not match the pointer")
+            if manifest.get("uniform_step_hours") is not None:
+                raise ValueError("run manifest claims a uniform step")
+            if manifest.get("horizon_hours") != WEEK_LEADS[-1]:
+                raise ValueError("run manifest horizon is not 168 h")
         age = (now - run).total_seconds() / 3600
         if age > MAX_AGE_HOURS:
             errors.append(f"native ECMWF run is stale: {age:.1f}h old (limit {MAX_AGE_HOURS}h)")
@@ -273,7 +315,7 @@ def check_native_grid(store: Path, errors: list[str], warnings: list[str], now: 
         shape: tuple[int, int] | None = None
         for variable in NATIVE_VARIABLES:
             entries = []
-            for lead in NATIVE_LEADS:
+            for lead in leads:
                 valid_id = (run + timedelta(hours=lead)).strftime("%Y%m%dT%HZ")
                 sidecar_path = run_dir / variable / f"{valid_id}.json"
                 data_path = run_dir / variable / f"{valid_id}.f16"
@@ -285,9 +327,14 @@ def check_native_grid(store: Path, errors: list[str], warnings: list[str], now: 
                         raise ValueError("not little-endian float16")
                     if meta.get("order") != "north-to-south, west-to-east":
                         raise ValueError("grid order is not canonical")
-                    for key, expected in NATIVE_GRID.items():
+                    for key, expected in grid_expect.items():
                         if meta.get(key) != expected:
                             raise ValueError(f"{key} is {meta.get(key)!r}, expected {expected!r}")
+                    if schema == 2:
+                        if meta.get("lead_hours") != lead:
+                            raise ValueError(f"lead_hours is {meta.get('lead_hours')!r}, expected {lead}")
+                        if "native_step_hours" in meta and meta.get("native_step_hours") is not None:
+                            raise ValueError("schema 2 sidecar claims a uniform step")
                     if meta.get("units") != NATIVE_UNITS[variable] or meta.get("param") != NATIVE_PARAMS[variable]:
                         raise ValueError("field units or param do not match the native contract")
                     if not isinstance(meta.get("nx"), int) or not isinstance(meta.get("ny"), int) or meta["nx"] < 2 or meta["ny"] < 2:
@@ -311,8 +358,8 @@ def check_native_grid(store: Path, errors: list[str], warnings: list[str], now: 
                 except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
                     errors.append(f"native ECMWF {variable} {valid_id}: {exc}")
             fields[variable] = len(entries)
-            if len(entries) != len(NATIVE_LEADS):
-                errors.append(f"native ECMWF {variable}: {len(entries)}/{len(NATIVE_LEADS)} valid steps")
+            if len(entries) != len(leads):
+                errors.append(f"native ECMWF {variable}: {len(entries)}/{len(leads)} valid steps")
         result["fields"] = fields
         result["run"] = latest
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:

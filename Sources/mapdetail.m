@@ -132,6 +132,45 @@ void DrawMapDetails(NSArray<NSDictionary *> *records, NSRect bounds) {
 }
 - (BOOL)isAccessibilityElement { return YES; }
 - (NSString *)accessibilityLabel { return [NSString stringWithFormat:@"%.0f hour temperature forecast in degrees Celsius", self.horizonHours > 0 ? self.horizonHours : 48]; }
+- (NSArray<NSDictionary<NSString *, id> *> *)dayLabels {
+    NSRect plot = [self plotRect];
+    double horizon = self.horizonHours > 0 ? self.horizonHours : 48;
+    NSDate *start = [self startDate];
+    NSDate *end = [start dateByAddingTimeInterval:horizon * 3600];
+    NSTimeZone *zone = self.timeZone ?: NSTimeZone.localTimeZone;
+    NSCalendar *cal = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+    cal.timeZone = zone;
+    NSDictionary *attrs = @{
+        NSFontAttributeName: [NSFont systemFontOfSize:11],
+        NSForegroundColorAttributeName: NSColor.secondaryLabelColor
+    };
+    NSDateFormatter *fmt = [NSDateFormatter new];
+    fmt.timeZone = zone;
+    fmt.dateFormat = @"EEE";
+    NSMutableArray *out = [NSMutableArray array];
+    NSDate *day = [cal dateByAddingUnit:NSCalendarUnitDay value:-1 toDate:start options:0] ?: start;
+    CGFloat lastRight = -1e9;
+    for (int guard = 0; guard < 16; guard++) {
+        if ([day compare:end] == NSOrderedDescending) break;
+        NSDateComponents *parts = [cal components:NSCalendarUnitYear|NSCalendarUnitMonth|NSCalendarUnitDay fromDate:day];
+        parts.hour = 12;
+        parts.minute = 0;
+        parts.second = 0;
+        NSDate *noon = [cal dateFromComponents:parts];
+        day = [cal dateByAddingUnit:NSCalendarUnitDay value:1 toDate:day options:0];
+        if (![noon isKindOfClass:NSDate.class]) continue;
+        if ([noon compare:start] == NSOrderedAscending || [noon compare:end] == NSOrderedDescending) continue;
+        NSString *text = [fmt stringFromDate:noon] ?: @"";
+        CGFloat w = ceil([text sizeWithAttributes:attrs].width);
+        NSTimeInterval offset = [noon timeIntervalSinceDate:start];
+        CGFloat cx = NSMinX(plot) + offset / (horizon * 3600) * NSWidth(plot);
+        CGFloat x = MIN(NSMaxX(plot) - w, MAX(NSMinX(plot), cx - w / 2));
+        if (lastRight > -1e8 && x < lastRight + 8) continue;
+        lastRight = x + w;
+        [out addObject:@{@"text": text, @"x": @(x), @"y": @(NSMaxY(plot) + 6), @"width": @(w)}];
+    }
+    return out;
+}
 - (void)drawRect:(NSRect)dirty {
     (void)dirty; NSRect plot=[self plotRect]; NSArray *segments=[self segments];
     NSDictionary *attrs=@{NSFontAttributeName:[NSFont systemFontOfSize:11],NSForegroundColorAttributeName:NSColor.secondaryLabelColor};
@@ -147,12 +186,9 @@ void DrawMapDetails(NSArray<NSDictionary *> *records, NSRect bounds) {
         [line moveToPoint:NSMakePoint(NSMinX(plot),y(t))]; [line lineToPoint:NSMakePoint(NSMaxX(plot),y(t))]; line.lineWidth=.5; [line stroke];
         [[NSString stringWithFormat:@"%.0f°",t] drawAtPoint:NSMakePoint(2,y(t)-7) withAttributes:attrs];
     }
-    NSDateFormatter *f=[NSDateFormatter new]; f.timeZone=self.timeZone ?: NSTimeZone.localTimeZone; f.dateFormat=@"EEE HH:mm";
-    NSInteger labelStep = (NSWidth(plot) < 420 && horizon > 72) ? 18 : 12;
-    for (int h=0; h<=ceil(horizon); h+=labelStep) {
-        NSDate *date=[[self startDate] dateByAddingTimeInterval:h*3600]; NSString *text=[f stringFromDate:date]; CGFloat w=[text sizeWithAttributes:attrs].width;
-        if (NSWidth(plot)<460) { f.dateFormat=@"EEE ha"; text=[f stringFromDate:date]; w=[text sizeWithAttributes:attrs].width; }
-        [text drawAtPoint:NSMakePoint(MIN(NSMaxX(plot)-w,MAX(NSMinX(plot),x(date)-w/2)),NSMaxY(plot)+6) withAttributes:attrs];
+    for (NSDictionary *label in [self dayLabels]) {
+        NSString *text = label[@"text"];
+        [text drawAtPoint:NSMakePoint([label[@"x"] doubleValue], [label[@"y"] doubleValue]) withAttributes:attrs];
     }
     [self placeCursor];
     NSColor *colour=NSColor.systemOrangeColor;

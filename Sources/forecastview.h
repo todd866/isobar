@@ -8,8 +8,8 @@ NSBezierPath * _Nullable KiteWindArrowPath(NSPoint centre, double windFromDegree
 // Amber under the saved kite band, green inside it, red above it.
 NSColor *KiteWindSpeedColour(double knots, double minKt, double maxKt);
 
-// A compact two-lane forecast: wind is the main plot and rain is the hourly
-// strip beneath it. Rows are dictionaries containing the keys documented here.
+// A compact wind instrument. Rain remains available in point tooltips,
+// without a second plotted axis. Direction marks are at least three hours apart.
 @interface HourlyForecastView : NSView <NSViewToolTipOwner>
 
 @property(nonatomic, copy) NSArray<NSDictionary *> *windRows;

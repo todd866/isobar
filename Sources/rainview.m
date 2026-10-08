@@ -10,7 +10,7 @@ static void RVText(NSString *text, NSRect rect, CGFloat size, NSColor *colour, B
     if (!text.length) return;
     NSMutableParagraphStyle *style = [NSMutableParagraphStyle new];
     style.alignment = align;
-    style.lineBreakMode = NSLineBreakByTruncatingTail;
+    style.lineBreakMode = NSLineBreakByClipping;
     [text drawInRect:rect withAttributes:@{
         NSFontAttributeName: [NSFont monospacedDigitSystemFontOfSize:size weight:bold ? NSFontWeightSemibold : NSFontWeightRegular],
         NSForegroundColorAttributeName: colour,
@@ -97,7 +97,7 @@ static void RVGap(CGFloat x0, CGFloat x1, CGFloat top, CGFloat height) {
     self.cachedHours = valid.copy;
     self.cachedHoursByStart = byStart.copy;
 }
-- (void)setHorizonHours:(double)hours { _horizonHours=isfinite(hours)?MIN(120,MAX(6,hours)):24; [self invalidateRenderCache]; self.needsDisplay=YES; [self rebuildTracking]; }
+- (void)setHorizonHours:(double)hours { _horizonHours=isfinite(hours)?MAX(1,hours):24; [self invalidateRenderCache]; self.needsDisplay=YES; [self rebuildTracking]; }
 - (void)setSelectedDate:(NSDate *)date {
     if (date != _selectedDate && ![date isEqualToDate:_selectedDate]) _selectedDate = date;
     [self placeCursor];
@@ -266,6 +266,33 @@ static void RVGap(CGFloat x0, CGFloat x1, CGFloat top, CGFloat height) {
     return [self summaryAtDate:[self dateForX:point.x]] ?: @"Forecast unavailable";
 }
 
+// Weekday labels sit at local noon on the same forecast interval as the map.
+- (NSArray<NSDictionary *> *)dayLabels {
+    NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+    calendar.timeZone = self.timeZone ?: NSTimeZone.localTimeZone;
+    NSDateFormatter *formatter = [NSDateFormatter new];
+    formatter.timeZone = calendar.timeZone; formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_AU_POSIX"];
+    formatter.dateFormat = @"EEE";
+    NSMutableArray *labels = [NSMutableArray array];
+    NSDate *day = [calendar startOfDayForDate:[self startDate]];
+    CGFloat previousRight = -CGFLOAT_MAX;
+    NSDictionary *attrs = @{NSFontAttributeName:[NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightRegular]};
+    while ([day compare:[self endDate]] != NSOrderedDescending) {
+        NSDate *noon = [calendar dateBySettingHour:12 minute:0 second:0 ofDate:day options:0];
+        day = [calendar dateByAddingUnit:NSCalendarUnitDay value:1 toDate:day options:0];
+        if (!noon || [noon compare:[self startDate]] == NSOrderedAscending || [noon compare:[self endDate]] == NSOrderedDescending) continue;
+        NSString *text = [formatter stringFromDate:noon];
+        CGFloat width = ceil([text sizeWithAttributes:attrs].width) + 2;
+        CGFloat centre = [self xForDate:noon];
+        CGFloat x = MIN(NSWidth(self.bounds)-[self rightInset]-width,MAX([self leftInset],centre-width/2));
+        if (x < previousRight+8) continue;
+        NSRect rect = NSMakeRect(x,NSHeight(self.bounds)-20,width,16);
+        [labels addObject:@{@"text":text,@"date":noon,@"centre":@(centre),@"rect":[NSValue valueWithRect:rect]}];
+        previousRight = NSMaxX(rect);
+    }
+    return labels;
+}
+
 - (void)drawStaticGraph {
     CGFloat width = NSWidth(self.bounds), height = NSHeight(self.bounds);
     CGFloat left = [self leftInset], right = width - [self rightInset];
@@ -286,21 +313,10 @@ static void RVGap(CGFloat x0, CGFloat x1, CGFloat top, CGFloat height) {
     if (maximum>2) maximum=ceil(maximum);
     else if (maximum>1) maximum=2;
     else if (maximum>.5) maximum=1;
-    NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
-    calendar.timeZone = self.timeZone ?: NSTimeZone.localTimeZone;
-    NSInteger stride=MAX(3,(NSInteger)ceil(self.horizonHours/MAX(2,floor((right-left)/65))/3)*3);
-    for (NSInteger i = 0; i <= self.horizonHours; i += stride) {
-        NSDate *date = [graphStart dateByAddingTimeInterval:i * 3600];
-        CGFloat x = [self xForDate:date];
+    for (NSDictionary *label in [self dayLabels]) {
+        CGFloat x = [label[@"centre"] doubleValue];
         RVLine(NSMakePoint(x, top), NSMakePoint(x, baseline), grid, .6, NO);
-        BOOL isNow=i==0 && fabs([date timeIntervalSinceDate:self.referenceNow ?: self.now])<3600;
-        NSString *label = isNow ? @"Now" : [NSString stringWithFormat:@"%02ld:00", (long)[calendar component:NSCalendarUnitHour fromDate:date]];
-        if (i > 0 && (self.horizonHours>36 || [calendar component:NSCalendarUnitHour fromDate:date] == 0)) {
-            NSDateFormatter *day=[NSDateFormatter new]; day.timeZone=calendar.timeZone;
-            day.locale=[NSLocale localeWithLocaleIdentifier:@"en_AU_POSIX"]; day.dateFormat=self.horizonHours>36?@"EEE HH":@"EEE";
-            label=[day stringFromDate:date];
-        }
-        RVText(label, NSMakeRect(MIN(right - 34, MAX(left - 18, x - 20)), baseline + 5, 42, 14), 11, muted, NO, NSTextAlignmentCenter);
+        RVText(label[@"text"], [label[@"rect"] rectValue], 11, muted, NO, NSTextAlignmentCenter);
     }
     RVLine(NSMakePoint(left, baseline), NSMakePoint(right, baseline), [blue colorWithAlphaComponent:.48], 1, NO);
     CGFloat mid = baseline - plotHeight * 0.5;

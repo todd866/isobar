@@ -150,6 +150,77 @@ int main(void) { @autoreleasepool {
     NSDictionary *secondBase = period(AviationOutlook(aviation(nil, second), now, perth)[@"periods"], @"Base");
     ck([secondBase[@"visibilityM"] doubleValue] == 9999 && [secondBase[@"visibilityAtLeast"] boolValue],
         @"a group keeps only its first visibility token");
+
+    NSDictionary *perthProduct = aviation(metar, liveTAF);
+    NSDictionary *matched = AviationBulletin(perthProduct, @"YPPH", now, perth);
+    ck([matched[@"metar"] containsString:@"METAR YPPH"] && [matched[@"taf"] containsString:@"TAF AMD YPPH"] &&
+        [matched[@"tafMatches"] boolValue] && [matched[@"metarMatches"] boolValue] && ![matched[@"tafForeign"] boolValue],
+        @"a report for the selected aerodrome stays on screen");
+    NSDictionary *foreign = AviationBulletin(perthProduct, @"YSSY", now, perth);
+    ck([foreign[@"metar"] isEqual:@"METAR for YSSY unavailable"] &&
+        [foreign[@"observation"] isEqual:@"METAR for YSSY unavailable"] &&
+        [foreign[@"taf"] isEqual:@"No TAF for YSSY yet"] &&
+        [foreign[@"lines"] count] == 0 && ![foreign[@"source"] length] &&
+        [foreign[@"tafForeign"] boolValue] && ![foreign[@"metarMatches"] boolValue] &&
+        ![foreign[@"metar"] containsString:@"YPPH"] && ![foreign[@"taf"] containsString:@"YPPH"] &&
+        ![foreign[@"observation"] containsString:@"Vis"],
+        @"a YPPH report is withheld under YSSY");
+    NSDictionary *disagrees = aviation(
+        @{@"icao": @"YSSY", @"raw": @"METAR YPPH 261200Z 14012KT 9999 SCT034", @"time": now},
+        @{@"icao": @"YSSY", @"raw": @"TAF YPPH 2612/2712 9999 SCT030", @"valid_from": utc(@"2026-09-26 12:00"),
+          @"valid_to": utc(@"2026-09-27 12:00"), @"issue_time": utc(@"2026-09-26 12:00")});
+    NSDictionary *withheld = AviationBulletin(disagrees, @"YSSY", now, perth);
+    ck([withheld[@"metar"] isEqual:@"METAR for YSSY unavailable"] && [withheld[@"taf"] isEqual:@"No TAF for YSSY yet"] &&
+        ![withheld[@"metar"] containsString:@"YPPH"] && ![withheld[@"taf"] containsString:@"SCT030"],
+        @"metadata that disagrees with the raw report does not authorise it");
+    NSDictionary *empty = AviationBulletin(@{}, @"YSSY", now, perth);
+    ck([empty[@"metar"] isEqual:@"METAR unavailable"] && [empty[@"taf"] isEqual:@"No TAF issued for YSSY"] &&
+        ![empty[@"tafForeign"] boolValue],
+        @"a missing report stays the explicit empty state");
+
+    NSDictionary *stormTAF = taf(@"TAF AMD YPPH 061121Z 0612/0718 20010KT 9999 -SHRA NSC "
+        @"INTER 0612/0614 VRB20G30KT 4000 TSRA SCT100CB "
+        @"TEMPO 0619/0623 9999 FEW020TCU "
+        @"FM061500 20008KT CAVOK",
+        @"2026-10-06 12:00", @"2026-10-07 18:00");
+    NSArray *stormPeriods = AviationOutlook(aviation(nil, stormTAF), utc(@"2026-10-06 12:30"), perth)[@"periods"];
+    NSDictionary *stormInter = period(stormPeriods, @"INTER");
+    NSDictionary *cbLayer = nil;
+    for (NSDictionary *layer in stormInter[@"cloudLayers"]) if ([layer[@"type"] isEqual:@"CB"]) cbLayer = layer;
+    ck(stormInter && [stormInter[@"weather"] containsString:@"TSRA"] && [stormInter[@"hazard"] isEqual:@"TS"] &&
+        cbLayer && [cbLayer[@"amount"] isEqual:@"SCT"] && [cbLayer[@"baseFt"] doubleValue] == 10000 &&
+        [stormInter[@"hazardTip"] containsString:@"Thunderstorm"] && [stormInter[@"hazardTip"] containsString:@"CB base 10,000 ft"],
+        @"an INTER thunderstorm keeps TS, the CB layer and a plain-language tip");
+    NSDictionary *tcuTempo = period(stormPeriods, @"TEMPO");
+    NSDictionary *tcuLayer = nil;
+    for (NSDictionary *layer in tcuTempo[@"cloudLayers"]) if ([layer[@"type"] isEqual:@"TCU"]) tcuLayer = layer;
+    ck(tcuLayer && [tcuLayer[@"baseFt"] doubleValue] == 2000 && [tcuTempo[@"hazard"] isEqual:@"TCU"],
+        @"TEMPO towering cumulus is TCU, not a thunderstorm");
+    NSDictionary *codes = taf(@"TAF YPPH 2612/2712 9999 FEW020 VCTS SQ FC GR +RA FG BR RETS RESHRA",
+        @"2026-09-26 12:00", @"2026-09-27 12:00");
+    NSString *coded = period(AviationOutlook(aviation(nil, codes), now, perth)[@"periods"], @"Base")[@"weather"];
+    for (NSString *token in @[@"VCTS", @"SQ", @"FC", @"GR", @"+RA", @"FG", @"BR", @"RETS", @"RESHRA"])
+        ck([coded containsString:token], [NSString stringWithFormat:@"weather keeps %@", token]);
+    ck([period(AviationOutlook(aviation(nil, codes), now, perth)[@"periods"], @"Base")[@"hazard"] isEqual:@"VCTS"],
+        @"VCTS is a vicinity thunderstorm, not an overhead one");
+
+    NSString *speci = @"METAR SPECI YPPH 061141Z 12007KT 9999 VCTS FEW035CB SCT069 BKN115 20/17 Q1015 RETS RESHRA";
+    NSDictionary *instrument = FlyMetarInstrument(speci, utc(@"2026-10-06 11:41"), utc(@"2026-10-06 12:00"), perth);
+    ck([instrument[@"cloud"] hasPrefix:@"CB 3,500"] && [instrument[@"cloud"] containsString:@"SCT069"] &&
+        [instrument[@"cloud"] containsString:@"BKN115"] && ![instrument[@"cloud"] hasPrefix:@"FEW"],
+        @"the CB layer leads the METAR cloud datum");
+    ck([instrument[@"hazard"] isEqual:@"VCTS"] && [instrument[@"hazardTip"] containsString:@"Thunderstorm in vicinity"] &&
+        [instrument[@"hazardTip"] containsString:@"CB base 3,500 ft"] && [instrument[@"tip"] containsString:@"Thunderstorm in vicinity"],
+        @"the METAR tooltip names the vicinity storm and the CB base");
+    NSDictionary *plain = FlyMetarInstrument(@"METAR YPPH 261200Z 14012KT 9999 SCT034 BKN073",
+        utc(@"2026-09-26 12:00"), now, perth);
+    ck([plain[@"cloud"] isEqual:@"SCT034/BKN073"] && ![plain[@"hazard"] length],
+        @"an ordinary METAR keeps compact layers and no hazard");
+    NSDictionary *overhead = FlyMetarInstrument(@"METAR YPPH 261200Z VRB20G30KT 4000 TSRA FEW012CB SCT030",
+        utc(@"2026-09-26 12:00"), now, perth);
+    ck([overhead[@"hazard"] isEqual:@"TS"] && [overhead[@"cloud"] hasPrefix:@"CB 1,200"] &&
+        [overhead[@"hazardTip"] containsString:@"Thunderstorm"] && ![overhead[@"hazardTip"] containsString:@"vicinity"],
+        @"TSRA with CB is an overhead thunderstorm");
 }
 return failures ? 1 : 0;
 }

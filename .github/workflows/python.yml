@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,6 +15,7 @@ concurrency:
 
 jobs:
   test:
+    if: github.repository == 'todd866/isobar' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -28,7 +30,7 @@ jobs:
           # first 1.9 run until the job was cancelled. The encoder is a dependency.
           sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg
-          python3 -m pip install --disable-pip-version-check pytest pytest-timeout pillow
+          python3 -m pip install --disable-pip-version-check pytest pytest-timeout pillow numpy
       - name: Run Python unit tests
         timeout-minutes: 6
         env:

@@ -27,8 +27,8 @@ static BOOL Warm(NSColor *c) { return c.redComponent > .7 && c.redComponent > c.
 
 // Draw a two-day strip offscreen in one appearance and read its range bar,
 // track and icons back from the pixels.
-static void CheckStripAppearance(NSAppearanceName name, const char *label) {
-    StripBackdrop *backdrop = [[StripBackdrop alloc] initWithFrame:NSMakeRect(0, 0, 320, 64)];
+static void CheckStripAppearance(NSAppearanceName name, const char *label, CGFloat width, CGFloat height) {
+    StripBackdrop *backdrop = [[StripBackdrop alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
     backdrop.appearance = [NSAppearance appearanceNamed:name];
     DayStripView *strip = [[DayStripView alloc] initWithFrame:backdrop.bounds];
     strip.days = @[
@@ -96,6 +96,12 @@ static void CheckStripAppearance(NSAppearanceName name, const char *label) {
     snprintf(message, sizeof message, "%s: weather icons stand out from the strip", label);
     Check(iconInk > 20 * scale * scale, message);
     Check([[strip accessibilityLabelForDay:0] containsString:@"Today"], "today stays labelled");
+    BOOL rainUnit = NO;
+    for (NSView *cell in strip.subviews)
+        if ([cell respondsToSelector:NSSelectorFromString(@"rainText")] &&
+            [[cell valueForKey:@"rainText"] isEqual:@"3.0 mm"]) rainUnit = YES;
+    Check(rainUnit, "drawn day rain includes mm");
+    Check([[strip accessibilityLabelForDay:1] containsString:@"millimetres of rain"], "spoken day rain includes its unit");
     (void)window;
 }
 
@@ -103,8 +109,10 @@ int main(void) {
     @autoreleasepool {
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
-        CheckStripAppearance(NSAppearanceNameAqua, "light");
-        CheckStripAppearance(NSAppearanceNameDarkAqua, "dark");
+        CheckStripAppearance(NSAppearanceNameAqua, "light", 320, 64);
+        CheckStripAppearance(NSAppearanceNameAqua, "compact light", 160, 52);
+        CheckStripAppearance(NSAppearanceNameDarkAqua, "dark", 320, 64);
+        CheckStripAppearance(NSAppearanceNameDarkAqua, "compact dark", 160, 52);
 
         NSDate *t0 = [NSDate dateWithTimeIntervalSince1970:100000];
         NSDate *mid = [t0 dateByAddingTimeInterval:3600];

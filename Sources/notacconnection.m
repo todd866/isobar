@@ -21,10 +21,13 @@ NSDictionary *IsobarNotacNewKeychainItem(NSDictionary *query, NSString *secret) 
 }
 
 NSString * const IsobarNotacErrorDomain = @"com.iantodd.isobar.notac";
+const NSInteger IsobarNotacErrorNoKey = 2;
 
-static NSError *NotacError(NSString *message) {
-    return [NSError errorWithDomain:IsobarNotacErrorDomain code:1 userInfo:@{NSLocalizedDescriptionKey: message}];
+static NSError *NotacErrorCode(NSString *message, NSInteger code) {
+    return [NSError errorWithDomain:IsobarNotacErrorDomain code:code userInfo:@{NSLocalizedDescriptionKey: message}];
 }
+
+static NSError *NotacError(NSString *message) { return NotacErrorCode(message, 1); }
 
 BOOL IsobarNotacTokenIsValid(NSString *token) {
     if (![token isKindOfClass:NSString.class] || token.length != 43 || ![token hasPrefix:@"lb_"]) return NO;
@@ -70,7 +73,7 @@ BOOL IsobarNotacTokenIsValid(NSString *token) {
     query[(__bridge id)kSecMatchLimit] = (__bridge id)kSecMatchLimitOne;
     CFTypeRef value = NULL;
     OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &value);
-    if (status == errSecItemNotFound) { if (error) *error = NotacError(@"No NOTAC key is saved"); return nil; }
+    if (status == errSecItemNotFound) { if (error) *error = NotacErrorCode(@"No NOTAC key is saved", IsobarNotacErrorNoKey); return nil; }
     if (status != errSecSuccess || !value) { if (error) *error = NotacError(@"The NOTAC key could not be read"); if (value) CFRelease(value); return nil; }
     NSData *data = CFBridgingRelease(value);
     NSString *token = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
@@ -129,7 +132,11 @@ static NSString *FetchFailure(NSData *diagnostics, BOOL timedOut) {
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         NSError *keyError = nil;
         NSString *token = [self loadToken:&keyError];
-        if (!token) { if (completion) completion(NO, @"No NOTAC key is saved"); return; }
+        if (!token) {
+            BOOL unreadable = [keyError.domain isEqual:IsobarNotacErrorDomain] && keyError.code != IsobarNotacErrorNoKey;
+            if (completion) completion(NO, unreadable ? keyError.localizedDescription : @"No NOTAC key is saved");
+            return;
+        }
         if (!root.length || !executable.isFileURL || ![NSFileManager.defaultManager isExecutableFileAtPath:executable.path]) {
             if (completion) completion(NO, @"The NOTAC collector is unavailable"); return;
         }

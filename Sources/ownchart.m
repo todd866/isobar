@@ -372,8 +372,33 @@ OwnView OwnViewMake(OwnLambert geo, double west, double east, double south, doub
     return view;
 }
 
+OwnView OwnWorldViewMake(double west, double east, double south, double north,
+    double pixelX, double pixelY, double pixelW, double pixelH) {
+    OwnView view = {0};
+    if (!(east > west) || !(north > south) || pixelW <= 1 || pixelH <= 1) return view;
+    view.west = west; view.east = east; view.south = south; view.north = north;
+    view.pixelX = pixelX; view.pixelY = pixelY; view.pixelW = pixelW; view.pixelH = pixelH;
+    view.equirectangular = YES;
+    view.scale = fmin(pixelW / (east - west), pixelH / (north - south));
+    view.minX = west; view.maxX = east; view.minY = south; view.maxY = north;
+    view.offsetX = pixelX + (pixelW - (east - west) * view.scale) * 0.5;
+    view.offsetY = pixelY + (pixelH - (north - south) * view.scale) * 0.5;
+    view.valid = isfinite(view.scale) && view.scale > 0;
+    return view;
+}
+
 BOOL OwnViewProject(OwnView view, double latitude, double longitude, double *x, double *y) {
     if (!view.valid || !x || !y) return NO;
+    if (view.equirectangular) {
+        if (!isfinite(latitude) || !isfinite(longitude)) return NO;
+        double lon = longitude;
+        while (lon < view.west) lon += 360;
+        while (lon > view.east) lon -= 360;
+        if (latitude < view.south || latitude > view.north) return NO;
+        *x = view.offsetX + (lon - view.west) * view.scale;
+        *y = view.offsetY + (view.north - latitude) * view.scale;
+        return isfinite(*x) && isfinite(*y);
+    }
     double px, py;
     if (!OwnProject(view.geo, latitude, longitude, &px, &py)) return NO;
     *x = view.offsetX + (px - view.minX) * view.scale;
@@ -430,7 +455,7 @@ OwnLineSet OwnContours(const double *field, int nLon, int nLat,
     if (!field || nLon < 2 || nLat < 2 || !levels || nLevels <= 0) return set;
     if (!(dx != 0) || !(dy != 0)) return set;
     size_t cells = (size_t)nLon * (size_t)nLat;
-    if (nLon > 1000 || nLat > 1000 || cells > 250000) return set;
+    if (nLon > 1000 || nLat > 1000 || cells > 300000) return set;
     size_t strideS = (size_t)nLon + 1;
     size_t keyMaxS = ((size_t)nLat + 1) * strideS * 2;
     size_t segCapS = cells * 2;
@@ -514,10 +539,16 @@ OwnLineSet OwnContours(const double *field, int nLon, int nLat,
                     case 6: case 9: OWN_LINK(0, 2); break;
                     case 7: case 8: OWN_LINK(3, 2); break;
                     case 5: case 10: {
-                        double avg = 0.25 * (v[0] + v[1] + v[2] + v[3]);
-                        BOOL through = (mask == 5) ? (avg >= level) : (avg < level);
-                        if (through) { OWN_LINK(3, 0); OWN_LINK(1, 2); }
-                        else { OWN_LINK(0, 1); OWN_LINK(3, 2); }
+                        // The bilinear saddle decides which diagonal connects.
+                        // A corner average flips at the wrong instant; the old
+                        // pairing also reversed the connected and isolated sides.
+                        // Negating the field must leave the zero contour unchanged.
+                        double a = v[0] - level, b = v[1] - level;
+                        double c = v[2] - level, d = v[3] - level;
+                        double scale = fmax(fmax(fabs(a), fabs(b)), fmax(fabs(c), fabs(d)));
+                        double saddle = (a / scale) * (c / scale) - (b / scale) * (d / scale);
+                        if (saddle >= 0) { OWN_LINK(0, 1); OWN_LINK(3, 2); }
+                        else { OWN_LINK(3, 0); OWN_LINK(1, 2); }
                         break;
                     }
                     default: break;
@@ -1367,6 +1398,8 @@ BOOL OwnLabelsOverlap(OwnLabel a, OwnLabel b, double padding) {
 static BOOL LabelsCrowded(OwnLabel a, OwnLabel b) {
     double width = 2.0 * fmax(a.halfW, b.halfW);
     if (!(width > 0)) return YES;
+    // Chart space stays on the three-width rule. A 140 px same-level gap is a
+    // viewport rule and is applied where labels are drawn in screen pixels.
     return hypot(a.x - b.x, a.y - b.y) < 3.0 * width;
 }
 
@@ -2027,23 +2060,90 @@ OwnBarb OwnWindBarb(double fromDegrees, double knots, double staff, BOOL souther
     return barb;
 }
 
-OwnRGB OwnTemperatureRGB(double celsius) {
-    // Diverging, centred on a quiet 10 °C so a front (a short run of the ramp)
-    // reads as blue against orange. The middle stays dull on purpose: the
-    // isobars are still the chart, and the land colour should not be dyed.
-    static const double stops[] = {-12, 0, 10, 20, 28};
-    static const OwnRGB cols[] = {
-        {0.10, 0.34, 0.78},
-        {0.30, 0.55, 0.88},
-        {0.78, 0.76, 0.70},
-        {0.93, 0.50, 0.16},
-        {0.84, 0.28, 0.08},
-    };
-    if (celsius <= stops[0]) return cols[0];
-    if (celsius >= stops[4]) return cols[4];
-    for (int i = 0; i < 4; i++) {
-        if (celsius <= stops[i + 1]) {
-            double t = (celsius - stops[i]) / (stops[i + 1] - stops[i]);
+// Classic chart and its key (tools/own-chart.m): muted blue through amber,
+// red from 35 °C. The classic renderer applies its own opacity and ocean
+// wash; these tables are its look and are not the GPU map overlay below.
+static const double kClassicTempStops[] = {0, 10, 20, 25, 30, 35, 40};
+static const OwnRGB kClassicTempCols[] = {
+    {0.42, 0.55, 0.70}, {0.62, 0.66, 0.70}, {0.78, 0.74, 0.62}, {0.86, 0.72, 0.42},
+    {0.84, 0.52, 0.28}, {0.74, 0.24, 0.20}, {0.55, 0.16, 0.16},
+};
+// Quiet overlays with separate dark ink: the plate and hairline coast remain
+// legible. Rain is one teal-blue, wind one slate, temperature cool to warm.
+// The low-temperature stops carry real contrast for 850 hPa as well as 2 m.
+static const double kTempStops[] = {-10, 0, 10, 20, 27, 35, 42};
+static const OwnRGB kTempCols[] = {
+    {0.24, 0.37, 0.54}, {0.34, 0.45, 0.56}, {0.40, 0.48, 0.56}, {0.58, 0.49, 0.40},
+    {0.80, 0.62, 0.44}, {0.74, 0.48, 0.34}, {0.64, 0.32, 0.28},
+};
+static const OwnRGB kTempDarkCols[] = {
+    {0.47, 0.65, 0.82}, {0.54, 0.69, 0.82}, {0.63, 0.68, 0.73}, {0.79, 0.69, 0.59},
+    {0.88, 0.69, 0.48}, {0.88, 0.59, 0.44}, {0.85, 0.47, 0.39},
+};
+static const double kTempAlpha[] = {0.34, 0.34, 0.34, 0.34, 0.26, 0.32, 0.34};
+// Trailing 24-hour millimetres, not an hourly rate. Dry below 0.1 mm.
+static const double kRainStops[] = {0.1, 1, 5, 20, 50};
+static const OwnRGB kRainCols[] = {
+    {0.26, 0.55, 0.65}, {0.12, 0.41, 0.53}, {0.06, 0.29, 0.42},
+    {0.04, 0.22, 0.34}, {0.03, 0.16, 0.27},
+};
+static const OwnRGB kRainDarkCols[] = {
+    {0.22, 0.54, 0.63}, {0.22, 0.61, 0.71}, {0.25, 0.72, 0.80},
+    {0.30, 0.74, 0.82}, {0.34, 0.76, 0.84},
+};
+static const double kRainAlpha[] = {0.20, 0.32, 0.40, 0.42, 0.44};
+// Most of the wind scale belongs to ordinary 10–40 kt, saturating at 60.
+static const double kWindStops[] = {0, 10, 20, 30, 40, 50, 60};
+static const OwnRGB kWindCols[] = {
+    {0.64, 0.66, 0.73}, {0.43, 0.46, 0.57}, {0.29, 0.34, 0.47},
+    {0.21, 0.27, 0.41}, {0.16, 0.22, 0.36}, {0.13, 0.19, 0.32}, {0.11, 0.16, 0.29},
+};
+static const OwnRGB kWindDarkCols[] = {
+    {0.50, 0.53, 0.65}, {0.56, 0.58, 0.71}, {0.62, 0.64, 0.77},
+    {0.66, 0.67, 0.79}, {0.68, 0.68, 0.80}, {0.69, 0.69, 0.81}, {0.70, 0.70, 0.82},
+};
+static const double kWindAlpha[] = {0, 0.20, 0.32, 0.37, 0.40, 0.40, 0.40};
+// Pressure fill for a grid with no land plate. The Australian chart does not
+// paint this; it uses the land and sea tokens.
+static const double kPresStops[] = {960, 990, 1008, 1020, 1036};
+static const OwnRGB kPresCols[] = {
+    {0.55, 0.64, 0.72}, {0.73, 0.78, 0.80}, {0.86, 0.84, 0.78},
+    {0.84, 0.78, 0.70}, {0.70, 0.60, 0.54},
+};
+static const double kPresAlpha[] = {1, 1, 1, 1, 1};
+
+static OwnRGB ByteRGB(int red, int green, int blue) {
+    return (OwnRGB){red / 255.0, green / 255.0, blue / 255.0};
+}
+
+void OwnFieldRampForAppearance(int kind, BOOL dark, const double **stops, const OwnRGB **cols, const double **alphas,
+    int *count, double *cutoff) {
+    const double *s = kPresStops, *a = kPresAlpha;
+    const OwnRGB *c = kPresCols;
+    int n = 5;
+    double cut = -1e30;
+    if (kind == 1) { s = kTempStops; c = dark ? kTempDarkCols : kTempCols; a = kTempAlpha; n = 7; }
+    else if (kind == 2) { s = kWindStops; c = dark ? kWindDarkCols : kWindCols; a = kWindAlpha; n = 7; }
+    else if (kind == 3) { s = kRainStops; c = dark ? kRainDarkCols : kRainCols; a = kRainAlpha; n = 5; cut = 0.1; }
+    if (stops) *stops = s;
+    if (cols) *cols = c;
+    if (alphas) *alphas = a;
+    if (count) *count = n;
+    if (cutoff) *cutoff = cut;
+}
+
+void OwnFieldRamp(int kind, const double **stops, const OwnRGB **cols, const double **alphas,
+    int *count, double *cutoff) {
+    OwnFieldRampForAppearance(kind, NO, stops, cols, alphas, count, cutoff);
+}
+
+static OwnRGB RampLerp(const double *stops, const OwnRGB *cols, int count, double value) {
+    if (count < 1 || !cols) return (OwnRGB){0, 0, 0};
+    if (!isfinite(value) || value <= stops[0]) return cols[0];
+    if (value >= stops[count - 1]) return cols[count - 1];
+    for (int i = 0; i < count - 1; i++) {
+        if (value <= stops[i + 1]) {
+            double t = (value - stops[i]) / (stops[i + 1] - stops[i]);
             return (OwnRGB){
                 cols[i].r + (cols[i + 1].r - cols[i].r) * t,
                 cols[i].g + (cols[i + 1].g - cols[i].g) * t,
@@ -2051,25 +2151,100 @@ OwnRGB OwnTemperatureRGB(double celsius) {
             };
         }
     }
-    return cols[4];
+    return cols[count - 1];
 }
+
+OwnRGB OwnFieldRGBForAppearance(int kind, double value, BOOL dark) {
+    const double *stops = NULL;
+    const OwnRGB *cols = NULL;
+    int count = 0;
+    OwnFieldRampForAppearance(kind, dark, &stops, &cols, NULL, &count, NULL);
+    return RampLerp(stops, cols, count, value);
+}
+
+OwnRGB OwnFieldRGB(int kind, double value) { return OwnFieldRGBForAppearance(kind, value, NO); }
+
+double OwnFieldSeaAlphaScale(int kind) { return kind == 1 ? 0.8 : 1.0; }
+
+double OwnFieldOverlayAlpha(int kind, double value) {
+    const double *stops = NULL, *alphas = NULL;
+    int count = 0;
+    double cutoff = -1e30;
+    OwnFieldRamp(kind, &stops, NULL, &alphas, &count, &cutoff);
+    if (!isfinite(value) || count < 1 || !alphas) return 0;
+    if (value < cutoff) return 0;
+    if (value <= stops[0]) return alphas[0];
+    if (value >= stops[count - 1]) return alphas[count - 1];
+    for (int i = 0; i < count - 1; i++) {
+        if (value <= stops[i + 1]) {
+            double t = (value - stops[i]) / (stops[i + 1] - stops[i]);
+            return alphas[i] + (alphas[i + 1] - alphas[i]) * t;
+        }
+    }
+    return alphas[count - 1];
+}
+
+OwnRGB OwnTemperatureRGB(double celsius) { return RampLerp(kClassicTempStops, kClassicTempCols, 7, celsius); }
+
+OwnRGB OwnOceanWash(OwnRGB colour) {
+    colour.r *= 0.88 * 0.92;
+    colour.g *= 0.88;
+    colour.b = fmin(1.0, colour.b * 0.88 + 0.045);
+    return colour;
+}
+
+OwnRGB OwnRainRGB(double millimetres) { return OwnFieldRGB(3, millimetres); }
+
+OwnRGB OwnWindRGB(double knots) { return OwnFieldRGB(2, knots); }
 
 static OwnRGB ChartByte(int red, int green, int blue) {
     return (OwnRGB){red / 255.0, green / 255.0, blue / 255.0};
 }
 
-// Soft sea, warm stone land, charcoal ink. Contrast is part of the contract
-// in test_ownchart: ink on both fills stays above 4.5:1, including at the
+// Pale blue-grey sea, pale yellow land, charcoal ink — the Bureau plate in
+// docs/design/own-chart/b-mslp.png. Contrast is part of the contract in
+// test_ownchart: ink on both fills stays above 4.5:1, including at the
 // small size of the menu-bar popover.
-OwnRGB OwnChartSea(void) { return ChartByte(0xC5, 0xD6, 0xE4); }
-OwnRGB OwnChartLand(void) { return ChartByte(0xE4, 0xD8, 0xC4); }
+OwnRGB OwnChartSea(void) { return ChartByte(0xEB, 0xF1, 0xF7); }
+OwnRGB OwnChartLand(void) { return ChartByte(0xF4, 0xEE, 0xAF); }
 OwnRGB OwnChartInk(void) { return ChartByte(0x1B, 0x28, 0x30); }
 OwnRGB OwnChartTitle(void) { return ChartByte(0x2E, 0x4C, 0x5C); }
 
+OwnChartPalette OwnChartPaletteFor(BOOL dark) {
+    if (!dark) {
+        OwnRGB ink = OwnChartInk();
+        return (OwnChartPalette){
+            .land = OwnChartLand(),
+            .sea = OwnChartSea(),
+            .coast = ByteRGB(0x12, 0x10, 0x0D),
+            .isobar = ink,
+            .label = ink,
+            .centre = ink,
+            .uncovered = ByteRGB(0xE4, 0xDD, 0xD2),
+            .missing = ByteRGB(0x8E, 0x8A, 0x84),
+            .edge = ByteRGB(0x5E, 0x6A, 0x74),
+        };
+    }
+    // Same chart, inverted: warm land lighter than cool sea, light ink.
+    // Clear of the light no-coverage beige, and of the coast token, so a
+    // dark isobar is not counted as the uncovered plate.
+    OwnRGB ink = ByteRGB(0xF3, 0xED, 0xD8);
+    return (OwnChartPalette){
+        .land = ByteRGB(0x6A, 0x5C, 0x32),
+        .sea = ByteRGB(0x24, 0x32, 0x42),
+        .coast = ByteRGB(0xF7, 0xF4, 0xEE),
+        .isobar = ink,
+        .label = ink,
+        .centre = ink,
+        .uncovered = ByteRGB(0x14, 0x16, 0x1C),
+        .missing = ByteRGB(0x7A, 0x76, 0x70),
+        .edge = ByteRGB(0x9A, 0xA4, 0xAE),
+    };
+}
+
 double OwnIsobarWidth(double levelHPa) {
-    if (!isfinite(levelHPa)) return 1.15;
-    double k = levelHPa / 20.0;
-    return fabs(k - round(k)) < 1e-6 ? 1.55 : 1.15;
+    (void)levelHPa;
+    return 1.25;
 }
 
 static uint16_t ReadU16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
@@ -2135,4 +2310,18 @@ void OwnCoastFree(OwnCoast coast) {
     free(coast.lat);
     free(coast.ringStart);
     free(coast.ringCount);
+}
+
+NSString *OwnCoastPath(void) {
+    const char *env = getenv("ISOBAR_COAST");
+    if (env && env[0]) return [[NSString stringWithUTF8String:env] stringByExpandingTildeInPath];
+    NSString *bundled = [NSBundle.mainBundle pathForResource:@"ownchart-coast" ofType:@"bin"];
+    return bundled.length ? bundled : @"Resources/ownchart-coast.bin";
+}
+
+NSString *OwnWorldCoastPath(void) {
+    const char *env = getenv("ISOBAR_WORLD_COAST");
+    if (env && env[0]) return [[NSString stringWithUTF8String:env] stringByExpandingTildeInPath];
+    NSString *bundled = [NSBundle.mainBundle pathForResource:@"world-coast" ofType:@"bin"];
+    return bundled.length ? bundled : @"Resources/world-coast.bin";
 }

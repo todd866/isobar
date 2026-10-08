@@ -1,5 +1,8 @@
 # Maintenance priorities
 
+For native interaction behavior and the reasons behind it, start with the
+[UX contract](design/ux-contract.md). Update it alongside UX changes.
+
 ## Checks on each change
 
 GitHub runs the full native test suite and an ad-hoc macOS 15 development build
@@ -48,8 +51,11 @@ notarized release.
 Avoid a broad file shuffle while behavior is still changing.
 
 The website's 390×844 large-text map clipping fix passed the headless viewport
-suite and its first Pages deploy. Notarization needs a saved Apple credential
-profile before a public Mac download can ship.
+suite and its first Pages deploy. Notarization credentials are saved as the
+`isobar-notary` keychain profile (`tools/setup-notary.sh`), and
+`tools/release-local.sh` builds, notarizes, staples and checks a quarantined
+copy. A public Mac download still needs the owner's go-ahead
+(`docs/releases.md`).
 
 ## Audit decisions, September 2026
 

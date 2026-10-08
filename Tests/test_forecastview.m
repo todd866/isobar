@@ -1,6 +1,10 @@
 #import <Cocoa/Cocoa.h>
 #import "../Sources/forecastview.h"
 
+@interface HourlyForecastView (LensCardTests)
+- (NSArray<NSDictionary *> *)dayLabels;
+@end
+
 static int failures;
 
 static void Check(BOOL ok, NSString *message) {
@@ -193,7 +197,7 @@ static void TestRenderedForecast(void) {
             view.windRows=@[Wind(view,0,30,@180),Wind(view,48,.5,@0)];
             NSRect b=StrongColourBounds(RenderedView(view),view.bounds.size);
             Check(NSMinX(b)>=1 && NSMaxX(b)<NSWidth(view.bounds)-1 && NSMinY(b)>=1 &&
-                NSMaxY(b)<NSHeight(view.bounds)-35,@"endpoint arrows fit above the rain strip");
+                NSMaxY(b)<NSHeight(view.bounds)-16,@"endpoint arrows fit above the day axis");
             view.windRows=SyntheticWindRows(view.now);
             view.rainRows=@[@{@"time":[view.now dateByAddingTimeInterval:13*3600],@"rainMm":@.4}];
             Capture(view,[NSString stringWithFormat:@"kite-%@-%@.png",width,appearance]);
@@ -243,9 +247,9 @@ static void TestRenderedForecast(void) {
 static void TestDensityAndColours(void) {
     HourlyForecastView *view=Forecast(NSMakeSize(420,132),NSAppearanceNameAqua);
     NSRect plot=view.windPlotRect;
-    view.windRows=@[Wind(view,1,10,@0),Wind(view,2,10,@0),Wind(view,4,15,@0),Wind(view,7,22,@0)];
+    view.windRows=@[Wind(view,1,10,@0),Wind(view,2,10,@0),Wind(view,5,15,@0),Wind(view,9,22,@0)];
     NSBitmapImageRep *rep=RenderedView(view);
-    NSArray *hours=@[@1,@2,@4,@7], *speeds=@[@10,@10,@15,@22];
+    NSArray *hours=@[@1,@2,@5,@9], *speeds=@[@10,@10,@15,@22];
     for (NSUInteger i=0;i<hours.count;i++) {
         NSPoint anchor=NSMakePoint(NSMinX(plot)+NSWidth(plot)*[hours[i] doubleValue]/48,
             NSMaxY(plot)-NSHeight(plot)*[speeds[i] doubleValue]/30);
@@ -262,10 +266,34 @@ static void TestDensityAndColours(void) {
     Capture(view,@"kite-sparse.png");
 }
 
+static void TestSharedDayAxis(void) {
+    for (NSNumber *width in @[@320,@460,@900]) {
+        HourlyForecastView *view=Forecast(NSMakeSize(width.doubleValue,200),NSAppearanceNameAqua);
+        view.horizonHours=168;
+        NSCalendar *calendar=[NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+        calendar.timeZone=view.timeZone;
+        CGFloat lastRight=-INFINITY;
+        for (NSDictionary *label in [view dayLabels]) {
+            NSPoint origin=[label[@"origin"] pointValue]; CGFloat w=[label[@"width"] doubleValue];
+            Check(origin.x>=lastRight+8 && origin.x+w<=NSMaxX(view.windPlotRect)+.1,@"weekday labels never overlap or truncate");
+            Check([calendar component:NSCalendarUnitHour fromDate:label[@"date"]]==12 && ![label[@"text"] containsString:@":"],@"weekday is placed at local noon");
+            lastRight=origin.x+w;
+        }
+        Check(isfinite([view cursorXForDate:[view.now dateByAddingTimeInterval:168*3600]]) &&
+            isnan([view cursorXForDate:[view.now dateByAddingTimeInterval:169*3600]]),@"wind ends exactly at the shared seven-day horizon");
+        view.windRows=@[Wind(view,24,18,@90)];
+        NSBitmapImageRep *before=RenderedView(view);
+        view.rainRows=@[@{@"time":[view.now dateByAddingTimeInterval:24*3600],@"rainMm":@99}];
+        NSBitmapImageRep *after=RenderedView(view);
+        Check(before.bytesPerRow==after.bytesPerRow && !memcmp(before.bitmapData,after.bitmapData,before.bytesPerRow*before.pixelsHigh),@"rain adds neither a second axis nor bars to the wind instrument");
+    }
+}
+
 int main(void) {
     @autoreleasepool {
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
+        TestSharedDayAxis();
         TestArrowGeometry();
         TestRenderedForecast();
         TestDensityAndColours();

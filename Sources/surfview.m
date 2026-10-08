@@ -83,10 +83,14 @@ static NSString *SFTime(NSDate *date, NSTimeZone *zone, NSDate *now) {
 }
 static CGFloat SFX(NSDate *date, NSDate *start, NSRect plot, double horizon) { return NSMinX(plot)+NSWidth(plot)*SFClamp([date timeIntervalSinceDate:start]/(horizon*3600),0,1); }
 static CGFloat SFWaveY(double h, NSRect lane, double max) { return NSMaxY(lane)-NSHeight(lane)*SFClamp(h/MAX(0.1,max),0,1); }
+static BOOL SFMarineRow(NSDictionary *row) {
+    return row[@"waveHeight"] || row[@"swellHeight"] || row[@"swellPeriod"];
+}
 
 @interface SurfForecastView ()
 @property(nonatomic, strong) NSView *playheadCursor;
 @property(nonatomic, strong) NSDate *headlineTime;
+@property(nonatomic) BOOL headlineDimmed;
 @end
 
 @implementation SurfForecastView
@@ -98,27 +102,50 @@ static CGFloat SFWaveY(double h, NSRect lane, double max) { return NSMaxY(lane)-
 }
 - (BOOL)isOpaque { return NO; }
 - (BOOL)isAccessibilityElement { return YES; }
-- (NSSize)intrinsicContentSize { return NSMakeSize(600,160); }
+- (NSSize)intrinsicContentSize { return NSMakeSize(600,180); }
 - (NSRect)plotRect { return NSMakeRect(34,12,MAX(1,NSWidth(self.bounds)-42),MAX(1,NSHeight(self.bounds)-30)); }
+- (NSRect)timeLaneRect { return NSMakeRect(NSMinX([self plotRect]),MAX(0,NSHeight(self.bounds)-23),NSWidth([self plotRect]),20); }
+- (NSRect)windLaneRect { return NSMakeRect(NSMinX([self plotRect]),MAX(62,NSHeight(self.bounds)-64),NSWidth([self plotRect]),34); }
+- (NSRect)wavePlotRect {
+    return NSMakeRect(NSMinX([self plotRect]),24,NSWidth([self plotRect]),MAX(20,NSMinY([self windLaneRect])-24-12));
+}
+- (BOOL)marineReadingIsDimmed {
+    NSDate *time=[self nearestMarineDateForSelection];
+    return self.selectedDate && time && fabs([self.selectedDate timeIntervalSinceDate:time])>1800;
+}
 - (void)setOutlook:(NSDictionary *)v { _outlook=[v isKindOfClass:NSDictionary.class]?[v copy]:@{}; [self setNeedsDisplay:YES]; }
 - (void)setWindRows:(NSArray *)v { _windRows=[v isKindOfClass:NSArray.class]?[v copy]:@[]; [self setNeedsDisplay:YES]; }
 - (NSDate *)headlineTimeForSelection {
     NSArray *rows = [self.outlook[@"rows"] isKindOfClass:NSArray.class] ? self.outlook[@"rows"] : @[];
     NSDictionary *headline = nil;
-    if ([self.selectedDate isKindOfClass:NSDate.class]) {
-        for (NSDictionary *candidate in rows)
-            if ([candidate[@"time"] isKindOfClass:NSDate.class] && fabs([candidate[@"time"] timeIntervalSinceDate:self.selectedDate]) < 1801) {
-                headline = candidate; break;
-            }
+    NSDate *selection = [self.selectedDate isKindOfClass:NSDate.class] ? self.selectedDate : self.now;
+    if ([selection isKindOfClass:NSDate.class]) {
+        NSTimeInterval nearest = INFINITY;
+        for (NSDictionary *candidate in rows) {
+            if (![candidate[@"time"] isKindOfClass:NSDate.class] || !SFMarineRow(candidate)) continue;
+            NSTimeInterval distance = fabs([candidate[@"time"] timeIntervalSinceDate:selection]);
+            if (distance < nearest) { nearest = distance; headline = candidate; }
+        }
     }
+    if (!headline) for (NSDictionary *candidate in rows) if (SFMarineRow(candidate)) { headline=candidate; break; }
     if (!headline) headline = rows.firstObject;
     return [headline[@"time"] isKindOfClass:NSDate.class] ? headline[@"time"] : nil;
 }
+- (NSDate *)marineDataEndDate {
+    NSDate *last = nil;
+    for (NSDictionary *row in self.outlook[@"rows"]) {
+        if (SFMarineRow(row) && [row[@"time"] isKindOfClass:NSDate.class] && (!last || [row[@"time"] compare:last] == NSOrderedDescending)) last=row[@"time"];
+    }
+    return last;
+}
+- (NSDate *)nearestMarineDateForSelection { return [self headlineTimeForSelection]; }
 - (void)setSelectedDate:(NSDate *)date {
     if (date != _selectedDate && ![date isEqualToDate:_selectedDate]) _selectedDate = date;
     [self placeCursor];
     NSDate *headline = [self headlineTimeForSelection];
-    if (headline != _headlineTime && ![headline isEqualToDate:_headlineTime]) {
+    BOOL dimmed=[self marineReadingIsDimmed];
+    if ((headline != _headlineTime && ![headline isEqualToDate:_headlineTime]) || dimmed!=_headlineDimmed) {
+        _headlineDimmed=dimmed;
         _headlineTime = headline;
         self.needsDisplay = YES;
     }
@@ -139,14 +166,24 @@ static CGFloat SFWaveY(double h, NSRect lane, double max) { return NSMaxY(lane)-
 }
 - (void)setHorizonHours:(double)hours { _horizonHours=(isfinite(hours)&&hours>0)?hours:48; [self setNeedsDisplay:YES]; }
 - (NSString *)accessibilityRoleDescription { return @"surf forecast"; }
-- (NSString *)accessibilityLabel { return [NSString stringWithFormat:@"%.0f hour surf forecast with wave height, swell direction, period and wind", self.horizonHours > 0 ? self.horizonHours : 48]; }
+- (NSString *)accessibilityLabel {
+    NSDate *reading=[self nearestMarineDateForSelection];
+    NSString *time=reading ? SFTime(reading,self.timeZone,self.now) : @"unavailable";
+    return [NSString stringWithFormat:@"%.0f hour surf forecast with wave height, swell direction, period and wind; marine reading %@", self.horizonHours > 0 ? self.horizonHours : 48, time];
+}
 - (NSString *)summaryAtPoint:(NSPoint)point {
-    NSRect p=[self plotRect]; if (!NSPointInRect(point,p)) return nil;
+    NSRect p=[self plotRect]; BOOL headline=point.y<24 && NSPointInRect(point,self.bounds);
+    if (!headline && !NSPointInRect(point,p)) return nil;
     NSArray *rows=self.outlook[@"rows"]; if (![rows isKindOfClass:NSArray.class]||!rows.count) return @"Surf forecast unavailable";
     NSDate *start=[self startDate]; double horizon=self.horizonHours>0?self.horizonHours:48; NSDate *date=[start dateByAddingTimeInterval:round(horizon*(point.x-NSMinX(p))/NSWidth(p))*3600]; NSDictionary *best=nil;
-    for (NSDictionary *r in rows) if (fabs([r[@"time"] timeIntervalSinceDate:date])<1801) { best=r; break; }
+    if (headline) date=self.selectedDate ?: self.now ?: start;
+    NSTimeInterval nearest=INFINITY;
+    for (NSDictionary *r in rows) if (SFMarineRow(r) && [r[@"time"] isKindOfClass:NSDate.class]) {
+        NSTimeInterval distance=fabs([r[@"time"] timeIntervalSinceDate:date]);
+        if (distance<nearest) { nearest=distance; best=r; }
+    }
     if (!best) return @"Surf forecast unavailable";
-    NSMutableArray *parts=[NSMutableArray arrayWithObject:SFTime(best[@"time"],self.timeZone,self.now)];
+    NSMutableArray *parts=[NSMutableArray arrayWithObject:[NSString stringWithFormat:@"%@%@",nearest>1800?@"Nearest marine reading · ":@"",SFTime(best[@"time"],self.timeZone,self.now)]];
     if (best[@"waveHeight"]) [parts addObject:[NSString stringWithFormat:@"Waves %.1f m",[best[@"waveHeight"] doubleValue]]];
     if (best[@"swellHeight"]) [parts addObject:[NSString stringWithFormat:@"Swell %.1f m",[best[@"swellHeight"] doubleValue]]];
     if (best[@"swellPeriod"]) [parts addObject:[NSString stringWithFormat:@"%.0f s",[best[@"swellPeriod"] doubleValue]]];
@@ -171,14 +208,14 @@ static CGFloat SFWaveY(double h, NSRect lane, double max) { return NSMaxY(lane)-
         NSTimeInterval offset=[row[@"time"] timeIntervalSinceDate:start];
         if (offset>=0 && offset<=horizon*3600) [rows addObject:row];
     }
-    if (!rows.count) {
+    if (![self marineDataEndDate]) {
         NSString *message=[self.outlook[@"stale"] boolValue]?@"Surf forecast expired":@"Surf forecast unavailable";
         [message drawAtPoint:NSMakePoint(NSMinX(plot),NSMidY(plot)-7) withAttributes:small];
         return;
     }
-    NSRect waves=NSMakeRect(NSMinX(plot),24,NSWidth(plot),MAX(20,NSHeight(self.bounds)-94));
-    CGFloat windY=NSMaxY(waves)+22;
-    CGFloat timeY=NSHeight(self.bounds)-16;
+    CGFloat timeY=NSMinY([self timeLaneRect])+4;
+    CGFloat windY=NSMinY([self windLaneRect])+10;
+    NSRect waves=[self wavePlotRect];
     double peak=1;
     for (NSDictionary *row in rows) for (NSString *key in @[@"waveHeight",@"swellHeight"])
         if (row[key]) peak=MAX(peak,ceil([row[key] doubleValue]));
@@ -193,15 +230,17 @@ static CGFloat SFWaveY(double h, NSRect lane, double max) { return NSMaxY(lane)-
     [@"m" drawAtPoint:NSMakePoint(4,1) withAttributes:small];
     NSDictionary *first=rows.firstObject;
     NSDictionary *headline=first;
-    if ([self.selectedDate isKindOfClass:NSDate.class]) {
-        for (NSDictionary *candidate in rows) if ([candidate[@"time"] isKindOfClass:NSDate.class] && fabs([candidate[@"time"] timeIntervalSinceDate:self.selectedDate]) < 1801) { headline=candidate; break; }
-    }
+    NSDate *marineDate=[self nearestMarineDateForSelection];
+    if (marineDate) for (NSDictionary *candidate in all) if ([candidate[@"time"] isEqualToDate:marineDate]) { headline=candidate; break; }
+    BOOL marineDimmed = [self marineReadingIsDimmed];
     NSString *period=headline[@"swellPeriod"]?[NSString stringWithFormat:@" · %.0f s",[headline[@"swellPeriod"] doubleValue]]:@"";
     NSString *waveTitle=headline[@"waveHeight"]?[NSString stringWithFormat:@"Waves %.1f",[headline[@"waveHeight"] doubleValue]]:@"Waves";
     NSString *swellTitle=headline[@"swellHeight"]?[NSString stringWithFormat:@"Swell %.1f%@",[headline[@"swellHeight"] doubleValue],period]:@"Swell";
-    [waveTitle drawAtPoint:NSMakePoint(NSMinX(plot),1) withAttributes:@{NSFontAttributeName:[NSFont systemFontOfSize:12 weight:NSFontWeightMedium],NSForegroundColorAttributeName:NSColor.systemBlueColor}];
-    [swellTitle drawAtPoint:NSMakePoint(NSMinX(plot)+110,1) withAttributes:@{NSFontAttributeName:[NSFont systemFontOfSize:12 weight:NSFontWeightMedium],NSForegroundColorAttributeName:NSColor.systemTealColor}];
-    NSString *right=[self.outlook[@"stale"] boolValue]?@"Model stale":(headline[@"seaTemp"]?[NSString stringWithFormat:@"Sea %.0f°",[headline[@"seaTemp"] doubleValue]]:@"");
+    NSColor *waveInk=marineDimmed?[NSColor.systemBlueColor colorWithAlphaComponent:.45]:NSColor.systemBlueColor;
+    NSColor *swellInk=marineDimmed?[NSColor.systemTealColor colorWithAlphaComponent:.45]:NSColor.systemTealColor;
+    [waveTitle drawAtPoint:NSMakePoint(NSMinX(plot),1) withAttributes:@{NSFontAttributeName:[NSFont systemFontOfSize:12 weight:NSFontWeightMedium],NSForegroundColorAttributeName:waveInk}];
+    [swellTitle drawAtPoint:NSMakePoint(NSMinX(plot)+110,1) withAttributes:@{NSFontAttributeName:[NSFont systemFontOfSize:12 weight:NSFontWeightMedium],NSForegroundColorAttributeName:swellInk}];
+    NSString *right=[self.outlook[@"stale"] boolValue]?@"⚠︎":(headline[@"seaTemp"]?[NSString stringWithFormat:@"Sea %.0f°",[headline[@"seaTemp"] doubleValue]]:@"");
     [right drawAtPoint:NSMakePoint(NSMaxX(plot)-[right sizeWithAttributes:small].width,1) withAttributes:small];
     [NSGraphicsContext saveGraphicsState];
     NSRectClip(NSInsetRect(waves,-1,-4));
@@ -228,6 +267,17 @@ static CGFloat SFWaveY(double h, NSRect lane, double max) { return NSMaxY(lane)-
         [NSColor.systemTealColor setFill]; [KiteWindArrowPath(centre,from.doubleValue,14) fill];
     }
     [NSGraphicsContext restoreGraphicsState];
+    NSDate *marineEnd=[self marineDataEndDate];
+    if (marineEnd && [marineEnd timeIntervalSinceDate:start] >= 0 && [marineEnd timeIntervalSinceDate:start] <= horizon*3600) {
+        CGFloat endX=SFX(marineEnd,start,plot,horizon);
+        NSBezierPath *stop=[NSBezierPath bezierPath]; stop.lineWidth=1;
+        [stop moveToPoint:NSMakePoint(endX,NSMinY(waves))]; [stop lineToPoint:NSMakePoint(endX,NSMaxY(waves))];
+        [[muted colorWithAlphaComponent:.55] setStroke]; [stop stroke];
+        NSString *endLabel=[@"ends " stringByAppendingString:SFTime(marineEnd,self.timeZone,self.now)];
+        CGFloat labelWidth=[endLabel sizeWithAttributes:small].width;
+        CGFloat labelX=SFClamp(endX+6,NSMinX(waves),NSMaxX(waves)-labelWidth);
+        [endLabel drawAtPoint:NSMakePoint(labelX,NSMinY(waves)+4) withAttributes:small];
+    }
     [@"kt" drawAtPoint:NSMakePoint(1,windY-6) withAttributes:small];
     previous=-1000;
     for (NSDictionary *row in self.windRows) {
@@ -246,13 +296,20 @@ static CGFloat SFWaveY(double h, NSRect lane, double max) { return NSMaxY(lane)-
         NSString *label=[NSString stringWithFormat:@"%.0f",speed.doubleValue];
         [label drawAtPoint:NSMakePoint(x-[label sizeWithAttributes:small].width/2,windY+10) withAttributes:small];
     }
-    NSInteger spacing=NSWidth(plot)<420?18:12;
-    for (NSInteger h=0;h<=ceil(horizon);h+=spacing) {
-        NSDate *date=[start dateByAddingTimeInterval:h*3600];
-        NSString *text=SFTime(date,self.timeZone,self.now);
-        CGFloat textWidth=[text sizeWithAttributes:small].width;
-        CGFloat x=SFClamp(SFX(date,start,plot,horizon)-textWidth/2,NSMinX(plot),NSMaxX(plot)-textWidth);
-        [text drawAtPoint:NSMakePoint(x,timeY) withAttributes:small];
+    NSCalendar *calendar=[NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian]; calendar.timeZone=self.timeZone ?: NSTimeZone.localTimeZone;
+    NSDateComponents *day=[calendar components:(NSCalendarUnitYear|NSCalendarUnitMonth|NSCalendarUnitDay) fromDate:start];
+    NSDate *cursor=[calendar dateFromComponents:day];
+    NSDate *lastLabel=nil; CGFloat lastRight=-INFINITY;
+    while ([cursor timeIntervalSinceDate:start] <= horizon*3600) {
+        NSDate *noon=[calendar dateBySettingHour:12 minute:0 second:0 ofDate:cursor options:0];
+        if ([noon timeIntervalSinceDate:start] >= 0 && [noon timeIntervalSinceDate:start] <= horizon*3600) {
+            NSDateFormatter *dayFormatter=[NSDateFormatter new]; dayFormatter.locale=[NSLocale localeWithLocaleIdentifier:@"en_AU_POSIX"]; dayFormatter.timeZone=calendar.timeZone; dayFormatter.dateFormat=@"EEE"; NSString *text=[dayFormatter stringFromDate:noon];
+            CGFloat textWidth=[text sizeWithAttributes:small].width; CGFloat x=SFX(noon,start,plot,horizon)-textWidth/2;
+            if (x >= NSMinX(plot) && x+textWidth <= NSMaxX(plot) && (!lastLabel || x-lastRight >= 8)) {
+                [text drawAtPoint:NSMakePoint(x,timeY) withAttributes:small]; lastLabel=noon; lastRight=x+textWidth;
+            }
+        }
+        cursor=[calendar dateByAddingUnit:NSCalendarUnitDay value:1 toDate:cursor options:0];
     }
     [self placeCursor];
 }

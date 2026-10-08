@@ -12,10 +12,24 @@ exporter is not required. The authoritative chart pointer is
 only when the published grid pointer is absent. A present but invalid published
 grid never silently falls back to an older prototype chart.
 
-The native reader validates a complete 0–96-hour sequence at three-hour steps,
-field lengths, sidecars, units and timestamps. Float16 missing-value sentinels
-become missing data. Rain is a 24-hour accumulation difference from a single
-cycle, including an earlier published cycle where needed and available.
+The app reads the store off the main thread and commits a complete snapshot.
+If a reload fails after a good one, the last good run stays on screen, marked
+stale, with the read error in the header tooltip; a first load, a new store
+root or a change of layout fails closed instead. Weather is never kept this way.
+
+The native reader accepts two grid schemas. Schema 1, including a pointer
+with no `schema_version`, is a complete 0–96-hour sequence at three-hour steps
+(33 frames). Schema 2 lists `forecast_hours` on `current.json` and on the run
+`manifest.json`: 0–144 h every 3 h, then 150, 156, 162 and 168 h (53 frames).
+`uniform_step_hours` is null. Each sidecar carries `lead_hours` and does not
+claim a 3 h step. The two hour lists must match. A listed hour with no file
+fails the run; the reader does not invent 147 h or any other gap, and it does
+not reuse the previous hour. Schema 3 and any other marker fail closed. A run
+directory with no manifest stays the schema 1 grid. Float16 missing-value
+sentinels become missing data. Rain is the 24-hour accumulation between a
+lead and the lead 24 h earlier in `forecast_hours`, including an earlier
+published cycle where that pair is not in the current run. Eight frames back
+is 24 h only while the step is 3 h.
 
 Observations are read from SQLite in a read-only transaction, including
 committed WAL updates. On macOS, an idle WAL may need auxiliary files recreated;

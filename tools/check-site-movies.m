@@ -139,6 +139,22 @@ static BOOL SyncSample(CMSampleBufferRef sample, CMItemIndex index) {
     return CFDictionaryGetValue(info, kCMSampleAttachmentKey_NotSync) != kCFBooleanTrue;
 }
 
+// AVFoundation calls back on its own queue, so a bounded wait is safe here.
+static NSArray<AVAssetTrack *> *VideoTracks(AVAsset *asset, NSString *layer) {
+    __block NSArray<AVAssetTrack *> *found = nil;
+    __block NSError *failure = nil;
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    [asset loadTracksWithMediaType:AVMediaTypeVideo completionHandler:^(NSArray<AVAssetTrack *> *tracks, NSError *error) {
+        found = tracks;
+        failure = error;
+        dispatch_semaphore_signal(done);
+    }];
+    Require(dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 60 * NSEC_PER_SEC)) == 0,
+            [NSString stringWithFormat:@"%@ tracks did not load within 60s", layer]);
+    Require(found != nil, [NSString stringWithFormat:@"%@ tracks failed to load: %@", layer, failure.localizedDescription ?: @"unknown error"]);
+    return found;
+}
+
 static void CheckMovie(NSString *layer, NSDictionary *movie, NSURL *url) {
     NSNumber *bytes = [[NSFileManager defaultManager] attributesOfItemAtPath:url.path error:nil][NSFileSize];
     unsigned long long size = bytes.unsignedLongLongValue;
@@ -154,7 +170,7 @@ static void CheckMovie(NSString *layer, NSDictionary *movie, NSURL *url) {
     NSInteger expectedFrames = (NSInteger)llround(expectedDuration * expectedFPS);
 
     AVURLAsset *asset = [AVURLAsset URLAssetWithURL:url options:@{ AVURLAssetPreferPreciseDurationAndTimingKey: @YES }];
-    NSArray<AVAssetTrack *> *tracks = [asset tracksWithMediaType:AVMediaTypeVideo];
+    NSArray<AVAssetTrack *> *tracks = VideoTracks(asset, layer);
     Require(tracks.count == 1, [NSString stringWithFormat:@"%@ movie has %lu video tracks", layer, (unsigned long)tracks.count]);
     AVAssetTrack *track = tracks.firstObject;
     double duration = CMTimeGetSeconds(asset.duration);

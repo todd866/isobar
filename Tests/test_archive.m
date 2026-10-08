@@ -7,8 +7,57 @@ static int failures;
 static void Check(BOOL value, NSString *message) { if (!value) { fprintf(stderr, "FAIL %s\n", message.UTF8String); failures++; } }
 static id Decode(NSData *data) { return data.length ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil; }
 
+// The formatter version ArchiveLocalStamp replaced; the fast path must agree with it.
+static NSString *ReferenceLocalStamp(NSString *utc, NSString *state) {
+    if (utc.length < 14) return nil;
+    NSDateFormatter *in = [NSDateFormatter new];
+    in.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    in.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
+    in.dateFormat = @"yyyyMMddHHmmss";
+    NSDate *date = [in dateFromString:utc];
+    if (!date) return nil;
+    NSDictionary *zones = @{@"WA": @"Australia/Perth", @"NSW": @"Australia/Sydney", @"VIC": @"Australia/Melbourne",
+        @"QLD": @"Australia/Brisbane", @"SA": @"Australia/Adelaide", @"TAS": @"Australia/Hobart", @"NT": @"Australia/Darwin"};
+    NSDateFormatter *out = [NSDateFormatter new];
+    out.locale = in.locale;
+    out.timeZone = [NSTimeZone timeZoneWithName:zones[state] ?: @"Australia/Perth"];
+    out.dateFormat = @"yyyyMMddHHmmss";
+    return [out stringFromDate:date];
+}
+
+static void CheckLocalStampMatchesFormatter(void) {
+    NSDateFormatter *utc = [NSDateFormatter new];
+    utc.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    utc.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
+    utc.dateFormat = @"yyyyMMddHHmmss";
+    NSMutableArray<NSString *> *stamps = [NSMutableArray array];
+    for (NSString *start in @[@"20260404000000", @"20261003000000"]) {
+        NSDate *from = [utc dateFromString:start];
+        for (int i = 0; i < 2 * 24 * 6; i++) [stamps addObject:[utc stringFromDate:[from dateByAddingTimeInterval:i * 600 + 17]]];
+    }
+    NSDate *sweep = [utc dateFromString:@"20250101000000"];
+    for (int i = 0; i < 2500; i++) [stamps addObject:[utc stringFromDate:[sweep dateByAddingTimeInterval:i * 26003.0]]];
+    [stamps addObjectsFromArray:@[@"", @"2026", @"2026100201300", @"20261332010000", @"20260230120000", @"20261002246000",
+        @"20261002235960", @"2026100201300x", @"20261002013000Z", @"2026-10-02T01:30", @"00000000000000"]];
+    NSUInteger mismatches = 0;
+    NSString *first = nil;
+    for (NSString *state in @[@"WA", @"NSW", @"VIC", @"QLD", @"SA", @"TAS", @"NT", @"ACT"]) {
+        for (NSString *stamp in stamps) {
+            NSString *fast = ArchiveLocalStamp(stamp, state), *slow = ReferenceLocalStamp(stamp, state);
+            if (fast == slow || [fast isEqualToString:slow]) continue;
+            mismatches++;
+            if (!first) first = [NSString stringWithFormat:@"%@ %@: %@ vs %@", state, stamp, fast, slow];
+        }
+    }
+    Check(mismatches == 0, mismatches ? [@"local stamps match the formatter: " stringByAppendingString:first] : @"local stamps match the formatter across DST, states and malformed stamps");
+    // Stricter than NSDateFormatter, which skips leading spaces: the collector writes bare digits.
+    Check(!ArchiveLocalStamp(@" 20261002013000", @"WA") && !ArchiveLocalStamp(@"20261002013000 ", @"WA"), @"a padded stamp is not a time");
+    Check([ArchiveLocalStamp(@"20261003160000", @"NSW") isEqualToString:@"20261004030000"], @"Sydney skips 2 am when daylight saving starts");
+}
+
 int main(void) {
     @autoreleasepool {
+        CheckLocalStampMatchesFormatter();
         NSString *root = [NSTemporaryDirectory() stringByAppendingPathComponent:[[NSUUID UUID] UUIDString]];
         NSFileManager *fm = NSFileManager.defaultManager;
         [fm createDirectoryAtPath:[root stringByAppendingPathComponent:@"products/points/ecmwf_ifs/runs/2026-09-26T000000Z"] withIntermediateDirectories:YES attributes:nil error:nil];

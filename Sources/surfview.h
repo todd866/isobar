@@ -12,6 +12,11 @@ NSColor *SurfWindInk(void);
 @property(nonatomic, strong, nullable) NSTimeZone *timeZone;
 - (nullable NSString *)summaryAtPoint:(NSPoint)point;
 - (NSRect)plotRect;
+- (NSRect)wavePlotRect;
+- (NSRect)windLaneRect;
+- (NSRect)timeLaneRect;
 - (CGFloat)cursorXForDate:(nullable NSDate *)date;
+- (nullable NSDate *)marineDataEndDate;
+- (nullable NSDate *)nearestMarineDateForSelection;
 @end
 NS_ASSUME_NONNULL_END

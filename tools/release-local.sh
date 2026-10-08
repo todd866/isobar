@@ -13,7 +13,7 @@ trap 'rm -rf "$WORK"' EXIT
 
 want=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
 echo "== build $(git rev-parse --short HEAD) v$want"
-ISOBAR_TIMESTAMP=1 ./build.sh > "$WORK/build.log" 2>&1 || { tail -40 "$WORK/build.log"; echo "release: build failed" >&2; exit 1; }
+ISOBAR_TIMESTAMP=1 ./build.sh > "$WORK/build.log" 2>&1 || { mkdir -p build; cp "$WORK/build.log" build/release-build.log; grep -E "^FAIL|failures: [1-9]" "$WORK/build.log" | head -20; tail -40 "$WORK/build.log"; echo "release: build failed (full log: build/release-build.log)" >&2; exit 1; }
 got=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/Isobar.app/Contents/Info.plist)
 [[ "$got" == "$want" ]] || { echo "release: built app is $got, expected $want" >&2; exit 1; }
 

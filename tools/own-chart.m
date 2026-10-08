@@ -13,6 +13,7 @@
 #import <pthread.h>
 #import <stdlib.h>
 #import <string.h>
+#import <limits.h>
 #import <sys/stat.h>
 #import <time.h>
 
@@ -38,9 +39,15 @@ static _Thread_local OwnRenderProfile gRenderProfile;
 static _Thread_local double gProfileMark;
 static _Thread_local double gChaikinMs;
 static _Thread_local double gOpenInset;
+static _Thread_local BOOL gClassicWorld;
 static _Thread_local CGRect gLabelBoxes[80], gCentreBoxes[24];
 static _Thread_local double gLabelAlpha[80], gCentreAlpha[24];
 static _Thread_local int gNLabelBoxes, gNCentreBoxes;
+
+static double ViewWest(void) { return gClassicWorld ? -180.0 : kViewWest; }
+static double ViewEast(void) { return gClassicWorld ? 180.0 : kViewEast; }
+static double ViewSouth(void) { return gClassicWorld ? -90.0 : kViewSouth; }
+static double ViewNorth(void) { return gClassicWorld ? 90.0 : kViewNorth; }
 
 static double ProfileNow(void) {
     return (double)clock_gettime_nsec_np(CLOCK_UPTIME_RAW) * 1e-6;
@@ -134,6 +141,67 @@ static NSString *PublishedDirectoryStamp(NSString *directory) {
 // while the main thread is painting a run with different dimensions.
 static _Thread_local double gWest, gNorth, gStep;
 static _Thread_local int gNLon, gNLat, gGridReady;
+// The published root may expose the Australian and wrapping global products
+// side by side. Keep the selected family on this loading thread so all of the
+// schema-2 sidecar helpers read the same immutable family. Store the path as
+// bytes: a bridged NSString here would be unretained after the selector
+// returns and could leave the worker reading a dangling object.
+static _Thread_local char gPublishedFamilyPath[PATH_MAX];
+static int PublishedSchema(NSDictionary *document);
+static BOOL SupportedGridContract(NSDictionary *document, NSString **error);
+static BOOL ParseForecastHours(NSArray *hours, int *leads, int *count, NSString **error);
+static NSDate *PublishedRunDate(NSString *runID);
+
+static NSString *PublishedFamilyPath(NSString *root) {
+    NSString *selected = gPublishedFamilyPath[0] ? [NSString stringWithUTF8String:gPublishedFamilyPath] : nil;
+    return selected.length ? selected
+        : [root stringByAppendingPathComponent:@"products/grids/ecmwf_ifs025"];
+}
+
+static BOOL PublishedPointerHasRun(NSString *family, NSDictionary *pointer, NSString *latestID) {
+    if (!family.length || !latestID.length || ![pointer isKindOfClass:NSDictionary.class]) return NO;
+    NSArray *runs = [pointer[@"runs"] isKindOfClass:NSArray.class] ? pointer[@"runs"] : nil;
+    if (![runs containsObject:latestID]) return NO;
+    NSString *dir = [[family stringByAppendingPathComponent:@"runs"] stringByAppendingPathComponent:latestID];
+    BOOL isDir = NO;
+    if (![[NSFileManager defaultManager] fileExistsAtPath:dir isDirectory:&isDir] || !isDir) return NO;
+    NSString *manifestPath = [dir stringByAppendingPathComponent:@"manifest.json"];
+    NSData *manifestData = [NSData dataWithContentsOfFile:manifestPath];
+    NSDictionary *manifest = [NSJSONSerialization JSONObjectWithData:manifestData ?: [NSData data] options:0 error:nil];
+    if (![manifest isKindOfClass:NSDictionary.class]) {
+        NSArray *files = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:[dir stringByAppendingPathComponent:@"mslp"] error:nil];
+        return files.count >= 1;
+    }
+    if (PublishedSchema(manifest) != 2 || !SupportedGridContract(manifest, nil)) return NO;
+    int leads[80], count = 0;
+    if (!ParseForecastHours(manifest[@"forecast_hours"], leads, &count, nil)) return NO;
+    if ([family.lastPathComponent isEqual:@"ecmwf_ifs_global"]) {
+        if (count != 53 || leads[0] != 0 || leads[count - 1] != 168) return NO;
+        NSArray *files = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:[dir stringByAppendingPathComponent:@"mslp"] error:nil];
+        NSMutableArray *json = [NSMutableArray array];
+        for (NSString *name in files)
+            if ([name.pathExtension.lowercaseString isEqual:@"json"]) [json addObject:name];
+        if (json.count != 53) return NO;
+        [json sortUsingSelector:@selector(compare:)];
+        NSString *sidePath = [[dir stringByAppendingPathComponent:@"mslp"] stringByAppendingPathComponent:json.firstObject];
+        NSDictionary *side = [NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:sidePath] ?: [NSData data] options:0 error:nil];
+        if (![side isKindOfClass:NSDictionary.class] || [side[@"nx"] intValue] != 720 || [side[@"ny"] intValue] != 361) return NO;
+    }
+    NSDate *run = PublishedRunDate(latestID);
+    if (!run) return NO;
+    NSDate *valid = [run dateByAddingTimeInterval:leads[0] * 3600.0];
+    NSISO8601DateFormatter *iso = [NSISO8601DateFormatter new];
+    iso.formatOptions = NSISO8601DateFormatWithInternetDateTime;
+    iso.timeZone = [NSTimeZone timeZoneWithName:@"UTC"];
+    NSString *stamp = [iso stringFromDate:valid];
+    if (stamp.length < 13) return NO;
+    NSString *validID = [NSString stringWithFormat:@"%@%@%@T%@%@",
+        [stamp substringWithRange:NSMakeRange(0, 4)], [stamp substringWithRange:NSMakeRange(5, 2)],
+        [stamp substringWithRange:NSMakeRange(8, 2)], [stamp substringWithRange:NSMakeRange(11, 2)], @"Z"];
+    NSString *stem = [[dir stringByAppendingPathComponent:@"mslp"] stringByAppendingPathComponent:validID];
+    return [[NSFileManager defaultManager] fileExistsAtPath:[stem stringByAppendingPathExtension:@"f16"]] &&
+        [[NSFileManager defaultManager] fileExistsAtPath:[stem stringByAppendingPathExtension:@"json"]];
+}
 
 static double GWest(void) { return gGridReady ? gWest : OwnGridWest (); }
 static double GNorth(void) { return gGridReady ? gNorth : OwnGridNorth (); }
@@ -165,6 +233,7 @@ static void AdoptCubeGrid(const Cube *cube) {
     gNLon = cube->nLon;
     gNLat = cube->nLat;
     gGridReady = 1;
+    gClassicWorld = cube->nLon == 720 && cube->nLat == 361 && fabs(cube->step - 0.5) < 1e-6;
 }
 
 static void CubeFree(Cube *cube) {
@@ -362,14 +431,75 @@ static NSString *VariableFile(NSDictionary *manifest, NSString *key, NSString *f
 
 static BOOL LoadRunDirectory(NSString *dir, Cube *cube, NSDictionary **manifestOut, NSString **error);
 
+// Absent schema is the original grid. Schema 1 is 33 frames at 3 h. Schema 2
+// lists forecast_hours. Anything else fails closed.
+static int PublishedSchema(NSDictionary *document) {
+    if (![document isKindOfClass:NSDictionary.class]) return -1;
+    id version = document[@"schema_version"];
+    if (!version) return 1;
+    if (![version isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)version) == CFBooleanGetTypeID())
+        return -1;
+    double value = [version doubleValue];
+    if (value == 1.0) return 1;
+    if (value == 2.0) return 2;
+    return -1;
+}
+
 static BOOL SupportedGridContract(NSDictionary *document, NSString **error) {
     if (![document isKindOfClass:NSDictionary.class]) return NO;
-    id contract = document[@"contract"], version = document[@"schema_version"], family = document[@"family"];
+    id contract = document[@"contract"], family = document[@"family"];
+    BOOL familyOK = !family || ([family isKindOfClass:NSString.class] &&
+        ([family isEqual:@"grids/ecmwf_ifs025"] || [family isEqual:@"grids/ecmwf_ifs_global"]));
     if ((contract && (![contract isKindOfClass:NSString.class] || ![contract isEqual:@"isobar-data"])) ||
-        (version && (![version isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)version) == CFBooleanGetTypeID() || [version doubleValue] != 1.0)) ||
-        (family && (![family isKindOfClass:NSString.class] || ![family isEqual:@"grids/ecmwf_ifs025"]))) {
+        PublishedSchema(document) < 0 ||
+        !familyOK) {
         if (error) *error = @"ECMWF data uses an unsupported contract version";
         return NO;
+    }
+    return YES;
+}
+
+// Strictly increasing whole hours, starting at 0 and ending by 168 h.
+static BOOL ParseForecastHours(NSArray *hours, int *leads, int *count, NSString **error) {
+    if (![hours isKindOfClass:NSArray.class] || hours.count < 2 || hours.count > 80) {
+        if (error) *error = @"ECMWF schema 2 is missing forecast_hours";
+        return NO;
+    }
+    int previous = -1;
+    for (NSUInteger i = 0; i < hours.count; i++) {
+        id item = hours[i];
+        if (![item isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)item) == CFBooleanGetTypeID()) {
+            if (error) *error = @"ECMWF schema 2 is missing forecast_hours";
+            return NO;
+        }
+        double value = [item doubleValue];
+        if (value != floor(value) || value < 0 || value > 168) {
+            if (error) *error = @"ECMWF forecast_hours is outside 0–168 h";
+            return NO;
+        }
+        int lead = (int)value;
+        if (i == 0 && lead != 0) {
+            if (error) *error = @"ECMWF forecast_hours does not start at 0";
+            return NO;
+        }
+        if (lead <= previous) {
+            if (error) *error = @"ECMWF forecast_hours is not strictly increasing";
+            return NO;
+        }
+        leads[i] = lead;
+        previous = lead;
+    }
+    *count = (int)hours.count;
+    return YES;
+}
+
+static BOOL SameForecastHours(NSArray *hours, const int *leads, int count) {
+    if (![hours isKindOfClass:NSArray.class] || (int)hours.count != count) return NO;
+    for (int i = 0; i < count; i++) {
+        id item = hours[i];
+        if (![item isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)item) == CFBooleanGetTypeID())
+            return NO;
+        if (fabs([item doubleValue] - leads[i]) > 1e-6) return NO;
     }
     return YES;
 }
@@ -393,12 +523,25 @@ static BOOL LoadRunDirectory(NSString *dir, Cube *cube, NSDictionary **manifestO
     NSData *manifestData = [NSData dataWithContentsOfFile:[dir stringByAppendingPathComponent:@"manifest.json"]];
     NSDictionary *manifest = [NSJSONSerialization JSONObjectWithData:manifestData ?: [NSData data] options:0 error:nil];
     if (!SupportedGridContract(manifest, error)) return NO;
-    if (manifest[@"schema"] && [manifest[@"schema"] integerValue] != 1) {
+    int schema = PublishedSchema(manifest);
+    if (schema < 1 || schema > 2) {
         if (error) *error = @"ECMWF grid schema is unsupported";
         return NO;
     }
     NSDictionary *grid = [manifest[@"grid"] isKindOfClass:NSDictionary.class] ? manifest[@"grid"] : nil;
     NSArray *times = [manifest[@"times"] isKindOfClass:NSArray.class] ? manifest[@"times"] : nil;
+    if (schema == 2 && times.count < 1) {
+        int leads[80], count = 0;
+        NSDate *runDate = PublishedISODate(manifest[@"run"]);
+        if (!runDate || !ParseForecastHours(manifest[@"forecast_hours"], leads, &count, error)) return NO;
+        NSISO8601DateFormatter *iso = [NSISO8601DateFormatter new];
+        iso.formatOptions = NSISO8601DateFormatWithInternetDateTime;
+        iso.timeZone = [NSTimeZone timeZoneWithName:@"UTC"];
+        NSMutableArray *generatedTimes = [NSMutableArray arrayWithCapacity:(NSUInteger)count];
+        for (int i = 0; i < count; i++)
+            [generatedTimes addObject:[iso stringFromDate:[runDate dateByAddingTimeInterval:leads[i] * 3600.0]]];
+        times = generatedTimes;
+    }
     if (!grid || times.count < 1) {
         if (error) *error = @"ECMWF manifest is missing a grid or valid times";
         return NO;
@@ -421,7 +564,7 @@ static BOOL LoadRunDirectory(NSString *dir, Cube *cube, NSDictionary **manifestO
     double west = [grid[@"west"] doubleValue];
     double north = [grid[@"north"] doubleValue];
     size_t nPoints = (size_t)nLon * (size_t)nLat;
-    if (nLon < 2 || nLat < 2 || nLon > 1000 || nLat > 1000 || nPoints > 250000 || !(step > 0)) {
+    if (nLon < 2 || nLat < 2 || nLon > 1000 || nLat > 1000 || nPoints > 300000 || !(step > 0)) {
         if (error) *error = @"ECMWF grid dimensions are unsafe";
         return NO;
     }
@@ -430,7 +573,7 @@ static BOOL LoadRunDirectory(NSString *dir, Cube *cube, NSDictionary **manifestO
         return NO;
     }
     int nTimes = (int)times.count;
-    if ((size_t)VarCount * nPoints * (size_t)nTimes * sizeof(float) > 256u * 1024u * 1024u) {
+    if ((size_t)VarCount * nPoints * (size_t)nTimes * sizeof(float) > 384u * 1024u * 1024u) {
         if (error) *error = @"ECMWF grid is too large";
         return NO;
     }
@@ -525,8 +668,9 @@ static BOOL SameNumber(id value, double expected) {
     return [value isKindOfClass:NSNumber.class] && fabs([value doubleValue] - expected) < 1e-7;
 }
 
+// expectLead < 0 skips the schema 2 lead check. Schema 1 sidecars have no lead_hours.
 static BOOL PublishedField(NSString *root, NSString *runID, NSDate *runDate, NSDate *valid,
-    PublishedSpec spec, int nLon, int nLat, float **out, NSString **error) {
+    PublishedSpec spec, int nLon, int nLat, float **out, int expectLead, NSString **error) {
     NSString *validID = nil;
     NSISO8601DateFormatter *iso = [NSISO8601DateFormatter new];
     iso.formatOptions = NSISO8601DateFormatWithInternetDateTime;
@@ -538,7 +682,7 @@ static BOOL PublishedField(NSString *root, NSString *runID, NSDate *runDate, NSD
         [validText substringWithRange:NSMakeRange(5, 2)],
         [validText substringWithRange:NSMakeRange(8, 2)],
         [validText substringWithRange:NSMakeRange(11, 2)], @"Z"];
-    NSString *dir = [[root stringByAppendingPathComponent:@"products/grids/ecmwf_ifs025/runs"]
+    NSString *dir = [[PublishedFamilyPath(root) stringByAppendingPathComponent:@"runs"]
         stringByAppendingPathComponent:runID];
     NSString *stem = [[dir stringByAppendingPathComponent:spec.directoryName]
         stringByAppendingPathComponent:validID];
@@ -551,16 +695,22 @@ static BOOL PublishedField(NSString *root, NSString *runID, NSDate *runDate, NSD
     }
     NSDate *sideRun = PublishedISODate(side[@"run"]);
     NSDate *sideValid = PublishedISODate(side[@"valid_time"]);
+    BOOL global = [PublishedFamilyPath(root).lastPathComponent isEqual:@"ecmwf_ifs_global"];
+    double expectedLon0 = global ? -180.0 : 95.0;
+    double expectedLat0 = global ? 90.0 : 0.0;
+    double expectedStep = global ? 0.5 : 0.25;
     if (!sideRun || !sideValid || fabs([sideRun timeIntervalSinceDate:runDate]) > 1 ||
         fabs([sideValid timeIntervalSinceDate:valid]) > 1 ||
         !SameNumber(side[@"nx"], nLon) || !SameNumber(side[@"ny"], nLat) ||
-        !SameNumber(side[@"lon0"], 95.0) || !SameNumber(side[@"lat0"], 0.0) ||
-        !SameNumber(side[@"dlon"], 0.25) || !SameNumber(side[@"dlat"], -0.25) ||
+        !SameNumber(side[@"lon0"], expectedLon0) || !SameNumber(side[@"lat0"], expectedLat0) ||
+        !SameNumber(side[@"dlon"], expectedStep) || !SameNumber(side[@"dlat"], -expectedStep) ||
         !SameNumber(side[@"fill"], -32768.0) ||
         ![side[@"units"] isKindOfClass:NSString.class] || ![side[@"units"] isEqual:spec.units] ||
         ![side[@"param"] isEqual:spec.sidecarParam] ||
         ![side[@"dtype"] isEqual:@"float16"] || ![side[@"endian"] isEqual:@"little"] ||
-        ![side[@"order"] isEqual:@"north-to-south, west-to-east"]) {
+        ![side[@"order"] isEqual:@"north-to-south, west-to-east"] ||
+        (expectLead >= 0 && (!SameNumber(side[@"lead_hours"], expectLead) ||
+            (side[@"native_step_hours"] && ![side[@"native_step_hours"] isKindOfClass:NSNull.class])))) {
         if (error) *error = [NSString stringWithFormat:@"%@ sidecar metadata does not match the published grid",
             sidePath.lastPathComponent];
         return NO;
@@ -581,7 +731,7 @@ static BOOL PublishedHasFile(NSString *root, NSString *runID, NSDate *valid, NSS
     NSString *validID = [NSString stringWithFormat:@"%@%@%@T%@%@",
         [text substringWithRange:NSMakeRange(0, 4)], [text substringWithRange:NSMakeRange(5, 2)],
         [text substringWithRange:NSMakeRange(8, 2)], [text substringWithRange:NSMakeRange(11, 2)], @"Z"];
-    NSString *base = [[root stringByAppendingPathComponent:@"products/grids/ecmwf_ifs025/runs"]
+    NSString *base = [[PublishedFamilyPath(root) stringByAppendingPathComponent:@"runs"]
         stringByAppendingPathComponent:runID];
     NSString *f16 = [[[base stringByAppendingPathComponent:variable] stringByAppendingPathComponent:validID]
         stringByAppendingPathExtension:@"f16"];
@@ -593,7 +743,85 @@ static BOOL PublishedHasFile(NSString *root, NSString *runID, NSDate *valid, NSS
     return f == j;
 }
 
-static BOOL LoadPublishedCube(NSString *root, NSString *runID, NSString *previousID,
+static int PublishedRunSchemaAt(NSString *root, NSString *runID) {
+    NSString *path = [[[PublishedFamilyPath(root) stringByAppendingPathComponent:@"runs"]
+        stringByAppendingPathComponent:runID] stringByAppendingPathComponent:@"manifest.json"];
+    NSData *data = [NSData dataWithContentsOfFile:path];
+    if (!data) return [[NSFileManager defaultManager] fileExistsAtPath:path] ? -1 : 1;
+    NSDictionary *manifest = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    if (![manifest isKindOfClass:NSDictionary.class] || !SupportedGridContract(manifest, nil)) return -1;
+    return PublishedSchema(manifest);
+}
+
+static BOOL PublishedRunHasLead(NSString *root, NSString *runID, int lead) {
+    NSString *path = [[[PublishedFamilyPath(root) stringByAppendingPathComponent:@"runs"]
+        stringByAppendingPathComponent:runID] stringByAppendingPathComponent:@"manifest.json"];
+    NSData *data = [NSData dataWithContentsOfFile:path];
+    NSDictionary *manifest = [NSJSONSerialization JSONObjectWithData:data ?: [NSData data] options:0 error:nil];
+    if (![manifest isKindOfClass:NSDictionary.class]) return NO;
+    int hours[80], count = 0;
+    if (!ParseForecastHours(manifest[@"forecast_hours"], hours, &count, nil)) return NO;
+    for (int i = 0; i < count; i++) if (hours[i] == lead) return YES;
+    return NO;
+}
+
+// Rain is the accumulated total 24 h earlier in the lead list, not N frames back.
+// A lead with no partner uses the newest older cycle whose files cover both
+// valid-24 h and valid. A missing complete window stays missing; it is never
+// fabricated with zero.
+static void ApplyPublishedRain(Cube *cube, const float *currentRain, const int *leads, int nTimes,
+    NSString *root, NSArray<NSString *> *previousIDs, NSDate *runDate, PublishedSpec rainSpec, int nLon, int nLat) {
+    for (int h = 0; h < nTimes; h++) {
+        int partner = -1;
+        for (int i = 0; i < nTimes; i++) if (leads[i] == leads[h] - 24) { partner = i; break; }
+        float *earlyEnd = NULL, *earlyStart = NULL;
+        if (partner < 0 && previousIDs.count) {
+            NSDate *endDate = [runDate dateByAddingTimeInterval:leads[h] * 3600.0];
+            NSDate *startDate = [endDate dateByAddingTimeInterval:-24 * 3600.0];
+            for (NSString *previousID in previousIDs) {
+                float *candidateEnd = NULL, *candidateStart = NULL;
+                int schema = PublishedRunSchemaAt(root, previousID);
+                if (schema < 0) continue;
+                int expectLead = -1;
+                if (schema == 2) {
+                    NSTimeInterval delta = [endDate timeIntervalSinceDate:PublishedRunDate(previousID)];
+                    double rounded = round(delta / 3600.0);
+                    if (!(delta >= 0) || fabs(delta / 3600.0 - rounded) > 1e-6 || rounded < 24 || rounded > 168) continue;
+                    expectLead = (int)rounded;
+                    if (!PublishedRunHasLead(root, previousID, expectLead) ||
+                        !PublishedRunHasLead(root, previousID, expectLead - 24)) continue;
+                }
+                PublishedField(root, previousID, PublishedRunDate(previousID), endDate, rainSpec,
+                    nLon, nLat, &candidateEnd, expectLead, nil);
+                PublishedField(root, previousID, PublishedRunDate(previousID), startDate, rainSpec,
+                    nLon, nLat, &candidateStart, expectLead - (expectLead >= 0 ? 24 : 0), nil);
+                BOOL covered = NO;
+                if (candidateEnd && candidateStart) for (int p = 0; p < cube->nPoints; p++)
+                    if (isfinite(OwnAccumulationWindow(candidateEnd[p], candidateStart[p]))) { covered = YES; break; }
+                if (covered) {
+                    earlyEnd = candidateEnd;
+                    earlyStart = candidateStart;
+                    break;
+                }
+                free(candidateEnd);
+                free(candidateStart);
+            }
+        }
+        for (int p = 0; p < cube->nPoints; p++) {
+            float rain = NAN;
+            if (partner >= 0)
+                rain = (float)OwnAccumulationWindow(currentRain[(size_t)h * (size_t)cube->nPoints + (size_t)p],
+                    currentRain[(size_t)partner * (size_t)cube->nPoints + (size_t)p]);
+            else if (earlyEnd && earlyStart)
+                rain = (float)OwnAccumulationWindow(earlyEnd[p], earlyStart[p]);
+            cube->data[((size_t)VarRain * (size_t)cube->nPoints + (size_t)p) * (size_t)nTimes + (size_t)h] = rain;
+        }
+        free(earlyEnd);
+        free(earlyStart);
+    }
+}
+
+static BOOL LoadPublishedCube(NSString *root, NSString *runID, NSArray<NSString *> *previousIDs,
     Cube *cube, NSDate **runDateOut, NSString **error) {
     NSDate *runDate = PublishedRunDate(runID);
     if (!runDate) {
@@ -607,9 +835,9 @@ static BOOL LoadPublishedCube(NSString *root, NSString *runID, NSString *previou
         if (error) *error = @"published ECMWF run has no valid mslp field";
         return NO;
     }
-    // Read the first sidecar to establish dimensions, then require a complete
-    // consecutive 3-hour sequence. The producer publishes 0–96 h (97 frames).
-    NSString *base = [[[root stringByAppendingPathComponent:@"products/grids/ecmwf_ifs025/runs"]
+    // Read the first sidecar to establish dimensions, then require the schema 1
+    // sequence: 33 frames at 3 h, 0–96 h.
+    NSString *base = [[[PublishedFamilyPath(root) stringByAppendingPathComponent:@"runs"]
         stringByAppendingPathComponent:runID] stringByAppendingPathComponent:msl.directoryName];
     NSArray *files = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:base error:nil];
     NSMutableArray *jsonNames = [NSMutableArray array];
@@ -634,7 +862,7 @@ static BOOL LoadPublishedCube(NSString *root, NSString *runID, NSString *previou
         return NO;
     }
     int nLon = [first[@"nx"] intValue], nLat = [first[@"ny"] intValue];
-    if (nLon < 2 || nLat < 2 || nLon > 1000 || nLat > 1000 || (size_t)nLon * (size_t)nLat > 250000) {
+    if (nLon < 2 || nLat < 2 || nLon > 1000 || nLat > 1000 || (size_t)nLon * (size_t)nLat > 300000) {
         if (error) *error = @"published ECMWF grid dimensions are unsafe";
         return NO;
     }
@@ -643,7 +871,7 @@ static BOOL LoadPublishedCube(NSString *root, NSString *runID, NSString *previou
         if (error) *error = @"published ECMWF run must contain 33 three-hour frames";
         return NO;
     }
-    if ((size_t)VarCount * (size_t)nLon * (size_t)nLat * (size_t)nTimes * sizeof(float) > 256u * 1024u * 1024u) {
+    if ((size_t)VarCount * (size_t)nLon * (size_t)nLat * (size_t)nTimes * sizeof(float) > 384u * 1024u * 1024u) {
         if (error) *error = @"published ECMWF grid is too large";
         return NO;
     }
@@ -673,7 +901,7 @@ static BOOL LoadPublishedCube(NSString *root, NSString *runID, NSString *previou
         }
         for (int var = 0; var < VarCount; var++) {
             float *field = NULL;
-            if (!PublishedField(root, runID, runDate, when, specs[var], nLon, nLat, &field, error)) {
+            if (!PublishedField(root, runID, runDate, when, specs[var], nLon, nLat, &field, -1, error)) {
                 free(currentRain); return NO;
             }
             for (int p = 0; p < cube->nPoints; p++) {
@@ -697,26 +925,153 @@ static BOOL LoadPublishedCube(NSString *root, NSString *runID, NSString *previou
             cube->data[((size_t)VarWDir * cube->nPoints + p) * nTimes + h] = NAN;
         }
     }
-    for (int h = 0; h < nTimes; h++) {
-        float *earlyEnd = NULL, *earlyStart = NULL;
-        if (h < 8 && previousID.length) {
-            NSDate *endDate = [runDate dateByAddingTimeInterval:3 * 3600 * h];
-            NSDate *startDate = [endDate dateByAddingTimeInterval:-24 * 3600];
-            PublishedField(root, previousID, PublishedRunDate(previousID), endDate, specs[VarRain],
-                nLon, nLat, &earlyEnd, nil);
-            PublishedField(root, previousID, PublishedRunDate(previousID), startDate, specs[VarRain],
-                nLon, nLat, &earlyStart, nil);
-        }
-        for (int p = 0; p < cube->nPoints; p++) {
-        float rain = NAN;
-        if (h >= 8) rain = (float)OwnAccumulationWindow(currentRain[(size_t)h * cube->nPoints + p],
-            currentRain[(size_t)(h - 8) * cube->nPoints + p]);
-        else if (earlyEnd && earlyStart)
-            rain = (float)OwnAccumulationWindow(earlyEnd[p], earlyStart[p]);
-        cube->data[((size_t)VarRain * cube->nPoints + p) * nTimes + h] = rain;
-        }
-        free(earlyEnd); free(earlyStart);
+    // 24 h is a lead-time pair. Eight frames back is 24 h only while the step is 3 h.
+    int schema1Leads[33];
+    for (int h = 0; h < nTimes && h < 33; h++) schema1Leads[h] = 3 * h;
+    ApplyPublishedRain(cube, currentRain, schema1Leads, nTimes, root, previousIDs, runDate, specs[VarRain], nLon, nLat);
+    free(currentRain);
+    cube->fetched = runDate.timeIntervalSince1970;
+    strncpy(cube->httpDate, "ECMWF Open Data", sizeof cube->httpDate - 1);
+    AdoptCubeGrid(cube);
+    if (runDateOut) *runDateOut = runDate;
+    return YES;
+}
+
+// Schema 2: the manifest's forecast_hours are the frames. A listed hour with
+// no file fails the run. Hours that are not listed are not invented.
+static BOOL LoadPublishedLadder(NSString *root, NSString *runID, NSArray<NSString *> *previousIDs,
+    const int *leads, int nLeads, Cube *cube, NSDate **runDateOut, NSString **error) {
+    NSDate *runDate = PublishedRunDate(runID);
+    if (!runDate || !leads || nLeads < 2) {
+        if (error) *error = @"published ECMWF run id is invalid";
+        return NO;
     }
+    NSString *manifestPath = [[[PublishedFamilyPath(root) stringByAppendingPathComponent:@"runs"]
+        stringByAppendingPathComponent:runID] stringByAppendingPathComponent:@"manifest.json"];
+    NSData *manifestData = [NSData dataWithContentsOfFile:manifestPath];
+    NSDictionary *manifest = [NSJSONSerialization JSONObjectWithData:manifestData ?: [NSData data] options:0 error:nil];
+    if (![manifest isKindOfClass:NSDictionary.class]) {
+        if (error) *error = @"published ECMWF schema 2 run has no manifest";
+        return NO;
+    }
+    if (!SupportedGridContract(manifest, error) || PublishedSchema(manifest) != 2) {
+        if (error && !*error) *error = @"ECMWF grid schema is unsupported";
+        return NO;
+    }
+    if (!SameForecastHours(manifest[@"forecast_hours"], leads, nLeads)) {
+        if (error) *error = @"ECMWF forecast_hours do not match the run";
+        return NO;
+    }
+    id uniform = manifest[@"uniform_step_hours"];
+    if (uniform && ![uniform isKindOfClass:NSNull.class]) {
+        if (error) *error = @"ECMWF schema 2 claims a uniform step";
+        return NO;
+    }
+    id horizon = manifest[@"horizon_hours"];
+    if (horizon && (![horizon isKindOfClass:NSNumber.class] || [horizon intValue] != leads[nLeads - 1])) {
+        if (error) *error = @"ECMWF horizon does not match forecast_hours";
+        return NO;
+    }
+    PublishedSpec specs[VarCount] = {
+        {@"mslp", @"msl", @"hPa"}, {@"t850", @"t", @"degC"},
+        {@"t2m", @"2t", @"degC"}, {@"u10", @"10u", @"m/s"},
+        {@"v10", @"10v", @"m/s"}, {@"tp", @"tp", @"mm"}
+    };
+    NSDate *firstValid = [runDate dateByAddingTimeInterval:leads[0] * 3600.0];
+    BOOL present = NO;
+    if (!PublishedHasFile(root, runID, firstValid, specs[0].directoryName, &present) || !present) {
+        if (error) *error = @"published ECMWF run has no valid mslp field";
+        return NO;
+    }
+    NSString *validID = nil;
+    NSISO8601DateFormatter *iso = [NSISO8601DateFormatter new];
+    iso.formatOptions = NSISO8601DateFormatWithInternetDateTime;
+    iso.timeZone = [NSTimeZone timeZoneWithName:@"UTC"];
+    NSString *validText = [iso stringFromDate:firstValid];
+    validID = [NSString stringWithFormat:@"%@%@%@T%@%@",
+        [validText substringWithRange:NSMakeRange(0, 4)],
+        [validText substringWithRange:NSMakeRange(5, 2)],
+        [validText substringWithRange:NSMakeRange(8, 2)],
+        [validText substringWithRange:NSMakeRange(11, 2)], @"Z"];
+    NSString *sidePath = [[[[[PublishedFamilyPath(root) stringByAppendingPathComponent:@"runs"]
+        stringByAppendingPathComponent:runID] stringByAppendingPathComponent:@"mslp"]
+        stringByAppendingPathComponent:validID] stringByAppendingPathExtension:@"json"];
+    NSData *sideData = [NSData dataWithContentsOfFile:sidePath];
+    NSDictionary *side = [NSJSONSerialization JSONObjectWithData:sideData ?: [NSData data] options:0 error:nil];
+    if (![side isKindOfClass:NSDictionary.class] || ![side[@"nx"] isKindOfClass:NSNumber.class] ||
+        ![side[@"ny"] isKindOfClass:NSNumber.class]) {
+        if (error) *error = @"published ECMWF first sidecar has invalid dimensions";
+        return NO;
+    }
+    int nLon = [side[@"nx"] intValue], nLat = [side[@"ny"] intValue];
+    if (nLon < 2 || nLat < 2 || nLon > 1000 || nLat > 1000 || (size_t)nLon * (size_t)nLat > 300000) {
+        if (error) *error = @"published ECMWF grid dimensions are unsafe";
+        return NO;
+    }
+    BOOL global = [PublishedFamilyPath(root).lastPathComponent isEqual:@"ecmwf_ifs_global"];
+    if (global && (nLon != 720 || nLat != 361)) {
+        if (error) *error = @"published global ECMWF run is not the 0.5-degree 720 by 361 grid";
+        return NO;
+    }
+    int nTimes = nLeads;
+    // The published 0.5-degree global cube is 720*361*53*6 float values
+    // (~330 MiB), plus the rain working set. Keep one bounded run below 512 MiB.
+    if ((size_t)VarCount * (size_t)nLon * (size_t)nLat * (size_t)nTimes * sizeof(float) > 512u * 1024u * 1024u) {
+        if (error) *error = @"published ECMWF grid is too large";
+        return NO;
+    }
+    cube->nLon = nLon; cube->nLat = nLat;
+    cube->west = global ? -180.0 : 95.0;
+    cube->north = global ? 90.0 : 0.0;
+    cube->step = global ? 0.5 : 0.25;
+    cube->nHours = nTimes; cube->nPoints = nLon * nLat;
+    cube->times = calloc((size_t)nTimes, sizeof(int64_t));
+    cube->data = calloc((size_t)VarCount * (size_t)cube->nPoints * (size_t)nTimes, sizeof(float));
+    if (!cube->times || !cube->data) {
+        if (error) *error = @"not enough memory for the published ECMWF grid";
+        return NO;
+    }
+    float *currentRain = calloc((size_t)nTimes * (size_t)cube->nPoints, sizeof(float));
+    if (!currentRain) {
+        if (error) *error = @"not enough memory for published rainfall";
+        return NO;
+    }
+    for (int h = 0; h < nTimes; h++) {
+        NSDate *when = [runDate dateByAddingTimeInterval:leads[h] * 3600.0];
+        cube->times[h] = (int64_t)llround(when.timeIntervalSince1970);
+        BOOL hourPresent = NO;
+        if (!PublishedHasFile(root, runID, when, @"mslp", &hourPresent) || !hourPresent) {
+            free(currentRain);
+            if (error) *error = [NSString stringWithFormat:@"published ECMWF run is missing the %d h frame", leads[h]];
+            return NO;
+        }
+        for (int var = 0; var < VarCount; var++) {
+            float *field = NULL;
+            if (!PublishedField(root, runID, runDate, when, specs[var], nLon, nLat, &field, leads[h], error)) {
+                free(currentRain);
+                return NO;
+            }
+            for (int p = 0; p < cube->nPoints; p++) {
+                size_t index = ((size_t)var * (size_t)cube->nPoints + (size_t)p) * (size_t)nTimes + (size_t)h;
+                cube->data[index] = field[p];
+                if (var == VarRain) currentRain[(size_t)h * (size_t)cube->nPoints + (size_t)p] = field[p];
+            }
+            free(field);
+        }
+    }
+    for (int h = 0; h < nTimes; h++) for (int p = 0; p < cube->nPoints; p++) {
+        float u = cube->data[((size_t)VarWSpd * cube->nPoints + p) * nTimes + h];
+        float v = cube->data[((size_t)VarWDir * cube->nPoints + p) * nTimes + h];
+        if (isfinite(u) && isfinite(v)) {
+            cube->data[((size_t)VarWSpd * cube->nPoints + p) * nTimes + h] = hypotf(u, v) * 1.9438445f;
+            float direction = atan2f(-u, -v) * (180.f / (float)M_PI);
+            cube->data[((size_t)VarWDir * cube->nPoints + p) * nTimes + h] = direction < 0 ? direction + 360 : direction;
+        } else {
+            cube->data[((size_t)VarWSpd * cube->nPoints + p) * nTimes + h] = NAN;
+            cube->data[((size_t)VarWDir * cube->nPoints + p) * nTimes + h] = NAN;
+        }
+    }
+    ApplyPublishedRain(cube, currentRain, leads, nTimes, root, previousIDs, runDate, specs[VarRain], nLon, nLat);
     free(currentRain);
     cube->fetched = runDate.timeIntervalSince1970;
     strncpy(cube->httpDate, "ECMWF Open Data", sizeof cube->httpDate - 1);
@@ -850,6 +1205,20 @@ static double *SmoothedMSLP(Cube *cube, double hour, const uint8_t *land, uint8_
 
 static BOOL PixelUnproject(OwnView view, double x, double yDown, double *latitude, double *longitude);
 
+BOOL OwnChartImagePoint(double latitude, double longitude, double *xFraction, double *yFraction) {
+    if (!xFraction || !yFraction) return NO;
+    OwnView view = gClassicWorld
+        ? OwnWorldViewMake(ViewWest(), ViewEast(), ViewSouth(), ViewNorth(), 0, 0, kPanelW, kMapH)
+        : OwnViewMake(OwnAustraliaLambert(), ViewWest(), ViewEast(), ViewSouth(), ViewNorth(),
+            0, 0, kPanelW, kMapH);
+    double x, yDown;
+    if (!OwnViewProject(view, latitude, longitude, &x, &yDown)) return NO;
+    if (x < 0 || yDown < 0 || x > kPanelW || yDown > kMapH) return NO;
+    *xFraction = x / kPanelW;
+    *yFraction = (kTitleH + yDown) / (double)kPanelH;
+    return YES;
+}
+
 // Contours only need the cells that can cross the drawn map. The Lambert
 // rectangle reaches past the view's lon/lat box at its corners, so the window
 // is the box around the unprojected map edge. Two cells of margin keep a line
@@ -860,7 +1229,7 @@ static double *ContourWindow(const double *field, int nLon, int nLat, OwnView vi
     if (!field || nLon < 2 || nLat < 2) return NULL;
     double step = GStep();
     if (!(step > 0)) return NULL;
-    double west = kViewWest, east = kViewEast, south = kViewSouth, north = kViewNorth;
+    double west = ViewWest(), east = ViewEast(), south = ViewSouth(), north = ViewNorth();
     for (int k = 0; k <= 64; k++) {
         double u = k / 64.0;
         double edge[4][2] = {{u * kPanelW, 0}, {u * kPanelW, kMapH}, {0, u * kMapH}, {kPanelW, u * kMapH}};
@@ -912,18 +1281,24 @@ static void FieldRange(const double *field, int n, double *minV, double *maxV) {
 static double SampleBilinear(const double *field, int nLon, int nLat, double longitude, double latitude) {
     double fi = (longitude - GWest()) / GStep();
     double fj = (GNorth() - latitude) / GStep();
-    if (fi < 0 || fj < 0 || fi > nLon - 1 || fj > nLat - 1) return NAN;
+    if (gClassicWorld) {
+        double period = (double)nLon;
+        fi = fi - floor(fi / period) * period;
+        if (fi < 0) fi += period;
+    } else if (fi < 0 || fi > nLon - 1) return NAN;
+    if (fj < 0 || fj > nLat - 1) return NAN;
     int i = (int)floor(fi);
     int j = (int)floor(fj);
-    if (i >= nLon - 1) i = nLon - 2;
     if (j >= nLat - 1) j = nLat - 2;
     if (i < 0 || j < 0) return NAN;
     double tx = fi - i;
     double ty = fj - j;
+    int i1 = gClassicWorld ? (i + 1) % nLon : (i >= nLon - 1 ? nLon - 1 : i + 1);
+    if (!gClassicWorld && i >= nLon - 1) { i = nLon - 2; i1 = nLon - 1; tx = 1; }
     double a = field[j * nLon + i];
-    double b = field[j * nLon + i + 1];
+    double b = field[j * nLon + i1];
     double c = field[(j + 1) * nLon + i];
-    double d = field[(j + 1) * nLon + i + 1];
+    double d = field[(j + 1) * nLon + i1];
     if (!isfinite(a) || !isfinite(b) || !isfinite(c) || !isfinite(d)) return NAN;
     return (a + (b - a) * tx) * (1 - ty) + (c + (d - c) * tx) * ty;
 }
@@ -934,12 +1309,18 @@ static double SampleWash(const double *field, int nLon, int nLat, double longitu
     double west = GWest();
     double north = GNorth();
     double step = GStep();
-    double east = west + (nLon - 1) * step;
+    double east = west + (gClassicWorld ? nLon : nLon - 1) * step;
     double south = north - (nLat - 1) * step;
-    if (longitude < west - 14.0 || longitude > east + 14.0 || latitude > north + 14.0 || latitude < south - 14.0)
+    if ((!gClassicWorld && (longitude < west - 14.0 || longitude > east + 14.0)) ||
+        latitude > north + 14.0 || latitude < south - 14.0)
         return NAN;
-    if (longitude < west) longitude = west;
-    if (longitude > east) longitude = east;
+    if (gClassicWorld) {
+        while (longitude < west) longitude += 360;
+        while (longitude >= east) longitude -= 360;
+    } else {
+        if (longitude < west) longitude = west;
+        if (longitude > east) longitude = east;
+    }
     if (latitude > north) latitude = north;
     if (latitude < south) latitude = south;
     return SampleBilinear(field, nLon, nLat, longitude, latitude);
@@ -947,6 +1328,11 @@ static double SampleWash(const double *field, int nLon, int nLat, double longitu
 
 static BOOL PixelUnproject(OwnView view, double x, double yDown, double *latitude, double *longitude) {
     if (!view.valid || view.scale == 0) return NO;
+    if (view.equirectangular) {
+        *longitude = view.west + (x - view.offsetX) / view.scale;
+        *latitude = view.north - (yDown - view.offsetY) / view.scale;
+        return isfinite(*latitude) && isfinite(*longitude);
+    }
     double projX = view.minX + (x - view.offsetX) / view.scale;
     double projY = view.maxY - (yDown - view.offsetY) / view.scale;
     return OwnUnproject(view.geo, projX, projY, latitude, longitude);
@@ -1086,35 +1472,6 @@ static void MixLandMSLP(double *field, const double *mild, const double *wide,
         double base = field[i] * (1.0 - 0.75 * terrain) + mild[i] * (0.75 * terrain);
         field[i] = base * (1.0 - wideBlend) + wide[i] * wideBlend;
     }
-}
-
-// A closed ring smaller than about 3° is MSL-reduction noise, not a cyclone.
-static void DropSmallClosed(OwnLineSet *set, double minSpan) {
-    if (!set || !set->lines) return;
-    int w = 0;
-    int dropped = 0;
-    for (int i = 0; i < set->count; i++) {
-        OwnLine line = set->lines[i];
-        BOOL tiny = NO;
-        if (line.closed && line.count >= 3) {
-            double minX = INFINITY, maxX = -INFINITY, minY = INFINITY, maxY = -INFINITY;
-            for (int p = 0; p < line.count; p++) {
-                if (line.pts[p].x < minX) minX = line.pts[p].x;
-                if (line.pts[p].x > maxX) maxX = line.pts[p].x;
-                if (line.pts[p].y < minY) minY = line.pts[p].y;
-                if (line.pts[p].y > maxY) maxY = line.pts[p].y;
-            }
-            tiny = fmax(maxX - minX, maxY - minY) < minSpan;
-        }
-        if (tiny) { free(line.pts); dropped++; continue; }
-        set->lines[w++] = line;
-    }
-    set->count = w;
-#ifndef ISOBAR_APP
-    if (dropped) fprintf(stderr, "  dropped %d closed contours under %.0f°\n", dropped, minSpan);
-#else
-    (void)dropped;
-#endif
 }
 
 typedef struct {
@@ -1294,18 +1651,25 @@ static OwnVec *RefineLine(const OwnVec *in, int count, int closed, int *outCount
     return out;
 }
 
+// Several threads render at once (live player, chart preparation, scrub, main),
+// so the label table is built once and the width cache is per thread.
 static NSString *PressureText(int hPa) {
-    static NSString *text[1601];
+    static NSArray<NSString *> *text;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSMutableArray *built = [NSMutableArray arrayWithCapacity:1601];
+        for (int i = 0; i <= 1600; i++) [built addObject:[NSString stringWithFormat:@"%d", i]];
+        text = [built copy];
+    });
     if (hPa < 0 || hPa > 1600) return [NSString stringWithFormat:@"%d", hPa];
-    if (!text[hPa]) text[hPa] = [NSString stringWithFormat:@"%d", hPa];
     return text[hPa];
 }
 
 static double LabelHalf(double level, void *context) {
     NSFont *font = (__bridge NSFont *)context;
     int key = (int)llround(level);
-    static double cache[1601];
-    static const void *fontSeen;
+    static _Thread_local double cache[1601];
+    static _Thread_local const void *fontSeen;
     if (fontSeen != (__bridge const void *)font) {
         memset(cache, 0, sizeof cache);
         fontSeen = (__bridge const void *)font;
@@ -1323,6 +1687,25 @@ static double LabelHalfHeight(NSFont *font) {
     return size.height > 2 ? size.height * 0.5 : 8;
 }
 
+// Tiny contours fade to nothing at the geometric pruning thresholds. This
+// is a function of the current field, so seeking and playing agree. Cutting
+// detours or dropping an opaque ring at a size threshold causes visible pops.
+static double ContourVisibility(const OwnLine *line) {
+    double t = MIN(1, MAX(0, (PolyLength(line) - 16) / 24));
+    if (line->closed) {
+        double area = 0, minX = INFINITY, maxX = -INFINITY, minY = INFINITY, maxY = -INFINITY;
+        for (int i = 0; i < line->count; i++) {
+            OwnVec p = line->pts[i], q = line->pts[(i + 1) % line->count];
+            area += p.x * q.y - q.x * p.y;
+            minX = MIN(minX, p.x); maxX = MAX(maxX, p.x);
+            minY = MIN(minY, p.y); maxY = MAX(maxY, p.y);
+        }
+        t = MIN(t, MIN(1, MAX(0, fabs(area) * .5 / 600)));
+        t = MIN(t, MIN(1, MAX(0, (MAX(maxX - minX, maxY - minY) - 6) / 12)));
+    }
+    return t * t * (3 - 2 * t);
+}
+
 static void StrokeRun(CGContextRef ctx, const OwnVec *pts, int a, int b, int closed) {
     if (b - a < 2) return;
     CGContextBeginPath(ctx);
@@ -1333,35 +1716,29 @@ static void StrokeRun(CGContextRef ctx, const OwnVec *pts, int a, int b, int clo
 }
 
 static void StrokeLine(CGContextRef ctx, const OwnVec *pts, int count, int closed,
-    const OwnVec *avoid, int nAvoid, double avoidRadius,
+    const OwnVec *avoid, const double *avoidAlpha, int nAvoid, double avoidRadius,
     double width, double red, double green, double blue, double alpha) {
     if (count < 2) return;
+    CGContextSaveGState(ctx);
+    if (nAvoid > 0 && avoidRadius > 0) {
+        // Clip the stroke at the actual circle, rather than dropping vertices
+        // as they enter it. Vertex-based gaps snap and can open a closed ring
+        // even when the marker never touches that ring.
+        CGContextBeginPath(ctx);
+        CGContextAddRect(ctx, CGContextGetClipBoundingBox(ctx));
+        for (int a = 0; a < nAvoid; a++) {
+            // A faint marker must not suddenly acquire a full-size hole.
+            double radius = avoidRadius * (avoidAlpha ? avoidAlpha[a] : 1);
+            if (radius <= 0) continue;
+            CGContextAddEllipseInRect(ctx, CGRectMake(avoid[a].x - radius,
+                avoid[a].y - radius, 2 * radius, 2 * radius));
+        }
+        CGContextEOClip(ctx);
+    }
     CGContextSetLineWidth(ctx, width);
     CGContextSetRGBStrokeColor(ctx, red, green, blue, alpha);
-    int start = -1;
-    for (int i = 0; i <= count; i++) {
-        BOOL blocked = i == count;
-        if (!blocked) {
-            for (int a = 0; a < nAvoid; a++) {
-                if (hypot(pts[i].x - avoid[a].x, pts[i].y - avoid[a].y) < avoidRadius) { blocked = YES; break; }
-            }
-        }
-        if (!blocked) {
-            if (start < 0) start = i;
-            continue;
-        }
-        if (start >= 0 && i - start >= 2) {
-            double len = 0;
-            for (int k = start + 1; k < i; k++)
-                len += hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y);
-            BOOL whole = start == 0 && i == count;
-            // A centre or a label can split a line. The stub left beside the
-            // hole is not an isobar.
-            if (whole || len >= 28.0)
-                StrokeRun(ctx, pts, start, i, whole && closed && nAvoid == 0);
-        }
-        start = -1;
-    }
+    StrokeRun(ctx, pts, 0, count, closed);
+    CGContextRestoreGState(ctx);
 }
 
 // A contour may stop where the model data stops: the grid edge, or a missing cell.
@@ -1427,7 +1804,7 @@ static void DrawHaloText(CGContextRef ctx, NSString *text, NSFont *font, NSColor
         NSFontAttributeName: font,
         NSForegroundColorAttributeName: halo,
         NSStrokeColorAttributeName: halo,
-        NSStrokeWidthAttributeName: @(24.0),
+        NSStrokeWidthAttributeName: @(100.0 / font.pointSize),
     }];
     [text drawAtPoint:origin withAttributes:fill];
     CGContextRestoreGState(ctx);
@@ -1494,12 +1871,17 @@ typedef struct {
     OwnView prior;
     int width, height;
     OwnVec *locations;
+    uint8_t *ocean;
+    const uint8_t *oceanLand;
+    OwnView oceanView;
+    int oceanW, oceanH;
 } PixelLocationCache;
 
 static void FreePixelLocationCache(void *value) {
     PixelLocationCache *cache = value;
     if (!cache) return;
     free(cache->locations);
+    free(cache->ocean);
     free(cache);
 }
 
@@ -1541,11 +1923,193 @@ static const OwnVec *PixelLocations(OwnView view, int width, int height) {
     return cache->locations;
 }
 
-static CGImageRef TemperatureImage(const double *field, OwnView view, int mapW, int mapH, double opacity) {
+static BOOL MaskOcean(const uint8_t *land, double lon, double lat);
+
+// 1 where the plate pixel is ocean. Built once per view; the colour loops
+// then read a byte instead of locating the mask cell again.
+static const uint8_t *PixelOcean(OwnView view, int width, int height, const uint8_t *land) {
+    if (!land) return NULL;
+    const OwnVec *locations = PixelLocations(view, width, height);
+    if (!locations) return NULL;
+    PixelLocationCache *cache = pthread_getspecific(PixelLocationKey());
+    if (!cache) return NULL;
+    if (cache->ocean && cache->oceanLand == land && cache->oceanW == width && cache->oceanH == height
+        && memcmp(&cache->oceanView, &view, sizeof view) == 0)
+        return cache->ocean;
+    uint8_t *next = malloc((size_t)width * (size_t)height);
+    if (!next) return NULL;
+    for (int i = 0; i < width * height; i++) {
+        OwnVec point = locations[i];
+        next[i] = isfinite(point.y) && MaskOcean(land, point.x, point.y) ? 1 : 0;
+    }
+    free(cache->ocean);
+    cache->ocean = next;
+    cache->oceanLand = land;
+    cache->oceanView = view;
+    cache->oceanW = width;
+    cache->oceanH = height;
+    return cache->ocean;
+}
+
+static BOOL MaskOcean(const uint8_t *land, double lon, double lat) {
+    if (!land) return NO;
+    double step = GStep();
+    if (!(step > 0)) return NO;
+    int i = (int)llround((lon - GWest()) / step);
+    int j = (int)llround((GNorth() - lat) / step);
+    int nLon = GNLon(), nLat = GNLat();
+    if (i < 0 || j < 0 || i >= nLon || j >= nLat) return YES;
+    return land[(size_t)j * (size_t)nLon + (size_t)i] == 0;
+}
+
+// Dark core over a light halo, above the colour fill and below the isobars.
+// The rings are projected once and stroked twice.
+static void AddWorldCoastSegment(CGMutablePathRef path, const OwnVec *points, int count,
+    BOOL closed, double tolerance) {
+    if (count < 2) return;
+    OwnVec *copy = malloc((size_t)count * sizeof(*copy));
+    if (!copy) return;
+    memcpy(copy, points, (size_t)count * sizeof(*copy));
+    OwnLine line = {.pts = copy, .count = count, .closed = closed};
+    OwnLineSet set = {.lines = &line, .count = 1};
+    OwnSimplifyContours(&set, tolerance);
+    CGPathMoveToPoint(path, NULL, line.pts[0].x, line.pts[0].y);
+    for (int i = 1; i < line.count; i++)
+        CGPathAddLineToPoint(path, NULL, line.pts[i].x, line.pts[i].y);
+    if (closed) CGPathCloseSubpath(path);
+    free(line.pts);
+}
+
+static BOOL DrawWorldCoastline(CGContextRef ctx, OwnView view, OwnCoast coast) {
+    CGMutablePathRef *paths = calloc((size_t)coast.rings, sizeof(*paths));
+    if (!paths) return NO;
+    CGAffineTransform transform = CGContextGetCTM(ctx);
+    double scale = fmax(hypot(transform.a, transform.b), hypot(transform.c, transform.d));
+    double tolerance = 0.35 / fmax(1, scale);
+    for (int r = 0; r < coast.rings; r++) {
+        int start = coast.ringStart[r], n = coast.ringCount[r], count = 0;
+        OwnVec *points = malloc((size_t)n * sizeof(*points));
+        paths[r] = CGPathCreateMutable();
+        if (!points || !paths[r]) {
+            free(points);
+            for (int j = 0; j <= r; j++) if (paths[j]) CGPathRelease(paths[j]);
+            free(paths);
+            return NO;
+        }
+        BOOL closed = YES;
+        for (int i = 0; i < n; i++) {
+            double x, y;
+            BOOL valid = OwnViewProject(view, coast.lat[start + i], coast.lon[start + i], &x, &y);
+            BOOL seam = i > 0 && fabs(coast.lon[start + i] - coast.lon[start + i - 1]) > 180;
+            if (!valid || seam) {
+                AddWorldCoastSegment(paths[r], points, count, NO, tolerance);
+                count = 0;
+                closed = NO;
+            }
+            if (valid) points[count++] = (OwnVec){x, kMapH - y};
+        }
+        AddWorldCoastSegment(paths[r], points, count, closed, tolerance);
+        free(points);
+    }
+    CGContextSetLineJoin(ctx, kCGLineJoinRound);
+    CGContextSetLineCap(ctx, kCGLineCapRound);
+    // Separate rings keep Core Graphics from building a huge intersection
+    // table for thousands of overlapping subpixel islands and round joins.
+    // Projection-space simplification stays within 0.35 output pixels.
+    for (int pass = 0; pass < 2; pass++) {
+        if (pass == 0) CGContextSetRGBStrokeColor(ctx, 0.98, 0.97, 0.93, 1);
+        else CGContextSetRGBStrokeColor(ctx, 0.07, 0.06, 0.05, 0.85);
+        CGContextSetLineWidth(ctx, pass == 0 ? 3.2 : 1.2);
+        for (int r = 0; r < coast.rings; r++) {
+            CGContextAddPath(ctx, paths[r]);
+            CGContextStrokePath(ctx);
+        }
+    }
+    for (int r = 0; r < coast.rings; r++) CGPathRelease(paths[r]);
+    free(paths);
+    return YES;
+}
+
+static void DrawCoastline(CGContextRef ctx, OwnView view, OwnCoast coast) {
+    if (gClassicWorld && DrawWorldCoastline(ctx, view, coast)) return;
+    CGMutablePathRef path = CGPathCreateMutable();
+    if (!path) return;
+    for (int r = 0; r < coast.rings; r++) {
+        int start = coast.ringStart[r];
+        int n = coast.ringCount[r];
+        BOOL moved = NO;
+        BOOL seam = NO;
+        for (int i = 0; i < n; i++) {
+            double x, y;
+            if (!OwnViewProject(view, coast.lat[start + i], coast.lon[start + i], &x, &y)) { moved = NO; continue; }
+            if (gClassicWorld && i > 0 && fabs(coast.lon[start + i] - coast.lon[start + i - 1]) > 180) {
+                moved = NO; seam = YES;
+            }
+            double yUp = kMapH - y;
+            if (!moved) { CGPathMoveToPoint(path, NULL, x, yUp); moved = YES; }
+            else CGPathAddLineToPoint(path, NULL, x, yUp);
+        }
+        if (moved && (!gClassicWorld || !seam)) CGPathCloseSubpath(path);
+    }
+    CGContextSetLineJoin(ctx, kCGLineJoinRound);
+    CGContextSetLineCap(ctx, kCGLineCapRound);
+    CGContextSetRGBStrokeColor(ctx, 0.98, 0.97, 0.93, 1);
+    CGContextSetLineWidth(ctx, 3.2);
+    CGContextAddPath(ctx, path);
+    CGContextStrokePath(ctx);
+    CGContextSetRGBStrokeColor(ctx, 0.07, 0.06, 0.05, 0.85);
+    CGContextSetLineWidth(ctx, 1.2);
+    CGContextAddPath(ctx, path);
+    CGContextStrokePath(ctx);
+    CGPathRelease(path);
+}
+
+// The panel window does not change between frames, so the halo and core are
+// drawn once per thread/view/scale and blitted on subsequent weather frames.
+static CGImageRef CachedCoastImage(CGContextRef dest, OwnView view, OwnCoast coast) {
+    static _Thread_local CGImageRef image;
+    static _Thread_local const double *keyLat;
+    static _Thread_local int keyRings;
+    static _Thread_local double keyScale, keyWest, keyEast, keySouth, keyNorth;
+    if (coast.rings < 1 || !coast.lat) return NULL;
+    CGAffineTransform ctm = CGContextGetCTM(dest);
+    double scale = fabs(ctm.a) > 0.01 ? fabs(ctm.a) : 1;
+    if (image && keyLat == coast.lat && keyRings == coast.rings && fabs(keyScale - scale) < 0.01
+        && keyWest == view.west && keyEast == view.east && keySouth == view.south && keyNorth == view.north)
+        return image;
+    CGImageRelease(image);
+    image = NULL;
+    int w = (int)llround(kPanelW * scale);
+    int h = (int)llround(kMapH * scale);
+    if (w < 1 || h < 1) return NULL;
+    CGColorSpaceRef cs = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGContextRef ctx = CGBitmapContextCreate(NULL, (size_t)w, (size_t)h, 8, (size_t)w * 4, cs,
+        (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+    CGColorSpaceRelease(cs);
+    if (!ctx) return NULL;
+    CGContextSetAllowsAntialiasing(ctx, true);
+    CGContextSetShouldAntialias(ctx, true);
+    CGContextScaleCTM(ctx, scale, scale);
+    DrawCoastline(ctx, view, coast);
+    image = CGBitmapContextCreateImage(ctx);
+    CGContextRelease(ctx);
+    keyLat = coast.lat;
+    keyRings = coast.rings;
+    keyScale = scale;
+    keyWest = view.west;
+    keyEast = view.east;
+    keySouth = view.south;
+    keyNorth = view.north;
+    return image;
+}
+
+static CGImageRef TemperatureImage(const double *field, OwnView view, int mapW, int mapH, double opacity,
+    const uint8_t *land) {
     size_t bytes = (size_t)mapW * (size_t)mapH * 4;
     uint8_t *buffer = calloc(1, bytes);
     if (!buffer) return NULL;
     const OwnVec *locations = PixelLocations(view, mapW, mapH);
+    const uint8_t *ocean = PixelOcean(view, mapW, mapH, land);
     for (int y = 0; y < mapH; y++) {
         for (int x = 0; x < mapW; x++) {
             double lat, lon;
@@ -1556,6 +2120,8 @@ static CGImageRef TemperatureImage(const double *field, OwnView view, int mapW, 
             double value = SampleWash(field, GNLon(), GNLat(), lon, lat);
             if (!isfinite(value)) continue;
             OwnRGB rgb = OwnTemperatureRGB(value);
+            if (ocean ? ocean[(size_t)y * (size_t)mapW + (size_t)x] : MaskOcean(land, lon, lat))
+                rgb = OwnOceanWash(rgb);
             uint8_t *px = buffer + ((size_t)y * (size_t)mapW + (size_t)x) * 4;
             px[0] = (uint8_t)lrint(rgb.r * 255);
             px[1] = (uint8_t)lrint(rgb.g * 255);
@@ -1570,6 +2136,84 @@ static CGImageRef TemperatureImage(const double *field, OwnView view, int mapW, 
     CGColorSpaceRelease(cs);
     CGDataProviderRelease(provider);
     return image;
+}
+
+static CGImageRef OverlayWashImage(const double *field, OwnView view, int mapW, int mapH,
+    BOOL rain, double opacity, const uint8_t *land) {
+    size_t bytes = (size_t)mapW * (size_t)mapH * 4;
+    uint8_t *buffer = calloc(1, bytes);
+    if (!buffer) return NULL;
+    const OwnVec *locations = PixelLocations(view, mapW, mapH);
+    const uint8_t *ocean = PixelOcean(view, mapW, mapH, land);
+    for (int y = 0; y < mapH; y++) for (int x = 0; x < mapW; x++) {
+        OwnVec point = locations ? locations[(size_t)y * mapW + x] : (OwnVec){NAN, NAN};
+        double lat = point.y, lon = point.x;
+        if (!locations && !PixelUnproject(view, x + .5, y + .5, &lat, &lon)) continue;
+        if (!isfinite(lat)) continue;
+        double value = SampleBilinear(field, GNLon(), GNLat(), lon, lat);
+        // Zero rainfall is dry and missing cells are unavailable: both remain
+        // fully transparent so the sea/land plate is not dyed by guesses.
+        if (!isfinite(value) || (rain && value < 0.1)) continue;
+        OwnRGB rgb = rain ? OwnRainRGB(value) : OwnWindRGB(value);
+        if (ocean ? ocean[(size_t)y * mapW + x] : MaskOcean(land, lon, lat)) rgb = OwnOceanWash(rgb);
+        double alpha = fmin(opacity, OwnFieldOverlayAlpha(rain ? 3 : 2, value));
+        uint8_t *px = buffer + ((size_t)y * mapW + x) * 4;
+        px[0] = (uint8_t)lrint(rgb.r * 255); px[1] = (uint8_t)lrint(rgb.g * 255);
+        px[2] = (uint8_t)lrint(rgb.b * 255); px[3] = (uint8_t)lrint(alpha * 255);
+    }
+    CGDataProviderRef provider = CGDataProviderCreateWithData(NULL, buffer, bytes, ReleaseImageBuffer);
+    CGColorSpaceRef colors = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGImageRef image = CGImageCreate(mapW, mapH, 8, 32, mapW * 4, colors,
+        kCGImageAlphaLast | kCGBitmapByteOrderDefault, provider, NULL, false, kCGRenderingIntentDefault);
+    CGColorSpaceRelease(colors); CGDataProviderRelease(provider);
+    return image;
+}
+
+static _Thread_local double *gRainSmooth;
+static _Thread_local size_t gRainSmoothN;
+static _Thread_local double gRainSmoothHour = -1;
+static _Thread_local const void *gRainSmoothCube;
+static _Thread_local uint64_t gRainSmoothStamp;
+
+// The cube pointer is recycled when a run is released, so identity is not a
+// content key. A sample hash keeps one hour's smooth without reusing another's.
+static uint64_t RainFieldStamp(const double *field, size_t n) {
+    uint64_t hash = 1469598103934665603ULL;
+    size_t step = n > 128 ? n / 128 : 1;
+    for (size_t i = 0; i < n; i += step) {
+        uint64_t bits = 0;
+        memcpy(&bits, field + i, sizeof bits);
+        hash ^= bits;
+        hash *= 1099511628211ULL;
+    }
+    return hash ^ n;
+}
+
+static const double *SmoothedRainDisplay(const void *cube, double hour, const double *field) {
+    int nLon = GNLon(), nLat = GNLat();
+    size_t n = (size_t)nLon * (size_t)nLat;
+    if (!field || n < 1) return field;
+    uint64_t stamp = RainFieldStamp(field, n);
+    if (gRainSmooth && gRainSmoothCube == cube && gRainSmoothN == n &&
+        gRainSmoothStamp == stamp && fabs(gRainSmoothHour - hour) < 1e-6)
+        return gRainSmooth;
+    double *next = malloc(n * sizeof(double));
+    if (!next) return field;
+    memcpy(next, field, n * sizeof(double));
+    OwnGaussianSmooth(next, nLon, nLat, 0.75);
+    free(gRainSmooth);
+    gRainSmooth = next;
+    gRainSmoothN = n;
+    gRainSmoothHour = hour;
+    gRainSmoothCube = cube;
+    gRainSmoothStamp = stamp;
+    return gRainSmooth;
+}
+
+static void DrawWash(CGContextRef ctx, const double *field, OwnView view, double mapW, double mapH,
+    BOOL rain, double opacity, const uint8_t *land) {
+    CGImageRef image = OverlayWashImage(field, view, (int)mapW, (int)mapH, rain, opacity, land);
+    if (image) { CGContextDrawImage(ctx, CGRectMake(0, 0, mapW, mapH), image); CGImageRelease(image); }
 }
 
 // Bureau forecast-rain hatch: thin diagonals, widely spaced, about 40% ink,
@@ -1668,7 +2312,7 @@ static void DrawLegend(CGContextRef ctx, double mapW, double mapH, NSString *cap
     NSFont *font = [NSFont fontWithName:@"Helvetica-Bold" size:11] ?: [NSFont boldSystemFontOfSize:11];
     NSColor *ink = [NSColor colorWithSRGBRed:0.12 green:0.11 blue:0.10 alpha:1];
     [caption drawAtPoint:NSMakePoint(x + 8, y + height - 16) withAttributes:@{NSFontAttributeName: font, NSForegroundColorAttributeName: ink}];
-    const double t0 = -12, t1 = 28;
+    const double t0 = 0, t1 = 40;
     int barW = (int)width - 16;
     double barY = y + (rain || observed ? 28 : 16);
     for (int i = 0; i < barW; i++) {
@@ -1678,7 +2322,7 @@ static void DrawLegend(CGContextRef ctx, double mapW, double mapH, NSString *cap
         CGContextFillRect(ctx, CGRectMake(x + 8 + i, barY, 1, 10));
     }
     NSFont *tickFont = [NSFont fontWithName:@"Helvetica" size:9] ?: [NSFont systemFontOfSize:9];
-    NSArray *ticks = @[@"-12", @"0", @"12", @"24"];
+    NSArray *ticks = @[@"0", @"20", @"35"];
     for (NSString *tick in ticks) {
         double value = tick.doubleValue;
         double frac = (value - t0) / (t1 - t0);
@@ -1760,7 +2404,9 @@ static double ObservedRainPriority(double mm) {
 typedef struct {
     int temperature; // 0 off, 1 the 850 hPa field, 2 the 2 m field
     int barbs;
+    int windFill;
     int rain;
+    int smoothRain;
     int observed; // Now frame only: station dots, and no model hatch
     int bare;     // map only, for the popover headings
     int plateOnly;
@@ -1868,7 +2514,7 @@ static BOOL LineCanHoldLabel(const OwnLine *line) {
 static const double kStickyCentre = 10;
 
 static int MotionUpdateCentres(OwnMotionState *state, const OwnExtremum *candidates, int nCandidates,
-    OwnVec *visible, int cap) {
+    OwnVec *visible, double *visibleAlpha, int cap) {
     if (!state) return 0;
     BOOL used[48] = {0};
     for (int s = 0; s < 24; s++) {
@@ -1925,7 +2571,10 @@ static int MotionUpdateCentres(OwnMotionState *state, const OwnExtremum *candida
     int count = 0;
     for (int s = 0; s < 24 && count < cap; s++) {
         MotionCentreSlot *slot = &state->_motionCentres[s];
-        if (slot->active && slot->alpha > 0.15) visible[count++] = (OwnVec){slot->x, slot->y};
+        if (slot->active && slot->alpha >= 0.02) {
+            visible[count] = (OwnVec){slot->x, slot->y};
+            visibleAlpha[count++] = slot->alpha;
+        }
     }
     return count;
 }
@@ -2093,8 +2742,9 @@ static int MotionEaseLabels(OwnMotionState *state, const OwnLabel *desired, int 
         MotionLabelSlot *slot = &state->_motionLabels[s];
         if (!slot->active || slot->alpha < 0.02) continue;
         double half = LabelHalf(slot->level, (__bridge void *)font);
-        int line = attached[s] >= 0 ? attached[s] : slot->line;
-        if (line < 0 || line >= nLines) line = -1;
+        // Contour arrays are rebuilt each frame. A retired label must never
+        // cut a gap in whichever unrelated line inherited its old index.
+        int line = attached[s];
         out[n] = (OwnLabel){slot->x, slot->y, 0, half, halfH, 0, half + 2.5, slot->level, line};
         outAlpha[n] = slot->alpha;
         n++;
@@ -2155,7 +2805,7 @@ static int SynopticCandidates(const double *field, int nLon, int nLat,
             if (!isfinite(z)) continue;
             double lon = GWest() + i * step;
             double lat = GNorth() - j * step;
-            if (lon < kViewWest || lon > kViewEast || lat < kViewSouth || lat > kViewNorth) continue;
+            if (lon < ViewWest() || lon > ViewEast() || lat < ViewSouth() || lat > ViewNorth()) continue;
             // The eight immediate neighbours are a subset of the disk below.
             // Match the disk's tolerance so a shallow but valid centre is
             // never discarded by the cheap immediate-neighbour check.
@@ -2306,7 +2956,8 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
 
     CGContextSaveGState(ctx);
     CGContextClipToRect(ctx, CGRectMake(0, 0, kPanelW, kMapH));
-    OwnView view = OwnViewMake(OwnAustraliaLambert(), kViewWest, kViewEast, kViewSouth, kViewNorth,
+    OwnView view = gClassicWorld ? OwnWorldViewMake(ViewWest(), ViewEast(), ViewSouth(), ViewNorth(),
+        0, 0, kPanelW, kMapH) : OwnViewMake(OwnAustraliaLambert(), ViewWest(), ViewEast(), ViewSouth(), ViewNorth(),
         0, 0, kPanelW, kMapH);
     if (!options.inkOnly) {
     CGContextSetRGBFillColor(ctx, sea.red, sea.green, sea.blue, 1);
@@ -2317,14 +2968,16 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
         int start = coast.ringStart[r];
         int n = coast.ringCount[r];
         BOOL moved = NO;
+        BOOL seam = NO;
         for (int i = 0; i < n; i++) {
             double x, y;
             if (!OwnViewProject(view, coast.lat[start + i], coast.lon[start + i], &x, &y)) { moved = NO; continue; }
+            if (gClassicWorld && i > 0 && fabs(coast.lon[start + i] - coast.lon[start + i - 1]) > 180) { moved = NO; seam = YES; }
             double yUp = kMapH - y;
             if (!moved) { CGContextMoveToPoint(ctx, x, yUp); moved = YES; }
             else CGContextAddLineToPoint(ctx, x, yUp);
         }
-        CGContextClosePath(ctx);
+        if (!gClassicWorld || !seam) CGContextClosePath(ctx);
     }
     CGContextSetRGBFillColor(ctx, land.red, land.green, land.blue, 1);
     CGContextEOFillPath(ctx);
@@ -2340,44 +2993,41 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
     if (!options.inkOnly && options.temperature == 1) temp = ScalarField(cube, VarT850, hour);
     else if (!options.inkOnly && options.temperature == 2) temp = ScalarField(cube, VarT2M, hour);
     if (temp) {
-        CGImageRef shade = TemperatureImage(temp, view, kPanelW, kMapH, 0.50);
+        CGImageRef shade = TemperatureImage(temp, view, kPanelW, kMapH, 1.0, landMask);
         if (shade) {
             CGContextDrawImage(ctx, CGRectMake(0, 0, kPanelW, kMapH), shade);
             CGImageRelease(shade);
         }
     }
 
-    if (!options.inkOnly) {
-    CGContextBeginPath(ctx);
-    // Greyer and thinner than the isobars, so a coast does not read as a pressure line.
-    CGContextSetLineWidth(ctx, 0.7);
-    CGContextSetRGBStrokeColor(ctx, 0.55, 0.50, 0.44, 0.85);
-    for (int r = 0; r < coast.rings; r++) {
-        int start = coast.ringStart[r];
-        int n = coast.ringCount[r];
-        BOOL moved = NO;
-        for (int i = 0; i < n; i++) {
-            double x, y;
-            if (!OwnViewProject(view, coast.lat[start + i], coast.lon[start + i], &x, &y)) { moved = NO; continue; }
-            double yUp = kMapH - y;
-            if (!moved) { CGContextMoveToPoint(ctx, x, yUp); moved = YES; }
-            else CGContextAddLineToPoint(ctx, x, yUp);
-        }
-        if (moved) CGContextClosePath(ctx);
-    }
-    CGContextStrokePath(ctx);
-    }
     gRenderProfile.plateMs += ProfileLap();
 
     OwnVec avoidPts[160];
     int nAvoid = 0;
     if (!options.inkOnly && options.rain && !options.observed) {
         double *rain = RainField(cube, hour);
-        if (rain) DrawHatch(ctx, rain, view, kPanelW, kMapH, kRainMm, options.motionState != nil);
+        if (rain) {
+            if (options.smoothRain) DrawWash(ctx, SmoothedRainDisplay(cube, hour, rain), view, kPanelW, kMapH, YES, .56, landMask);
+            else DrawHatch(ctx, rain, view, kPanelW, kMapH, kRainMm, options.motionState != nil);
+        }
         free(rain);
     }
 
+    if (!options.inkOnly && options.windFill) {
+        double *wind = ScalarField(cube, VarWSpd, hour);
+        if (wind) DrawWash(ctx, wind, view, kPanelW, kMapH, NO, .45, landMask);
+        free(wind);
+    }
+
+    if (!options.inkOnly) {
+        CGImageRef coastImage = CachedCoastImage(ctx, view, coast);
+        if (coastImage) CGContextDrawImage(ctx, CGRectMake(0, 0, kPanelW, kMapH), coastImage);
+        else DrawCoastline(ctx, view, coast);
+    }
+
     OwnVec centers[48];
+    double centerAlpha[48];
+    for (int i = 0; i < 48; i++) centerAlpha[i] = 1;
     int nCenters = 0;
     OwnExtremum extrema[48];
     OwnExtremum motionExtrema[48];
@@ -2428,21 +3078,22 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
         OwnLineSet raw = OwnContours(contoured, cLon, cLat, originX, originY,
             GStep(), -GStep(), levels, nLevels);
         free(window);
-        OwnPruneContours(&raw, 1.2, 0.45, 0.85);
+        OwnPruneContours(&raw, 1.2, 0.45, 0);
         // No vertex simplification: which vertices survive flips between
         // nearby instants, and playback would show the polygon kinking.
-        DropSmallClosed(&raw, 3.0);
         gRenderProfile.contourMs += ProfileLap();
         int enclosed[48] = {0};
         if (nCand > 48) nCand = 48;
         OwnMarkEnclosedCentres(candidates, nCand, raw.lines, raw.count, 6.0,
-            kViewWest, kViewSouth, kViewEast, kViewNorth, enclosed);
+            ViewWest(), ViewSouth(), ViewEast(), ViewNorth(), enclosed);
         // The two southern highs on the plate sit about 110 px apart at 2×,
         // 730–800 km. Same-type centres inside 860 km collapse. Marker
         // hysteresis lives in the glyph tracker; the rings match a still.
         nExt = OwnSettleCentres(candidates, candProm, enclosed, nCand,
             kOwnIsobarInterval, 0.5, 860.0, 500.0, 1, NULL, 0, extrema, 8);
-        OwnDropStrayRings(&raw, extrema, nExt, 8.0);
+        // A real pressure ring does not depend on whether an H/L was selected
+        // for display. Candidate scans are cached and marker selection has
+        // thresholds; using it to delete contours made whole loops pop.
         {
             int drawn = 0;
             for (int e = 0; e < nExt; e++) {
@@ -2462,9 +3113,9 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
             nExt = drawn;
             nCenters = drawn;
             if (options.motionState) {
-                OwnVec glyphs[48];
-                MotionUpdateCentres(options.motionState, motionExtrema, nExt, glyphs, 48);
+                nCenters = MotionUpdateCentres(options.motionState, motionExtrema, nExt, centers, centerAlpha, 48);
             }
+            if (options.quiet) nCenters = 0;
         }
         gRenderProfile.centreMs += ProfileLap();
         OwnLineSet lines = ProjectContours(raw, view, kMapH);
@@ -2473,10 +3124,10 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
         if (projected > gChaikinMs) gRenderProfile.contourMs += projected - gChaikinMs;
         gChaikinMs = 0;
         OwnLineSetFree(raw);
-        OwnPruneContours(&lines, 32, 500, 16);
+        OwnPruneContours(&lines, 16, 4, 0);
         NoteOpenEnds(&lines, view, mslp, cube->nLon, cube->nLat, GWest(), GNorth());
 
-        NSFont *labelFont = [NSFont fontWithName:@"Helvetica-Bold" size:15] ?: [NSFont boldSystemFontOfSize:15];
+        NSFont *labelFont = [NSFont systemFontOfSize:11 weight:NSFontWeightMedium];
         double labelHalfH = LabelHalfHeight(labelFont);
         OwnLabel labels[80];
         int nLabels = OwnPlaceLabels(lines.lines, lines.count, LabelHalf, (__bridge void *)labelFont, labelHalfH, 6,
@@ -2529,6 +3180,8 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
         NSColor *inkColor = [NSColor colorWithSRGBRed:ink.red green:ink.green blue:ink.blue alpha:1];
         for (int i = 0; i < lines.count; i++) {
             double width = OwnIsobarWidth(lines.lines[i].level);
+            double visibility = ContourVisibility(&lines.lines[i]);
+            if (visibility <= 0) continue;
             OwnLabel mine[8];
             double mineAlpha[8];
             int mineCount = 0;
@@ -2539,16 +3192,15 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
             }
             if (mineCount == 0) {
                 StrokeLine(ctx, lines.lines[i].pts, lines.lines[i].count, lines.lines[i].closed,
-                    centers, nCenters, 11, width, ink.red, ink.green, ink.blue, 1);
+                    centers, centerAlpha, nCenters, 11, width, ink.red, ink.green, ink.blue, visibility);
                 continue;
             }
             // The gap is the label box: the stroke is cut, the plate stays.
             OwnLineSet parts = OwnCutGaps(lines.lines[i].pts, lines.lines[i].count,
                 lines.lines[i].closed, mine, mineCount);
             for (int p = 0; p < parts.count; p++) {
-                if (PolyLength(&parts.lines[p]) < 22) continue;
                 StrokeLine(ctx, parts.lines[p].pts, parts.lines[p].count, 0,
-                    centers, nCenters, 11, width, ink.red, ink.green, ink.blue, 1);
+                    centers, centerAlpha, nCenters, 11, width, ink.red, ink.green, ink.blue, visibility);
             }
             OwnLineSetFree(parts);
             // A fading label's gap closes with it.
@@ -2558,12 +3210,14 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
                 CGContextSaveGState(ctx);
                 CGContextClipToRect(ctx, CGRectMake(mine[L].x - hw, mine[L].y - hh, hw * 2, hh * 2));
                 StrokeLine(ctx, lines.lines[i].pts, lines.lines[i].count, lines.lines[i].closed,
-                    centers, nCenters, 11, width, ink.red, ink.green, ink.blue, 1 - mineAlpha[L]);
+                    centers, centerAlpha, nCenters, 11, width, ink.red, ink.green, ink.blue, visibility * (1 - mineAlpha[L]));
                 CGContextRestoreGState(ctx);
             }
         }
         for (int L = 0; L < nDrawn; L++) {
             double glyphAlpha = L < 80 ? drawnAlpha[L] : 1;
+            if (drawn[L].line >= 0 && drawn[L].line < lines.count)
+                glyphAlpha *= ContourVisibility(&lines.lines[drawn[L].line]);
             if (glyphAlpha < 0.02) continue;
             // The stroke gap is the knockout; the plate shows around the glyphs.
             DrawHaloText(ctx, PressureText((int)llround(drawn[L].level)), labelFont,
@@ -2635,8 +3289,8 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
     if (!options.inkOnly && options.barbs) {
         // Sparse, geographically fixed samples do not jump as the time changes.
         const double barbStep = 8.0;
-        for (double lat = ceil(kViewSouth / barbStep) * barbStep; lat <= kViewNorth; lat += barbStep) {
-            for (double lon = ceil(kViewWest / barbStep) * barbStep; lon <= kViewEast; lon += barbStep) {
+        for (double lat = ceil(ViewSouth() / barbStep) * barbStep; lat <= ViewNorth(); lat += barbStep) {
+            for (double lon = ceil(ViewWest() / barbStep) * barbStep; lon <= ViewEast(); lon += barbStep) {
                 double fi = (lon - GWest()) / GStep();
                 double fj = (GNorth() - lat) / GStep();
                 int i = (int)llround(fi);
@@ -2823,6 +3477,18 @@ double OwnChartMapAspect(void) { return (double)kPanelW / (double)kMapH; }
 }
 
 - (NSInteger)hours { return _cube.nHours; }
+
+- (OwnRunGeo)geo {
+    OwnRunGeo grid = {0};
+    grid.west = _cube.west;
+    grid.north = _cube.north;
+    grid.step = _cube.step;
+    grid.nLon = _cube.nLon;
+    grid.nLat = _cube.nLat;
+    double span = (double)_cube.nLon * _cube.step;
+    grid.wrapsLongitude = isfinite(span) && fabs(span - 360.0) < 1e-3;
+    return grid;
+}
 - (NSDate *)runDate { return _runDate; }
 - (NSDate *)generated { return _generated; }
 - (NSString *)attribution { return _attribution; }
@@ -2852,10 +3518,21 @@ double OwnChartMapAspect(void) { return (double)kPanelW / (double)kMapH; }
     return CubeAtFraction(&_cube, (int)field, (int)point, hour);
 }
 
+- (double *)screenedMslpAtHour:(NSInteger)hour rough:(uint8_t **)roughOut {
+    if (roughOut) *roughOut = NULL;
+    if (hour < 0 || hour >= _cube.nHours || !_land) return NULL;
+    return SmoothedMSLP(&_cube, (double)hour, _land, roughOut);
+}
+
 - (BOOL)readDirectory:(NSString *)dir coast:(NSString *)coastPath error:(NSString **)error {
     NSDictionary *manifest = nil;
     if (!LoadRunDirectory(dir, &_cube, &manifest, error)) return NO;
-    NSData *coastData = [NSData dataWithContentsOfFile:coastPath];
+    NSString *selectedCoastPath = coastPath;
+    if (_cube.nLon == 720 && _cube.nLat == 361 && fabs(_cube.step - 0.5) < 1e-6) {
+        NSString *world = OwnWorldCoastPath();
+        selectedCoastPath = world;
+    }
+    NSData *coastData = [NSData dataWithContentsOfFile:selectedCoastPath];
     _coast = OwnCoastParse(coastData);
     if (_coast.rings < 1) {
         if (error) *error = @"coastline is missing";
@@ -2880,11 +3557,41 @@ double OwnChartMapAspect(void) { return (double)kPanelW / (double)kMapH; }
     return YES;
 }
 
-- (BOOL)readPublishedRoot:(NSString *)root run:(NSString *)runID previous:(NSString *)previousID
-    coast:(NSString *)coastPath error:(NSString **)error {
+- (BOOL)readPublishedRoot:(NSString *)root run:(NSString *)runID previousRuns:(NSArray<NSString *> *)previousRuns
+    leads:(const int *)leads count:(int)nLeads coast:(NSString *)coastPath error:(NSString **)error {
     NSDate *date = nil;
-    if (!LoadPublishedCube(root, runID, previousID, &_cube, &date, error)) return NO;
-    NSData *coastData = [NSData dataWithContentsOfFile:coastPath];
+    BOOL loaded = NO;
+    if (nLeads > 0) {
+        // A run directory with no manifest is the old 0–96 h grid. A schema 2
+        // directory that lists other hours cannot borrow that path.
+        NSString *manifestPath = [[[PublishedFamilyPath(root) stringByAppendingPathComponent:@"runs"]
+            stringByAppendingPathComponent:runID] stringByAppendingPathComponent:@"manifest.json"];
+        if ([[NSFileManager defaultManager] fileExistsAtPath:manifestPath])
+            loaded = LoadPublishedLadder(root, runID, previousRuns, leads, nLeads, &_cube, &date, error);
+        else {
+            NSString *mslp = [[[PublishedFamilyPath(root) stringByAppendingPathComponent:@"runs"]
+                stringByAppendingPathComponent:runID] stringByAppendingPathComponent:@"mslp"];
+            NSArray *names = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:mslp error:nil];
+            NSUInteger jsonCount = 0;
+            for (NSString *name in names) if ([name.pathExtension.lowercaseString isEqual:@"json"]) jsonCount++;
+            // The legacy loader is Australian-only; a global run must have its manifest.
+            BOOL global = [PublishedFamilyPath(root).lastPathComponent isEqual:@"ecmwf_ifs_global"];
+            if (jsonCount == 33 && !global)
+                loaded = LoadPublishedCube(root, runID, previousRuns, &_cube, &date, error);
+            else {
+                if (error) *error = @"published ECMWF schema 2 run has no manifest";
+                return NO;
+            }
+        }
+    } else
+        loaded = LoadPublishedCube(root, runID, previousRuns, &_cube, &date, error);
+    if (!loaded) return NO;
+    NSString *selectedCoastPath = coastPath;
+    if (_cube.nLon == 720 && _cube.nLat == 361 && fabs(_cube.step - 0.5) < 1e-6) {
+        NSString *world = OwnWorldCoastPath();
+        selectedCoastPath = world;
+    }
+    NSData *coastData = [NSData dataWithContentsOfFile:selectedCoastPath];
     _coast = OwnCoastParse(coastData);
     if (_coast.rings < 1) {
         if (error) *error = @"coastline is missing";
@@ -2920,7 +3627,9 @@ double OwnChartMapAspect(void) { return (double)kPanelW / (double)kMapH; }
     PanelOptions options = {0};
     options.temperature = layers.temperature;
     options.barbs = layers.barbs;
+    options.windFill = layers.windFill;
     options.rain = layers.rain && !layers.observed;
+    options.smoothRain = layers.rain && !layers.observed;
     options.observed = layers.observed;
     options.bare = layers.bare;
     options.plateOnly = layers.plateOnly;
@@ -2968,7 +3677,9 @@ double OwnChartMapAspect(void) { return (double)kPanelW / (double)kMapH; }
     PanelOptions options = {0};
     options.temperature = layers.temperature;
     options.barbs = layers.barbs;
+    options.windFill = layers.windFill;
     options.rain = layers.rain && !layers.observed;
+    options.smoothRain = layers.rain && !layers.observed;
     options.observed = layers.observed;
     options.bare = layers.bare;
     options.plateOnly = layers.plateOnly;
@@ -3013,14 +3724,58 @@ OwnRun *OwnRunLoadPublished(NSString *root, BOOL previous, NSString *coastPath, 
         if (error) *error = @"no isobar data root";
         return nil;
     }
-    NSString *family = [root stringByAppendingPathComponent:@"products/grids/ecmwf_ifs025"];
-    NSData *pointerData = [NSData dataWithContentsOfFile:[family stringByAppendingPathComponent:@"current.json"]];
-    NSDictionary *pointer = [NSJSONSerialization JSONObjectWithData:pointerData ?: [NSData data] options:0 error:nil];
+    NSString *family = nil;
+    NSData *pointerData = nil;
+    NSDictionary *pointer = nil;
+    NSString *globalFamily = [[root stringByAppendingPathComponent:@"products/grids"]
+        stringByAppendingPathComponent:@"ecmwf_ifs_global"];
+    NSString *globalPointerPath = [globalFamily stringByAppendingPathComponent:@"current.json"];
+    BOOL hasGlobalPointer = [[NSFileManager defaultManager] fileExistsAtPath:globalPointerPath];
+    if (hasGlobalPointer) {
+        // A published global pointer is authoritative. Never silently select
+        // the regional product when that pointer is malformed or incomplete:
+        // doing so would report a healthy Australia run while global coverage
+        // had actually failed.
+        pointerData = [NSData dataWithContentsOfFile:globalPointerPath];
+        pointer = [NSJSONSerialization JSONObjectWithData:pointerData ?: [NSData data] options:0 error:nil];
+        NSString *latestID = [pointer isKindOfClass:NSDictionary.class] &&
+            [pointer[@"latest"] isKindOfClass:NSString.class] ? pointer[@"latest"] : nil;
+        if (![pointer isKindOfClass:NSDictionary.class] || !SupportedGridContract(pointer, error) ||
+            !PublishedPointerHasRun(globalFamily, pointer, latestID)) {
+            if (error && !*error) *error = @"published global ECMWF pointer is invalid or incomplete";
+            return nil;
+        }
+        family = globalFamily;
+        // The global reader uses the world plate. Include that actual asset in
+        // the cache identity, even when a caller supplied its regional coast.
+        coastPath = OwnWorldCoastPath();
+        if (!coastPath.length) {
+            if (error) *error = @"world coastline is missing";
+            return nil;
+        }
+    } else {
+        family = [[root stringByAppendingPathComponent:@"products/grids"]
+            stringByAppendingPathComponent:@"ecmwf_ifs025"];
+        pointerData = [NSData dataWithContentsOfFile:[family stringByAppendingPathComponent:@"current.json"]];
+        pointer = [NSJSONSerialization JSONObjectWithData:pointerData ?: [NSData data] options:0 error:nil];
+    }
+    strlcpy(gPublishedFamilyPath, family.fileSystemRepresentation, sizeof gPublishedFamilyPath);
     if (![pointer isKindOfClass:NSDictionary.class]) {
         if (error) *error = @"published ECMWF pointer is not an object";
         return nil;
     }
     if (!SupportedGridContract(pointer, error)) return nil;
+    int schema = PublishedSchema(pointer);
+    int leads[80];
+    int nLeads = 0;
+    if (schema == 2) {
+        if (!ParseForecastHours(pointer[@"forecast_hours"], leads, &nLeads, error)) return nil;
+        id uniform = pointer[@"uniform_step_hours"];
+        if (uniform && ![uniform isKindOfClass:NSNull.class]) {
+            if (error) *error = @"ECMWF schema 2 claims a uniform step";
+            return nil;
+        }
+    }
     NSString *latest = [pointer[@"latest"] isKindOfClass:NSString.class] ? pointer[@"latest"] : nil;
     NSArray *runs = [pointer[@"runs"] isKindOfClass:NSArray.class] ? pointer[@"runs"] : nil;
     if (!latest.length || !runs.count) {
@@ -3051,6 +3806,7 @@ OwnRun *OwnRunLoadPublished(NSString *root, BOOL previous, NSString *coastPath, 
     }
     NSString *runID = latest;
     NSString *previousID = nil;
+    NSArray<NSString *> *rainPreviousRuns = @[];
     if (previous) {
         NSString *nearestOlder = nil;
         NSDate *nearestDate = nil;
@@ -3072,27 +3828,25 @@ OwnRun *OwnRunLoadPublished(NSString *root, BOOL previous, NSString *coastPath, 
             return nil;
         }
     } else {
-        NSDate *nearestDate = nil;
-        for (NSString *item in dates) {
-            NSDate *date = dates[item];
-            if ([date compare:latestDate] == NSOrderedAscending &&
-                (!nearestDate || [date compare:nearestDate] == NSOrderedDescending)) {
-                previousID = item; nearestDate = date;
-            }
-        }
+        NSMutableArray<NSString *> *older = [NSMutableArray array];
+        for (NSString *item in dates)
+            if ([dates[item] compare:latestDate] == NSOrderedAscending) [older addObject:item];
+        [older sortUsingComparator:^NSComparisonResult(NSString *a, NSString *b) {
+            return [dates[b] compare:dates[a]];
+        }];
+        rainPreviousRuns = [older copy];
+        previousID = older.firstObject;
     }
-    NSString *rainPreviousID = previous ? nil : previousID;
     NSString *runsRoot = [family stringByAppendingPathComponent:@"runs"];
     NSMutableString *cacheKey = [NSMutableString stringWithFormat:@"%@|previous=%d|pointer=",
         [root stringByStandardizingPath], previous];
     [cacheKey appendString:[pointerData base64EncodedStringWithOptions:0] ?: @"missing"];
     [cacheKey appendFormat:@"|coast=%@", PublishedFileStamp(coastPath)];
-    // Current runs derive the first eight rain frames from the adjacent older
-    // run, so include that directory in the identity too. The selected run is
-    // always included. Metadata is enough to detect atomic publishes and
-    // in-place corrections without hashing tens of megabytes on every tick.
-    NSArray<NSString *> *dependencies = rainPreviousID.length
-        ? @[runID, rainPreviousID] : @[runID];
+    // Current runs may derive early rain frames from any retained older run,
+    // so include every candidate directory in the identity. Metadata is enough
+    // to detect atomic publishes and in-place corrections without hashing tens
+    // of megabytes on every tick.
+    NSArray<NSString *> *dependencies = [@[runID] arrayByAddingObjectsFromArray:rainPreviousRuns];
     for (NSString *dependency in dependencies) {
         NSString *dir = [runsRoot stringByAppendingPathComponent:dependency];
         [cacheKey appendFormat:@"|run=%@:%@", dependency, PublishedDirectoryStamp(dir)];
@@ -3100,7 +3854,18 @@ OwnRun *OwnRunLoadPublished(NSString *root, BOOL previous, NSString *coastPath, 
     OwnRun *cached = [PublishedRunCache() objectForKey:cacheKey];
     if (cached) return cached;
     OwnRun *run = [OwnRun new];
-    if (![run readPublishedRoot:root run:runID previous:rainPreviousID coast:coastPath error:error]) return nil;
+    if (![run readPublishedRoot:root run:runID previousRuns:rainPreviousRuns leads:nLeads ? leads : NULL count:nLeads coast:coastPath error:error]) return nil;
+    // Each publish changes the key. Drop the superseded run for this root and
+    // slot, so a 550 MiB global run does not linger beside its successor.
+    static NSMutableDictionary<NSString *, NSString *> *latestKeys;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ latestKeys = [NSMutableDictionary dictionary]; });
+    NSString *slot = [NSString stringWithFormat:@"%@|previous=%d", [root stringByStandardizingPath], previous];
+    @synchronized (latestKeys) {
+        NSString *stale = latestKeys[slot];
+        if (stale && ![stale isEqualToString:cacheKey]) [PublishedRunCache() removeObjectForKey:stale];
+        latestKeys[slot] = cacheKey;
+    }
     [PublishedRunCache() setObject:run forKey:cacheKey];
     return run;
 }
@@ -3121,7 +3886,7 @@ NSImage *OwnRunRenderMotion(OwnRun *run, double fractionalIndex, NSString *title
 }
 
 NSString *OwnRainLegendText(void) {
-    return @"Rain ≥ 1 mm, 24 h to chart time";
+    return @"24 h precipitation ending at chart time (mm)";
 }
 
 #ifndef ISOBAR_APP

@@ -30,6 +30,90 @@ static double FixedHalf(double level, void *ctx) {
 
 static BOOL Near(double a, double b, double tol) { return fabs(a - b) < tol; }
 
+static double SrgbLum(double c) {
+    return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+}
+
+static double ContrastRatio(OwnRGB a, OwnRGB b) {
+    double L1 = 0.2126 * SrgbLum(a.r) + 0.7152 * SrgbLum(a.g) + 0.0722 * SrgbLum(a.b);
+    double L2 = 0.2126 * SrgbLum(b.r) + 0.7152 * SrgbLum(b.g) + 0.0722 * SrgbLum(b.b);
+    double hi = fmax(L1, L2), lo = fmin(L1, L2);
+    return (hi + 0.05) / (lo + 0.05);
+}
+
+static OwnRGB MixOwn(OwnRGB plate, OwnRGB ink, double alpha) {
+    if (alpha < 0) alpha = 0;
+    if (alpha > 1) alpha = 1;
+    return (OwnRGB){
+        plate.r * (1.0 - alpha) + ink.r * alpha,
+        plate.g * (1.0 - alpha) + ink.g * alpha,
+        plate.b * (1.0 - alpha) + ink.b * alpha,
+    };
+}
+
+static void LabOwn(OwnRGB colour, double lab[3]) {
+    double c[3] = {colour.r, colour.g, colour.b};
+    for (int i = 0; i < 3; i++)
+        c[i] = c[i] <= 0.04045 ? c[i] / 12.92 : pow((c[i] + 0.055) / 1.055, 2.4);
+    double xyz[3] = {
+        (0.4124 * c[0] + 0.3576 * c[1] + 0.1805 * c[2]) / 0.95047,
+        0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2],
+        (0.0193 * c[0] + 0.1192 * c[1] + 0.9505 * c[2]) / 1.08883,
+    };
+    for (int i = 0; i < 3; i++)
+        xyz[i] = xyz[i] > 0.008856 ? cbrt(xyz[i]) : 7.787 * xyz[i] + 16.0 / 116.0;
+    lab[0] = 116 * xyz[1] - 16;
+    lab[1] = 500 * (xyz[0] - xyz[1]);
+    lab[2] = 200 * (xyz[1] - xyz[2]);
+}
+
+static double DeltaEOwn(OwnRGB a, OwnRGB b) {
+    double la[3], lb[3];
+    LabOwn(a, la); LabOwn(b, lb);
+    return sqrt((la[0] - lb[0]) * (la[0] - lb[0])
+        + (la[1] - lb[1]) * (la[1] - lb[1])
+        + (la[2] - lb[2]) * (la[2] - lb[2]));
+}
+
+static void TestFieldPlateContrast(void) {
+    struct { int kind; double value; double minimum; const char *name; } fields[] = {
+        {3, 5, 15, "rain 5 mm"}, {2, 20, 12, "wind 20 kt"},
+        {1, 0, 10, "850 hPa 0 C"}, {1, 10, 10, "850 hPa 10 C"},
+        {1, 20, 10, "850 hPa 20 C"},
+    };
+    for (int dark = 0; dark < 2; dark++) {
+        OwnChartPalette plate = OwnChartPaletteFor(dark);
+        OwnRGB grounds[] = {plate.land, plate.sea};
+        const char *groundNames[] = {"land", "sea"};
+        for (size_t f = 0; f < sizeof fields / sizeof fields[0]; f++) {
+            OwnRGB ink = OwnFieldRGBForAppearance(fields[f].kind, fields[f].value, dark);
+            double alpha = OwnFieldOverlayAlpha(fields[f].kind, fields[f].value);
+            OwnRGB land = MixOwn(plate.land, ink, alpha);
+            OwnRGB sea = MixOwn(plate.sea, ink, alpha * OwnFieldSeaAlphaScale(fields[f].kind));
+            check(DeltaEOwn(land, sea) >= 20, @"field retains land/sea colour separation");
+            if (fields[f].kind == 1) {
+                check(DeltaEOwn(land, plate.sea) - DeltaEOwn(land, plate.land) >= 3 &&
+                    DeltaEOwn(sea, plate.land) - DeltaEOwn(sea, plate.sea) >= 8,
+                    @"temperature preserves land and sea identity");
+            }
+            for (int p = 0; p < 2; p++) {
+                double effective = alpha * (p == 1 ? OwnFieldSeaAlphaScale(fields[f].kind) : 1.0);
+                OwnRGB composite = MixOwn(grounds[p], ink, effective);
+                double de = DeltaEOwn(composite, grounds[p]);
+                check(de >= fields[f].minimum, [NSString stringWithFormat:
+                    @"%s %s %s separates from plate (DeltaE %.1f >= %.1f)",
+                    dark ? "dark" : "light", groundNames[p], fields[f].name, de, fields[f].minimum]);
+            }
+        }
+        for (int p = 0; p < 2; p++) {
+            OwnRGB dry = MixOwn(grounds[p], OwnFieldRGBForAppearance(3, 0.09, dark),
+                OwnFieldOverlayAlpha(3, 0.09) * (p == 1 ? OwnFieldSeaAlphaScale(3) : 1.0));
+            check(DeltaEOwn(dry, grounds[p]) <= 1e-9, [NSString stringWithFormat:
+                @"%s %s rain 0.09 mm is transparent", dark ? "dark" : "light", groundNames[p]]);
+        }
+    }
+}
+
 static void TestGrid(void) {
     check(OwnGridNLon() == 301 && OwnGridNLat() == 201, @"0.25° window is 301 by 201");
     check(OwnGridCount() == 301 * 201, @"grid is 60,501 points");
@@ -204,7 +288,46 @@ static void TestProjection(void) {
     check(darwinX > 0 && darwinX < 580 && hobartY > 0 && hobartY < 444, @"the continent lands inside the panel");
 }
 
+static int SaddleEdge(OwnVec p) {
+    if (Near(p.y, 0, 1e-9)) return 0;
+    if (Near(p.x, 1, 1e-9)) return 1;
+    if (Near(p.y, 1, 1e-9)) return 2;
+    if (Near(p.x, 0, 1e-9)) return 3;
+    return -1;
+}
+
+static int SaddlePairs(const double corners[4], double level) {
+    double field[] = {corners[0], corners[1], corners[3], corners[2]};
+    OwnLineSet set = OwnContours(field, 2, 2, 0, 0, 1, 1, &level, 1);
+    int pairs = 0;
+    for (int i = 0; i < set.count; i++) {
+        OwnLine line = set.lines[i];
+        int a = SaddleEdge(line.pts[0]), b = SaddleEdge(line.pts[line.count - 1]);
+        if (a > b) { int swap = a; a = b; b = swap; }
+        if (!line.closed && a >= 0 && b >= 0) pairs |= 1 << (a * 4 + b);
+    }
+    OwnLineSetFree(set);
+    return pairs;
+}
+
 static void TestContours(void) {
+    // Bilinear saddles: corners in order bottom-left, bottom-right,
+    // top-right, top-left. The zero set is identical after sign inversion.
+    const double saddles[][4] = {{2,-1,2,-1}, {1,-2,1,-2},
+        {10,-2,.1,-1}, {.1,-1,10,-2}};
+    const int positive = (1 << 1) | (1 << 11); // bottom-right and top-left
+    const int negative = (1 << 3) | (1 << 6); // bottom-left and top-right
+    for (int i = 0; i < 4; i++) for (int sign = -1; sign <= 1; sign += 2) {
+        double corners[4];
+        for (int j = 0; j < 4; j++) corners[j] = 1012 + sign * saddles[i][j];
+        check(SaddlePairs(corners, 1012) == (i == 0 ? positive : negative),
+            [NSString stringWithFormat:@"saddle %d sign %d follows the bilinear field", i, sign]);
+    }
+    for (int frame = -1; frame <= 1; frame++) {
+        double corners[] = {10, -5.05 + frame * 1e-5, .1, -5.05};
+        check(SaddlePairs(corners, 0) == negative,
+            @"crossing the corner average does not reconnect an unchanged saddle");
+    }
     const int n = 31;
     double *bowl = calloc((size_t)(n * n), sizeof(double));
     for (int j = 0; j < n; j++) {
@@ -971,6 +1094,71 @@ static void TestBarbsAndColour(void) {
     double sat = fmax(mid.r, fmax(mid.g, mid.b)) - fmin(mid.r, fmin(mid.g, mid.b));
     check(sat < 0.2, @"the middle of the ramp stays quiet");
     check(OwnTemperatureRGB(0).b > OwnTemperatureRGB(20).b, @"the ramp warms as temperature rises");
+    OwnRGB at28 = OwnTemperatureRGB(28), at35 = OwnTemperatureRGB(35);
+    check(at28.r > 0.75 && at28.g > 0.45 && at28.b < 0.45 && at28.r - at28.g < 0.40,
+        @"28 C is orange-yellow");
+    check(at35.r > 0.70 && at35.g < 0.30 && at35.b < 0.25 && at35.g < at28.g,
+        @"35 C is red");
+    OwnRGB washed = OwnOceanWash(at28);
+    check(fabs(washed.r - at28.r) + fabs(washed.g - at28.g) + fabs(washed.b - at28.b) > 0.08,
+        @"the ocean wash changes the same temperature");
+    struct { int kind; double value; } samples[] = {
+        {1, 0}, {1, 20}, {1, 28}, {1, 35}, {1, 40},
+        {3, 0.1}, {3, 10}, {3, 50},
+        {2, 0}, {2, 20}, {2, 100},
+    };
+    BOOL coastOK = YES;
+    for (int dark = 0; dark < 2 && coastOK; dark++) {
+        OwnChartPalette plate = OwnChartPaletteFor(dark);
+        OwnRGB plates[2] = {plate.land, plate.sea};
+        for (int p = 0; p < 2; p++) {
+            double bare = ContrastRatio(plate.coast, plates[p]);
+            if (bare < 3.0) coastOK = NO;
+        }
+        for (int i = 0; i < (int)(sizeof samples / sizeof samples[0]); i++) {
+            OwnRGB colour = OwnFieldRGBForAppearance(samples[i].kind, samples[i].value, dark);
+            double alpha = OwnFieldOverlayAlpha(samples[i].kind, samples[i].value);
+            for (int p = 0; p < 2; p++) {
+                OwnRGB under = MixOwn(plates[p], colour, alpha);
+                if (ContrastRatio(plate.coast, under) < 3.0) coastOK = NO;
+            }
+        }
+    }
+    check(coastOK, @"the coast token is at least 3:1 on the plate and on each field overlay");
+    // GPU map overlay (owner, 7 Oct 2026: "too colorful"). Temperature is a
+    // tint of at most 35% in two low-saturation hues; red only from 35 °C.
+    double peak = 0, chromaMax = 0;
+    BOOL redEarly = NO;
+    for (double t = -15; t <= 45; t += 0.5) {
+        peak = fmax(peak, OwnFieldOverlayAlpha(1, t));
+        OwnRGB c = OwnFieldRGB(1, t);
+        chromaMax = fmax(chromaMax, fmax(c.r, fmax(c.g, c.b)) - fmin(c.r, fmin(c.g, c.b)));
+        if (t < 35 && c.r - c.g > 0.25 && c.g - c.b < 0.12) redEarly = YES;
+    }
+    check(peak <= 0.35, [NSString stringWithFormat:@"temperature overlay peaks at %.2f opacity (<= 0.35)", peak]);
+    check(chromaMax <= 0.42, [NSString stringWithFormat:@"temperature overlay stays low-saturation (%.2f)", chromaMax]);
+    check(!redEarly, @"the temperature overlay is not red below 35 C");
+    OwnRGB coolT = OwnFieldRGB(1, 0), warmT = OwnFieldRGB(1, 30), midT = OwnFieldRGB(1, 20);
+    check(coolT.b > coolT.r && warmT.r > warmT.b && fabs(midT.r - midT.b) < 0.2,
+        @"the temperature overlay runs blue-grey to sand through a quiet middle");
+    check(OwnFieldSeaAlphaScale(1) < 1 && OwnFieldSeaAlphaScale(3) == 1 && OwnFieldSeaAlphaScale(2) == 1,
+        @"only temperature is thinner over the sea");
+    double rainPeak = 0, windPeak = 0;
+    for (double x = 0; x <= 120; x += 0.5) {
+        rainPeak = fmax(rainPeak, OwnFieldOverlayAlpha(3, x));
+        windPeak = fmax(windPeak, OwnFieldOverlayAlpha(2, x));
+    }
+    check(rainPeak <= 0.5 && windPeak <= 0.45 && OwnFieldOverlayAlpha(3, 0.09) == 0,
+        @"rain and wind overlays stay translucent; rain under 0.1 mm per 24 h is clear");
+    OwnRGB rainLight = OwnRainRGB(0.1), rainHeavy = OwnRainRGB(50);
+    check(rainLight.b > rainLight.r && rainLight.g > rainLight.r &&
+          rainHeavy.b > rainHeavy.r && rainHeavy.g > rainHeavy.r,
+          @"rain is one blue from a light tint to a deep tint");
+    check(OwnRainRGB(0.1).r != OwnRainRGB(1).r && OwnRainRGB(1).g != OwnRainRGB(5).g,
+          @"rain palette has graduated intermediate stops");
+    OwnRGB windCalm = OwnWindRGB(0), windStorm = OwnWindRGB(100);
+    check(windCalm.b > windCalm.r && windStorm.b > windStorm.r && windStorm.g > windStorm.r,
+          @"wind is one slate from calm to storm");
 
     const int n = 31;
     double *field = calloc((size_t)(n * n), sizeof(double));
@@ -1014,8 +1202,8 @@ static void TestBarbsAndColour(void) {
         return fabs(colour.r - r / 255.0) < 1e-12 && fabs(colour.g - g / 255.0) < 1e-12
             && fabs(colour.b - b / 255.0) < 1e-12;
     };
-    check(nearByte(OwnChartSea(), 0xC5, 0xD6, 0xE4), @"sea is the soft chart blue");
-    check(nearByte(OwnChartLand(), 0xE4, 0xD8, 0xC4), @"land is warm stone");
+    check(nearByte(OwnChartSea(), 0xEB, 0xF1, 0xF7), @"sea is the pale Bureau blue-grey");
+    check(nearByte(OwnChartLand(), 0xF4, 0xEE, 0xAF), @"land is the pale Bureau yellow");
     check(nearByte(OwnChartInk(), 0x1B, 0x28, 0x30), @"isobar ink is charcoal");
     check(nearByte(OwnChartTitle(), 0x2E, 0x4C, 0x5C), @"the title bar is a calm slate");
     double (^lum)(OwnRGB) = ^double(OwnRGB colour) {
@@ -1036,10 +1224,10 @@ static void TestBarbsAndColour(void) {
     check(contrast(OwnChartInk(), OwnChartSea()) >= 4.5 && contrast(OwnChartInk(), OwnChartLand()) >= 4.5,
           @"ink stays legible on sea and on land");
     check(contrast(white, OwnChartTitle()) >= 4.5, @"white title text stays legible on the bar");
-    check(OwnIsobarWidth(1020) > OwnIsobarWidth(1016) && OwnIsobarWidth(1000) == OwnIsobarWidth(1040),
-          @"1000 and 1020 lines are heavier than the 4 hPa lines");
+    check(OwnIsobarWidth(1020) == 1.25 && OwnIsobarWidth(1016) == 1.25 && OwnIsobarWidth(1000) == OwnIsobarWidth(1040),
+          @"all pressure levels use the same 1.25 pt stroke");
     check(OwnIsobarWidth(1012) == OwnIsobarWidth(1004) && OwnIsobarWidth(1012) < 1.4,
-          @"ordinary isobars stay the lighter weight");
+          @"ordinary isobars stay below 1.4 pt");
 }
 
 static void TestCoast(void) {
@@ -1086,6 +1274,7 @@ int main(void) {
         TestOpenFragments();
         TestPruneAndReflect();
         TestBarbsAndColour();
+        TestFieldPlateContrast();
         TestCoast();
         fprintf(stderr, "%s\n", failures ? "FAILED" : "OK");
         return failures ? 1 : 0;

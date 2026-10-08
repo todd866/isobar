@@ -25,8 +25,8 @@ if [[ ! "$MINIMUM_MACOS" =~ '^[0-9]+\.[0-9]+(\.[0-9]+)?$' ]]; then
 fi
 SHORT=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
 BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist)
-if [[ "$SHORT" != "1.9.0" || "$BUILD" != "28" ]]; then
-    echo "build.sh: ERROR — Info.plist version is ${SHORT} (${BUILD}); expected 1.9.0 (28)." >&2
+if [[ "$SHORT" != "1.10.2" || "$BUILD" != "31" ]]; then
+    echo "build.sh: ERROR — Info.plist version is ${SHORT} (${BUILD}); expected 1.10.2 (31)." >&2
     exit 1
 fi
 
@@ -59,15 +59,38 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
     "${ARCH_FLAGS[@]}" \
     -ISources \
     -DISOBAR_APP \
-    Sources/pure.m Sources/rain.m Sources/rainview.m Sources/aviation.m Sources/forecastview.m Sources/aviationview.m Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Sources/notices.m Sources/notacconnection.m Sources/surfview.m Sources/motion.m Sources/rawmovie.m Sources/scrub.m Sources/mapdetail.m Sources/collector.m Sources/archive.m Sources/ownchart.m tools/own-chart.m Sources/daystrip.m Sources/fullscreenwindow.m Sources/playback.m Sources/main.m \
-    -framework Cocoa -framework Security -framework ServiceManagement -framework CoreLocation -framework Vision -framework CoreVideo -framework CoreMedia -framework AVFoundation -framework QuartzCore -framework Accelerate -lz -lsqlite3 \
+    Sources/pure.m Sources/rain.m Sources/rainview.m Sources/aviation.m Sources/forecastview.m Sources/aviationview.m Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Sources/notices.m Sources/notacconnection.m Sources/surfview.m Sources/motion.m Sources/rawmovie.m Sources/scrub.m Sources/mapdetail.m Sources/collector.m Sources/archive.m Sources/ownchart.m tools/own-chart.m Sources/daystrip.m Sources/fullscreenwindow.m Sources/playback.m Sources/storereload.m     Sources/mapcamera.m Sources/gpumapview.m Sources/hazard.m Sources/fieldrender.m Sources/trainingdata.m Sources/trainingwindow.m Sources/main.m \
+    -framework Cocoa -framework WebKit -framework Security -framework ServiceManagement -framework CoreLocation -framework Vision -framework CoreVideo -framework CoreMedia -framework AVFoundation -framework QuartzCore -framework Metal -framework CoreText -framework Accelerate -lz -lsqlite3 \
     -o "$APP/Contents/MacOS/Isobar"
 install -m 0644 Info.plist "$APP/Contents/Info.plist"
 for catalogue in stations-wa.json stations-nsw.json stations-vic.json; do
     install -m 0644 "Tests/fixtures/$catalogue" "$APP/Contents/Resources/$catalogue"
 done
 install -m 0644 Resources/ownchart-coast.bin "$APP/Contents/Resources/ownchart-coast.bin"
+install -m 0644 Resources/world-coast.bin "$APP/Contents/Resources/world-coast.bin"
+install -m 0644 Resources/world-places.json "$APP/Contents/Resources/world-places.json"
 ditto Resources/Aviation "$APP/Contents/Resources/Aviation"
+if ! command -v npm >/dev/null 2>&1; then
+    echo "build.sh: ERROR — npm is not available, so the offline trainer cannot be built from training/." >&2
+    exit 1
+fi
+if [[ ! -x training/node_modules/.bin/esbuild ]]; then
+    (cd training && npm install --ignore-scripts) || {
+        echo "build.sh: ERROR — npm install failed in training/. The trainer is built in this step and is not downloaded later." >&2
+        exit 1
+    }
+fi
+(cd training && npm run build) || {
+    echo "build.sh: ERROR — the trainer failed to build from training/." >&2
+    exit 1
+}
+for need in training/dist/index.html training/dist/app.js training/dist/app.css; do
+    if [[ ! -f $need ]]; then
+        echo "build.sh: ERROR — the trainer build did not produce $need." >&2
+        exit 1
+    fi
+done
+ditto training/dist "$APP/Contents/Resources/training"
 
 if [[ "${ISOBAR_BUNDLE_COLLECTOR:-1}" == "1" ]]; then
     if [[ -n "${ISOBAR_COLLECTOR_DIR:-}" ]]; then

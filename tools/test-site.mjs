@@ -177,7 +177,7 @@ async function prepareSite() {
     return;
   }
   if (process.env.ISOBAR_SITE_ROOT) { siteRoot = process.env.ISOBAR_SITE_ROOT; return; }
-  if (existsSync(join(root, 'data/current.json')) && process.env.ISOBAR_SITE_FIXTURE !== '1') return;
+  // An ignored, possibly stale site/data must not stand in for the fixture; check exports with --site.
   siteRoot = buildFixtureSite();
 }
 function assert(condition, message) { if (!condition) fail(message); }
@@ -377,6 +377,18 @@ async function testAnimation(browser, baseURL) {
     assert(await page.locator('#map-video').evaluate((video) => !video.paused), 'surf lens paused the pressure movie');
     await page.click('[data-layer="surf"]');
 
+    // A map layer swaps the movie, but a playing forecast keeps playing from the same instant.
+    const switchedFrom = await page.locator('#map-video').evaluate((video) => video.currentTime);
+    await page.click('#layers-button'); await page.locator('[name="map-overlay"][value="wind"]').check(); await page.keyboard.press('Escape');
+    const windPlaying = await page.waitForFunction(() => { const video = document.querySelector('#map-video'); return video?.dataset.source?.endsWith('animation-wind.mp4') && video.readyState >= 2 && !video.paused; }, null, { timeout: 5000 }).then(() => true, () => false);
+    assert(windPlaying, `switching map layer stopped the playing forecast: ${JSON.stringify(await page.evaluate(() => ({ source: document.querySelector('#map-video')?.dataset.source, paused: document.querySelector('#map-video')?.paused, button: document.querySelector('#play-toggle')?.textContent })))}`);
+    const switchedTo = await page.locator('#map-video').evaluate((video) => video.currentTime);
+    assert(switchedTo >= switchedFrom - .3 && switchedTo < switchedFrom + 2, `switching map layer lost the forecast position (${switchedTo} vs ${switchedFrom})`);
+    assert(await page.locator('#play-toggle').textContent() === 'Pause', 'switching map layer left Play showing while the forecast plays');
+    await page.click('#layers-button'); await page.locator('[name="map-overlay"][value="none"]').check(); await page.keyboard.press('Escape');
+    const pressurePlaying = await page.waitForFunction(() => { const video = document.querySelector('#map-video'); return video?.dataset.source?.endsWith('animation-pressure.mp4') && !video.paused; }, null, { timeout: 5000 }).then(() => true, () => false);
+    assert(pressurePlaying, 'returning to the pressure layer stopped the playing forecast');
+
     await page.click('#play-toggle');
     const paused = await page.locator('#map-video').evaluate((video) => video.currentTime);
     await page.waitForTimeout(250);
@@ -525,6 +537,7 @@ async function testAnimation(browser, baseURL) {
     await page.click('#play-toggle'); await page.waitForFunction(() => document.querySelector('#map-video')?.readyState >= 2 && document.querySelector('#map-video')?.dataset.source?.endsWith('animation-wind.mp4'));
     const windTime = await playbackStart();
     assert(Math.abs(windTime - preservedTime) < .3, `layer switch lost forecast position (${windTime} vs ${preservedTime})`);
+    await page.waitForFunction(() => document.querySelector('#play-toggle')?.textContent === 'Pause'); // Pause only a started movie.
     await page.click('#play-toggle');
     preservedTime = await page.locator('#map-video').evaluate((video) => video.currentTime);
     const pressureRequests = movieRequests.filter((url) => url.endsWith('animation-pressure.mp4')).length;
@@ -537,6 +550,7 @@ async function testAnimation(browser, baseURL) {
     assert(movieRequests.filter((url) => url.endsWith('animation-pressure.mp4')).length === pressureRequests, 'returning to a prepared layer fetched the movie again');
     await page.unroute('**/*');
     assert(await page.locator('#play-toggle').isEnabled(), 'keyed movie was not prepared');
+    await page.waitForFunction(() => document.querySelector('#play-toggle')?.textContent === 'Pause'); // Pause only a started movie.
     await page.click('#play-toggle');
     await page.locator('#time').evaluate((input) => { input.value = input.max; input.dispatchEvent(new Event('input', { bubbles: true })); });
     await page.waitForFunction(() => document.querySelector('#map-video').currentTime > document.querySelector('#map-video').duration - .1);
@@ -553,8 +567,8 @@ async function testAnimation(browser, baseURL) {
     assert(await page.locator('#time').evaluate((input) => Number(input.value) / Number(input.max) > .9999), 'ArrowRight moved past the final forecast hour');
     assert(await page.locator('#map-video').evaluate((video) => video.paused), 'ArrowRight at the final frame resumed playback');
     await page.click('#play-toggle');
-    await page.waitForFunction(() => document.querySelector('#map-video').currentTime < 1 && document.querySelector('#play-toggle').textContent === 'Pause');
-    assert(await page.locator('#play-toggle').textContent() === 'Pause', 'Play at the end did not restart the movie');
+    const restarted = await page.waitForFunction(() => document.querySelector('#map-video').currentTime < 1 && document.querySelector('#play-toggle').textContent === 'Pause', null, { timeout: 10000 }).then(() => true, () => false);
+    assert(restarted, `Play at the end did not restart the movie: ${JSON.stringify(await page.evaluate(() => ({ current: document.querySelector('#map-video')?.currentTime, duration: document.querySelector('#map-video')?.duration, paused: document.querySelector('#map-video')?.paused, source: document.querySelector('#map-video')?.dataset.source, button: document.querySelector('#play-toggle')?.textContent, time: document.querySelector('#time')?.value, max: document.querySelector('#time')?.max })))}`);
   } finally { await page.close(); }
 
   const retryPage = await browser.newPage({ viewport: { width: 1280, height: 720 } });
@@ -921,6 +935,8 @@ async function testPolish(browser, baseURL) {
   try {
     await fallback.addInitScript(() => { try { localStorage.removeItem('isobar.place'); } catch { /* Perth is the default when storage is empty. */ } });
     await fallback.addInitScript(forceOffsetZoneNames);
+    // The fixture run is fixed in time; pin the clock so a fresh run label ends in its zone.
+    if (Date.parse(manifest.runAt)) await fallback.addInitScript((fixed) => { Date.now = () => fixed; }, Date.parse(manifest.runAt) + 3600000);
     await fallback.emulateMedia({ reducedMotion: 'reduce' });
     await fallback.goto(baseURL, { waitUntil: 'domcontentloaded' }); await waitReady(fallback);
     assert(zoneOf(await fallback.locator('#time-label').textContent()) === 'AWST', 'GMT+8 did not fall back to AWST');

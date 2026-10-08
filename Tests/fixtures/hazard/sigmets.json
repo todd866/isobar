@@ -1,0 +1,148 @@
+{
+ "note": "Real SIGMET features copied from the isobar-data aviation product (Aviation Weather Center isigmet) for parser tests.",
+ "features": [
+  {
+   "firId": "YMMM",
+   "firName": "YMMM MELBOURNE",
+   "hazard": "TS",
+   "qualifier": "FRQ",
+   "base": null,
+   "top": 30000,
+   "raw": "WSAU21 YMRF 020728\nYMMM SIGMET M01 VALID 020728/020926 YMRF-\nYMMM MELBOURNE FIR FRQ TS FCST WI S2740 E12430 - S2850 E12500 -\nS2910 E12350 - S2800 E12320 TOP FL300 MOV ESE 25KT NC=",
+   "valid_from": 1790926080,
+   "valid_to": 1790933160
+  },
+  {
+   "firId": "YMMM",
+   "firName": "YMMM MELBOURNE",
+   "hazard": "TS",
+   "qualifier": "EMBD",
+   "base": null,
+   "top": 51000,
+   "raw": "WSAU21 YMMC 281809\nYMMM SIGMET Z01 VALID 281810/282210 YMMC-\nYMMM MELBOURNE FIR EMBD TS OBS WI S0220 E09230 - S0320 E09130 -\nS0350 E08520 - S0200 E08520 - S0200 E09200 TOP FL510 MOV WSW 15KT NC=",
+   "valid_from": 1790619000,
+   "valid_to": 1790633400
+  },
+  {
+   "firId": "YMMM",
+   "firName": "YMMM MELBOURNE",
+   "hazard": "TS",
+   "qualifier": "SQL",
+   "base": null,
+   "top": 42000,
+   "raw": "WSAU21 YMRF 020729\nYMMM SIGMET P01 VALID 020729/020900 YMRF-\nYMMM MELBOURNE FIR SQL TSGR FCST WI S3400 E14630 - S3620 E14800 -\nS3610 E14640 - S3350 E14510 TOP FL420 MOV ESE 30KT NC=",
+   "valid_from": 1790926140,
+   "valid_to": 1790931600
+  },
+  {
+   "firId": "YBBB",
+   "firName": "YBBB BRISBANE",
+   "hazard": "TURB",
+   "qualifier": "SEV",
+   "base": 28000,
+   "top": 35000,
+   "raw": "WSAU21 YMMC 302344\nYBBB SIGMET G13 VALID 010030/010430 YMMC-\nYBBB BRISBANE FIR SEV TURB FCST WI S2030 E16300 - S3400 E13610 -\nS2900 E13050 - S2720 E13150 - S1750 E16300 FL280/350 MOV E 15KT NC=",
+   "valid_from": 1790814600,
+   "valid_to": 1790829000
+  },
+  {
+   "firId": "YMMM",
+   "firName": "YMMM MELBOURNE",
+   "hazard": "ICE",
+   "qualifier": "SEV",
+   "base": 7500,
+   "top": 19000,
+   "raw": "WSAU21 YMMC 302242\nYMMM SIGMET P01 VALID 302242/010242 YMMC-\nYMMM MELBOURNE FIR SEV ICE FCST WI S3420 E13640 - S3620 E14030 -\nS3810 E14040 - S3850 E13940 - S3750 E13730 - S3450 E13610\n7500FT/FL190 MOV SE 35KT NC=",
+   "valid_from": 1790808120,
+   "valid_to": 1790822520
+  },
+  {
+   "firId": "YMMM",
+   "firName": "YMMM MELBOURNE",
+   "hazard": "MTW",
+   "qualifier": "SEV",
+   "base": 3000,
+   "top": 16000,
+   "raw": "WSAU21 YMRF 302332\nYMMM SIGMET S01 VALID 010000/010400 YMRF-\nYMMM MELBOURNE FIR SEV MTW FCST WI S4230 E14620 - S4250 E14720 -\nS4400 E14730 - S4340 E14630 3000FT/FL160 STNR NC=",
+   "valid_from": 1790812800,
+   "valid_to": 1790827200
+  },
+  {
+   "firId": "YMMM",
+   "firName": "YMMM MELBOURNE",
+   "hazard": "TURB",
+   "qualifier": "SEV MTW",
+   "base": 4000,
+   "top": 20000,
+   "raw": "WSAU21 YMRF 060752\nYMMM SIGMET Y01 VALID 060900/061300 YMRF-\nYMMM MELBOURNE FIR SEV MTW FCST WI S4130 E14600 - S4110 E14610 -\nS4140 E14720 - S4110 E14740 - S4120 E14800 - S4210 E14720\n4000FT/FL200 STNR NC=",
+   "valid_from": 1791277200,
+   "valid_to": 1791291600
+  },
+  {
+   "firId": "YMMM",
+   "firName": "YMMM MELBOURNE",
+   "hazard": "TURB",
+   "qualifier": "SEV",
+   "base": 20000,
+   "top": 40000,
+   "raw": "WSAU21 YMMC 070239\nYMMM SIGMET W06 VALID 070245/070645 YMMC-\nYMMM MELBOURNE FIR SEV TURB FCST WI S3230 E09520 - S3820 E10300 -\nS4300 E10250 - S4800 E10000 - S4920 E09340 - S4400 E09710 - S4140\nE08940 - S3300 E07840 - S3100 E08120 FL200/400 MOV NE 30KT NC=",
+   "valid_from": 1791341100,
+   "valid_to": 1791355500
+  },
+  {
+   "firId": "YBBB",
+   "firName": "YBBB BRISBANE",
+   "hazard": "TS",
+   "qualifier": "FRQ",
+   "base": null,
+   "top": 37000,
+   "raw": "WSAU21 YBRF 070259\nYBBB SIGMET M01 VALID 070313/070515 YBRF-\nYBBB BRISBANE FIR FRQ TSGR OBS WI S2450 E15020 - S2530 E14950 -\nS2500 E14830 - S2610 E14730 - S2510 E14600 - S2330 E14720 TOP FL370\nMOV NE 10KT INTSF=",
+   "valid_from": 1791342780,
+   "valid_to": 1791350100
+  },
+  {
+   "firId": "YBBB",
+   "firName": "YBBB BRISBANE",
+   "hazard": "TURB",
+   "qualifier": "SEV",
+   "base": 13000,
+   "top": 29000,
+   "raw": "WSAU21 YMMC 070309\nYBBB SIGMET L04 VALID 070328/070728 YMMC-\nYBBB BRISBANE FIR SEV TURB FCST WI S4400 E15440 - S3850 E15210 -\nS3730 E15630 - S4200 E16300 - S4940 E16300 FL130/290 MOV E 25KT NC=",
+   "valid_from": 1791343680,
+   "valid_to": 1791358080
+  },
+  {
+   "firId": "YMMM",
+   "firName": "YMMM MELBOURNE",
+   "hazard": "TURB",
+   "qualifier": "SEV",
+   "base": 13000,
+   "top": 29000,
+   "raw": "WSAU21 YMMC 070309\nYMMM SIGMET B04 VALID 070328/070728 YMMC-\nYMMM MELBOURNE FIR SEV TURB FCST WI S4400 E15440 - S3850 E15210 -\nS3730 E15630 - S4200 E16300 - S4940 E16300 FL130/290 MOV E 25KT NC=",
+   "valid_from": 1791343680,
+   "valid_to": 1791358080
+  },
+  {
+   "firId": "YMMM",
+   "firName": "YMMM MELBOURNE",
+   "hazard": "TURB",
+   "qualifier": "SEV",
+   "base": 12000,
+   "top": 24000,
+   "raw": "WSAU21 YMMC 070312\nYMMM SIGMET M15 VALID 070341/070741 YMMC-\nYMMM MELBOURNE FIR SEV TURB FCST WI S4001 E10947 - S3914 E11446 -\nS5000 E12620 - S5000 E11910 FL120/240 MOV E 35KT NC=",
+   "valid_from": 1791344460,
+   "valid_to": 1791358860
+  },
+  {
+   "firId": "YMMM",
+   "firName": "YMMM MELBOURNE",
+   "hazard": "TURB",
+   "qualifier": "SEV",
+   "base": 0,
+   "top": 6000,
+   "raw": "WSAU21 YMRF 301003\nYMMM SIGMET B02 VALID 301100/301500 YMRF-\nYMMM MELBOURNE FIR SEV TURB FCST WI S3700 E14730 - S3740 E14800 -\nS3820 E14600 - S3750 E14500 - S3750 E14420 - S3720 E14410 - S3720\nE14550 SFC/6000FT STNR NC=",
+   "valid_from": 1790766000,
+   "valid_to": 1790780400
+  }
+ ]
+}

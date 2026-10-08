@@ -150,6 +150,13 @@ static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, dou
     [[NSColor colorWithSRGBRed:pr + (ar - pr) * amount green:pg + (ag - pg) * amount blue:pb + (ab - pb) * amount alpha:1] setFill];
     [[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds, 1, 1) xRadius:6 yRadius:6] fill];
 }
+// Shared by both tile layouts. The unit is part of the drawn value.
+- (NSString *)rainText {
+    NSNumber *rain = Finite(self.day[@"rainMm"]);
+    if (!rain || rain.doubleValue < 1) return nil;
+    return rain.doubleValue < 10 ? [NSString stringWithFormat:@"%.1f mm", rain.doubleValue] :
+        [NSString stringWithFormat:@"%.0f mm", round(rain.doubleValue)];
+}
 - (void)drawRect:(NSRect)dirty {
     (void)dirty;
     // A tall cell is a narrow column. A short cell is one day of the horizontal strip.
@@ -163,31 +170,37 @@ static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, dou
     CGFloat width = NSWidth(self.bounds);
     CGFloat labelW = ceil([weekday sizeWithAttributes:weekdayStyle].width);
     [weekday drawAtPoint:NSMakePoint(MAX(0, (width - labelW) / 2), 1) withAttributes:weekdayStyle];
-    NSNumber *code = Finite(day[@"weatherCode"]);
-    NSString *symbol = code ? WeatherCodeSymbol(code.integerValue, YES) : nil;
-    NSImage *icon = symbol ? [NSImage imageWithSystemSymbolName:symbol accessibilityDescription:WeatherCodeLabel(code.integerValue)] : nil;
-    if (icon) {
-        NSImageSymbolConfiguration *style = [[NSImageSymbolConfiguration configurationWithPointSize:15 weight:NSFontWeightRegular]
-            configurationByApplyingConfiguration:SymbolInk()];
-        icon = [icon imageWithSymbolConfiguration:style] ?: icon;
-        BOOL snug = NSHeight(self.bounds) < 58;
-        CGFloat side = snug ? 14 : 16;
-        [icon drawInRect:NSMakeRect((width - side) / 2, snug ? 12 : 14, side, side)];
-    }
     NSString *temps = [NSString stringWithFormat:@"%@ %@", TempText(day[@"max"]), TempText(day[@"min"])];
-    NSNumber *rain = Finite(day[@"rainMm"]);
-    NSString *rainText = (rain && rain.doubleValue >= 1) ? (rain.doubleValue < 10 ? [NSString stringWithFormat:@"%.1f", rain.doubleValue] : [NSString stringWithFormat:@"%.0f", round(rain.doubleValue)]) : nil;
+    NSString *rainText = [self rainText];
     NSDictionary *tempStyle = @{NSFontAttributeName: temp, NSForegroundColorAttributeName: NSColor.labelColor};
     NSDictionary *rainStyle = @{NSFontAttributeName: temp, NSForegroundColorAttributeName: NSColor.systemBlueColor};
     CGFloat tempW = ceil([temps sizeWithAttributes:tempStyle].width);
     CGFloat rainW = rainText ? ceil([rainText sizeWithAttributes:rainStyle].width) + 4 : 0;
     BOOL rainInline = rainText && tempW + rainW <= width - 4;
+    NSNumber *code = Finite(day[@"weatherCode"]);
+    NSString *symbol = code ? WeatherCodeSymbol(code.integerValue, YES) : nil;
+    NSImage *icon = symbol ? [NSImage imageWithSystemSymbolName:symbol accessibilityDescription:WeatherCodeLabel(code.integerValue)] : nil;
+    BOOL rainOnlyRow = rainText && !rainInline && NSHeight(self.bounds) < 58 && rainW + 18 > width;
+    if (icon && !rainOnlyRow) {
+        NSImageSymbolConfiguration *style = [[NSImageSymbolConfiguration configurationWithPointSize:15 weight:NSFontWeightRegular]
+            configurationByApplyingConfiguration:SymbolInk()];
+        icon = [icon imageWithSymbolConfiguration:style] ?: icon;
+        BOOL snug = NSHeight(self.bounds) < 58;
+        CGFloat side = snug ? 14 : 16;
+        CGFloat iconX = snug && rainText && !rainInline ? 4 : (width - side) / 2;
+        [icon drawInRect:NSMakeRect(iconX, snug ? 12 : 14, side, side)];
+    }
     CGFloat lineW = tempW + (rainInline ? rainW : 0);
     CGFloat lineX = MAX(0, (width - lineW) / 2);
     CGFloat tempY = NSHeight(self.bounds) < 58 ? 26 : 30;
     [temps drawAtPoint:NSMakePoint(lineX, tempY) withAttributes:tempStyle];
     if (rainInline) [rainText drawAtPoint:NSMakePoint(lineX + tempW + 4, tempY) withAttributes:rainStyle];
-    else if (rainText && NSHeight(self.bounds) >= 58) {
+    else if (rainText && NSHeight(self.bounds) < 58) {
+        // Keep the rain beside the weather glyph when the temperature row is
+        // too narrow. Reuse that row; never silently discard a wet day.
+        CGFloat rainX = rainOnlyRow ? MAX(0, (width - rainW + 4) / 2) : width - rainW;
+        [rainText drawAtPoint:NSMakePoint(rainX, 12) withAttributes:rainStyle];
+    } else if (rainText) {
         CGFloat alone = ceil([rainText sizeWithAttributes:rainStyle].width);
         [rainText drawAtPoint:NSMakePoint(MAX(0, (width - alone) / 2), 44) withAttributes:rainStyle];
     }
@@ -219,7 +232,9 @@ static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, dou
     NSNumber *code = Finite(day[@"weatherCode"]);
     NSString *symbol = code ? WeatherCodeSymbol(code.integerValue, YES) : nil;
     NSImage *icon = symbol ? [NSImage imageWithSystemSymbolName:symbol accessibilityDescription:WeatherCodeLabel(code.integerValue)] : nil;
-    if (icon) {
+    NSString *rainText = [self rainText];
+    BOOL rainInIconRow = rainText && NSHeight(self.bounds) <= 78;
+    if (icon && !rainInIconRow) {
         NSImageSymbolConfiguration *style = [[NSImageSymbolConfiguration configurationWithPointSize:14 weight:NSFontWeightRegular]
             configurationByApplyingConfiguration:SymbolInk()];
         icon = [icon imageWithSymbolConfiguration:style] ?: icon;
@@ -230,12 +245,10 @@ static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, dou
     CGFloat minW = ceil([minText sizeWithAttributes:tempStyle].width);
     [maxText drawAtPoint:NSMakePoint(MAX(0, (width - maxW) / 2), 36) withAttributes:tempStyle];
     [minText drawAtPoint:NSMakePoint(MAX(0, (width - minW) / 2), 50) withAttributes:@{NSFontAttributeName: temp, NSForegroundColorAttributeName: NSColor.secondaryLabelColor}];
-    NSNumber *rain = Finite(day[@"rainMm"]);
-    if (rain && rain.doubleValue >= 1 && NSHeight(self.bounds) > 78) {
-        NSString *rainText = rain.doubleValue < 10 ? [NSString stringWithFormat:@"%.1f", rain.doubleValue] : [NSString stringWithFormat:@"%.0f", round(rain.doubleValue)];
+    if (rainText) {
         NSDictionary *rainStyle = @{NSFontAttributeName: temp, NSForegroundColorAttributeName: NSColor.systemBlueColor};
         CGFloat rainW = ceil([rainText sizeWithAttributes:rainStyle].width);
-        [rainText drawAtPoint:NSMakePoint(MAX(0, (width - rainW) / 2), 66) withAttributes:rainStyle];
+        [rainText drawAtPoint:NSMakePoint(MAX(0, (width - rainW) / 2), rainInIconRow ? 18 : 66) withAttributes:rainStyle];
     }
     if (NSHeight(self.bounds) > 72 && self.hasWeek)
         DrawTemperatureRange(NSMakeRect(8, NSHeight(self.bounds) - 10, MAX(4, width - 16), kRangeThickness), self.hasWeek, self.weekMin, self.weekMax, day[@"min"], day[@"max"]);

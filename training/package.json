@@ -1,0 +1,13 @@
+{
+  "name": "isobar-training",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "tsc --noEmit && node --experimental-strip-types --test test/*.test.ts"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10",
+    "typescript": "5.9.3"
+  }
+}

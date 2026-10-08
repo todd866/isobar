@@ -1,0 +1,17 @@
+{
+  "notice": "Fixture bulletin for tests. Not a flight briefing.",
+  "icao": "YPPH",
+  "metar": {
+    "icao": "YPPH",
+    "raw": "METAR YPPH 261200Z 14012KT 9999 SCT034 BKN073 18/12 Q1015",
+    "time": "2026-09-26T12:00:00Z",
+    "visibility_m": 9999,
+    "ceiling_ft": 7300
+  },
+  "taf": {
+    "raw": "TAF YPPH 261200Z 2612/2712 14012KT 9999 SCT030",
+    "issue_time": "2026-09-26T12:00:00Z",
+    "valid_from": "2026-09-26T12:00:00Z",
+    "valid_to": "2026-09-27T12:00:00Z"
+  }
+}

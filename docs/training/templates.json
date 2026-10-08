@@ -1,0 +1,149 @@
+{
+  "schema": "isobar.training.templates/v1",
+  "written": "2026-10-06",
+  "instance_id": "template id + store run id + valid time + sha256 of the authority product. Yesterday's TAF is a different instance. Scheduling updates the concept, not the instance.",
+  "serve_rule": "If the recomputed key differs from the frozen key by more than the tolerance, do not serve the card. Missing data is a skipped card. Never fill a missing value with zero.",
+  "difficulty": {
+    "easy": "One station or one cell. The value is a single field. One comparison.",
+    "medium": "A definition has to be applied (ceiling is BKN or OVC; TEMPO is a group; the card names which product is authoritative).",
+    "hard": "A field over the grid, or a contrast where the obvious neighbouring maximum is the wrong answer."
+  },
+  "tolerances": {
+    "wind_kt": 1,
+    "geostrophic_kt": 5,
+    "position_deg": 0.5,
+    "pressure_hpa": 0.5,
+    "cape_j_per_kg": 50,
+    "height_m": 50,
+    "density_altitude_ft": 50,
+    "time": "exact TAF group or exact model hour"
+  },
+  "global_rules": [
+    "Name one authority product. If the TAF and the model disagree, the card says which one is scored.",
+    "Ceiling is the lowest BKN or OVC base. FEW and SCT are not a ceiling. CAVOK is not a cloud group.",
+    "A teaching threshold is labelled as a teaching threshold. It is not the AIP alternate minima and it is not 14 CFR 91.169.",
+    "TEMPO and INTER count only when the stem says they count.",
+    "Geostrophic speed uses a central difference on MSLP, density 1.225 kg/m³, f = 2 Ω sin φ, and only where latitude is at least 30° from the equator. Report the model's 10 m wind at the same cell. Do not call the geostrophic number a surface wind.",
+    "A pressure centre on the outer two rows or columns of the grid is not a centre.",
+    "No front position unless a front product exists.",
+    "Australian cards use metres, feet, hPa, knots and UTC. They do not use statute miles or inches of mercury.",
+    "practiceLocale is au or us when the scored rule differs. A miss on an au card does not schedule the us twin as the same fact.",
+    "Verbatim METAR, TAF and SIGMET text is evidence class verify (aviationweather). It stays out of a foss export. A number taken from an ECMWF CC BY grid may be the evidence for a CC BY question.",
+    "The map notice stands: situational awareness only, not a flight briefing. The card says so in the footer, not as a sentence in the stem."
+  ],
+  "templates": [
+    {
+      "id": "taf-first-below-threshold",
+      "concept": "fpl.taf-threshold",
+      "mode": "live-chart",
+      "layer": "fly",
+      "difficulty": "medium",
+      "authority": "taf",
+      "inputs": ["TAF raw for each ICAO in the set", "declared ceiling_ft", "declared visibility_m", "whether TEMPO and INTER count"],
+      "key": "The ICAO whose first counted group has a BKN or OVC base at or below ceiling_ft, or a visibility below visibility_m. The key includes the group type and the UTC start.",
+      "traps": ["SCT treated as a ceiling", "the FM group at the same time as a worse TEMPO", "CAVOK treated as missing rather than as a pass"]
+    },
+    {
+      "id": "metar-best-headwind",
+      "concept": "fpl.wind-component",
+      "mode": "live-chart",
+      "layer": "fly",
+      "difficulty": "easy",
+      "authority": "metar-runway-components",
+      "inputs": ["runway end", "true heading", "headwind_kt", "crosswind_kt from the aviation product"],
+      "key": "The runway end with the greatest positive headwind_kt. A tie is the whole set of ends.",
+      "traps": ["choosing the runway facing the wind by name without the heading", "using the gust when the METAR has no gust"]
+    },
+    {
+      "id": "taf-steady-headwind",
+      "concept": "fpl.wind-component",
+      "mode": "live-chart",
+      "layer": "fly",
+      "difficulty": "medium",
+      "authority": "taf-plus-runway-headings",
+      "inputs": ["one FM or base wind group, steady speed not the gust", "true headings from the runway file"],
+      "formula": "diff = wrap(wind_dir − heading) to ±180°. headwind = speed × cos(diff). crosswind = speed × sin(diff). Positive crosswind is from the right.",
+      "key": "End or ends with the greatest headwind, within 1 kt.",
+      "traps": ["using the gust instead of the steady wind", "using magnetic heading"]
+    },
+    {
+      "id": "mslp-geostrophic-max",
+      "concept": "met.gradient-wind",
+      "mode": "live-chart",
+      "layer": "isobars",
+      "difficulty": "hard",
+      "authority": "ecmwf-mslp-and-10m",
+      "inputs": ["mslp, u10, v10 float16 for one valid time", "mask: 30–43°S, 112–155°E", "stencil range ≤ 6 hPa", "drop the outer two cells"],
+      "formula": "ug = −(1/(ρ f)) ∂p/∂y, vg = (1/(ρ f)) ∂p/∂x, y northward, f = 2 Ω sin φ, ρ = 1.225. Speed in knots. Direction is the meteorological FROM direction.",
+      "key": "Latitude, longitude, speed, direction, MSLP, and the 10 m wind at that cell.",
+      "traps": ["the tropical 1/f spike outside the latitude floor", "calling the geostrophic speed the surface wind"]
+    },
+    {
+      "id": "wind10-max",
+      "concept": "met.surface-friction",
+      "mode": "live-chart",
+      "layer": "wind",
+      "difficulty": "medium",
+      "authority": "ecmwf-u10-v10",
+      "inputs": ["u10 and v10 in m/s", "mask: 12–44°S, 112–155°E", "drop the outer two cells"],
+      "key": "The cell with the greatest 10 m speed in knots.",
+      "traps": ["answering with the geostrophic maximum instead"]
+    },
+    {
+      "id": "mslp-high-centre",
+      "concept": "met.pressure-systems",
+      "mode": "live-chart",
+      "layer": "isobars",
+      "difficulty": "easy",
+      "authority": "ecmwf-mslp",
+      "inputs": ["mslp", "mask interior of 10–45°S, 110–160°E"],
+      "key": "The maximum hPa and the set of cells that share it. A maximum on the outer two cells is rejected.",
+      "traps": ["a low on the southern edge of the window reported as the feature of the day"]
+    },
+    {
+      "id": "sigmet-versus-cape",
+      "concept": "met.thunderstorm",
+      "mode": "live-chart",
+      "layer": "fly",
+      "difficulty": "hard",
+      "authority": "sigmet-polygon-and-mucape",
+      "inputs": ["one TS SIGMET polygon", "mucape on the same valid time", "a comparison region that is outside the polygon"],
+      "key": "Maximum MUCAPE inside the polygon, its cell, and the maximum in the comparison region. The scored location of the storm is the SIGMET, not the CAPE maximum.",
+      "traps": ["pointing at the Cape York or Kimberley CAPE maximum because the number is bigger"]
+    },
+    {
+      "id": "density-altitude-pair",
+      "concept": "perf.density-altitude",
+      "mode": "live-chart",
+      "layer": "temperature",
+      "difficulty": "medium",
+      "authority": "metar-qnh-oat-and-point-elevation",
+      "formula": "elevation_ft from the point file. PA = elevation_ft + (1013.25 − QNH) × 30. ISA = 15 − 2 × PA/1000. DA = PA + 120 × (OAT − ISA).",
+      "key": "Which station has the higher density altitude, and both values in feet.",
+      "traps": ["using the model 2 m temperature instead of the METAR", "using an AIP elevation that is not in the store", "treating the 30 ft and 120 ft rules as exact"]
+    },
+    {
+      "id": "freezing-level-lower",
+      "concept": "met.icing",
+      "mode": "live-chart",
+      "layer": "fly",
+      "difficulty": "easy",
+      "authority": "aviation-freezing-level",
+      "inputs": ["freezing_level_m on each station product"],
+      "check": "Interpolate 0 °C between the upper-air levels. If that height differs by more than 200 m, do not serve.",
+      "key": "The station with the lower freezing level, in metres.",
+      "traps": ["reading the higher number as the lower level"]
+    },
+    {
+      "id": "point-visibility-first-below",
+      "concept": "met.taf-groups",
+      "mode": "live-chart",
+      "layer": "fly",
+      "difficulty": "medium",
+      "authority": "ecmwf-point-visibility",
+      "inputs": ["hourly visibility on the named point series", "threshold metres"],
+      "key": "The point and the first hour where visibility is below the threshold.",
+      "traps": ["answering from the TAF when the stem says the model series", "the reverse"]
+    }
+  ]
+}

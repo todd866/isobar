@@ -80,9 +80,12 @@ typedef struct {
     double scale, offsetX, offsetY;
     double minX, maxX, minY, maxY;
     BOOL valid;
+    BOOL equirectangular;
 } OwnView;
 
 OwnView OwnViewMake(OwnLambert geo, double west, double east, double south, double north,
+    double pixelX, double pixelY, double pixelW, double pixelH);
+OwnView OwnWorldViewMake(double west, double east, double south, double north,
     double pixelX, double pixelY, double pixelW, double pixelH);
 BOOL OwnViewProject(OwnView view, double latitude, double longitude, double *x, double *y);
 
@@ -296,19 +299,63 @@ typedef struct {
 
 OwnBarb OwnWindBarb(double fromDegrees, double knots, double staff, BOOL southernHemisphere);
 
-// Low-saturation cool-to-warm ramp for a temperature field.
+// Absolute temperature ramp. Stops are degrees Celsius, never stretched
+// to the values on screen.
 typedef struct {
     double r, g, b;
 } OwnRGB;
 
+// Classic chart palettes (tools/own-chart.m and its key). The GPU map uses
+// OwnFieldRGB and OwnFieldRamp instead.
 OwnRGB OwnTemperatureRGB(double celsius);
+// Slightly cooler and darker, for ocean cells under a colour field.
+OwnRGB OwnOceanWash(OwnRGB colour);
+// Graduated overlay palettes. Inputs below the first stop are clamped; NaN is
+// handled by the renderer as transparent missing data.
+OwnRGB OwnRainRGB(double millimetres);
+OwnRGB OwnWindRGB(double knots);
 
 // Animated MSLP chart. Not the Bureau PDF fills in MSLPColour*.
 OwnRGB OwnChartSea(void);
 OwnRGB OwnChartLand(void);
 OwnRGB OwnChartInk(void);
 OwnRGB OwnChartTitle(void);
-// 20 hPa lines (1000, 1020, …) are heavier than the 4 hPa lines between them.
+
+// Named plate. Light is the Bureau chart: pale yellow land, pale blue-grey
+// sea, near-black coast, charcoal isobars. Dark is that design inverted —
+// warm land stays warmer than cool sea, and the ink flips light. A field
+// ramp is the only other colour on the map.
+typedef struct {
+    OwnRGB land;
+    OwnRGB sea;
+    OwnRGB coast;
+    OwnRGB isobar;
+    OwnRGB label;
+    OwnRGB centre;
+    OwnRGB uncovered;
+    OwnRGB missing;
+    OwnRGB edge;
+} OwnChartPalette;
+
+OwnChartPalette OwnChartPaletteFor(BOOL dark);
+
+// GPU map overlay. kind matches IsobarFieldKind: 0 pressure, 1 temperature,
+// 2 wind, 3 rain. The plate stays the map: temperature is a low-saturation
+// two-hue ramp (cool blue-grey, warm sand to terracotta, muted red only from
+// 35 °C) at no more than 35% opacity; rain and wind are each one hue.
+// `alphas` is the overlay opacity at each stop. Values below `cutoff` draw
+// no overlay. Over sea the opacity is further multiplied by
+// OwnFieldSeaAlphaScale, so a warm sea keeps reading as sea.
+void OwnFieldRamp(int kind, const double **stops, const OwnRGB **cols, const double **alphas,
+    int *count, double *cutoff);
+// Appearance variants share value stops and opacity, including with the legend.
+void OwnFieldRampForAppearance(int kind, BOOL dark, const double **stops, const OwnRGB **cols,
+    const double **alphas, int *count, double *cutoff);
+OwnRGB OwnFieldRGBForAppearance(int kind, double value, BOOL dark);
+OwnRGB OwnFieldRGB(int kind, double value);
+double OwnFieldOverlayAlpha(int kind, double value);
+double OwnFieldSeaAlphaScale(int kind);
+// Uniform light-chart stroke in points; dark rendering uses 1 point at 85%.
 double OwnIsobarWidth(double levelHPa);
 
 // Natural Earth crop. See Resources/OWNCHART-COAST.txt.
@@ -322,4 +369,11 @@ typedef struct {
 } OwnCoast;
 
 OwnCoast OwnCoastParse(NSData *data);
+// The coastline file: ISOBAR_COAST, else the app bundle's copy, else the
+// checkout's Resources/ (tools and tests run from the repo root). Every
+// renderer resolves the coast here so an installed app never draws without it.
+NSString *OwnCoastPath(void);
+// Natural Earth world coastline used when a wrapping global grid is active.
+// ISOBAR_WORLD_COAST overrides the bundle/checkout fallback.
+NSString *OwnWorldCoastPath(void);
 void OwnCoastFree(OwnCoast coast);

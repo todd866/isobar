@@ -79,6 +79,59 @@ static BOOL WaitFor(BOOL (^ready)(void)) {
     return ready();
 }
 
+// Lines describe the field, independently of the H/L candidate cache. Cover
+// every marker refresh and model boundary in the full nine-hour fixture.
+static void CheckStrokeHistoryIndependence(OwnRun *run) {
+    OwnLayerOptions lines = {.bare = 1, .inkOnly = 1, .quiet = 1};
+    OwnMotionState *state = [OwnMotionState new];
+    NSInteger mismatches = 0;
+    for (int frame = 0; frame <= 120; frame++) { @autoreleasepool {
+        double index = (run.hours - 1) * frame / 120.0;
+        NSData *playing = Pixels(OwnRunRenderMotion(run, index, @"", lines, nil, 1, state));
+        NSData *direct = Pixels(OwnRunRenderFraction(run, index, @"", lines, nil, 1));
+        if (!playing || ![playing isEqualToData:direct]) mismatches++;
+    }}
+    check(mismatches == 0, [NSString stringWithFormat:
+        @"all 121 forecast samples draw the same pressure lines regardless of marker history (%ld mismatches)",
+        (long)mismatches]);
+}
+
+static void CheckSmallRingRetiresSmoothly(OwnRun *run) {
+    OwnLayerOptions lines = {.bare = 1, .inkOnly = 1, .quiet = 1};
+    double previous = -1, largest = 0, maximum = 0, minimum = INFINITY;
+    BOOL isolatedRing = NO;
+    // The small ocean ring north-west of Darwin shrinks below the clutter
+    // threshold here. No other pressure line crosses this isolated region.
+    for (int frame = 0; frame <= 240; frame++) { @autoreleasepool {
+        double index = 1.10 + frame / 480.0;
+        NSData *pixels = Pixels(OwnRunRenderFraction(run, index, @"", lines, nil, 1));
+        const uint8_t *bytes = pixels.bytes;
+        double ink = 0;
+        if (pixels.length != 580 * 444 * 4) { largest = INFINITY; break; }
+        for (int y = 50; y < 92; y++) for (int x = 155; x < 218; x++)
+            ink += bytes[(y * 580 + x) * 4 + 3] / 255.0;
+        if (frame == 60) {
+            int left = 218, right = 155, top = 92, bottom = 50;
+            for (int y = 50; y < 92; y++) for (int x = 155; x < 218; x++) {
+                if (bytes[(y * 580 + x) * 4 + 3] < 8) continue;
+                left = MIN(left, x); right = MAX(right, x);
+                top = MIN(top, y); bottom = MAX(bottom, y);
+            }
+            // At this instant the whole ring is inside the crop, with no
+            // neighbouring line crossing its edge (also checked visually).
+            isolatedRing = left > 155 && right < 217 && top > 50 && bottom < 91 &&
+                right - left > 12 && bottom - top > 8;
+        }
+        maximum = MAX(maximum, ink); minimum = MIN(minimum, ink);
+        if (previous >= 0) largest = MAX(largest, fabs(ink - previous));
+        previous = ink;
+    }}
+    fprintf(stderr, "shrinking ring ink %.1f..%.1f worst step %.2f\n", minimum, maximum, largest);
+    check(isolatedRing, @"the continuity probe contains an isolated complete ring");
+    check(maximum > 10 && minimum < 1 && largest < maximum * .20,
+        @"a shrinking ring fades away instead of vanishing in one forecast step");
+}
+
 static void CheckLabelFade(void) {
     NSString *error = nil;
     OwnRun *run = OwnRunLoad(@"Tests/fixtures/grid025", @"Resources/ownchart-coast.bin", &error);
@@ -152,8 +205,8 @@ static void CheckExactStrokes(OwnRun *run, NSString *name, double start, double 
     double overall = strokes ? (double)mismatched / strokes : 1;
     fprintf(stderr, "%s live-vs-still stroke mismatch %.5f (worst frame %.5f) open inset %.2f\n",
         name.UTF8String, overall, worst, worstInset);
-    // A label beside a line end drops the short stub it leaves, so a frame
-    // whose label sits elsewhere can differ by that stub.
+    // Raster clipping beside annotation edges leaves a small antialiasing
+    // tolerance; the contour itself must agree away from those boxes.
     check(strokes > 20000 && overall < 0.003 && worst < 0.01,
         [NSString stringWithFormat:@"%@ live strokes match a still of the same instant outside the annotations", name]);
     check(worstInset <= 2,
@@ -209,6 +262,8 @@ int main(void) { @autoreleasepool {
     {
         OwnRun *quarter = OwnRunLoad(@"Tests/fixtures/grid025", @"Resources/ownchart-coast.bin", NULL);
         if (quarter.hours >= 3) {
+            CheckStrokeHistoryIndependence(quarter);
+            CheckSmallRingRetiresSmoothly(quarter);
             CheckExactStrokes(quarter, @"0.25°", 0.35, 3);
             CheckKnockouts(quarter, @"0.25°", 0.35, 3);
         } else check(NO, @"0.25° fixture loads for the stroke checks");
@@ -355,18 +410,53 @@ int main(void) { @autoreleasepool {
         for (int h = 0; h < 2; h++) for (int p = 0; p < 91*66; p++) rainValues[h*91*66+p] = .75 + h*.5;
         [rain writeToFile:[directory stringByAppendingPathComponent:@"rain24.f32"] atomically:YES];
         OwnRun *thresholdRun = OwnRunLoad(directory,@"Resources/ownchart-coast.bin",NULL);
-        double lastRainChange = -1;
+        NSData *lastRainFrame = nil;
         BOOL gradualRain = YES;
         for (int step = 0; step <= 4; step++) {
             double hour = step / 4.0;
-            OwnLayerOptions wet = {.bare=1,.rain=1};
-            NSData *plain = Pixels(OwnRunRenderMotion(thresholdRun,hour,@"",pressure,nil,1,[OwnMotionState new]));
-            NSData *hatched = Pixels(OwnRunRenderMotion(thresholdRun,hour,@"",wet,nil,1,[OwnMotionState new]));
-            double change = MeanChange(plain,hatched);
-            if (change < lastRainChange + .02) gradualRain = NO;
-            lastRainChange = change;
+            OwnLayerOptions wet = {.bare=1,.rain=1,.plateOnly=1};
+            NSData *coloured = Pixels(OwnRunRenderFraction(thresholdRun,hour,@"",wet,nil,1));
+            // A colour ramp need not get monotonically farther from the base
+            // map. Test the visible change between adjacent rain values.
+            if (lastRainFrame && MeanChange(lastRainFrame,coloured) < .05) gradualRain = NO;
+            lastRainFrame = coloured;
         }
-        check(gradualRain,@"rain hatch fades continuously through the 1 mm threshold");
+        check(gradualRain,@"rain colour changes across values below and above 1 mm");
+        OwnLayerOptions rainPlate = {.bare=1,.rain=1,.plateOnly=1};
+        NSData *below = Pixels(OwnRunRenderFraction(thresholdRun,.48,@"",rainPlate,nil,1));
+        NSData *above = Pixels(OwnRunRenderFraction(thresholdRun,.52,@"",rainPlate,nil,1));
+        check(MeanChange(below,above) > .01 && MeanChange(below,above) < 1,
+            @"crossing 1 mm has no abrupt threshold in the rain wash");
+
+        OwnLayerOptions rainLayer = {.bare = 1, .rain = 1};
+        OwnLayerOptions windLayer = {.bare = 1, .windFill = 1};
+        NSData *plainMap = Pixels(OwnRunRenderMotion(run, .5, @"", pressure, nil, 1, [OwnMotionState new]));
+        NSData *rainMap = Pixels(OwnRunRenderMotion(run, .5, @"", rainLayer, nil, 1, [OwnMotionState new]));
+        NSData *windMap = Pixels(OwnRunRenderMotion(run, .5, @"", windLayer, nil, 1, [OwnMotionState new]));
+        check(ChangedPixels(plainMap, rainMap) > 1000, @"positive rain produces a visible graduated wash");
+        check(ChangedPixels(plainMap, windMap) > 1000, @"wind fill is independent of wind barbs");
+
+        NSData *originalRain = [rain copy];
+        NSData *previousWet = nil;
+        for (NSNumber *amount in @[@(NAN), @0, @0.05, @0.1, @5, @50]) {
+            for (int p=0; p<91*66*2; p++) rainValues[p] = amount.floatValue;
+            [rain writeToFile:[directory stringByAppendingPathComponent:@"rain24.f32"] atomically:YES];
+            OwnRun *sample = OwnRunLoad(directory,@"Resources/ownchart-coast.bin",NULL);
+            NSData *dry = Pixels(OwnRunRenderFraction(sample,.5,@"",pressure,nil,1));
+            NSData *wet = Pixels(OwnRunRenderFraction(sample,.5,@"",rainLayer,nil,1));
+            if (!isfinite(amount.doubleValue) || amount.doubleValue < .1) {
+                // UX-039: the rain ramp is clear below 0.1 mm per 24 h.
+                check([dry isEqual:wet], @"missing, zero and sub-0.1 mm rainfall add no coloured pixels");
+                check([sample hasRainAtIndex:0] == isfinite(amount.doubleValue),
+                    @"unavailable rain remains distinct from a valid dry field");
+            } else {
+                check(MeanChange(dry,wet) > 1, @"0.1 mm, the lightest keyed rain, is visible");
+                if (previousWet) check(MeanChange(previousWet,wet) > 1,
+                    @"light, moderate and heavy totals produce distinct rain colours");
+                previousWet = wet;
+            }
+        }
+        [originalRain writeToFile:[directory stringByAppendingPathComponent:@"rain24.f32"] atomically:YES];
 
         NSString *pressurePath = [directory stringByAppendingPathComponent:@"msl.f32"];
         NSMutableData *missing = [NSMutableData dataWithContentsOfFile:pressurePath];

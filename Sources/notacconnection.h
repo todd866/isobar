@@ -8,6 +8,9 @@ NS_ASSUME_NONNULL_BEGIN
 NSDictionary *IsobarNotacNewKeychainItem(NSDictionary *query, NSString *secret);
 
 FOUNDATION_EXPORT NSString * const IsobarNotacErrorDomain;
+// The code loadToken: uses when no key is saved. Any other failure means a
+// saved key could not be read (for example, a locked Keychain).
+FOUNDATION_EXPORT const NSInteger IsobarNotacErrorNoKey;
 
 // NOTAC keys are deliberately kept out of UserDefaults, process arguments,
 // environment variables, logs and returned collector output.

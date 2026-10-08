@@ -6,3 +6,9 @@ Rings wider or taller than 80° (Eurasia, Antarctica) are left out; Australia,
 Tasmania, New Guinea, New Zealand and the nearby islands are kept.
 Coordinates are signed hundredths of a degree, little-endian.
 Packed by tools/pack-coast.py.
+
+Resources/world-coast.bin contains all land rings from the same 1:50m source,
+including Eurasia and Antarctica. It is packed with --global, with no regional
+crop or duplicate closing points. Both native and web global maps use these
+identical bytes. Source:
+https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_50m_land.geojson

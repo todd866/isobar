@@ -139,6 +139,18 @@ static NSString *ObservationStateCode(NSDictionary *obs) {
     return code;
 }
 
+// Formatters and calendars cost far more to build than to use, and parsers run
+// on more than one thread, so each thread keeps its own.
+static id ThreadCached(NSString *key, id (^make)(void)) {
+    NSMutableDictionary *cache = NSThread.currentThread.threadDictionary;
+    id value = cache[key];
+    if (!value) {
+        value = make();
+        cache[key] = value;
+    }
+    return value;
+}
+
 // Bureau civil stamps are local wall time. A missing or unknown state, or a
 // clock time that does not exist (the DST spring-forward gap), is not a time.
 static NSDate *CivilTime(NSString *yyyymmddhhmmss, NSTimeZone *tz) {
@@ -154,8 +166,11 @@ static NSDate *CivilTime(NSString *yyyymmddhhmmss, NSTimeZone *tz) {
     NSInteger minute = [[yyyymmddhhmmss substringWithRange:NSMakeRange(10, 2)] integerValue];
     NSInteger second = yyyymmddhhmmss.length >= 14 ? [[yyyymmddhhmmss substringWithRange:NSMakeRange(12, 2)] integerValue] : 0;
     if (year < 1 || month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59) return nil;
-    NSCalendar *cal = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
-    cal.timeZone = tz;
+    NSCalendar *cal = ThreadCached([@"isobar.civil." stringByAppendingString:tz.name], ^id{
+        NSCalendar *made = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+        made.timeZone = tz;
+        return made;
+    });
     NSDateComponents *c = [NSDateComponents new];
     c.calendar = cal;
     c.timeZone = tz;
@@ -220,12 +235,19 @@ NSDictionary *ParseLatestObservation(NSData *json) {
 
 static NSDate *ISODate(id v) {
     if (![v isKindOfClass:NSString.class]) return nil;
-    NSISO8601DateFormatter *f = [NSISO8601DateFormatter new];
-    f.formatOptions = NSISO8601DateFormatWithInternetDateTime | NSISO8601DateFormatWithFractionalSeconds;
-    NSDate *d = [f dateFromString:v];
+    NSISO8601DateFormatter *fractional = ThreadCached(@"isobar.iso.fractional", ^id{
+        NSISO8601DateFormatter *made = [NSISO8601DateFormatter new];
+        made.formatOptions = NSISO8601DateFormatWithInternetDateTime | NSISO8601DateFormatWithFractionalSeconds;
+        return made;
+    });
+    NSDate *d = [fractional dateFromString:v];
     if (d) return d;
-    f.formatOptions = NSISO8601DateFormatWithInternetDateTime;
-    return [f dateFromString:v];
+    NSISO8601DateFormatter *whole = ThreadCached(@"isobar.iso.whole", ^id{
+        NSISO8601DateFormatter *made = [NSISO8601DateFormatter new];
+        made.formatOptions = NSISO8601DateFormatWithInternetDateTime;
+        return made;
+    });
+    return [whole dateFromString:v];
 }
 
 NSArray<NSDictionary *> *ParseDailyForecasts(NSData *json) {
@@ -1040,6 +1062,18 @@ NSArray<NSDictionary *> *DefaultLocations(void) {
     ];
 }
 
+NSTimeZone *ZoneForPlace(NSDictionary *place) {
+    NSString *name = place[@"timezone"];
+    NSTimeZone *tz = [name isKindOfClass:NSString.class] ? [NSTimeZone timeZoneWithName:name] : nil;
+    if (tz) return tz;
+    NSDictionary *names = @{
+        @"WA": @"Australia/Perth", @"NT": @"Australia/Darwin", @"SA": @"Australia/Adelaide",
+        @"QLD": @"Australia/Brisbane", @"NSW": @"Australia/Sydney", @"ACT": @"Australia/Sydney",
+        @"VIC": @"Australia/Melbourne", @"TAS": @"Australia/Hobart",
+    };
+    return [NSTimeZone timeZoneWithName:names[[place[@"state"] uppercaseString] ?: @""] ?: @"Australia/Perth"];
+}
+
 static NSArray *LocationFields(void) {
     return @[@"name", @"state", @"geohash", @"latitude", @"longitude", @"timezone", @"stationName", @"stationWMO", @"stationProduct"];
 }
@@ -1136,6 +1170,35 @@ static BOOL PDFSpace(unichar c) {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r';
 }
 
+NSData *PDFInflate(NSData *raw) {
+    static const NSUInteger kPDFInflateLimit = 64u * 1024u * 1024u;
+    if (!raw.length || raw.length > UINT_MAX) return nil;
+    z_stream strm = {0};
+    strm.next_in = (Bytef *)raw.bytes;
+    strm.avail_in = (uInt)raw.length;
+    if (inflateInit(&strm) != Z_OK) return nil;
+    NSUInteger start = 65536;
+    if (raw.length < 16384) start = raw.length * 4 + 64;
+    if (start > kPDFInflateLimit) start = kPDFInflateLimit;
+    NSMutableData *buf = [NSMutableData dataWithLength:start];
+    int rc = Z_OK;
+    while (rc == Z_OK) {
+        if (strm.total_out >= kPDFInflateLimit) { rc = Z_BUF_ERROR; break; }
+        if (strm.total_out >= buf.length) {
+            NSUInteger extra = MIN((NSUInteger)65536 + buf.length, kPDFInflateLimit - buf.length);
+            if (!extra) { rc = Z_BUF_ERROR; break; }
+            [buf increaseLengthBy:extra];
+        }
+        strm.next_out = (Bytef *)buf.mutableBytes + strm.total_out;
+        strm.avail_out = (uInt)MIN(buf.length - strm.total_out, (NSUInteger)UINT_MAX);
+        rc = inflate(&strm, Z_NO_FLUSH);
+    }
+    inflateEnd(&strm);
+    if (rc != Z_STREAM_END || strm.total_out > kPDFInflateLimit) return nil;
+    buf.length = strm.total_out;
+    return buf;
+}
+
 static NSArray<NSData *> *PDFInflatedStreams(NSData *pdf) {
     if (!pdf.length) return @[];
     const uint8_t *bytes = pdf.bytes;
@@ -1156,35 +1219,7 @@ static NSArray<NSData *> *PDFInflatedStreams(NSData *pdf) {
             if (raw.length >= 2 && ((const uint8_t *)raw.bytes)[raw.length - 2] == '\r') trim = 2;
             raw = [raw subdataWithRange:NSMakeRange(0, raw.length - trim)];
         }
-        z_stream strm = {0};
-        strm.next_in = (Bytef *)raw.bytes;
-        strm.avail_in = (uInt)MIN(raw.length, (NSUInteger)UINT_MAX);
-        NSData *dec = nil;
-        // A cached chart must not be able to expand without a ceiling.
-        static const NSUInteger kPDFInflateLimit = 64u * 1024u * 1024u;
-        if (raw.length && raw.length <= UINT_MAX && inflateInit(&strm) == Z_OK) {
-            NSUInteger start = 65536;
-            if (raw.length < 16384) start = raw.length * 4 + 64;
-            if (start > kPDFInflateLimit) start = kPDFInflateLimit;
-            NSMutableData *buf = [NSMutableData dataWithLength:start];
-            int rc = Z_OK;
-            while (rc == Z_OK) {
-                if (strm.total_out >= kPDFInflateLimit) { rc = Z_BUF_ERROR; break; }
-                if (strm.total_out >= buf.length) {
-                    NSUInteger extra = MIN((NSUInteger)65536 + buf.length, kPDFInflateLimit - buf.length);
-                    if (!extra) { rc = Z_BUF_ERROR; break; }
-                    [buf increaseLengthBy:extra];
-                }
-                strm.next_out = (Bytef *)buf.mutableBytes + strm.total_out;
-                strm.avail_out = (uInt)MIN(buf.length - strm.total_out, (NSUInteger)UINT_MAX);
-                rc = inflate(&strm, Z_NO_FLUSH);
-            }
-            inflateEnd(&strm);
-            if (rc == Z_STREAM_END && strm.total_out <= kPDFInflateLimit) {
-                buf.length = strm.total_out;
-                dec = buf;
-            }
-        }
+        NSData *dec = PDFInflate(raw);
         if (dec.length) [out addObject:dec];
         i = k + 9;
     }
@@ -2491,7 +2526,8 @@ NSString *StoreRunCompareTitle(NSDate *run, NSDate *previous) {
 }
 
 static const NSTimeInterval kFrameSlop = 90 * 60;
-static const NSTimeInterval kFrameHorizon = 96 * 3600;
+// Schema 2 publishes through 168 h. The ladder must not stop at the old 96 h grid.
+static const NSTimeInterval kFrameHorizon = 168 * 3600;
 
 NSArray<NSNumber *> *StoreFrameIndices(NSArray<NSDate *> *times, NSDate *now) {
     if (!times.count || !now) return @[];
@@ -2511,7 +2547,8 @@ NSArray<NSNumber *> *StoreFrameIndices(NSArray<NSDate *> *times, NSDate *now) {
     if (anchor < 0) return @[];
     NSDate *origin = times[anchor];
     NSMutableArray<NSNumber *> *ladder = [NSMutableArray array];
-    for (int lead = 0; lead <= 96; lead += 12) {
+    int horizonHours = (int)llround(kFrameHorizon / 3600.0);
+    for (int lead = 0; lead <= horizonHours; lead += 12) {
         NSDate *want = [origin dateByAddingTimeInterval:lead * 3600.0];
         NSInteger best = -1;
         NSTimeInterval bestDelta = kFrameSlop + 1;
@@ -2788,9 +2825,12 @@ NSDate *WeatherInstant(NSString *text) {
             s = [NSString stringWithFormat:@"%@%@:00%@", [text substringToIndex:tee.location + 1], clock, [rest substringFromIndex:sign]];
     } else if (text.length == 17)
         s = [[text substringToIndex:16] stringByAppendingString:@":00Z"];
-    NSISO8601DateFormatter *formatter = [NSISO8601DateFormatter new];
-    formatter.formatOptions = NSISO8601DateFormatWithInternetDateTime;
-    formatter.timeZone = [NSTimeZone timeZoneWithName:@"GMT"];
+    NSISO8601DateFormatter *formatter = ThreadCached(@"isobar.iso.gmt", ^id{
+        NSISO8601DateFormatter *made = [NSISO8601DateFormatter new];
+        made.formatOptions = NSISO8601DateFormatWithInternetDateTime;
+        made.timeZone = [NSTimeZone timeZoneWithName:@"GMT"];
+        return made;
+    });
     return [formatter dateFromString:s];
 }
 
@@ -3275,6 +3315,49 @@ NSArray<NSDictionary *> *WarningTags(NSArray<NSDictionary *> *warnings) {
     return out;
 }
 
+static BOOL WarningIsSevere(NSDictionary *warning) {
+    NSMutableString *search = [NSMutableString string];
+    for (NSString *key in @[@"title", @"shortTitle"]) {
+        NSString *value = [warning[key] isKindOfClass:NSString.class] ? warning[key] : @"";
+        if (value.length) [search appendFormat:@" %@", value.lowercaseString];
+    }
+    NSString *s = search.copy;
+    for (NSString *term in @[
+        @"severe thunderstorm", @"thunderstorm warning", @"severe weather", @"fire warning", @"fire weather", @"bushfire",
+        @"cyclone", @"flood emergency", @"major flood", @"tsunami", @"tornado", @"extreme fire danger"
+    ]) {
+        if ([s containsString:term]) return YES;
+    }
+    return NO;
+}
+
+NSDictionary *WarningBadgeModel(NSArray<NSDictionary *> *warnings) {
+    if (![warnings isKindOfClass:NSArray.class]) {
+        return @{ @"text": @"", @"severity": @"advisory", @"glyph": @"exclamationmark.circle", @"tooltip": @"" };
+    }
+    NSMutableArray<NSString *> *titles = [NSMutableArray array];
+    BOOL severe = NO;
+    for (id item in warnings) {
+        if (![item isKindOfClass:NSDictionary.class]) continue;
+        NSDictionary *warning = item;
+        NSString *title = [warning[@"title"] isKindOfClass:NSString.class] ? warning[@"title"] : nil;
+        if (!title.length) title = [warning[@"shortTitle"] isKindOfClass:NSString.class] ? warning[@"shortTitle"] : nil;
+        if (!title.length) continue;
+        [titles addObject:title];
+        if (WarningIsSevere(warning)) severe = YES;
+    }
+    if (!titles.count) {
+        return @{ @"text": @"", @"severity": @"advisory", @"glyph": @"exclamationmark.circle", @"tooltip": @"" };
+    }
+    NSString *severity = severe ? @"severe" : @"advisory";
+    return @{
+        @"text": [NSString stringWithFormat:@"%lu warning%@", (unsigned long)titles.count, titles.count == 1 ? @"" : @"s"],
+        @"severity": severity,
+        @"glyph": severe ? @"exclamationmark.triangle" : @"exclamationmark.circle",
+        @"tooltip": [titles componentsJoinedByString:@"\n"],
+    };
+}
+
 static NSDictionary *NewestSample(NSArray *rows) {
     NSDictionary *best = nil;
     for (NSDictionary *row in rows) {
@@ -3640,13 +3723,22 @@ NSDictionary *AerodromeForState(NSString *state) {
     NSDictionary *known = AerodromeForCode(code);
     if (known) return known;
     // Runway headings are configured for YPPH and YSSY only. Other capitals
-    // still name the aerodrome so METAR/TAF is not Perth's.
-    NSDictionary *zones = @{
-        @"YMML": @"Australia/Melbourne", @"YBBN": @"Australia/Brisbane",
-        @"YPAD": @"Australia/Adelaide", @"YMHB": @"Australia/Hobart",
-        @"YPDN": @"Australia/Darwin", @"YSCB": @"Australia/Sydney",
+    // still name the aerodrome, with a position, so the nearest TAF field is
+    // not Perth's or Sydney's by default.
+    NSDictionary *capitals = @{
+        @"YMML": @{@"name": @"Melbourne Airport", @"latitude": @(-37.6733), @"longitude": @(144.8433), @"timeZone": @"Australia/Melbourne"},
+        @"YBBN": @{@"name": @"Brisbane Airport", @"latitude": @(-27.3842), @"longitude": @(153.1175), @"timeZone": @"Australia/Brisbane"},
+        @"YPAD": @{@"name": @"Adelaide Airport", @"latitude": @(-34.9450), @"longitude": @(138.5306), @"timeZone": @"Australia/Adelaide"},
+        @"YMHB": @{@"name": @"Hobart Airport", @"latitude": @(-42.8361), @"longitude": @(147.5103), @"timeZone": @"Australia/Hobart"},
+        @"YPDN": @{@"name": @"Darwin Airport", @"latitude": @(-12.4147), @"longitude": @(130.8769), @"timeZone": @"Australia/Darwin"},
+        @"YSCB": @{@"name": @"Canberra Airport", @"latitude": @(-35.3069), @"longitude": @(149.1950), @"timeZone": @"Australia/Sydney"},
     };
-    return @{@"code": code, @"name": code, @"timeZone": zones[code] ?: @"", @"runways": @[]};
+    NSDictionary *info = capitals[code];
+    if (!info) return @{@"code": code, @"name": code, @"timeZone": @"", @"runways": @[]};
+    NSMutableDictionary *field = [info mutableCopy];
+    field[@"code"] = code;
+    field[@"runways"] = @[];
+    return field;
 }
 
 static void ClockBits(NSDate *date, NSCalendar *cal, NSInteger *hour12, NSInteger *minute, BOOL *pm) {

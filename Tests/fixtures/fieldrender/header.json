@@ -1,0 +1,29 @@
+{
+  "attribution": "ECMWF Open Data, CC BY 4.0",
+  "model": "ecmwf-ifs-0p25-open-data",
+  "units": "hPa",
+  "dtype": "float16",
+  "endian": "little",
+  "order": "north-to-south, west-to-east",
+  "fill": -32768,
+  "grid": {
+    "west": 108.0,
+    "north": -30.25,
+    "step": 0.25,
+    "nLon": 120,
+    "nLat": 80,
+    "wrapsLongitude": false
+  },
+  "steps": [
+    {
+      "file": "mslp-0.f16",
+      "valid": "2026-10-04T12:00:00Z",
+      "run": "2026-10-04T12:00:00Z"
+    },
+    {
+      "file": "mslp-1.f16",
+      "valid": "2026-10-04T15:00:00Z",
+      "run": "2026-10-04T12:00:00Z"
+    }
+  ]
+}

@@ -2,6 +2,7 @@
 #import "pure.h"
 #import <sqlite3.h>
 #import <math.h>
+#import <time.h>
 
 static NSDictionary *JSON(NSData *data) {
     id value = data.length ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
@@ -86,31 +87,48 @@ NSString *ArchiveWarningDirectory(NSString *root) {
     return [NSFileManager.defaultManager fileExistsAtPath:directory] ? directory : nil;
 }
 
-static NSString *LocalStamp(NSString *utc, NSString *state) {
-    if (utc.length < 14) return nil;
-    static NSDateFormatter *in;
-    static NSMutableDictionary *outputs;
-    if (!in) {
-        in = [NSDateFormatter new];
-        in.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
-        in.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
-        in.dateFormat = @"yyyyMMddHHmmss";
-        outputs = [NSMutableDictionary dictionary];
+static NSTimeZone *StateZone(NSString *state) {
+    static NSDictionary<NSString *, NSTimeZone *> *zones;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSDictionary *names = @{@"WA": @"Australia/Perth", @"NSW": @"Australia/Sydney", @"VIC": @"Australia/Melbourne",
+            @"QLD": @"Australia/Brisbane", @"SA": @"Australia/Adelaide", @"TAS": @"Australia/Hobart", @"NT": @"Australia/Darwin"};
+        NSMutableDictionary *built = [NSMutableDictionary dictionary];
+        for (NSString *key in names) built[key] = [NSTimeZone timeZoneWithName:names[key]];
+        zones = [built copy];
+    });
+    return (state ? zones[state] : nil) ?: zones[@"WA"];
+}
+
+// Calendar arithmetic, not a formatter per row: an observation database is
+// tens of thousands of rows a reload.
+NSString *ArchiveLocalStamp(NSString *utc, NSString *state) {
+    if (utc.length != 14) return nil;
+    unichar c[14];
+    [utc getCharacters:c range:NSMakeRange(0, 14)];
+    int v[14];
+    for (int i = 0; i < 14; i++) {
+        if (c[i] < '0' || c[i] > '9') return nil;
+        v[i] = c[i] - '0';
     }
-    NSDate *date = [in dateFromString:utc];
-    if (!date) return nil;
-    NSDictionary *zones = @{@"WA": @"Australia/Perth", @"NSW": @"Australia/Sydney", @"VIC": @"Australia/Melbourne",
-        @"QLD": @"Australia/Brisbane", @"SA": @"Australia/Adelaide", @"TAS": @"Australia/Hobart",
-        @"NT": @"Australia/Darwin"};
-    NSDateFormatter *out = outputs[state];
-    if (!out) {
-        out = [NSDateFormatter new];
-        out.locale = in.locale;
-        out.timeZone = [NSTimeZone timeZoneWithName:zones[state] ?: @"Australia/Perth"];
-        out.dateFormat = @"yyyyMMddHHmmss";
-        outputs[state] = out;
-    }
-    return [out stringFromDate:date];
+    struct tm t = {0};
+    t.tm_year = v[0] * 1000 + v[1] * 100 + v[2] * 10 + v[3] - 1900;
+    t.tm_mon = v[4] * 10 + v[5] - 1;
+    t.tm_mday = v[6] * 10 + v[7];
+    t.tm_hour = v[8] * 10 + v[9];
+    t.tm_min = v[10] * 10 + v[11];
+    t.tm_sec = v[12] * 10 + v[13];
+    // timegm fails without normalising for some fields (month 00), so bound them first.
+    if (t.tm_year < 0 || t.tm_mon < 0 || t.tm_mon > 11 || t.tm_mday < 1 || t.tm_hour > 23 || t.tm_min > 59 || t.tm_sec > 59) return nil;
+    struct tm round = t;
+    time_t instant = timegm(&round);
+    // timegm normalises out-of-range fields; a stamp that does not round-trip is not a time.
+    if (round.tm_year != t.tm_year || round.tm_mon != t.tm_mon || round.tm_mday != t.tm_mday ||
+        round.tm_hour != t.tm_hour || round.tm_min != t.tm_min || round.tm_sec != t.tm_sec) return nil;
+    time_t local = instant + [StateZone(state) secondsFromGMTForDate:[NSDate dateWithTimeIntervalSince1970:instant]];
+    struct tm l;
+    if (!gmtime_r(&local, &l)) return nil;
+    return [NSString stringWithFormat:@"%04d%02d%02d%02d%02d%02d", l.tm_year + 1900, l.tm_mon + 1, l.tm_mday, l.tm_hour, l.tm_min, l.tm_sec];
 }
 
 NSDictionary<NSString *, NSData *> *ArchiveObservationFiles(NSString *root) {
@@ -202,7 +220,7 @@ NSDictionary<NSString *, NSData *> *ArchiveObservationFilesAtDate(NSString *root
             NSString *state = [product hasPrefix:@"IDN"] ? @"NSW" : [product hasPrefix:@"IDV"] ? @"VIC" : [product hasPrefix:@"IDQ"] ? @"QLD" : [product hasPrefix:@"IDS"] ? @"SA" : [product hasPrefix:@"IDT"] ? @"TAS" : [product hasPrefix:@"IDD"] ? @"NT" : @"WA";
             NSMutableDictionary *row = [NSMutableDictionary dictionary];
             NSString *stamp = [NSString stringWithUTF8String:(const char *)sqlite3_column_text(stmt, 1) ?: ""];
-            row[@"local_date_time_full"] = LocalStamp(stamp, state) ?: stamp;
+            row[@"local_date_time_full"] = ArchiveLocalStamp(stamp, state) ?: stamp;
             NSString *keys[] = {@"name", @"wind_dir", @"press_tend", @"rain_trace"};
             int textColumns[] = {3, 7, 14, 15};
             for (int i = 0; i < 4; i++) if (sqlite3_column_type(stmt, textColumns[i]) != SQLITE_NULL)
