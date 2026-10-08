@@ -100,9 +100,12 @@ static NSArray<NSArray *> *WorldPlaces(void) {
     return places;
 }
 
-// Draws into a y-down pixel context. Returns the names drawn.
+typedef NSString *(^PlaceReading)(double latitude, double longitude);
+
+// Draws into a y-down pixel context. `reading`, when set, is the active lens's
+// value at each town ("16°", "SW 12 kt", "3 mm"); nil draws names only.
 static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, double scale, BOOL dark,
-    NSArray<NSValue *> *avoid) {
+    NSArray<NSValue *> *avoid, PlaceReading reading) {
     double w = cam.viewportW, h = cam.viewportH;
     double lat0 = 0, lonL = 0, lat1 = 0, lonR = 0;
     if (!IsobarCameraUnproject(cam, 0, h * 0.5, &lat0, &lonL) ||
@@ -130,6 +133,8 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
         BOOL big = rank <= rankLimit - 1.5;
         NSDictionary *attrs = @{NSFontAttributeName: big ? major : minor, NSForegroundColorAttributeName: ink};
         NSString *name = place[0];
+        NSString *value = reading ? reading([place[1] doubleValue], [place[2] doubleValue]) : nil;
+        if (value.length) name = [NSString stringWithFormat:@"%@  %@", name, value];
         NSSize size = [name sizeWithAttributes:attrs];
         double r = (big ? 2.6 : 2.0) * scale;
         // The label tries the right, then the left. Only the label must be
@@ -171,6 +176,7 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
 @property (nonatomic) BOOL dark;
 @property (nonatomic, copy) NSArray<NSValue *> *reserved;
 @property (nonatomic, copy) NSArray<NSString *> *drawnNames;
+@property (nonatomic, copy) PlaceReading reading;
 @end
 @implementation GPUMapPlacesView
 - (BOOL)isFlipped { return YES; }
@@ -182,7 +188,7 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
     double scale = self.pixelScale > 0 ? self.pixelScale : 1;
     CGContextSaveGState(c);
     CGContextScaleCTM(c, 1.0 / scale, 1.0 / scale);
-    self.drawnNames = DrawPlaceNames(c, self.camera, scale, self.dark, self.reserved);
+    self.drawnNames = DrawPlaceNames(c, self.camera, scale, self.dark, self.reserved, self.reading);
     CGContextRestoreGState(c);
 }
 @end
@@ -240,6 +246,7 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
     GPUMapHazardView *_hazardView;
     GPUMapPlacesView *_placesView;
     NSArray<NSString *> *_snapshotPlaceNames;
+    double _namesStep;
     dispatch_queue_t _hazardQueue;
     IsobarHazardRun *_hazardRun;
     OwnRun *_hazardSource;
@@ -812,8 +819,45 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     return rects;
 }
 
+// The active lens's value at a town, sampled from the run at the playhead:
+// Temp → "16°", Wind (Kite, Surf) → "SW 12 kt", Rain → "3 mm" (dry shows
+// nothing). Pressure and Fly name the towns only.
+- (PlaceReading)placeReading {
+    OwnRun *run = _run;
+    OwnRunField field = _source;
+    double hour = _fractionalStep;
+    if (!run || field == OwnRunFieldMSLP || !isfinite(hour)) return nil;
+    OwnRunGeo g = [run geo];
+    if (!(g.step > 0) || g.nLon < 1 || g.nLat < 1) return nil;
+    return ^NSString *(double lat, double lon) {
+        int i = (int)llround((lon - g.west) / g.step), j = (int)llround((g.north - lat) / g.step);
+        if (g.wrapsLongitude) i = ((i % g.nLon) + g.nLon) % g.nLon;
+        if (i < 0 || j < 0 || i >= g.nLon || j >= g.nLat) return nil;
+        NSInteger index = (NSInteger)j * g.nLon + i;
+        double v = [run valueAtPointIndex:index field:field fractionalHour:hour];
+        if (!isfinite(v)) return nil;
+        if (field == OwnRunFieldRain) return v >= 0.2 ? [NSString stringWithFormat:@"%.0f mm", fmax(1, round(v))] : nil;
+        if (field == OwnRunFieldWindSpeed) {
+            double from = [run valueAtPointIndex:index field:OwnRunFieldWindDirection fractionalHour:hour];
+            static NSString *const points[] = {@"N", @"NE", @"E", @"SE", @"S", @"SW", @"W", @"NW"};
+            NSString *dir = isfinite(from) ? points[((int)llround(fmod(from + 360.0, 360.0) / 45.0)) % 8] : @"";
+            return [NSString stringWithFormat:@"%@ %.0f kt", dir, v];
+        }
+        return [NSString stringWithFormat:@"%.0f°", v];
+    };
+}
+
+- (void)setFractionalStep:(double)fractionalStep {
+    _fractionalStep = fractionalStep;
+    // Scrubbing and paused seeks set the step here, not through the timeline.
+    if (_source != OwnRunFieldMSLP && _placesView && !_placesView.hidden && fabs(fractionalStep - _namesStep) > 0.06)
+        [self updatePlaceNames];
+}
+
 - (void)updatePlaceNames {
     if (!_placesView) return;
+    _placesView.reading = [self placeReading];
+    _namesStep = _fractionalStep;
     _placesView.hidden = self.unavailable;
     _placesView.camera = _camera;
     _placesView.pixelScale = [self pixelScale];
@@ -1272,6 +1316,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     if (player.playheadRate > 0 && step < _stepFloor) step = _stepFloor;
     else if (player.playheadRate > 0) _stepFloor = step;
     _fractionalStep = step;
+    if (_source != OwnRunFieldMSLP && !_placesView.hidden && fabs(step - _namesStep) > 0.06) [self updatePlaceNames];
 }
 
 - (void)displayAtTime:(NSTimeInterval)time {
@@ -1654,7 +1699,8 @@ static const NSUInteger kHazardFrameCache = 24;
     IsobarCamera camera = _camera;
     camera.viewportW = w;
     camera.viewportH = h;
-    _snapshotPlaceNames = DrawPlaceNames(c, camera, [self pixelScale], [self mapIsDark], [self placeReservedRects]);
+    _snapshotPlaceNames = DrawPlaceNames(c, camera, [self pixelScale], [self mapIsDark], [self placeReservedRects],
+        [self placeReading]);
     CGImageRef out = _snapshotPlaceNames.count ? CGBitmapContextCreateImage(c) : NULL;
     CGContextRelease(c);
     return out;

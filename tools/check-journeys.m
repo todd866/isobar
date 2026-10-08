@@ -156,6 +156,23 @@ static void Journeys(JourneyController *c, NSView *(^root)(void), NSString *surf
     BOOL nearby = NO;
     for (NSString *name in names) if ([home localizedCaseInsensitiveContainsString:name]) nearby = YES;
     EXPECT(nearby, "zoomed-in view on %s does not name it", home.UTF8String);
+
+    // The towns read out the lens: Temp in degrees, Wind in knots.
+    journey = [surface stringByAppendingString:@" J7b towns read the lens"];
+    for (NSArray *pair in @[@[@"Temp", @"°"], @[@"Wind", @" kt"]]) {
+        ClickLens(root(), pair[0]);
+        map = Map(c);
+        [map advanceDisplay:0.05];
+        CGImageRef lensShot = [map copySnapshot];
+        if (lensShot) CGImageRelease(lensShot);
+        NSArray *read = map.snapshotPlaceNames;
+        NSUInteger with = 0;
+        for (NSString *name in read) if ([name containsString:pair[1]]) with++;
+        printf("%s %s: %s\n", surface.UTF8String, [pair[0] UTF8String], [[read subarrayWithRange:NSMakeRange(0, MIN(4u, read.count))] componentsJoinedByString:@" | "].UTF8String);
+        EXPECT(read.count && with * 2 >= read.count, "%s lens: %lu of %lu towns show a reading", [pair[0] UTF8String],
+            (unsigned long)with, (unsigned long)read.count);
+    }
+    ClickLens(root(), @"Pressure");
 }
 
 int main(int argc, const char **argv) {
