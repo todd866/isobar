@@ -25,8 +25,8 @@ if [[ ! "$MINIMUM_MACOS" =~ '^[0-9]+\.[0-9]+(\.[0-9]+)?$' ]]; then
 fi
 SHORT=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
 BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist)
-if [[ "$SHORT" != "1.10.3" || "$BUILD" != "32" ]]; then
-    echo "build.sh: ERROR — Info.plist version is ${SHORT} (${BUILD}); expected 1.10.3 (32)." >&2
+if [[ "$SHORT" != "1.10.4" || "$BUILD" != "33" ]]; then
+    echo "build.sh: ERROR — Info.plist version is ${SHORT} (${BUILD}); expected 1.10.4 (33)." >&2
     exit 1
 fi
 
@@ -59,7 +59,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
     "${ARCH_FLAGS[@]}" \
     -ISources \
     -DISOBAR_APP \
-    Sources/pure.m Sources/rain.m Sources/rainview.m Sources/aviation.m Sources/forecastview.m Sources/aviationview.m Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Sources/notices.m Sources/notacconnection.m Sources/surfview.m Sources/motion.m Sources/rawmovie.m Sources/scrub.m Sources/mapdetail.m Sources/collector.m Sources/archive.m Sources/ownchart.m tools/own-chart.m Sources/daystrip.m Sources/fullscreenwindow.m Sources/playback.m Sources/storereload.m     Sources/mapcamera.m Sources/gpumapview.m Sources/hazard.m Sources/fieldrender.m Sources/trainingdata.m Sources/trainingwindow.m Sources/main.m \
+    Sources/pure.m Sources/rain.m Sources/rainview.m Sources/aviation.m Sources/forecastview.m Sources/aviationview.m Sources/skyview.m Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Sources/notices.m Sources/notacconnection.m Sources/surfview.m Sources/motion.m Sources/rawmovie.m Sources/scrub.m Sources/mapdetail.m Sources/collector.m Sources/archive.m Sources/ownchart.m tools/own-chart.m Sources/daystrip.m Sources/fullscreenwindow.m Sources/playback.m Sources/storereload.m     Sources/mapcamera.m Sources/gpumapview.m Sources/hazard.m Sources/fieldrender.m Sources/trainingdata.m Sources/trainingwindow.m Sources/main.m \
     -framework Cocoa -framework WebKit -framework Security -framework ServiceManagement -framework CoreLocation -framework Vision -framework CoreVideo -framework CoreMedia -framework AVFoundation -framework QuartzCore -framework Metal -framework CoreText -framework Accelerate -lz -lsqlite3 \
     -o "$APP/Contents/MacOS/Isobar"
 install -m 0644 Info.plist "$APP/Contents/Info.plist"
@@ -84,7 +84,7 @@ fi
     echo "build.sh: ERROR — the trainer failed to build from training/." >&2
     exit 1
 }
-for need in training/dist/index.html training/dist/app.js training/dist/app.css; do
+for need in training/dist/index.html training/dist/app.js training/dist/app.css training/dist/sky.html training/dist/sky.js; do
     if [[ ! -f $need ]]; then
         echo "build.sh: ERROR — the trainer build did not produce $need." >&2
         exit 1

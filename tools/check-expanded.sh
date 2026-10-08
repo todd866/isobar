@@ -13,7 +13,7 @@ SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
 "$CC" -fobjc-arc -O2 -Wall -Wextra -Werror \
     -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" \
     -ISources -DISOBAR_APP \
-    Sources/pure.m Sources/rain.m Sources/rainview.m Sources/aviation.m Sources/forecastview.m Sources/aviationview.m \
+    Sources/pure.m Sources/rain.m Sources/rainview.m Sources/aviation.m Sources/forecastview.m Sources/aviationview.m Sources/skyview.m \
     Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Sources/notices.m \
     Sources/notacconnection.m Sources/surfview.m Sources/motion.m Sources/rawmovie.m Sources/scrub.m Sources/mapdetail.m \
     Sources/collector.m Sources/archive.m Sources/ownchart.m Sources/daystrip.m Sources/fullscreenwindow.m Sources/playback.m \

@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sky</title>
+<style>
+:root { --bg: #f6f7f9; --note: rgba(30, 38, 48, 0.82); --note-bg: rgba(255, 255, 255, 0.72); }
+:root[data-theme="dark"] { --bg: #111418; --note: rgba(232, 236, 242, 0.88); --note-bg: rgba(17, 20, 24, 0.66); }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); }
+canvas { display: block; width: 100vw; height: 100vh; }
+#note { position: absolute; top: 4px; left: 50%; transform: translateX(-50%); max-width: calc(100vw - 16px);
+  font: 500 11px -apple-system, system-ui, sans-serif; color: var(--note); background: var(--note-bg);
+  padding: 1px 6px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+#note[hidden] { display: none; }
+</style>
+</head>
+<body>
+<canvas id="sky" role="img" aria-label="Sky section"></canvas>
+<div id="note" hidden></div>
+<script src="sky.js"></script>
+</body>
+</html>

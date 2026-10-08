@@ -128,9 +128,43 @@ static void Journeys(JourneyController *c, NSView *(^root)(void), NSString *surf
         EXPECT(SameView(map.camera, zoomed), "%s moved the view: %s -> %s", lens.UTF8String,
             Describe(zoomed).UTF8String, Describe(map.camera).UTF8String);
         NSDate *after = [c selectedForecastDate];
-        EXPECT(before && after && fabs([after timeIntervalSinceDate:before]) < 3 * 3600,
+        EXPECT(before && after && fabs([after timeIntervalSinceDate:before]) < 10 * 60,
             "%s jumped the forecast time", lens.UTF8String);
     }
+
+    // Fly zoomed in: the sky section is the card's picture, and it shows the
+    // fixture's cloud at the aerodrome's height when the playhead is in the TAF.
+    NSDate *before2 = [c selectedForecastDate];
+    journey = [surface stringByAppendingString:@" J8 Fly sky"];
+    ClickLens(root(), @"Fly");
+    AviationLensView *fly = [c valueForKey:@"flyLens"];
+    SkySectionView *sky = fly.sky;
+    EXPECT(sky && !sky.hiddenOrHasHiddenAncestor && NSHeight(sky.frame) >= 96, "no sky section on the Fly card");
+    NSDictionary *aviation = [c valueForKey:@"aviation"];
+    BOOL fixture = [[aviation[@"taf"][@"raw"] description] containsString:@"2612/2712 14012KT 9999 SCT030"];
+    if (sky.window && fixture) {
+        NSDate *taf = [[NSISO8601DateFormatter new] dateFromString:@"2026-09-26T12:00:00Z"];
+        [c inspectPopoverMovieFraction:[c motionFractionForDate:taf]];
+        NSDate *until = [NSDate dateWithTimeIntervalSinceNow:15];
+        BOOL done = NO;
+        while (!done && until.timeIntervalSinceNow > 0) {
+            Pump(.05);
+            // A scrub can rebuild the card: follow the current one.
+            sky = ((AviationLensView *)[c valueForKey:@"flyLens"]).sky ?: sky;
+            NSDictionary *drawn = sky.drawnState;
+            done = [drawn[@"source"] isEqual:@"TAF"] && [drawn[@"layers"] count];
+        }
+        NSDictionary *drawn = sky.drawnState;
+        NSMutableArray *bases = [NSMutableArray array];
+        for (NSDictionary *layer in drawn[@"layers"]) [bases addObject:@(llround([layer[@"baseFtAmsl"] doubleValue]))];
+        printf("%s J8 sky %s %s bases %s\n", surface.UTF8String, [drawn[@"icao"] description].UTF8String,
+            [drawn[@"source"] description].UTF8String, [bases componentsJoinedByString:@","].UTF8String);
+        EXPECT([drawn[@"source"] isEqual:@"TAF"] && [bases containsObject:@3067],
+            "Fly sky at 12Z does not show the TAF's SCT030 at 3,067 ft AMSL (%s)", [bases componentsJoinedByString:@","].UTF8String);
+        [c inspectPopoverMovieFraction:[c motionFractionForDate:before2]];
+        Pump(.1);
+    } else if (!sky.window) printf("%s J8 sky not in a window (popover not shown offscreen)\n", surface.UTF8String);
+    ClickLens(root(), @"Pressure");
 
     journey = [surface stringByAppendingString:@" J4 elsewhere"];
     Drag(map, -260, 120);

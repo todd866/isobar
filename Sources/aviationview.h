@@ -1,4 +1,5 @@
 #import <Cocoa/Cocoa.h>
+@class SkySectionView;
 
 typedef struct {
     CGFloat groundY, ceilingY;
@@ -52,6 +53,9 @@ AviationSceneGeometry AviationSceneLayout(NSRect rect, NSDictionary *period, dou
 @property(nonatomic, copy) NSDictionary *aerodrome;
 @property(nonatomic, copy) NSArray<NSDictionary *> *aerodromes;
 @property(nonatomic, copy) NSDictionary *aviation;
+// The ECMWF upper-air product for this aerodrome (points/ecmwf_ifs025_upper);
+// nil when the archive has none. Feeds the sky section.
+@property(nonatomic, copy) NSDictionary *upper;
 // Notice products are supplied by the controller so the links can show the
 // same current counts as the Notices window.
 @property(nonatomic, copy) NSDictionary *notams;
@@ -60,6 +64,10 @@ AviationSceneGeometry AviationSceneLayout(NSRect rect, NSDictionary *period, dou
 @property(nonatomic, strong) NSDate *playhead;
 @property(nonatomic, strong) NSTimeZone *placeZone;
 @property(nonatomic, readonly) AviationForecastView *forecast;
+// The sky section (docs/design/sky-section.md), the same renderer as the web.
+// It takes the graphic's place, and follows the playhead, when the page is
+// built (SkySectionWebRoot); otherwise nil and the forecast graphic draws.
+@property(nonatomic, readonly) SkySectionView *sky;
 @property(nonatomic, readonly) NSTextView *bulletin;
 @property(nonatomic, readonly) NSTextField *timeField;
 @property(nonatomic, readonly) NSPopUpButton *airportButton;

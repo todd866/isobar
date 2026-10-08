@@ -1,4 +1,5 @@
 #import "aviationview.h"
+#import "skyview.h"
 #import "aviation.h"
 #import "playheadcursor.h"
 #import "solar.h"
@@ -1283,11 +1284,33 @@ static NSDictionary *AVBlendScene(NSDictionary *a, NSDictionary *b, double p) {
     NSScrollView *_scroll;
     NSTextView *_bulletin;
     AviationForecastView *_forecast;
+    SkySectionView *_sky;
     NSString *_nearestCode;
     BOOL _loading;
 }
 
+static NSUInteger AVNoticeCountUncached(NSDictionary *product, BOOL sigmet, NSString *airport, NSDate *date);
+
+// Counts change only with the archive, the aerodrome or the minute; a Fly
+// rebuild asks again for the same answer, and parsing every notice's dates
+// each time cost ~100 ms on the main thread.
 static NSUInteger AVNoticeCount(NSDictionary *product, BOOL sigmet, NSString *airport, NSDate *date) {
+    if (![product isKindOfClass:NSDictionary.class]) return 0;
+    static NSMapTable<NSDictionary *, NSMutableDictionary *> *cache;
+    if (!cache) cache = [NSMapTable weakToStrongObjectsMapTable];
+    NSString *key = [NSString stringWithFormat:@"%d|%@|%.0f", sigmet, airport.uppercaseString ?: @"",
+        floor(date.timeIntervalSince1970 / 60.0)];
+    NSMutableDictionary *answers = [cache objectForKey:product];
+    NSNumber *hit = answers[key];
+    if (hit) return hit.unsignedIntegerValue;
+    NSUInteger count = AVNoticeCountUncached(product, sigmet, airport, date);
+    if (!answers) { answers = [NSMutableDictionary dictionary]; [cache setObject:answers forKey:product]; }
+    if (answers.count > 64) [answers removeAllObjects];
+    answers[key] = @(count);
+    return count;
+}
+
+static NSUInteger AVNoticeCountUncached(NSDictionary *product, BOOL sigmet, NSString *airport, NSDate *date) {
     if (![product isKindOfClass:NSDictionary.class]) return 0;
     id records=product[sigmet?@"features":@"notices"];
     if (![records isKindOfClass:NSArray.class]) return 0;
@@ -1396,6 +1419,12 @@ static NSUInteger AVNoticeCount(NSDictionary *product, BOOL sigmet, NSString *ai
         _forecast.accessibilityIdentifier=@"aviation.timeline";
         _forecast.showsTimeline=NO;
         _forecast.latitude=NAN; _forecast.longitude=NAN; [self addSubview:_forecast];
+        if (SkySectionWebRoot().length) {
+            _sky=[[SkySectionView alloc] initWithFrame:NSZeroRect];
+            _sky.accessibilityIdentifier=@"aviation.sky";
+            _sky.hidden=YES;
+            [self addSubview:_sky];
+        }
         _bulletin=[[NSTextView alloc] initWithFrame:NSZeroRect];
         _bulletin.editable=NO; _bulletin.selectable=YES; _bulletin.richText=YES;
         _bulletin.drawsBackground=YES; _bulletin.backgroundColor=NSColor.textBackgroundColor;
@@ -1414,6 +1443,7 @@ static NSUInteger AVNoticeCount(NSDictionary *product, BOOL sigmet, NSString *ai
     return self;
 }
 - (AviationForecastView *)forecast { return _forecast; }
+- (SkySectionView *)sky { return _sky; }
 - (NSTextView *)bulletin { return _bulletin; }
 - (NSTextField *)timeField { return _time; }
 - (NSPopUpButton *)airportButton { return _airport; }
@@ -1430,6 +1460,7 @@ static NSUInteger AVNoticeCount(NSDictionary *product, BOOL sigmet, NSString *ai
 - (void)setPlayhead:(NSDate *)date {
     if (_playhead==date || [_playhead isEqualToDate:date]) return;
     _playhead=date;
+    _sky.time=date;
     if (_loading || !self.aerodrome) return;
     NSString *code=[self.aerodrome[@"code"] isKindOfClass:NSString.class]?[self.aerodrome[@"code"] uppercaseString]:@"";
     [self applyBulletin:AviationBulletin(self.aviation,code,_playhead,self.placeZone?:NSTimeZone.localTimeZone)];
@@ -1492,6 +1523,8 @@ static NSUInteger AVNoticeCount(NSDictionary *product, BOOL sigmet, NSString *ai
         _forecast.periods=outlook[@"periods"]?:@[];
         _forecast.status=nil;
     }
+    [_sky setAviation:self.aviation upper:self.upper aerodrome:self.aerodrome now:clock];
+    _sky.time=self.playhead?:clock;
     [self applyBulletin:bulletin];
     [self refreshInstruments];
     NSUInteger notamCount=AVNoticeCount(self.notams,NO,code,clock), sigmetCount=AVNoticeCount(self.sigmets,YES,code,clock);
@@ -1656,14 +1689,20 @@ static NSUInteger AVNoticeCount(NSDictionary *product, BOOL sigmet, NSString *ai
     CGFloat remain=MAX(0,height-y);
     // A short overlay cannot hold the cloud scene without stacking its labels.
     // The issued text takes that space; the side panel still draws the graphic.
-    BOOL showGraphic=contentWidth>=360 && height>=180;
-    _forecast.hidden=!showGraphic;
+    // The sky section holds its labels down to phone widths; the older
+    // forecast graphic needs 360 pt.
+    BOOL showGraphic=contentWidth>=(_sky?240:360) && height>=180;
+    _forecast.hidden=!showGraphic || _sky!=nil;
+    _sky.hidden=!showGraphic;
     if (showGraphic) {
-        CGFloat textFloor=tall?88:56, graphicFloor=96;
+        // The sky section needs about 140 pt for its height labels not to touch.
+        CGFloat least=_sky?140:110;
+        CGFloat textFloor=tall?88:56, graphicFloor=_sky?least:96;
         CGFloat textH=MIN(tall?200:120, MAX(textFloor, remain-graphicFloor));
         if (textH>remain-40) textH=MAX(36,remain*0.46);
-        CGFloat graphicH=compactWide?MAX(110,remain-4):MAX(110,remain-textH-4);
-        _forecast.frame=NSMakeRect(0,y,contentWidth,graphicH); y+=graphicH+4;
+        CGFloat graphicH=compactWide?MAX(least,remain-4):MAX(least,remain-textH-4);
+        _forecast.frame=NSMakeRect(0,y,contentWidth,graphicH);
+        _sky.frame=_forecast.frame; y+=graphicH+4;
     }
     NSRect scrollFrame=compactWide?NSMakeRect(contentWidth+8,0,MAX(1,width-contentWidth-8),height):NSMakeRect(0,y,width,MAX(0,height-y));
     _scroll.frame=scrollFrame;
@@ -1692,7 +1731,7 @@ static NSUInteger AVNoticeCount(NSDictionary *product, BOOL sigmet, NSString *ai
         metarHeight=MAX(20,ceil(need.size.height)+2);
     }
     CGFloat bulletinHeight=MAX(12,ceil(used.size.height)+12);
-    CGFloat instrumentHeight=22+20+metarHeight+20+110+4;
+    CGFloat instrumentHeight=22+20+metarHeight+20+(_sky?140:110)+4;
     if (width>=800) return MAX(instrumentHeight,MIN(280,bulletinHeight));
     return instrumentHeight+bulletinHeight;
 }

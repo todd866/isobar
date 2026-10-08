@@ -136,7 +136,37 @@ static NSArray *AFMarkers(void) { return AircraftRecognitionCards(); }
 - (BOOL)animationRunning { return _timer.valid; }
 - (NSRect)timelineRect { return NSMakeRect(12,NSHeight(self.bounds)-76,NSWidth(self.bounds)-24,72); }
 - (NSRect)plotRect { return NSMakeRect(62,55,MAX(1,NSWidth(self.bounds)-80),MAX(1,NSHeight(self.bounds)-196)); }
-- (CGFloat)yForHeight:(double)height { NSRect p=self.plotRect; return NSMaxY(p)-NSHeight(p)*MIN(1,MAX(0,height/20000)); }
+// The sky section's curve (training/src/sky/render.ts yForFt): FL450 at the
+// top, the sea 16 pt above the frame's bottom, finer near the ground.
+static const double AFSectionTopFt=45000, AFSectionH0=5000;
+- (NSRect)sectionRect { NSRect p=self.plotRect; return NSMakeRect(12,NSMinY(p)-4,MAX(1,self.cloudRight-12),NSHeight(p)+20); }
+- (CGFloat)yForHeight:(double)height {
+    NSRect p=self.plotRect;
+    if (!self.sectionView) return NSMaxY(p)-NSHeight(p)*MIN(1,MAX(0,height/20000));
+    double f=log1p(MAX(0,height/.3048)/AFSectionH0)/log1p(AFSectionTopFt/AFSectionH0);
+    return NSMaxY(p)-(NSMaxY(p)-NSMinY(p))*MIN(1.02,f);
+}
+- (double)heightForY:(CGFloat)y {
+    NSRect p=self.plotRect; double f=(NSMaxY(p)-y)/MAX(1,NSHeight(p));
+    if (!self.sectionView) return MIN(20000,MAX(0,f*20000));
+    return MIN(AFSectionTopFt,MAX(0,AFSectionH0*expm1(f*log1p(AFSectionTopFt/AFSectionH0))))*.3048;
+}
+- (void)setSectionView:(NSView *)view {
+    if (_sectionView==view) return;
+    [_sectionView removeFromSuperview];
+    _sectionView=view;
+    if (view) {
+        self.trafficEnabled=NO;
+        [self addSubview:view positioned:NSWindowBelow relativeTo:_trafficButton];
+        view.frame=self.sectionRect;
+    }
+    _trafficButton.hidden=view!=nil;
+    self.needsDisplay=YES;
+}
+- (void)resizeSubviewsWithOldSize:(NSSize)oldSize {
+    [super resizeSubviewsWithOldSize:oldSize];
+    _sectionView.frame=self.sectionRect;
+}
 - (CGFloat)skyRight { return NSMaxX(self.plotRect)-MAX(156,NSWidth(self.plotRect)*.29); }
 - (CGFloat)cloudRight { return self.skyRight-138; }
 - (CGFloat)temperatureX:(double)temperature {
@@ -157,6 +187,7 @@ static NSArray *AFMarkers(void) { return AircraftRecognitionCards(); }
     return result;
 }
 - (NSArray<NSValue *> *)aircraftMarkerRects {
+    if (self.sectionView) return @[];
     NSArray *target=self.markerTo?:[self markerTargets:self.selectedDate]; NSArray *from=self.markerFrom?:target;
     CGFloat left=NSMinX(self.plotRect)+12,width=MAX(1,self.cloudRight-left-42); double mix=self.transitionProgress;
     NSMutableArray *rects=[NSMutableArray array];
@@ -181,6 +212,7 @@ static NSArray *AFMarkers(void) { return AircraftRecognitionCards(); }
     self.fromTime=self.displayDate.timeIntervalSince1970; self.toTime=date.timeIntervalSince1970;
     self.markerFrom=display; self.markerTo=[self markerTargets:date]; self.transitionStart=self.animationTime;
     self.selectedDate=date; self.hoveredAircraft=nil; [self refreshAnimation]; self.needsDisplay=YES;
+    if (self.onDate) self.onDate(date);
     if (self.onInspect) self.onInspect([self selectionSummary]);
 }
 - (void)advanceAnimationAtTime:(NSTimeInterval)time {
@@ -258,12 +290,18 @@ static NSArray *AFMarkers(void) { return AircraftRecognitionCards(); }
     double night=isfinite(sun)?1-AFEase((sun+8)/10):0;
     NSColor *sky=[[NSColor colorWithSRGBRed:.85 green:.93 blue:.96 alpha:1] blendedColorWithFraction:night*.65 ofColor:[NSColor colorWithSRGBRed:.67 green:.73 blue:.85 alpha:1]];
     NSGradient *gradient=[[NSGradient alloc] initWithStartingColor:[sky blendedColorWithFraction:.18 ofColor:NSColor.whiteColor] endingColor:sky];
-    [gradient drawInRect:p angle:90];
+    BOOL section=self.sectionView!=nil;
+    if (section) {
+        p.origin.x=self.cloudRight; p.size.width=MAX(1,NSMaxX(self.plotRect)-self.cloudRight);
+        [[NSColor colorWithSRGBRed:.53 green:.64 blue:.81 alpha:.08] setFill]; NSRectFillUsingOperation(p,NSCompositingOperationSourceOver);
+    } else [gradient drawInRect:p angle:90];
     // Keep the three reading lanes distinct without turning the column into
     // a dashboard: moisture/clouds, wind and temperature each get a quiet
     // tint and a hairline boundary.
-    [[NSColor.systemTealColor colorWithAlphaComponent:.045] setFill];
-    NSRectFillUsingOperation(NSMakeRect(NSMinX(p),NSMinY(p),self.cloudRight-NSMinX(p),NSHeight(p)),NSCompositingOperationSourceOver);
+    if (!section) {
+        [[NSColor.systemTealColor colorWithAlphaComponent:.045] setFill];
+        NSRectFillUsingOperation(NSMakeRect(NSMinX(p),NSMinY(p),self.cloudRight-NSMinX(p),NSHeight(p)),NSCompositingOperationSourceOver);
+    }
     [[NSColor.systemBlueColor colorWithAlphaComponent:.035] setFill];
     NSRectFillUsingOperation(NSMakeRect(self.cloudRight,NSMinY(p),self.skyRight-self.cloudRight,NSHeight(p)),NSCompositingOperationSourceOver);
     [[NSColor.systemOrangeColor colorWithAlphaComponent:.035] setFill];
@@ -271,20 +309,24 @@ static NSArray *AFMarkers(void) { return AircraftRecognitionCards(); }
     AFLine(NSMakePoint(self.cloudRight,NSMinY(p)),NSMakePoint(self.cloudRight,NSMaxY(p)),[NSColor.separatorColor colorWithAlphaComponent:.28],.5,NO);
     AFLine(NSMakePoint(self.skyRight,NSMinY(p)),NSMakePoint(self.skyRight,NSMaxY(p)),[NSColor.separatorColor colorWithAlphaComponent:.28],.5,NO);
     CGFloat tropopause=[self yForHeight:11000];
-    [[NSColor colorWithSRGBRed:.53 green:.64 blue:.81 alpha:.10] setFill]; NSRectFillUsingOperation(NSMakeRect(NSMinX(p),NSMinY(p),NSWidth(p),tropopause-NSMinY(p)),NSCompositingOperationSourceOver);
+    if (!section) { [[NSColor colorWithSRGBRed:.53 green:.64 blue:.81 alpha:.10] setFill]; NSRectFillUsingOperation(NSMakeRect(NSMinX(p),NSMinY(p),NSWidth(p),tropopause-NSMinY(p)),NSCompositingOperationSourceOver); }
     AFText([NSString stringWithFormat:@"%@ · Atmosphere",self.product[@"id"]?:@"Airport"],NSMakeRect(18,10,182,22),16,NSColor.labelColor,YES);
     NSString *phase=!isfinite(sun)?@"":sun< -6?@"Civil night":sun< -50.0/60?@"Civil twilight":@"Day";
     AFText([NSString stringWithFormat:@"%@ · %@",[self clock:date day:YES],phase],NSMakeRect(NSWidth(self.bounds)-240,13,225,20),12,NSColor.secondaryLabelColor,NO);
-    AFText(@"ft AMSL",NSMakeRect(6,36,60,16),10,NSColor.secondaryLabelColor,NO);
-    AFText(@"Cloud · RH · W–E",NSMakeRect(NSMinX(p)+8,35,160,16),11,NSColor.secondaryLabelColor,NO);
-    AFText(@"ECMWF",NSMakeRect(self.cloudRight-48,35,48,16),10,NSColor.secondaryLabelColor,NO);
+    if (!section) {
+        AFText(@"ft AMSL",NSMakeRect(6,36,60,16),10,NSColor.secondaryLabelColor,NO);
+        AFText(@"Cloud · RH · W–E",NSMakeRect(NSMinX(p)+8,35,160,16),11,NSColor.secondaryLabelColor,NO);
+        AFText(@"ECMWF",NSMakeRect(self.cloudRight-48,35,48,16),10,NSColor.secondaryLabelColor,NO);
+    }
     AFText(@"Wind → · kt",NSMakeRect(self.skyRight-127,35,82,16),10,NSColor.secondaryLabelColor,NO);
     AFText(@"Vertical · m/s",NSMakeRect(self.skyRight-58,35,65,16),10,NSColor.secondaryLabelColor,NO);
     AFText(@"Temp · °C",NSMakeRect(self.skyRight+16,35,NSMaxX(p)-self.skyRight-16,16),11,NSColor.secondaryLabelColor,NO);
-    for (double feet=0;feet<=60000;feet+=10000) {
-        CGFloat y=[self yForHeight:feet*.3048];
+    // With the section, its own axis labels the heights; the lanes keep its ticks.
+    NSArray<NSNumber *> *ticks=section?@[@0,@5000,@10000,@20000,@30000,@40000]:@[@0,@10000,@20000,@30000,@40000,@50000,@60000];
+    for (NSNumber *tick in ticks) {
+        double feet=tick.doubleValue; CGFloat y=[self yForHeight:feet*.3048];
         AFLine(NSMakePoint(NSMinX(p),y),NSMakePoint(NSMaxX(p),y),[muted colorWithAlphaComponent:.15],.5,NO);
-        AFText(feet==0?@"0":[NSString stringWithFormat:@"%.0fk",feet/1000],NSMakeRect(20,y-7,40,15),10,NSColor.secondaryLabelColor,NO);
+        if (!section) AFText(feet==0?@"0":[NSString stringWithFormat:@"%.0fk",feet/1000],NSMakeRect(20,y-7,40,15),10,NSColor.secondaryLabelColor,NO);
     }
     AFLine(NSMakePoint(NSMinX(p),tropopause),NSMakePoint(NSMaxX(p),tropopause),[muted colorWithAlphaComponent:.55],1,YES);
     // Keep the labels in the left side of the cloud lane, away from the wind
@@ -292,11 +334,13 @@ static NSArray *AFMarkers(void) { return AircraftRecognitionCards(); }
     NSRect tropoLabel=NSMakeRect(NSMinX(p)+4,tropopause+5,120,18);
     NSRect stratoLabel=NSMakeRect(NSMinX(p)+4,NSMinY(p)+7,150,18);
     NSRect tropopauseLabel=NSMakeRect(NSMinX(p)+4,tropopause-19,MAX(1,MIN(180,self.cloudRight-NSMinX(p)-8)),18);
-    AFText(@"ISA tropopause · 36,100 ft",tropopauseLabel,10,muted,NO);
-    AFText(@"Lower stratosphere",stratoLabel,11,muted,NO);
-    AFText(@"Troposphere",tropoLabel,11,muted,NO);
+    if (!section) {
+        AFText(@"ISA tropopause · 36,100 ft",tropopauseLabel,10,muted,NO);
+        AFText(@"Lower stratosphere",stratoLabel,11,muted,NO);
+        AFText(@"Troposphere",tropoLabel,11,muted,NO);
+    }
     NSBezierPath *standard=[NSBezierPath bezierPath]; CGFloat dash[]={4,4}; [standard setLineDash:dash count:2 phase:0]; standard.lineWidth=1;
-    for (NSUInteger i=0;i<=40;i++) {
+    for (NSUInteger i=0;i<=(section?27:40);i++) {
         double h=i*500; NSPoint point=NSMakePoint([self temperatureX:[StandardAtmosphereAtHeight(h)[@"temperatureC"] doubleValue]],[self yForHeight:h]);
         if (!i) [standard moveToPoint:point]; else [standard lineToPoint:point];
     }
@@ -312,16 +356,16 @@ static NSArray *AFMarkers(void) { return AircraftRecognitionCards(); }
     for (NSDictionary *level in levels) {
         double height=[level[@"heightM"] doubleValue]; if (height<0 || height>20000) continue;
         CGFloat y=[self yForHeight:height],left=NSMinX(p)+6,width=MAX(1,self.cloudRight-left-8);
-        if (AFNumber(level[@"humidityPct"])) {
+        if (!section && AFNumber(level[@"humidityPct"])) {
             [[NSColor colorWithSRGBRed:.27 green:.58 blue:.75 alpha:.11] setFill];
             NSRectFillUsingOperation(NSMakeRect(left,y-5,width*[level[@"humidityPct"] doubleValue]/100,10),NSCompositingOperationSourceOver);
         }
-        if (AFNumber(level[@"cloudPct"]) && [level[@"cloudPct"] doubleValue]>0) {
+        if (!section && AFNumber(level[@"cloudPct"]) && [level[@"cloudPct"] doubleValue]>0) {
             double cover=[level[@"cloudPct"] doubleValue]/100;
             CGFloat cloudW=MIN(170,width*.5),spread=MAX(1,width-cloudW);
             for (NSUInteger j=0;j<3;j++) AFImage(@"cloud",NSMakeRect(left+spread*j/2,y-24,cloudW,36),cover*.8);
         }
-        if (AFNumber(level[@"windEastKt"])) {
+        if (!section && AFNumber(level[@"windEastKt"])) {
             double east=[level[@"windEastKt"] doubleValue];
             // This is the west/east component only. The compass column carries
             // the full horizontal direction; vertical motion has its own lane.
@@ -355,7 +399,7 @@ static NSArray *AFMarkers(void) { return AircraftRecognitionCards(); }
             AFText([NSString stringWithFormat:@"%.2f",fabs(w)],NSMakeRect(self.skyRight-43,y-7,42,16),9,colour,YES);
         } else AFText(@"—",NSMakeRect(self.skyRight-40,y-7,36,16),10,muted,NO);
     }
-    for (NSNumber *height in sample[@"freezingHeightsM"]) {
+    for (NSNumber *height in section?@[]:sample[@"freezingHeightsM"]) {
         CGFloat y=[self yForHeight:height.doubleValue];
         AFLine(NSMakePoint(NSMinX(p),y),NSMakePoint(self.cloudRight,y),[NSColor.systemBlueColor colorWithAlphaComponent:.6],1,YES);
         AFText([NSString stringWithFormat:@"0°C · %.0f ft",height.doubleValue/.3048],NSMakeRect(self.cloudRight-111,y-17,109,15),10,ink,YES);
@@ -370,7 +414,8 @@ static NSArray *AFMarkers(void) { return AircraftRecognitionCards(); }
     NSArray *markers=self.aircraftMarkerRects;
     BOOL liveMode=self.trafficEnabled && [self isLiveTime];
     for (NSUInteger i=0;i<markers.count;i++) AFImage(AFMarkers()[i][@"name"],[markers[i] rectValue],liveMode?.5:.9);
-    if (!liveMode) {
+    if (section) {
+    } else if (!liveMode) {
         if (self.trafficEnabled) AFText(@"Illustrated · forecast time",NSMakeRect(NSMinX(p)+8,NSMinY(p)+30,210,16),10,ink,NO);
     } else {
         NSArray *live=self.liveAircraft,*rects=self.liveAircraftRects;
@@ -390,7 +435,7 @@ static NSArray *AFMarkers(void) { return AircraftRecognitionCards(); }
     AFText([self selectionSummary],NSMakeRect(18,footer,NSWidth(self.bounds)-36,18),11,NSColor.labelColor,YES);
     AFText([self explanation],NSMakeRect(18,footer+19,NSWidth(self.bounds)-36,28),11,NSColor.secondaryLabelColor,NO);
     AFText(@"Solid: model  ·  Dashed: standard",NSMakeRect(self.skyRight+4,NSMinY(p)+10,NSMaxX(p)-self.skyRight-8,30),9,muted,NO);
-    if (!sample) AFText(@"No model profile for this time",NSMakeRect(NSMinX(p)+8,NSMaxY(p)-40,260,18),11,muted,YES);
+    if (!sample && !section) AFText(@"No model profile for this time",NSMakeRect(NSMinX(p)+8,NSMaxY(p)-40,260,18),11,muted,YES);
     [self drawTimeline];
     [self drawAircraftCard];
 }
@@ -440,7 +485,7 @@ static NSArray *AFMarkers(void) { return AircraftRecognitionCards(); }
     }
     if (NSPointInRect(p,self.timelineRect)) { self.draggingTimeline=YES; [self inspectPoint:p]; return; }
     if (!NSPointInRect(p,self.plotRect)) return;
-    self.selectedHeightM=MIN(20000,MAX(0,(NSMaxY(self.plotRect)-p.y)/NSHeight(self.plotRect)*20000));
+    self.selectedHeightM=[self heightForY:p.y];
     self.needsDisplay=YES; if (self.onInspect) self.onInspect(self.selectionSummary);
 }
 - (void)keyDown:(NSEvent *)event {
@@ -463,6 +508,7 @@ static NSArray *AFMarkers(void) { return AircraftRecognitionCards(); }
 - (NSString *)view:(NSView *)view stringForToolTip:(NSToolTipTag)tag point:(NSPoint)point userData:(void *)data {
     (void)view; (void)tag; (void)data;
     (void)point; // Recognition cards are rendered immediately, without a tooltip delay.
+    if (self.sectionView) return @"Heights in ft AMSL on the sky section's scale. Wind in knots, lift in m/s, temperature solid (model) and dashed (standard). Click a height to inspect.";
     return @"Fixed 0–20 km AMSL. Sky trails show west–east wind. Wind arrows use north-up compass direction; speed is in knots. Lift arrows show model ascent or descent in m/s. Animation speed is schematic. Click a height to inspect.";
 }
 - (void)resetCursorRects { [self addCursorRect:self.timelineRect cursor:NSCursor.pointingHandCursor]; [self addCursorRect:self.plotRect cursor:NSCursor.crosshairCursor]; }

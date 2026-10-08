@@ -10,8 +10,8 @@ fi
 
 SHORT=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
 BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist)
-if [[ "$SHORT" != "1.10.3" || "$BUILD" != "32" ]]; then
-    echo "tests.sh: Info.plist version is ${SHORT} (${BUILD}); expected 1.10.3 (32)." >&2
+if [[ "$SHORT" != "1.10.4" || "$BUILD" != "33" ]]; then
+    echo "tests.sh: Info.plist version is ${SHORT} (${BUILD}); expected 1.10.4 (33)." >&2
     exit 1
 fi
 
@@ -130,8 +130,8 @@ done
 
 "$CC" -fobjc-arc -O2 -Wall -Wextra -Werror \
     -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
-    Sources/aviation.m Sources/aviationview.m Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Tests/test_aviationview.m \
-    -framework Cocoa -o "$WORK_DIR/aviationview_tests"
+    Sources/aviation.m Sources/aviationview.m Sources/skyview.m Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Tests/test_aviationview.m \
+    -framework Cocoa -framework WebKit -o "$WORK_DIR/aviationview_tests"
 
 "$CC" -fobjc-arc -O2 -Wall -Wextra -Werror \
     -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
@@ -191,6 +191,15 @@ if [[ ! -x training/node_modules/.bin/esbuild || ! -x training/node_modules/.bin
     (cd training && npm install --ignore-scripts)
 fi
 (cd training && npm test && npm run build)
+
+# The sky section page (training/src/sky, the web's renderer) in an offscreen
+# WKWebView with the fixture store: the native feed, the drawn layers read
+# back, a METAR base at its ft AMSL on the axis, no profile beyond 3 h.
+"$CC" -fobjc-arc -O2 -Wall -Wextra -Werror \
+    -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
+    Sources/skyview.m Tests/test_skyview.m \
+    -framework Cocoa -framework WebKit -framework QuartzCore -o "$WORK_DIR/skyview_tests"
+ISOBAR_TRAINING_DIST="${0:A:h}/training/dist" "$WORK_DIR/skyview_tests" Tests/fixtures/store
 
 "$CC" -fobjc-arc -O2 -Wall -Wextra -Werror \
     -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources -DISOBAR_APP \
@@ -267,7 +276,7 @@ cp Resources/ownchart-coast.bin Resources/world-coast.bin "$COAST_APP/Resources/
 "$CC" \
     -fobjc-arc -O2 -Wall -Wextra -Werror \
     -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources -DISOBAR_APP \
-    Sources/pure.m Sources/rain.m Sources/rainview.m Sources/aviation.m Sources/forecastview.m Sources/aviationview.m Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Sources/notices.m Sources/notacconnection.m Sources/surfview.m Sources/motion.m Sources/rawmovie.m Sources/scrub.m Sources/mapdetail.m Sources/collector.m Sources/archive.m Sources/ownchart.m tools/own-chart.m Sources/daystrip.m Sources/fullscreenwindow.m Sources/playback.m Sources/storereload.m     Sources/mapcamera.m Sources/gpumapview.m Sources/hazard.m Sources/fieldrender.m Sources/trainingdata.m Sources/trainingwindow.m Tests/test_store_refresh.m \
+    Sources/pure.m Sources/rain.m Sources/rainview.m Sources/aviation.m Sources/forecastview.m Sources/aviationview.m Sources/skyview.m Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Sources/notices.m Sources/notacconnection.m Sources/surfview.m Sources/motion.m Sources/rawmovie.m Sources/scrub.m Sources/mapdetail.m Sources/collector.m Sources/archive.m Sources/ownchart.m tools/own-chart.m Sources/daystrip.m Sources/fullscreenwindow.m Sources/playback.m Sources/storereload.m     Sources/mapcamera.m Sources/gpumapview.m Sources/hazard.m Sources/fieldrender.m Sources/trainingdata.m Sources/trainingwindow.m Tests/test_store_refresh.m \
     -framework Cocoa -framework WebKit -framework Security -framework ServiceManagement -framework CoreLocation -framework Vision -framework CoreVideo -framework CoreMedia -framework AVFoundation -framework QuartzCore -framework Metal -framework CoreText -framework Accelerate -lz -lsqlite3 \
     -o "$WORK_DIR/store_refresh_tests"
 ISOBAR_FIXTURES="${0:A:h}/Tests/fixtures" \

@@ -463,8 +463,15 @@ static NSString *Value(double v, NSString *format) {
 }
 - (IsobarHazardArea *)areaAtLatitude:(double)latitude longitude:(double)longitude {
     if (!_labels || !(_grid.step > 0)) return nil;
-    int col = (int)lround((longitude - _grid.west) / _grid.step);
     int row = (int)lround((_grid.north - latitude) / _grid.step);
+    double rel = longitude - _grid.west;
+    if (_grid.wrapsLongitude && _grid.nLon > 0) {
+        double span = (double)_grid.nLon * _grid.step;
+        rel = rel - floor(rel / span) * span;
+        if (rel < 0) rel += span;
+    }
+    int col = (int)lround(rel / _grid.step);
+    if (_grid.wrapsLongitude && col == _grid.nLon) col = 0;
     if (col < 0 || row < 0 || col >= _grid.nLon || row >= _grid.nLat) return nil;
     int32_t id = _labels[(size_t)row * (size_t)_grid.nLon + (size_t)col];
     if (id <= 0) return nil;
@@ -473,10 +480,53 @@ static NSString *Value(double v, NSString *format) {
 }
 @end
 
-// Marching squares at `iso` on a grid padded with zeros, so every ring
-// closes. Each segment runs from the edge the clockwise cell walk enters the
-// area through to the edge it leaves by, which puts the area on the left of
-// the ring as drawn north-up. Rings are in (column, row).
+static int WrapCol(int i, int nx) {
+    int m = i % nx;
+    return m < 0 ? m + nx : m;
+}
+
+static double UnwrapNear(double lon, double prev) {
+    while (lon - prev > 180.0) lon -= 360.0;
+    while (lon - prev < -180.0) lon += 360.0;
+    return lon;
+}
+
+static double HazardWrap180(double lon) {
+    if (!isfinite(lon)) return lon;
+    double x = fmod(lon + 180.0, 360.0);
+    if (x < 0) x += 360.0;
+    return x - 180.0;
+}
+
+// Outside the grid is zero, so a ring closes. A wrapping grid reads the
+// column across the seam instead of inventing a zero west or east of it.
+static float ContourSample(const float *v, int i, int j, int nx, int ny, BOOL wrap) {
+    if (j < 0 || j >= ny) return 0;
+    if (i < 0 || i >= nx) {
+        if (!wrap) return 0;
+        i = WrapCol(i, nx);
+    }
+    return v[(size_t)j * (size_t)nx + (size_t)i];
+}
+
+static double FoldLon(IsobarGeoGrid grid, double lon) {
+    double span = (double)grid.nLon * grid.step;
+    if (!(span > 0)) return lon;
+    double x = lon - grid.west;
+    x = x - floor(x / span) * span;
+    if (x < 0) x += span;
+    if (x >= span) x = 0;
+    return grid.west + x;
+}
+
+// Marching squares at `iso`. Latitude rows outside the grid are zero, so a
+// ring closes at the poles. A longitude-wrapping grid does not pad east or
+// west: that zero pad closes a seam blob along the dateline, and the straight
+// screen stroke of the short edge is a full-width band. The seam's two
+// vertical-edge ids are the same edge. Longitudes are unwrapped before the
+// area test and Chaikin, then folded back into the grid. Each segment runs
+// from the edge the clockwise cell walk enters through to the edge it leaves
+// by, so the area is on the left as drawn north-up.
 static void ContourRings(const float *v, int nx, int ny, float iso, IsobarGeoGrid grid,
     NSMutableArray<NSData *> *out, int minVertices, double minCells,
     const int32_t *labels, NSMutableArray<NSNumber *> *owners) {
@@ -486,12 +536,14 @@ static void ContourRings(const float *v, int nx, int ny, float iso, IsobarGeoGri
     float *ex = malloc(edges * sizeof(float)), *ey = malloc(edges * sizeof(float));
     if (!next || !ex || !ey) { free(next); free(ex); free(ey); return; }
     memset(next, 0xff, edges * sizeof(int32_t));
-#define VAL(I, J) (((I) < 0 || (J) < 0 || (I) >= nx || (J) >= ny) ? 0.0f : v[(size_t)(J) * (size_t)nx + (size_t)(I)])
-#define HID(I, J) ((int32_t)((((J) + 1) * W + ((I) + 1)) * 2))
-#define VID(I, J) ((int32_t)((((J) + 1) * W + ((I) + 1)) * 2 + 1))
+    BOOL wrap = grid.wrapsLongitude;
+#define VAL(I, J) ContourSample(v, (I), (J), nx, ny, wrap)
+#define COL(I) (wrap ? WrapCol((I), nx) : (I))
+#define HID(I, J) ((int32_t)((((J) + 1) * W + (COL(I) + 1)) * 2))
+#define VID(I, J) ((int32_t)((((J) + 1) * W + (COL(I) + 1)) * 2 + 1))
     BOOL any = NO;
     for (int j = -1; j < ny; j++) {
-        for (int i = -1; i < nx; i++) {
+        for (int i = wrap ? 0 : -1; i < nx; i++) {
             float c[4] = {VAL(i, j), VAL(i + 1, j), VAL(i + 1, j + 1), VAL(i, j + 1)};
             BOOL in[4];
             int count = 0;
@@ -548,6 +600,9 @@ static void ContourRings(const float *v, int nx, int ny, float iso, IsobarGeoGri
             if (VAL(i, j) < iso) {
                 if (start % 2 == 0) i++; else j++;
             }
+            // The seam edge is stored at column 0; a step onto column nx is that
+            // same node. Non-wrapping grids still drop an index outside the crop.
+            if (wrap) i = WrapCol(i, nx);
             if (i >= 0 && i < nx && j >= 0 && j < ny)
                 owner = labels[(size_t)j * nx + i];
         }
@@ -568,6 +623,16 @@ static void ContourRings(const float *v, int nx, int ny, float iso, IsobarGeoGri
             e = to;
         }
         if ((int)n < minVertices) continue;
+        // A seam ring jumps by 360° where the two edge ids meet. Unwrap so the
+        // area test and Chaikin follow the short side, then fold back into the grid.
+        if (wrap && n > 1) {
+            for (size_t k = 1; k < n; k++)
+                ring[k * 2 + 1] = UnwrapNear(ring[k * 2 + 1], ring[(k - 1) * 2 + 1]);
+            double closed = UnwrapNear(ring[1], ring[(n - 1) * 2 + 1]);
+            double shift = closed - ring[1];
+            if (fabs(shift) > 1e-4)
+                for (size_t k = 0; k < n; k++) ring[k * 2 + 1] += shift;
+        }
         // Rings (and holes) smaller than minCells grid cells are speckle.
         double twice = 0;
         for (size_t k = 0; k < n; k++) {
@@ -586,10 +651,13 @@ static void ContourRings(const float *v, int nx, int ny, float iso, IsobarGeoGri
             soft[k * 4 + 2] = 0.25 * p[0] + 0.75 * q[0];
             soft[k * 4 + 3] = 0.25 * p[1] + 0.75 * q[1];
         }
+        if (wrap)
+            for (size_t k = 0; k < m; k++) soft[k * 2 + 1] = FoldLon(grid, soft[k * 2 + 1]);
         [out addObject:[NSData dataWithBytesNoCopy:soft length:m * 2 * sizeof(double) freeWhenDone:YES]];
         [owners addObject:@(owner)];
     }
 #undef VAL
+#undef COL
 #undef HID
 #undef VID
     free(ring);
@@ -957,7 +1025,8 @@ static inline double Lerp(const uint16_t *a, const uint16_t *b, size_t i, double
                 if (jj < 0 || jj >= ny) continue;
                 for (int di = -1; di <= 1; di++) {
                     int ii = i + di;
-                    if (ii < 0 || ii >= nx) continue;
+                    if (_grid.wrapsLongitude) ii = WrapCol(ii, nx);
+                    else if (ii < 0 || ii >= nx) continue;
                     float v = mp[(size_t)jj * nx + ii];
                     if (v > m) m = v;
                 }
@@ -974,7 +1043,7 @@ static inline double Lerp(const uint16_t *a, const uint16_t *b, size_t i, double
         labels[seed] = id;
         NSInteger cells = 0, poss = 0, lik = 0, sev = 0;
         double peakCape = -INFINITY, peakRain = -INFINITY, peakCloud = -INFINITY, peakGust = -INFINITY;
-        double sumLat = 0, sumLon = 0;
+        double sumLat = 0, sumLon = 0, lonOrigin = NAN;
         NSInteger trough = 0, minimum = 0, front = 0, cold = 0, heat = 0;
         while (head < tail) {
             int32_t at = queue[head++];
@@ -991,7 +1060,12 @@ static inline double Lerp(const uint16_t *a, const uint16_t *b, size_t i, double
                 if (k > peakCloud) peakCloud = k;
                 if (isfinite(gst) && gst > peakGust) peakGust = gst;
                 sumLat += _grid.north - j * _grid.step;
-                sumLon += _grid.west + i * _grid.step;
+                double lon = _grid.west + i * _grid.step;
+                if (_grid.wrapsLongitude) {
+                    if (!isfinite(lonOrigin)) lonOrigin = lon;
+                    lon = UnwrapNear(lon, lonOrigin);
+                }
+                sumLon += lon;
                 uint8_t fl = flags ? flags[at] : 0;
                 if (fl & IsobarCauseTrough) trough++;
                 if (fl & IsobarCausePressureMinimum) minimum++;
@@ -1002,7 +1076,10 @@ static inline double Lerp(const uint16_t *a, const uint16_t *b, size_t i, double
             for (int dj = -1; dj <= 1; dj++)
                 for (int di = -1; di <= 1; di++) {
                     int jj = j + dj, ii = i + di;
-                    if ((!dj && !di) || jj < 0 || jj >= ny || ii < 0 || ii >= nx) continue;
+                    if (!dj && !di) continue;
+                    if (jj < 0 || jj >= ny) continue;
+                    if (_grid.wrapsLongitude) ii = WrapCol(ii, nx);
+                    else if (ii < 0 || ii >= nx) continue;
                     size_t k = (size_t)jj * nx + ii;
                     if (labels[k] != 0 || area[k] < 1.0f) continue;
                     labels[k] = id;
@@ -1038,13 +1115,18 @@ static inline double Lerp(const uint16_t *a, const uint16_t *b, size_t i, double
         // crescent's label stays inside it.
         double cLat = sumLat / p, cLon = sumLon / p, best = INFINITY;
         a.labelLatitude = cLat;
-        a.labelLongitude = cLon;
+        a.labelLongitude = _grid.wrapsLongitude ? HazardWrap180(cLon) : cLon;
         for (size_t q = 0; q < tail; q++) {
             int32_t at = queue[q];
             if (mp[at] < 1.0f) continue;
             double lat = _grid.north - (at / nx) * _grid.step, lon = _grid.west + (at % nx) * _grid.step;
+            if (_grid.wrapsLongitude) lon = UnwrapNear(lon, cLon);
             double d = (lat - cLat) * (lat - cLat) + (lon - cLon) * (lon - cLon);
-            if (d < best) { best = d; a.labelLatitude = lat; a.labelLongitude = lon; }
+            if (d < best) {
+                best = d;
+                a.labelLatitude = lat;
+                a.labelLongitude = _grid.wrapsLongitude ? HazardWrap180(lon) : lon;
+            }
         }
         [areas addObject:a];
     }
@@ -1158,22 +1240,78 @@ static void SetStroke(CGContextRef c, HazardRGB ink, double alpha) {
     CGContextSetRGBStrokeColor(c, ink.r, ink.g, ink.b, alpha);
 }
 
-// Projected ring in viewport pixels. NO when any vertex is off the earth.
-static BOOL ProjectRing(IsobarHazardFrame *frame, NSInteger ring, NSInteger level, IsobarCamera camera,
-    CGPoint **out, NSInteger *count) {
+// The short geographic edge whose ends fall on opposite sides of the camera
+// antimeridian. A straight screen segment between them is the full-width band.
+static BOOL CrossesAntimeridian(double centreLon, double lon0, double lon1) {
+    double a = HazardWrap180(lon0 - centreLon);
+    double b = HazardWrap180(lon1 - centreLon);
+    return a * b < 0.0 && fabs(a) + fabs(b) > 180.0;
+}
+
+static void AddPlainRing(CGMutablePathRef path, const CGPoint *p, NSInteger n);
+static void AddScallopRing(CGMutablePathRef path, const CGPoint *p, NSInteger n, double spacing);
+
+static void AddClosedChain(CGMutablePathRef plain, CGMutablePathRef scallop, const CGPoint *pts,
+    const double *lons, NSInteger n, double centreLon, double spacing) {
+    if (n < 3 || CrossesAntimeridian(centreLon, lons[n - 1], lons[0])) return;
+    AddPlainRing(plain, pts, n);
+    if (scallop) AddScallopRing(scallop, pts, n, spacing);
+}
+
+// Project the ring. Split it where an edge crosses the camera antimeridian and
+// close each piece on its own side of the cut, so the stroke cannot chord
+// across the viewport. A vertex that fails projection drops the whole ring,
+// matching the previous behaviour.
+static void AddProjectedRing(CGMutablePathRef plain, CGMutablePathRef scallop, IsobarHazardFrame *frame,
+    NSInteger ring, NSInteger level, IsobarCamera camera, double spacing) {
     NSInteger n = [frame vertexCountForRing:ring level:level];
-    if (n < 3) return NO;
+    if (n < 3 || !plain) return;
     CGPoint *pts = malloc(sizeof(CGPoint) * (size_t)n);
-    if (!pts) return NO;
+    double *lons = malloc(sizeof(double) * (size_t)n);
+    if (!pts || !lons) { free(pts); free(lons); return; }
     for (NSInteger i = 0; i < n; i++) {
         double lat = 0, lon = 0, x = 0, y = 0;
         [frame vertexForRing:ring level:level index:i latitude:&lat longitude:&lon];
-        if (!IsobarCameraProject(camera, lat, lon, &x, &y)) { free(pts); return NO; }
+        if (!IsobarCameraProject(camera, lat, lon, &x, &y)) { free(pts); free(lons); return; }
         pts[i] = CGPointMake(x, y);
+        lons[i] = lon;
     }
-    *out = pts;
-    *count = n;
-    return YES;
+    BOOL *cross = calloc((size_t)n, 1);
+    NSInteger nCross = 0;
+    if (cross) {
+        for (NSInteger i = 0; i < n; i++) {
+            cross[i] = CrossesAntimeridian(camera.centreLon, lons[i], lons[(i + 1) % n]);
+            nCross += cross[i] ? 1 : 0;
+        }
+    }
+    if (!cross || nCross == 0) {
+        AddPlainRing(plain, pts, n);
+        if (scallop) AddScallopRing(scallop, pts, n, spacing);
+    } else {
+        NSInteger start = 0;
+        for (NSInteger i = 0; i < n; i++) if (cross[i]) { start = (i + 1) % n; break; }
+        CGPoint *chain = malloc(sizeof(CGPoint) * (size_t)n);
+        double *chainLon = malloc(sizeof(double) * (size_t)n);
+        if (chain && chainLon) {
+            NSInteger cn = 0, i = start;
+            for (NSInteger k = 0; k < n; k++) {
+                chain[cn] = pts[i];
+                chainLon[cn] = lons[i];
+                cn++;
+                if (cross[i]) {
+                    AddClosedChain(plain, scallop, chain, chainLon, cn, camera.centreLon, spacing);
+                    cn = 0;
+                }
+                i = (i + 1) % n;
+            }
+            if (cn) AddClosedChain(plain, scallop, chain, chainLon, cn, camera.centreLon, spacing);
+        }
+        free(chain);
+        free(chainLon);
+    }
+    free(cross);
+    free(pts);
+    free(lons);
 }
 
 static void AddPlainRing(CGMutablePathRef path, const CGPoint *p, NSInteger n) {
@@ -1440,14 +1578,9 @@ void IsobarHazardDraw(CGContextRef c, IsobarHazardFrame *frame, NSArray<IsobarSi
     CGMutablePathRef outlineScallop = CGPathCreateMutable(), severeScallop = CGPathCreateMutable();
     for (NSInteger level = 0; level < 3; level++) {
         for (NSInteger r = 0; r < [frame ringCountForLevel:level]; r++) {
-            CGPoint *pts = NULL;
-            NSInteger n = 0;
-            if (!ProjectRing(frame, r, level, camera, &pts, &n)) continue;
             CGMutablePathRef plain = level == 0 ? outline : level == 1 ? likely : severe;
-            AddPlainRing(plain, pts, n);
-            if (level == 0) AddScallopRing(outlineScallop, pts, n, 7.0 * scale);
-            if (level == 2) AddScallopRing(severeScallop, pts, n, 5.0 * scale);
-            free(pts);
+            CGMutablePathRef scallop = level == 0 ? outlineScallop : level == 2 ? severeScallop : NULL;
+            AddProjectedRing(plain, scallop, frame, r, level, camera, (level == 2 ? 5.0 : 7.0) * scale);
         }
     }
     if (!CGPathIsEmpty(outline)) {

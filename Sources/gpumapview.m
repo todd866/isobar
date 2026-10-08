@@ -116,6 +116,7 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
     double rankLimit = log2(360.0 / span) + 1.5;
     NSMutableArray<NSValue *> *taken = [avoid mutableCopy] ?: [NSMutableArray array];
     NSMutableArray<NSString *> *drawn = [NSMutableArray array];
+    NSMutableSet<NSString *> *shownNames = [NSMutableSet set];
     NSFont *major = [NSFont systemFontOfSize:12 * scale weight:NSFontWeightSemibold];
     NSFont *minor = [NSFont systemFontOfSize:11 * scale weight:NSFontWeightRegular];
     NSColor *ink = dark ? [NSColor colorWithWhite:.9 alpha:1] : [NSColor colorWithWhite:.16 alpha:1];
@@ -133,6 +134,9 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
         BOOL big = rank <= rankLimit - 1.5;
         NSDictionary *attrs = @{NSFontAttributeName: big ? major : minor, NSForegroundColorAttributeName: ink};
         NSString *name = place[0];
+        // One label per name in view: places are ranked, so the first is the
+        // better known (Vancouver BC over Vancouver WA beside Portland).
+        if ([shownNames containsObject:name]) continue;
         NSString *value = reading ? reading([place[1] doubleValue], [place[2] doubleValue]) : nil;
         if (value.length) name = [NSString stringWithFormat:@"%@  %@", name, value];
         NSSize size = [name sizeWithAttributes:attrs];
@@ -165,6 +169,7 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
         [name drawAtPoint:label.origin withAttributes:haloAttrs];
         [name drawAtPoint:label.origin withAttributes:attrs];
         [drawn addObject:name];
+        [shownNames addObject:place[0]];
     }
     NSGraphicsContext.currentContext = previous;
     return drawn;

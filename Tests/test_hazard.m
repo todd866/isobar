@@ -382,6 +382,130 @@ static void TestDrawing(void) {
     CGContextRelease(ctx);
 }
 
+static double LonDelta(double a, double b) {
+    double d = a - b;
+    while (d > 180) d -= 360;
+    while (d < -180) d += 360;
+    return fabs(d);
+}
+
+// Share of pixels with visible ink. The bitmap is the y-down context TestDrawing uses.
+static double InkFraction(CGContextRef ctx, int x0, int y0, int x1, int y1) {
+    const uint8_t *px = CGBitmapContextGetData(ctx);
+    size_t stride = CGBitmapContextGetBytesPerRow(ctx);
+    int W = (int)CGBitmapContextGetWidth(ctx), H = (int)CGBitmapContextGetHeight(ctx);
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > W) x1 = W;
+    if (y1 > H) y1 = H;
+    int ink = 0, total = 0;
+    for (int y = y0; y < y1; y++)
+        for (int x = x0; x < x1; x++) {
+            total++;
+            if (px[(size_t)y * stride + (size_t)x * 4 + 3] > 20) ink++;
+        }
+    return total ? (double)ink / (double)total : 1;
+}
+
+static CGContextRef HazardBitmap(int w, int h) {
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGContextRef ctx = CGBitmapContextCreate(NULL, (size_t)w, (size_t)h, 8, 0, space,
+        (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+    CGColorSpaceRelease(space);
+    CGContextTranslateCTM(ctx, 0, h);
+    CGContextScaleCTM(ctx, 1, -1);
+    return ctx;
+}
+
+// A global grid. One CB blob straddles the meridian opposite a Perth-centred
+// camera; stroking that short edge the long way is the full-width band. A
+// second blob sits on both sides of the longitude seam and must stay one area,
+// closed on the seam rather than along a zero-padded edge.
+static void TestWrappedAntimeridianBand(void) {
+    IsobarGeoGrid g = {.west = -180, .north = 20, .step = 2, .nLon = 180, .nLat = 30, .wrapsLongitude = YES};
+    IsobarHazardRun *run = [[IsobarHazardRun alloc] initWithGrid:g times:@[Z(@"2026-10-07T18:00:00Z")]];
+    size_t n = (size_t)g.nLon * g.nLat;
+    float *c = malloc(n * sizeof(float)), *r = malloc(n * sizeof(float)), *k = malloc(n * sizeof(float));
+    for (size_t i = 0; i < n; i++) { c[i] = 40; r[i] = 0; k[i] = 10; }
+    // Columns 55..61 are 70°W..58°W, across the antimeridian of 116°E. Rows 22..26 are 24°S..32°S.
+    for (int j = 22; j < 27; j++)
+        for (int i = 55; i < 62; i++) {
+            size_t at = (size_t)j * g.nLon + i;
+            c[at] = 1800; r[at] = 4; k[at] = 90;
+        }
+    // Columns 0..2 and 177..179 meet across ±180°.
+    for (int j = 8; j < 12; j++)
+        for (int i = 0; i < g.nLon; i++) {
+            if (i > 2 && i < 177) continue;
+            size_t at = (size_t)j * g.nLon + i;
+            c[at] = 1800; r[at] = 4; k[at] = 90;
+        }
+    [run setStep:0 mucape:c rain3h:r cloud:k gust:NULL mslp:NULL t850:NULL t2m:NULL u10:NULL v10:NULL];
+    free(c); free(r); free(k);
+    IsobarHazardFrame *f = [run frameAtStep:0];
+    IsobarHazardArea *seamWest = [f areaAtLatitude:0 longitude:-180];
+    IsobarHazardArea *seamEast = [f areaAtLatitude:0 longitude:178];
+    BOOL oneSeam = seamWest && seamEast && seamWest == seamEast;
+    check(oneSeam, [NSString stringWithFormat:@"a blob across the longitude seam is one area (%lu areas)",
+        (unsigned long)f.areas.count]);
+    if (oneSeam)
+        check(LonDelta(seamWest.labelLongitude, 180) <= 2.01,
+            [NSString stringWithFormat:@"the seam label stays on the blob (%.1f)", seamWest.labelLongitude]);
+    BOOL outside = NO;
+    double worstSpan = 0;
+    for (NSInteger ring = 0; ring < [f ringCountForLevel:0]; ring++) {
+        NSInteger nv = [f vertexCountForRing:ring level:0];
+        double prev = 0, lo = 0, hi = 0;
+        for (NSInteger v = 0; v < nv; v++) {
+            double lat = 0, lon = 0;
+            [f vertexForRing:ring level:0 index:v latitude:&lat longitude:&lon];
+            if (lon < g.west - 0.01 || lon > g.west + g.nLon * g.step + 0.01) outside = YES;
+            if (v == 0) { prev = lo = hi = lon; continue; }
+            while (lon - prev > 180) lon -= 360;
+            while (lon - prev < -180) lon += 360;
+            if (lon < lo) lo = lon;
+            if (lon > hi) hi = lon;
+            prev = lon;
+        }
+        if (hi - lo > worstSpan) worstSpan = hi - lo;
+    }
+    check(!outside, @"a wrapped outline does not close on the zero-padded longitude edge");
+    check(worstSpan < 40, [NSString stringWithFormat:@"no outline is a constant-latitude belt (span %.0f°)", worstSpan]);
+
+    const int W = 800, H = 500;
+    IsobarCamera perth = {.centreLat = -28, .centreLon = 116, .zoom = 6, .globe = 0, .viewportW = W, .viewportH = H};
+    CGContextRef ctx = HazardBitmap(W, H);
+    IsobarHazardDraw(ctx, f, nil, nil, perth, 1, NO, NO, nil);
+    double cx = 0, cy = 0;
+    IsobarCameraProject(perth, perth.centreLat, perth.centreLon, &cx, &cy);
+    double band = InkFraction(ctx, (int)cx - 180, (int)cy - 30, (int)cx + 180, (int)cy + 30);
+    check(band < 0.005, [NSString stringWithFormat:
+        @"a blob opposite the camera does not hatch a full-width band (ink %.3f)", band]);
+    CGContextRelease(ctx);
+
+    IsobarCamera local = perth;
+    local.centreLon = -64;
+    local.centreLat = -28;
+    ctx = HazardBitmap(W, H);
+    IsobarHazardDraw(ctx, f, nil, nil, local, 1, NO, NO, nil);
+    IsobarCameraProject(local, local.centreLat, local.centreLon, &cx, &cy);
+    double blob = InkFraction(ctx, (int)cx - 25, (int)cy - 25, (int)cx + 25, (int)cy + 25);
+    check(blob > 0.03, [NSString stringWithFormat:@"the same blob still draws when the camera is on it (ink %.3f)", blob]);
+    CGContextRelease(ctx);
+
+    // Missing cloud on a full-latitude belt of MUCAPE and rain is not a CB area.
+    IsobarHazardRun *gap = [[IsobarHazardRun alloc] initWithGrid:g times:@[Z(@"2026-10-07T18:00:00Z")]];
+    c = malloc(n * sizeof(float)); r = malloc(n * sizeof(float)); k = malloc(n * sizeof(float));
+    for (size_t i = 0; i < n; i++) { c[i] = 4000; r[i] = 20; k[i] = NAN; }
+    [gap setStep:0 mucape:c rain3h:r cloud:k gust:NULL mslp:NULL t850:NULL t2m:NULL u10:NULL v10:NULL];
+    IsobarHazardFrame *blank = [gap frameAtStep:0];
+    check(blank.areas.count == 0 && [blank ringCountForLevel:0] == 0, @"NaN cloud does not draw a latitude band");
+    [gap setStep:0 mucape:c rain3h:r cloud:NULL gust:NULL mslp:NULL t850:NULL t2m:NULL u10:NULL v10:NULL];
+    blank = [gap frameAtStep:0];
+    check(blank.areas.count == 0 && [blank ringCountForLevel:0] == 0, @"a missing cloud field draws no CB");
+    free(c); free(r); free(k);
+}
+
 // Optional: a real run from the store, read only.
 static void TestRealRun(void) {
     const char *store = getenv("ISOBAR_HAZARD_STORE");
@@ -433,6 +557,7 @@ int main(void) {
         TestCauses();
         TestDrawnLowAreaOwnership();
         TestDrawing();
+        TestWrappedAntimeridianBand();
         TestRealRun();
         fprintf(stderr, "%s\n", failures ? "FAILED" : "hazard ok");
         return failures ? 1 : 0;

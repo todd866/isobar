@@ -25,7 +25,8 @@ typedef NSData *(*StoreChartRecolour)(NSData *pdf);
 @property (nonatomic, copy) NSString *aviationCode;
 // Saved kite thresholds override the archive's. Nil when unset.
 @property (nonatomic, strong) NSNumber *kiteMin, *kiteMax;
-// The atmosphere window is open, so its product is read too.
+// Read the Fly aerodrome's upper-air product (the Atmosphere window and the
+// Fly card's sky section).
 @property (nonatomic) BOOL atmosphere;
 // The committed runs and their file stamps. An unchanged legacy run is reused.
 @property (nonatomic, strong) OwnRun *run, *previousRun;

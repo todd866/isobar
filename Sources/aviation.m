@@ -9,11 +9,17 @@ static NSDate *Date(id value) {
     if ([value isKindOfClass:NSDate.class]) return value;
     if (Number(value)) return [NSDate dateWithTimeIntervalSince1970:[value doubleValue]];
     if (!Text(value).length) return nil;
-    NSISO8601DateFormatter *f = [NSISO8601DateFormatter new];
-    f.formatOptions = NSISO8601DateFormatWithInternetDateTime | NSISO8601DateFormatWithFractionalSeconds;
-    NSDate *d = [f dateFromString:value];
-    if (!d) { f.formatOptions = NSISO8601DateFormatWithInternetDateTime; d = [f dateFromString:value]; }
-    return d;
+    // Built once: a new ISO 8601 formatter per date made every Fly rebuild parse
+    // the NOTAM archive at ~0.3 ms a date. The formatters are thread-safe.
+    static NSISO8601DateFormatter *fractional, *whole;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        fractional = [NSISO8601DateFormatter new];
+        fractional.formatOptions = NSISO8601DateFormatWithInternetDateTime | NSISO8601DateFormatWithFractionalSeconds;
+        whole = [NSISO8601DateFormatter new];
+        whole.formatOptions = NSISO8601DateFormatWithInternetDateTime;
+    });
+    return [fractional dateFromString:value] ?: [whole dateFromString:value];
 }
 static NSString *Format(NSDate *d, NSTimeZone *tz, NSString *pattern) {
     if (!d) return @"—";

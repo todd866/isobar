@@ -20,6 +20,7 @@
 #import "aviation.h"
 #import "aviationview.h"
 #import "atmosphereview.h"
+#import "skyview.h"
 #import "notices.h"
 #import "notacconnection.h"
 #import "fullscreenwindow.h"
@@ -2346,6 +2347,9 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     NSWindow *_noticesWindow;
     NSWindow *_atmosphereWindow;
     AtmosphereView *_atmosphereView;
+    SkySectionView *_atmosphereSky;
+    // The Fly aerodrome's ECMWF upper-air product, for the sky section.
+    NSDictionary *_upperAir;
     AviationNoticesView *_noticesView;
     NSImage *_chart;
     NSData *_chartPDF;
@@ -3031,6 +3035,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 
 - (void)syncTimeLens:(NSDate *)date {
     if (![date isKindOfClass:NSDate.class]) date = [self selectedForecastDate];
+    // The Fly sky follows every playhead move; it coalesces to the display rate.
+    _flyLens.sky.time = date;
     NSInteger previous = _timeLensDay;
     BOOL playing = _live.playing && !_timelinePreviewing && !_scrubHasFraction;
     NSTimeInterval uptime = NSProcessInfo.processInfo.systemUptime;
@@ -3090,6 +3096,12 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (void)updateForecastInspection:(NSDate *)date {
+    // The Atmosphere window follows the map's time unless the pointer is in it
+    // (its own time strip and keys hold a time there, as hover does on the map).
+    if (date && _atmosphereWindow.visible) {
+        NSPoint at=_atmosphereWindow.mouseLocationOutsideOfEventStream;
+        if (!NSPointInRect(at,_atmosphereWindow.contentView.frame)) [_atmosphereView inspectDate:date];
+    }
     if (!date || !_forecastGraph) return;
     NSTimeZone *zone=(_forecastMode==1)?[self aviationTimeZone]:ZoneForPlace((_forecastMode==0 || _forecastMode==3)?[self windPlace]:[self rainPlace]);
     _forecastTime.stringValue=[NSString stringWithFormat:@"%@ · %@",ForecastDay(date,_chartNow ?: NSDate.date,zone),SituationClock(date,zone)];
@@ -4259,7 +4271,11 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     chart.frame = frame;
     chart.mapDetails = [self mapDetailsAtTime:index>=0 && index<(NSInteger)_sequenceTimes.count ? _sequenceTimes[index] : nil];
     if (_sourceECMWF) {
-        [chart setChartImage:[self ecmwfImageForIndex:index bare:YES comparison:NO] comparison:nil alpha:0];
+        // The GPU map covers this view. Rendering the classic chart under it cost
+        // 100-300 ms on the main thread at every lens change with a world grid;
+        // it is drawn only when the classic chart is what the user sees.
+        NSImage *image = [self gpuMapWanted] ? nil : [self ecmwfImageForIndex:index bare:YES comparison:NO];
+        [chart setChartImage:image comparison:nil alpha:0];
         [chart setPins:nil];
         [root addSubview:chart];
         return;
@@ -4314,6 +4330,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     NSString *after = [self flyAerodromeCode];
     if ([before ?: @"" isEqual:after ?: @""]) return;
     _aviation = nil;
+    _upperAir = nil;
     [self requestStoreReload];
 }
 
@@ -4900,8 +4917,18 @@ static NSImage *WindBarbGlyph(void) {
         _atmosphereView.trafficClient=[[AirborneTraffic alloc] initWithLatitude:[field[@"latitude"] doubleValue] longitude:[field[@"longitude"] doubleValue] configuration:nil];
     _atmosphereView.latitude=[field[@"latitude"] doubleValue]; _atmosphereView.longitude=[field[@"longitude"] doubleValue];
     _atmosphereView.timeZone=[self aviationTimeZone];
-    _atmosphereView.product=ArchiveAtmosphereProduct(_storeRoot,field[@"code"]);
+    NSDictionary *upper=ArchiveAtmosphereProduct(_storeRoot,field[@"code"]);
+    _atmosphereView.product=upper;
     _atmosphereView.now=_chartNow ?: NSDate.date;
+    // The sky section takes the cloud lane: the same picture as the Fly card.
+    if (!_atmosphereSky && SkySectionWebRoot().length) {
+        _atmosphereSky=[[SkySectionView alloc] initWithFrame:NSZeroRect];
+        _atmosphereSky.accessibilityIdentifier=@"atmosphere.sky";
+        _atmosphereView.sectionView=_atmosphereSky;
+        __weak SkySectionView *weakSky=_atmosphereSky;
+        _atmosphereView.onDate=^(NSDate *date) { weakSky.time=date; };
+    }
+    [_atmosphereSky setAviation:_aviation upper:upper aerodrome:field now:_chartNow ?: NSDate.date];
     [_atmosphereView inspectDate:[self selectedForecastDate]];
     return _atmosphereView;
 }
@@ -5038,6 +5065,7 @@ static NSImage *WindBarbGlyph(void) {
     lens.aerodrome = field;
     lens.aerodromes = [self tafAerodromes];
     lens.aviation = _aviation;
+    lens.upper = _upperAir;
     lens.notams = _notams; lens.sigmets = _sigmets;
     lens.now = _chartNow ?: NSDate.date;
     lens.placeZone = [self placeZone];
@@ -7038,7 +7066,8 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
         if ([kiteDefaults objectForKey:@"kiteMinKt"]) request.kiteMin = @([kiteDefaults doubleForKey:@"kiteMinKt"]);
         if ([kiteDefaults objectForKey:@"kiteMaxKt"]) request.kiteMax = @([kiteDefaults doubleForKey:@"kiteMaxKt"]);
     }
-    request.atmosphere = _atmosphereWindow.visible;
+    // Small (one aerodrome's levels), and the Fly card's sky needs it.
+    request.atmosphere = YES;
     request.run = _ownRun;
     request.runStamp = _ownRunStamp;
     request.previousRun = _previousRun;
@@ -7208,9 +7237,15 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
         _noticesView.timeZone=[self aviationTimeZone];
         _noticesView.notams=_notams ?: @{}; _noticesView.sigmets=_sigmets ?: @{}; [_noticesView reload];
     }
+    if (snapshot.atmosphereLoaded) _upperAir = snapshot.atmosphere;
+    if (_flyLens) {
+        _flyLens.upper = _upperAir;
+        [_flyLens.sky setAviation:_aviation upper:_upperAir aerodrome:[self flyAerodrome] now:_chartNow ?: NSDate.date];
+    }
     if (_atmosphereWindow.visible && snapshot.atmosphereLoaded) {
         _atmosphereView.product=snapshot.atmosphere;
         _atmosphereView.now=_chartNow ?: NSDate.date;
+        [_atmosphereSky setAviation:_aviation upper:snapshot.atmosphere aerodrome:[self flyAerodrome] now:_chartNow ?: NSDate.date];
     }
     [self rebuildSequence];
     if (_ownRun != cachedRun || _previousRun != cachedPreviousRun || ![cachedRain isEqual:_rainDots])

@@ -423,7 +423,8 @@ StoreSnapshot *StoreSnapshotLoad(StoreReloadRequest *request) {
     s.notams = ArchiveAviationProduct(root, @"notams.json");
     s.sigmets = ArchiveAviationProduct(root, @"sigmet.json");
     s.atmosphereLoaded = request.atmosphere;
-    if (request.atmosphere) s.atmosphere = ArchiveAtmosphereProduct(root, field[@"code"]);
+    // The Fly aerodrome's, like METAR/TAF: the Atmosphere window and the sky section show it.
+    if (request.atmosphere && aviationCode.length) s.atmosphere = ArchiveAtmosphereProduct(root, aviationCode);
     StoreReloadNote("end");
     }
     return s;

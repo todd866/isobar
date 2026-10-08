@@ -11,6 +11,15 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, strong, nullable) AirborneTraffic *trafficClient;
 @property(nonatomic, copy, nullable) NSDictionary *trafficSnapshot;
 @property(nonatomic) BOOL trafficEnabled;
+// The sky section (docs/design/sky-section.md). When set it covers the cloud
+// lane, the height axis becomes the section's (surface to FL450, the same
+// curve as its picture), and the illustrated aircraft and live traffic go;
+// wind, vertical motion and temperature stay beside it on the same heights.
+@property(nonatomic, strong, nullable) NSView *sectionView;
+// The time to show changed (inspectDate).
+@property(nonatomic, copy, nullable) void (^onDate)(NSDate *date);
+- (NSRect)sectionRect;
+- (double)heightForY:(CGFloat)y;
 @property(nonatomic, readonly) NSDate *selectedDate;
 @property(nonatomic, readonly) NSInteger selectedLevelIndex;
 @property(nonatomic, readonly) BOOL animationRunning;

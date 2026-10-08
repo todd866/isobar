@@ -1864,7 +1864,8 @@ int main(int argc, const char **argv) {
             AtmosphereView *profile=[c prepareAtmosphere];
             NSWindow *profileWindow=[c valueForKey:@"atmosphereWindow"];
             if (profileWindow.visible || NSWidth(profile.bounds)>c.budget.width || NSHeight(profile.bounds)>c.budget.height) FAIL();
-            if (profile.aircraftMarkerRects.count!=7 || [profile yForHeight:20000]>=[profile yForHeight:1000]) FAIL();
+            if (profile.aircraftMarkerRects.count!=(profile.sectionView?0:7) || [profile yForHeight:20000]>=[profile yForHeight:1000]) FAIL();
+            if (profile.sectionView && !NSEqualRects(profile.sectionView.frame,profile.sectionRect)) FAIL();
             if (![profile.timeZone.name isEqual:[c aviationTimeZone].name]) FAIL();
             Save(profile,[output stringByAppendingPathComponent:@"atmosphere-1024x600.png"]);
             profile.appearance=[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
