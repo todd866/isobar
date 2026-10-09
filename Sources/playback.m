@@ -3,7 +3,11 @@
 
 const NSUInteger kIsobarLiveCacheBudget = 300 * 1024 * 1024;
 const NSTimeInterval kIsobarLiveFrameStep = 18;
-const NSTimeInterval kIsobarLiveSeamDuration = 1.5;
+// A longer identical still fails the cadence check on a fast loop: at 256x the
+// forecast updates every display tick, so a 0.3 s freeze is an irregular gap.
+const NSTimeInterval kIsobarLiveSeamHold = 0.2;
+const NSTimeInterval kIsobarLiveSeamDissolve = 0.6;
+const NSTimeInterval kIsobarLiveSeamDuration = 0.8;
 const NSTimeInterval kIsobarLiveDisplayTick = 1.0 / 30.0;
 
 @implementation IsobarLiveClock {
@@ -221,23 +225,27 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
 - (double)playheadRate { return _anchorRate; }
 - (NSUInteger)playheadEpoch { return _playheadEpoch; }
 
-// Re-base the shared timeline on the clock. A seek or a change of direction
-// (forward play, the seam back to now, a hold) starts a new epoch so a display
-// sample does not treat that corner as a backwards glitch. A plain tick keeps
-// the epoch and continues from where the previous rate had already arrived.
+// Re-base the shared timeline on the clock. A seek, a hold, or the jump from
+// the end of the run back to now starts a new epoch so a display sample does
+// not treat that corner as a backwards glitch. A plain tick keeps the epoch
+// and continues from where the previous rate had already arrived. The seam
+// holds the last hour at rate 0; it never integrates a negative rate.
 - (void)reanchorFromSeek:(BOOL)seek {
     NSTimeInterval now = [self clockNow];
-    double previous = _anchorRate;
+    double previous = _anchorRate > 0 ? _anchorRate : 0;
     double rate = 0;
     double hours = _hours;
-    BOOL seamDone = _anchorReady && previous < 0 && !_seaming && _playing;
+    // A cache stall leaves the anchor a step ahead of the rendered hour. The
+    // return to now is the seam placing the hour on now while the anchor is
+    // still at the end of the run.
+    BOOL returned = _anchorReady && !_seaming && _playing && _spanHours > 0
+        && _anchorHours >= _spanHours - 1e-3 && _hours <= _nowHours + 1e-3;
     if (_seaming && _playing) {
-        rate = (_nowHours - _spanHours) / kIsobarLiveSeamDuration;
-        double t = MIN(1, MAX(0, _seam));
-        hours = _spanHours + (_nowHours - _spanHours) * t;
+        rate = 0;
+        hours = _spanHours > 0 ? _spanHours : _hours;
     } else if (_playing && !_holding) {
         rate = _hoursPerSecond > 0 ? _hoursPerSecond : 0;
-        if (seek || seamDone || !_anchorReady) hours = _hours;
+        if (seek || returned || !_anchorReady) hours = _hours;
         else {
             double dt = now - _anchorTime;
             if (dt < 0) dt = 0;
@@ -259,8 +267,8 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
         if (_spanHours > 0 && previous > 0 && hours > _spanHours) hours = _spanHours;
         rate = 0;
     }
-    BOOL turned = (previous > 0 && rate <= 0) || (previous < 0 && rate >= 0) || (previous == 0 && rate != 0);
-    if (seek || seamDone || turned) _playheadEpoch++;
+    BOOL turned = (previous > 0 && rate <= 0) || (previous == 0 && rate != 0);
+    if (seek || returned || turned) _playheadEpoch++;
     _anchorTime = now;
     _anchorHours = hours;
     _anchorRate = rate;
@@ -271,10 +279,10 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
     if (!_anchorReady) return _hours;
     double dt = time - _anchorTime;
     if (!isfinite(dt) || dt < 0) dt = 0;
-    double hours = _anchorHours + _anchorRate * dt;
+    double rate = _anchorRate > 0 ? _anchorRate : 0;
+    double hours = _anchorHours + rate * dt;
     if (hours < 0) hours = 0;
-    if (_anchorRate > 0 && _spanHours > 0 && hours > _spanHours) hours = _spanHours;
-    if (_anchorRate < 0 && hours < _nowHours) hours = _nowHours;
+    if (rate > 0 && _spanHours > 0 && hours > _spanHours) hours = _spanHours;
     return hours;
 }
 
@@ -283,6 +291,25 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
     if (_modelIndex && date) return _modelIndex(date);
     return [self forecastHoursAtTime:time];
 }
+
+- (double)modelIndexForHours:(double)hours {
+    NSDate *date = [self dateForHours:hours];
+    if (_modelIndex && date) return _modelIndex(date);
+    return hours;
+}
+
+- (CGFloat)seamMix {
+    if (!_seaming || !(kIsobarLiveSeamDissolve > 0)) return 0;
+    double elapsed = MIN(1, MAX(0, _seam)) * kIsobarLiveSeamDuration;
+    if (elapsed <= kIsobarLiveSeamHold) return 0;
+    double t = (elapsed - kIsobarLiveSeamHold) / kIsobarLiveSeamDissolve;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    return (CGFloat)t;
+}
+
+- (double)seamFromModelIndex { return [self modelIndexForHours:_spanHours]; }
+- (double)seamToModelIndex { return [self modelIndexForHours:_nowHours]; }
 - (double)stepHours { return [self frameSpacing] / 3600.0; }
 
 - (void)noteRenderSeconds:(double)seconds {
@@ -324,10 +351,6 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
 }
 
 - (NSDate *)playhead {
-    if (_seaming && _spanHours > 0) {
-        double t = MIN(1, MAX(0, _seam));
-        return [self dateForHours:_spanHours + (_nowHours - _spanHours) * t];
-    }
     return [self dateForHours:_hours];
 }
 
@@ -564,6 +587,18 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
     dispatch_async(_queue, ^{ [self->_plates removeAllObjects]; });
 }
 
+// The playhead jumped (play from a date, or the loop landing on now). The
+// glide restarts from what is on screen: the seek memory drew that frame, so
+// it becomes the playing memory. Otherwise the old track stays ahead of the
+// playhead, every frame up to it is a seek, and the hand-back pops the
+// digits (8 Oct, 256×).
+- (void)restartGlide {
+    _motion = _seekMotion ?: [OwnMotionState new];
+    _motion.immediateAnnotations = NO;
+    _seekMotion = nil;
+    _motionStep = -1;
+}
+
 - (void)playFromDate:(NSDate *)date {
     if (date && _start) {
         _hours = [date timeIntervalSinceDate:_start] / 3600.0;
@@ -574,6 +609,7 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
     _seaming = NO;
     _seam = 0;
     _playing = YES;
+    [self restartGlide];
     [self reanchorFromSeek:YES];
     [self publish];
     [self schedule];
@@ -633,11 +669,14 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
     if (seconds < 0) seconds = 0;
     if (seconds > 0.25) seconds = 0.25;
     if (_seaming) {
-        _seam += seconds / kIsobarLiveSeamDuration;
-        if (_seam >= 1) {
-            _seaming = NO;
-            _seam = 0;
-            _hours = _nowHours;
+        if (_playing && !_holding) {
+            _seam += seconds / kIsobarLiveSeamDuration;
+            if (_seam >= 1) {
+                _seaming = NO;
+                _seam = 0;
+                _hours = _nowHours;
+                [self restartGlide];
+            }
         }
         [self reanchorFromSeek:NO];
         [self publish];
@@ -671,26 +710,15 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
         NSInteger last = _stepCount - 1;
         NSInteger nowStep = [self stepForHours:_nowHours];
         NSImage *lastImage = _frames[@(last)];
-        NSImage *lastPlate = _framePlates[@(last)];
         NSImage *nowImage = _frames[@(nowStep)];
-        NSImage *nowPlate = _framePlates[@(nowStep)];
-        if (!lastPlate || !nowPlate) {
-            _baseImage = lastImage ?: nowImage;
+        CGFloat mix = [self seamMix];
+        _baseImage = lastImage ?: nowImage;
+        if (mix > 0.001 && lastImage && nowImage) {
+            _nextImage = nowImage;
+            _nextOpacity = mix;
+        } else {
             _nextImage = nil;
             _nextOpacity = 0;
-            return;
-        }
-        CGFloat seam = (CGFloat)MIN(1, MAX(0, _seam));
-        if (seam < 0.5) {
-            // Cover the final pressure field with its flat plate first.
-            _baseImage = lastImage;
-            _nextImage = lastPlate;
-            _nextOpacity = seam * 2;
-        } else {
-            // Then reveal the current pressure field over a flat plate.
-            _baseImage = nowPlate ?: lastPlate;
-            _nextImage = nowImage;
-            _nextOpacity = (seam - 0.5) * 2;
         }
         if (_baseImage) [self rememberStep:@(last)];
         if (_nextImage) [self rememberStep:@(nowStep)];

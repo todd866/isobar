@@ -257,8 +257,84 @@ static void CheckKnockouts(OwnRun *run, NSString *name, double start, double hou
     check(clashes == 0, [NSString stringWithFormat:@"%@ labels keep clear of H and L marks", name]);
 }
 
+// A point that still has a neighbour inside `window` may move at most `limit`.
+// A neighbour farther than that is a new annotation, not a glide.
+static double FarthestKept(const CGPoint *now, int nNow, const CGPoint *prev, int nPrev,
+    double window, int *fresh) {
+    double worst = 0;
+    int born = 0;
+    for (int i = 0; i < nNow; i++) {
+        double best = 1e9;
+        for (int k = 0; k < nPrev; k++) {
+            double d = hypot(now[i].x - prev[k].x, now[i].y - prev[k].y);
+            if (d < best) best = d;
+        }
+        if (nPrev < 1 || best > window) born++;
+        else if (best > worst) worst = best;
+    }
+    if (fresh) *fresh = born;
+    return worst;
+}
+
+// 256× advances 512 forecast seconds a frame. Labels used to detach once the
+// isobar left an 8 pt hold and reappear tens of points away. They now glide.
+static void CheckFastLabelGlide(void) {
+    NSString *error = nil;
+    OwnRun *run = OwnRunLoad(@"Tests/fixtures/store/ecmwf/20260925T18Z",
+        @"Resources/ownchart-coast.bin", &error);
+    check(run != nil, [NSString stringWithFormat:@"fast-label fixture loads (%@)", error ?: @""]);
+    if (!run) return;
+    OwnLayerOptions layers = {.bare = 1};
+    const double start = 1800.0 / 43200.0; // 00:30 on a 12 h step, the playback chart
+    struct { const char *name; double step; int frames; double limit; int setLimit; int birthLimit; } speeds[] = {
+        // 320 prompt frames is the 10 s of 8× that MaxGlide checks.
+        {"8x", 16.0 / 43200.0, 320, 0.5, 0, 0},
+        // One 96 h loop at the 256× prompt step. The old handoff planted a
+        // label tens of points away; a glide stays inside 3 pt.
+        {"256x", 512.0 / 43200.0, 660, 3.05, 2, 1},
+    };
+    for (int s = 0; s < 2; s++) {
+        OwnMotionState *state = [OwnMotionState new];
+        CGPoint prevLabels[80], prevCentres[24];
+        int nLabels = 0, nCentres = 0, missed = 0, births = 0, centreBirths = 0, peak = 0;
+        double worstLabel = 0, worstCentre = 0;
+        for (int frame = 0; frame < speeds[s].frames; frame++) { @autoreleasepool {
+            double index = start + frame * speeds[s].step;
+            NSImage *image = OwnRunRenderMotion(run, index, @"", layers, nil, 1, state);
+            if (!image) missed++;
+            CGPoint nowLabels[80], nowCentres[24];
+            int nNow = (int)[state copyLabelPoints:nowLabels max:80];
+            int nNowC = (int)[state copyCentrePoints:nowCentres max:24];
+            if (nNow > peak) peak = nNow;
+            if (frame > 0) {
+                int fresh = 0;
+                worstLabel = fmax(worstLabel, FarthestKept(nowLabels, nNow, prevLabels, nLabels, 12, &fresh));
+                births += fresh;
+                int freshCentre = 0;
+                worstCentre = fmax(worstCentre, FarthestKept(nowCentres, nNowC, prevCentres, nCentres, 12, &freshCentre));
+                centreBirths += freshCentre;
+            }
+            memcpy(prevLabels, nowLabels, sizeof nowLabels);
+            memcpy(prevCentres, nowCentres, sizeof nowCentres);
+            nLabels = nNow;
+            nCentres = nNowC;
+        }}
+        fprintf(stderr, "%s label glide worst %.2f pt births %d centres %.2f centre births %d set changes %ld peak %d\n",
+            speeds[s].name, worstLabel, births, worstCentre, centreBirths, (long)state.labelSetChanges, peak);
+        check(missed == 0 && peak >= 3,
+            [NSString stringWithFormat:@"%s playback renders and keeps isobar labels", speeds[s].name]);
+        check(worstLabel <= speeds[s].limit && worstCentre <= speeds[s].limit,
+            [NSString stringWithFormat:@"%s labels and centres glide (%.2f, %.2f pt) instead of jumping",
+                speeds[s].name, worstLabel, worstCentre]);
+        check(centreBirths == 0 && births <= speeds[s].birthLimit && state.labelSetChanges <= speeds[s].setLimit,
+            [NSString stringWithFormat:@"%s keeps the same labels (births %d, centre births %d, set changes %ld)",
+                speeds[s].name, births, centreBirths, (long)state.labelSetChanges]);
+    }
+}
+
 int main(void) { @autoreleasepool {
     CheckLabelFade();
+    CheckFastLabelGlide();
     {
         OwnRun *quarter = OwnRunLoad(@"Tests/fixtures/grid025", @"Resources/ownchart-coast.bin", NULL);
         if (quarter.hours >= 3) {

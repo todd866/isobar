@@ -88,10 +88,10 @@ int main(void) { @autoreleasepool {
     view.product=product; view.now=dry; view.timeZone=[NSTimeZone timeZoneWithName:@"Australia/Perth"];
     view.latitude=[product[@"latitude"] doubleValue]; view.longitude=[product[@"longitude"] doubleValue];
     [view setValue:@150 forKey:@"selectedHeightM"];
-    Check([view.accessibilityValue containsString:@"N 8 kt"],@"inspected level gives wind-from direction and knots");
+    Check([view.accessibilityValue containsString:@"350/8"],@"inspected level gives wind as direction/speed (350/8)");
     [view inspectDate:cloudy];
     [view advanceAnimationAtTime:[[view valueForKey:@"animationTime"] doubleValue]+.6];
-    Check([view.accessibilityValue containsString:@"NNE 16 kt"],@"wind-from compass label follows the next forecast");
+    Check([view.accessibilityValue containsString:@"020/16"],@"wind direction/speed follows the next forecast (020/16)");
     [view inspectDate:dry];
     [view advanceAnimationAtTime:[[view valueForKey:@"animationTime"] doubleValue]+.6];
     [view setValue:@1500 forKey:@"selectedHeightM"];

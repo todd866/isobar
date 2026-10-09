@@ -1,6 +1,6 @@
 # Isobar
 
-A moving weather map for Australia, with the details you need when you need them.
+A moving weather map of the whole world, with the details you need when you need them.
 Watch pressure systems develop, scrub to a day and hour, then explore the rain,
 temperature, wind, surf or flying conditions underneath.
 
@@ -15,9 +15,10 @@ disk image, drag Isobar to Applications, then open it from there.
 
 ## Start with the weather
 
-One map, one timeline. Let the forecast play or choose a time on the timeline.
-The current Mac release returns to now when you click the map. Its lenses add
-detail for the activity you are planning:
+One map, one timeline. The forecast drifts forward on its own; scrub or hover
+to choose a time, hold the map to freeze it, and press Now to return to the
+present. Click-drag pans; pinch or two-finger scroll zooms. Lenses add detail
+for the activity you are planning:
 
 - **Rain:** when it arrives, how much to expect, and the hourly breakdown.
 - **Temperature:** a clear current reading, hourly forecasts and optional map colour.
@@ -93,14 +94,10 @@ See [maintenance priorities](docs/maintenance.md) for the structural work.
 
 ## In development
 
-Worldwide coverage is being prepared with a shared global forecast data
-contract. A new test harness compares forecast values, map controls, layout
-and release identity across Mac and web deployments. Worldwide rendering and
-data loading are being tested; these changes have not been released.
-
-The map covers the whole world. Hold it to freeze time and release to resume
-if it was playing; click-drag pans; pinch or two-finger scroll zooms; Now returns
-to the present. A zoomed-in view draws 2 hPa isobars and names the nearby towns.
+The web app at isobar.md leads: worldwide place and aerodrome search, units
+(AUS / US / local), the point sounding, Ask Isobar and Learn ship there first
+and reach the Mac app afterwards. A zoomed-in view draws 2 hPa isobars and
+names the nearby towns.
 
 GitHub builds the native app and runs its tests on pushes and pull requests.
 The CI build skips the bundled collector; release packaging has separate checks

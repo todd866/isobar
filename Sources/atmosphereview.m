@@ -6,11 +6,12 @@
 
 static double AFEase(double x) { x=MIN(1,MAX(0,x)); return x*x*(3-2*x); }
 static BOOL AFNumber(id x) { return [x isKindOfClass:NSNumber.class] && isfinite([x doubleValue]); }
-static NSString *AFWindFrom(double degrees) {
-    static NSArray<NSString *> *points;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ points=@[@"N",@"NNE",@"NE",@"ENE",@"E",@"ESE",@"SE",@"SSE",@"S",@"SSW",@"SW",@"WSW",@"W",@"WNW",@"NW",@"NNW"]; });
-    return points[((NSInteger)llround(fmod(degrees+360.0,360.0)/22.5))%16];
+// Pilot order, direction then speed, as in a TAF or winds-aloft forecast:
+// "230/12". Direction to the nearest ten degrees; under 1 kt is calm.
+static NSString *AFWindAloft(double degrees, double knots) {
+    if (!(knots >= 0.5)) return @"Calm";
+    long tens = lround(fmod(degrees + 360.0, 360.0) / 10.0) % 36;
+    return [NSString stringWithFormat:@"%03ld/%.0f", tens == 0 ? 360L : tens * 10, knots];
 }
 static NSDate *AFDate(id value) {
     if (![value isKindOfClass:NSString.class]) return nil;
@@ -249,7 +250,7 @@ static const double AFSectionTopFt=45000, AFSectionH0=5000;
     NSString *(^value)(NSString *,NSString *)=^NSString *(NSString *key,NSString *format) { return AFNumber(level[key])?[NSString stringWithFormat:format,[level[key] doubleValue]]:@"—"; };
     double vertical=[level[@"verticalVelocityMS"] doubleValue];
     NSString *motion=AFNumber(level[@"verticalVelocityMS"])?[NSString stringWithFormat:@" · %@%.2f m/s",fabs(vertical)<.005?@"":vertical>0?@"↑ ":@"↓ ",fabs(vertical)]:@"";
-    NSString *wind=AFNumber(level[@"windKt"])?[NSString stringWithFormat:@"%@ %.0f kt",AFNumber(level[@"windDegrees"])?AFWindFrom([level[@"windDegrees"] doubleValue]):@"Wind",[level[@"windKt"] doubleValue]]:@"—";
+    NSString *wind=AFNumber(level[@"windKt"])?(AFNumber(level[@"windDegrees"])?AFWindAloft([level[@"windDegrees"] doubleValue],[level[@"windKt"] doubleValue]):[NSString stringWithFormat:@"%.0f kt",[level[@"windKt"] doubleValue]]):@"—";
     return [NSString stringWithFormat:@"%.0f hPa · %.0f ft · %@ · RH %@ · %@%@",[level[@"pressureHpa"] doubleValue],[level[@"heightM"] doubleValue]/.3048,value(@"temperatureC",@"%.1f°C"),value(@"humidityPct",@"%.0f%%"),wind,motion];
 }
 - (NSString *)explanation {
@@ -390,7 +391,8 @@ static const double AFSectionTopFt=45000, AFSectionH0=5000;
         if (AFNumber(level[@"windKt"])) {
             NSColor *windInk=[NSColor colorWithSRGBRed:.16 green:.38 blue:.49 alpha:.82];
             if (AFNumber(level[@"windDegrees"])) AFArrow(NSMakePoint(self.skyRight-116,y),u,-v,16,windInk);
-            AFText([NSString stringWithFormat:@"%.0f",[level[@"windKt"] doubleValue]],NSMakeRect(self.skyRight-103,y-7,39,16),11,windInk,YES);
+            NSString *label=AFNumber(level[@"windDegrees"])?AFWindAloft([level[@"windDegrees"] doubleValue],[level[@"windKt"] doubleValue]):[NSString stringWithFormat:@"%.0f",[level[@"windKt"] doubleValue]];
+            AFText(label,NSMakeRect(self.skyRight-106,y-7,47,16),10,windInk,YES);
         }
         if (AFNumber(level[@"verticalVelocityMS"])) {
             double w=[level[@"verticalVelocityMS"] doubleValue];

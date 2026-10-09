@@ -8,7 +8,9 @@ extern const NSUInteger kIsobarLiveCacheBudget; // bytes
 // at 1x/2x/4x, 8x, 16x, 32x, 64x, 128x and 256x speed and never asking for more than 30 new frames/sec.
 extern const NSTimeInterval kIsobarLiveFrameStep;
 NSTimeInterval IsobarLiveFrameSpacing(double renderSeconds, double hoursPerSecond);
-extern const NSTimeInterval kIsobarLiveSeamDuration; // real seconds, end of run back to now
+extern const NSTimeInterval kIsobarLiveSeamHold;     // real seconds on the last frame
+extern const NSTimeInterval kIsobarLiveSeamDissolve; // real seconds, end frame into the now frame
+extern const NSTimeInterval kIsobarLiveSeamDuration; // hold plus dissolve
 // One display step. The on-screen timer fires at this interval. A manual
 // clock advances by this step; it does not follow the machine.
 extern const NSTimeInterval kIsobarLiveDisplayTick;
@@ -45,6 +47,8 @@ typedef double (^IsobarLiveModelIndex)(NSDate *date);
 @property (nonatomic, readonly) BOOL playing;
 @property (nonatomic, readonly) BOOL holding;
 @property (nonatomic, readonly) BOOL seaming;
+// 0 except while the end frame is dissolving into now, when it rises from 0 to 1.
+@property (nonatomic, readonly) CGFloat seamMix;
 @property (nonatomic, readonly, strong) NSDate *playhead;
 @property (nonatomic, readonly, strong) NSImage *baseImage;
 @property (nonatomic, readonly, strong) NSImage *nextImage;
@@ -55,15 +59,20 @@ typedef double (^IsobarLiveModelIndex)(NSDate *date);
 @property (nonatomic, readonly) NSUInteger displayTicks;
 // The one forecast timeline. A display link samples `modelIndexAtTime:` at
 // its target timestamp; it does not keep a second clock. `playheadRate` is
-// forecast hours per real second: the playing speed, 0 while paused or held,
-// and negative while the seam runs back to now. Each push (tick, seek, hold,
-// pause, seam) re-anchors. Forward play does not step backwards across a push.
+// forecast hours per real second: the playing speed, or 0 while paused, held,
+// or dissolving back to now. A playing rate is never negative. Each push
+// (tick, seek, hold, pause, seam) re-anchors. Forward play does not step
+// backwards across a push. The seam holds the last hour, then jumps once to now.
 @property (nonatomic, readonly) NSTimeInterval playheadAnchorTime;
 @property (nonatomic, readonly) double playheadAnchorHours;
 @property (nonatomic, readonly) double playheadRate;
 @property (nonatomic, readonly) NSUInteger playheadEpoch;
 - (double)forecastHoursAtTime:(NSTimeInterval)time;
 - (double)modelIndexAtTime:(NSTimeInterval)time;
+// Model index of the last frame and of now. The dissolve blends these two
+// steps; it does not walk the hours between them.
+- (double)seamFromModelIndex;
+- (double)seamToModelIndex;
 // Label and centre positions of the frame on screen, in chart points.
 @property (nonatomic, readonly, copy) NSArray<NSValue *> *labelPositions;
 @property (nonatomic, readonly, copy) NSArray<NSValue *> *centrePositions;
@@ -84,7 +93,7 @@ typedef double (^IsobarLiveModelIndex)(NSDate *date);
 - (void)holdAtDate:(NSDate *)date;
 - (void)tick:(NSTimeInterval)seconds;
 // The frame on screen. Steady play shows one pressure render at a time. The
-// seam passes through the cached flat plate between the last frame and now.
+// seam holds the last frame, then blends that render into the now frame.
 - (NSImage *)displayedImage;
 // Drops cached frames except the one on screen and ignores in-flight renders.
 - (void)stopRendering;

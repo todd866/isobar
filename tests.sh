@@ -10,8 +10,8 @@ fi
 
 SHORT=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
 BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist)
-if [[ "$SHORT" != "1.10.4" || "$BUILD" != "33" ]]; then
-    echo "tests.sh: Info.plist version is ${SHORT} (${BUILD}); expected 1.10.4 (33)." >&2
+if [[ "$SHORT" != "1.10.5" || "$BUILD" != "34" ]]; then
+    echo "tests.sh: Info.plist version is ${SHORT} (${BUILD}); expected 1.10.5 (34)." >&2
     exit 1
 fi
 
@@ -281,12 +281,24 @@ cp Resources/ownchart-coast.bin Resources/world-coast.bin "$COAST_APP/Resources/
     -o "$WORK_DIR/store_refresh_tests"
 ISOBAR_FIXTURES="${0:A:h}/Tests/fixtures" \
     ISOBAR_COAST="${0:A:h}/Resources/ownchart-coast.bin" "$WORK_DIR/store_refresh_tests"
-# Score what the viewer sees: displayed autoplay and a hover sweep, recorded
-# offscreen by the store-refresh harness. A jumpy verdict fails the suite.
-for MOVIE in autoplay hover; do
+# Score what the viewer sees: displayed autoplay, a hover sweep, and a 256x
+# run long enough for two loops. A jumpy verdict fails the suite.
+for MOVIE in autoplay hover fastplay; do
     JANK_ARGS=()
     # A hover starts with one intended jump from now; judge numbers per forecast hour swept.
     [[ $MOVIE == hover ]] && JANK_ARGS=(--skip 0.1 --forecast-hours "$(cat build/qa/hover.hours)")
+    # Fast play opens on a fresh frame, then dissolves at each loop. Those
+    # windows are intended; the spike rule is unchanged.
+    if [[ $MOVIE == fastplay ]]; then
+        [[ -f build/qa/fastplay.seams ]] || { echo "missing build/qa/fastplay.seams" >&2; exit 1; }
+        # The open's first label set lands on frame 3 (t = 0.100), on the
+        # skip boundary; skip through it, as the opening frame is meant to be.
+        JANK_ARGS=(--skip 0.15)
+        while IFS= read -r seam || [[ -n $seam ]]; do
+            [[ -z $seam ]] && continue
+            JANK_ARGS+=(--seam "$seam")
+        done < build/qa/fastplay.seams
+    fi
     python3 tools/measure-jank.py "build/qa/${MOVIE}.mov" --out "build/qa/${MOVIE}" "${JANK_ARGS[@]}" > "$WORK_DIR/jank-${MOVIE}.json"
     python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); print("jank", sys.argv[2], s["verdict"], "numbers/min", s["number_events_per_minute"], "spikes", s["spikes"], "irregularity", s["update_gap_ms"]["irregularity"]); sys.exit(0 if s["verdict"] == "smooth" else 1)' "$WORK_DIR/jank-${MOVIE}.json" "$MOVIE"
 done

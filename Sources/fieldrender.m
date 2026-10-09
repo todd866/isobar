@@ -1006,6 +1006,9 @@ static const float kClassPx[3] = {11.f, 18.f, 11.f};
     id<MTLFunction> _lineFS;
     id<MTLFunction> _textVS;
     id<MTLFunction> _textFS;
+    BOOL _endpointMix;
+    NSInteger _endpoint0, _endpoint1;
+    float _endpointT;
 }
 @property (nonatomic, strong) id<MTLDevice> device;
 @property (nonatomic, strong) id<MTLCommandQueue> queue;
@@ -1630,6 +1633,13 @@ static BOOL TimeSteps(double time, NSInteger *i0, NSInteger *i1, float *mix, NSE
     *i1 = f == 0 ? *i0 : *i0 + 1;
     *mix = (float)f;
     return YES;
+}
+
+static NSInteger NearestTimeStep(double time) {
+    NSInteger i0 = 0, i1 = 0;
+    float mix = 0;
+    if (!TimeSteps(time, &i0, &i1, &mix, NULL)) return 0;
+    return mix >= 0.5f ? i1 : i0;
 }
 
 static int StrideForZoom(IsobarGeoGrid g, double zoom) {
@@ -4473,7 +4483,7 @@ static ContourSet *BuildContourSet(const float *va, const float *vb, float mix,
     return YES;
 }
 
-- (void)buildAnnotationsCamera:(IsobarCamera)cam s0:(NSInteger)s0 s1:(NSInteger)s1 mix:(float)mix {
+- (void)buildAnnotationsCamera:(IsobarCamera)cam s0:(NSInteger)s0 s1:(NSInteger)s1 mix:(float)mix time:(double)time {
     double began = NowMs();
     _lastLabelMilliseconds = 0;
     double scale = [self pixelScale];
@@ -4646,13 +4656,25 @@ static ContourSet *BuildContourSet(const float *va, const float *vb, float mix,
             motion->stamp = 0;
         }
         BOOL first = motion->frame == 0;
-        double now = NowMs();
-        double dt = !first && motion->stamp > 0 ? now - motion->stamp : 0;
-        if (!(dt >= 0)) dt = 0;
-        // NowMs is milliseconds. 87 ms is one step under the 0.35 alpha bound
-        // (87/250 = 0.348). A steady 60 Hz frame advances 1/15 of the ramp.
-        if (dt > 87) dt = 87;
-        motion->stamp = now;
+        // The forecast sample is the frame. A steady 60 Hz frame advances
+        // 1/15 of the 250 ms ramp. The wall gap since the previous sample is
+        // not the clock: under load that gap was a few milliseconds and a
+        // label sitting near half opacity left the set. Tests inject
+        // milliseconds; 87 ms is one step under the 0.35 alpha bound
+        // (87/250 = 0.348).
+        double dt = 0;
+        if (!isfinite(time)) {
+            dt = 0;
+        } else if (gTestingNow >= 0) {
+            double now = gTestingNow;
+            dt = !first && motion->stamp > 0 ? now - motion->stamp : 0;
+            if (!(dt >= 0)) dt = 0;
+            if (dt > 87) dt = 87;
+            motion->stamp = now;
+        } else if (!first) {
+            dt = 1000.0 / 60.0;
+            motion->stamp += dt;
+        }
         double fade = dt / 250.0;
         if (fade > 1) fade = 1;
         typedef struct { double level, x, y; } Mark;
@@ -4727,6 +4749,17 @@ static ContourSet *BuildContourSet(const float *va, const float *vb, float mix,
                 for (int c = 0; c < nCentres; c++)
                     if (hypot(bx - centres[c].x, by - centres[c].y) < gap) keep = NO;
             }
+            // The anchor can sit a pixel over the grid edge once the fringe
+            // is included. Slide along the same isobar to a point that fits
+            // instead of fading the label out on a wall-clock timer.
+            if (!keep && best >= 0 && owns && srcLine) {
+                DrawnLabel nudged = fitted;
+                if ([self refitLabel:&nudged on:&slines[srcLine[best]] centres:centres nCentres:nCentres camera:cam]) {
+                    bx = nudged.x;
+                    by = nudged.y;
+                    keep = YES;
+                }
+            }
             if (!keep) {
                 if (first) {
                     slot->active = 0;
@@ -4748,6 +4781,17 @@ static ContourSet *BuildContourSet(const float *va, const float *vb, float mix,
             }
             if (!first) {
                 double step = hypot(bx - slot->x, by - slot->y);
+                // One sample at 256× can move an isobar tens of pixels. Walk
+                // toward that point. Snapping there relocates the digits while
+                // the line itself is still moving smoothly. 8× samples stay
+                // under 2 px, inside the labels-slide check.
+                double cap = 3.0 * [self pixelScale];
+                if (step > cap && step > 0) {
+                    double t = cap / step;
+                    bx = slot->x + (bx - slot->x) * t;
+                    by = slot->y + (by - slot->y) * t;
+                    step = cap;
+                }
                 if (step > motion->stepMax) motion->stepMax = step;
             }
             slot->x = bx;
@@ -4803,7 +4847,7 @@ static ContourSet *BuildContourSet(const float *va, const float *vb, float mix,
             born.level = desired[i].level;
             born.x = desired[i].x;
             born.y = desired[i].y;
-            born.alpha = first ? 1 : 0;
+            born.alpha = first ? 1 : fade;
             born.lat = blat;
             born.lon = blon;
             born.geo = bornGeo;
@@ -5249,6 +5293,17 @@ static double ToLinear(double c) {
     }
 }
 
+- (void)setEndpointMixFrom:(double)fromTime to:(double)toTime mix:(float)mix {
+    if (!(mix > 0) || !isfinite(fromTime) || !isfinite(toTime)) {
+        _endpointMix = NO;
+        return;
+    }
+    _endpoint0 = NearestTimeStep(fromTime);
+    _endpoint1 = NearestTimeStep(toTime);
+    _endpointT = MIN(1.f, mix);
+    _endpointMix = YES;
+}
+
 - (BOOL)drawCamera:(IsobarCamera)camera fill:(IsobarFieldKind)fill isobars:(BOOL)isobars time:(double)time
     into:(id<MTLTexture>)color command:(id<MTLCommandBuffer>)external commit:(BOOL)commit
     blitColour:(BOOL)blitColour error:(NSError **)error {
@@ -5263,7 +5318,21 @@ static double ToLinear(double c) {
     if (!pipes) return NO;
     NSInteger i0 = 0, i1 = 0;
     float mix = 0;
-    if (!TimeSteps(time, &i0, &i1, &mix, error)) return NO;
+    if (_endpointMix) {
+        // Blend the end step into the now step. A missing now step holds the
+        // end frame rather than failing the draw.
+        i0 = _endpoint0;
+        i1 = _endpoint1;
+        mix = i0 == i1 ? 0 : _endpointT;
+        if (mix > 0 && ![self slotForStep:i1 kind:IsobarFieldPressure]) {
+            i1 = i0;
+            mix = 0;
+        }
+        if (mix > 0 && fill != IsobarFieldPressure && ![self slotForStep:i1 kind:fill]) {
+            i1 = i0;
+            mix = 0;
+        }
+    } else if (!TimeSteps(time, &i0, &i1, &mix, error)) return NO;
     IsobarFieldSlot *fill0 = [self slotForStep:i0 kind:fill];
     IsobarFieldSlot *fill1 = mix == 0 ? fill0 : [self slotForStep:i1 kind:fill];
     if (!fill0 || !fill1) return Fail(error, 13, @"fill step is not resident");
@@ -5278,7 +5347,7 @@ static double ToLinear(double c) {
         IsobarFieldSlot *msl1 = mix == 0 ? msl0 : [self slotForStep:i1 kind:IsobarFieldPressure];
         if (!msl0 || !msl1) return Fail(error, 14, @"pressure step is not resident");
         [self ensureContoursStep0:i0 step1:i1 mix:mix camera:camera];
-        [self buildAnnotationsCamera:camera s0:i0 s1:i1 mix:mix];
+        [self buildAnnotationsCamera:camera s0:i0 s1:i1 mix:mix time:time];
         msl0.stamp = ++_clock;
         msl1.stamp = ++_clock;
     } else {

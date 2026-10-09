@@ -110,7 +110,9 @@ extern const NSUInteger kIsobarFieldResidentCap;
 void IsobarSmoothPressure(float *values, IsobarGeoGrid grid, double sigmaDegrees);
 
 // Label identity across frames. maxLabelStep is the largest screen-pixel
-// move of a label that stayed, measured after the first frame.
+// move of a label that stayed, measured after the first frame. A sample
+// walks at most 3 px times the pixel scale toward its isobar; it does not
+// snap the rest of the way.
 // labelSetChanges counts later frames on which that set changed.
 // maxAnnotationAlphaStep is the largest opacity change of a label or an
 // H/L mark after the first frame. A still frame leaves all three at zero.
@@ -124,7 +126,11 @@ void IsobarSmoothPressure(float *values, IsobarGeoGrid grid, double sigmaDegrees
 @end
 
 // Test clock for label fades, in milliseconds. NowMs returns this value
-// while it is >= 0. A negative value restores the process clock.
+// while it is >= 0, and fades follow its deltas, capped at 87 ms so one
+// stall stays under the 0.35 alpha step. A negative value restores the
+// process clock for NowMs. Fades then advance one 60 Hz quantum per
+// rendered forecast sample: the wall gap since the previous sample is not
+// the clock, so a slow frame cannot push a label in or out of the set.
 void IsobarFieldRenderTestingSetNow(double milliseconds);
 
 @interface IsobarFieldRenderer : NSObject
@@ -282,6 +288,10 @@ void IsobarFieldRenderTestingSetNow(double milliseconds);
   intoCommandBuffer:(id<MTLCommandBuffer>)commandBuffer
             target:(id<MTLTexture>)target
              error:(NSError **)error;
+// Next draws blend the steps nearest `fromTime` and `toTime` instead of
+// walking `time`. mix 0 draws `time` as usual. The blend does not visit the
+// hours between the two steps.
+- (void)setEndpointMixFrom:(double)fromTime to:(double)toTime mix:(float)mix;
 // Commits and waits. Same target formats as encodeTime:.
 - (BOOL)renderTime:(double)fractionalStep
               fill:(IsobarFieldKind)fill

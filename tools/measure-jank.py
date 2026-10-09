@@ -2,7 +2,8 @@
 """Score the on-screen smoothness of a map recording (a screen capture of the
 popover or fullscreen map, or an exported movie).
 
-    tools/measure-jank.py RECORDING.mov [--out DIR]
+    tools/measure-jank.py RECORDING.mov [--out DIR] [--skip SEC]
+        [--forecast-hours H] [--seam START,DURATION]
 
 It reports what a viewer sees rather than what the renderer intends:
   cadence  real visual updates per second and how evenly they are spaced
@@ -117,6 +118,27 @@ class Tracker:
         return still, moved, appeared, vanished, []
 
 
+def seam_windows(specs):
+    """START,DURATION pairs. A dissolve is an intended transition."""
+    windows = []
+    for spec in specs:
+        parts = spec.split(",")
+        if len(parts) != 2:
+            raise SystemExit(f"seam must be START,DURATION, got {spec}")
+        try:
+            start, dur = float(parts[0]), float(parts[1])
+        except ValueError:
+            raise SystemExit(f"seam must be START,DURATION, got {spec}")
+        if dur < 0 or start < 0:
+            raise SystemExit(f"seam start and duration must be >= 0, got {spec}")
+        windows.append((start, dur))
+    return windows
+
+
+def in_seam(t, windows):
+    return any(start <= t < start + dur for start, dur in windows)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("recording")
@@ -125,7 +147,10 @@ def main():
         help="ignore the first SKIP seconds (an intended jump, such as entering a hover)")
     parser.add_argument("--forecast-hours", type=float,
         help="forecast time the recording covers; judge numbers per forecast hour (scrubbing)")
+    parser.add_argument("--seam", action="append", default=[],
+        help="START,DURATION seconds of an intended dissolve; its updates are not spikes or number events. Repeat for each seam")
     args = parser.parse_args()
+    seams = seam_windows(args.seam)
     w0, h0, fps = probe(args.recording)
     height = int(round(h0 * WIDTH / w0 / 2) * 2)
     previous = None
@@ -152,9 +177,23 @@ def main():
         previous = frame
     duration = max(1e-6, (n + 1) / fps) if previous is not None else 1e-6
     d = np.array(diffs) if diffs else np.zeros(1)
-    gaps = np.diff(times) if len(times) > 1 else np.zeros(1)
-    median = float(np.median(d)) if len(diffs) else 0.0
-    judged = [e for e in events if e["t"] >= args.skip]
+    # A dissolve can be a large, even change. Leave it out of the median so
+    # it cannot raise the bar, and out of the gaps so the hold is not a stutter.
+    # The spike rule itself stays diff > 3× that median.
+    pace = [e for e in events if not in_seam(e["t"], seams)]
+    pace_d = np.array([e["diff"] for e in pace]) if pace else d
+    if seams:
+        play = [e["t"] for e in pace if e["t"] >= args.skip]
+        gaps_list = []
+        for a, b in zip(play, play[1:]):
+            if any(start > a and start < b for start, _dur in seams):
+                continue
+            gaps_list.append(b - a)
+        gaps = np.array(gaps_list) if gaps_list else np.zeros(1)
+    else:
+        gaps = np.diff(times) if len(times) > 1 else np.zeros(1)
+    median = float(np.median(pace_d)) if len(pace_d) else 0.0
+    judged = [e for e in events if e["t"] >= args.skip and not in_seam(e["t"], seams)]
     spikes = [e for e in judged if median > 0 and e["diff"] > 3 * median]
     number_events = sum(e["moved"] + e["appeared"] + e["vanished"] for e in judged)
     minutes = duration / 60

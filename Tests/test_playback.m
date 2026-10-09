@@ -161,20 +161,102 @@ static void TestSpeedRatesAndAdvancement(void) {
         @"invalid playback values fall back to 8x");
 }
 
-static void TestLoopDoesNotOverlayForecasts(void) {
+static void TestLoopDissolvesTheEndpoints(void) {
     IsobarLivePlayer *player = [IsobarLivePlayer new];
-    NSImage *now = ContourFrame(600), *end = ContourFrame(612), *plate = ContourFrame(-1);
+    NSImage *now = ContourFrame(600), *end = ContourFrame(612);
     [player setValue:[NSMutableDictionary dictionaryWithDictionary:@{@0:now, @1:end}] forKey:@"frames"];
-    [player setValue:[NSMutableDictionary dictionaryWithDictionary:@{@0:plate, @1:plate}] forKey:@"framePlates"];
     [player setValue:@2 forKey:@"stepCount"];
     [player setValue:@YES forKey:@"seaming"];
-    for (NSNumber *fraction in @[@.1, @.25, @.5, @.75, @.9]) {
-        [player setValue:fraction forKey:@"seam"];
-        [player publish];
-        int count = ContoursAcrossMiddle(player.displayedImage);
-        Check(count >= 0 && count <= 1,
-            @"returning to now never overlays pressure lines from two forecast times");
+    [player setValue:@0.1 forKey:@"seam"];
+    [player publish];
+    Check(player.seamMix <= 0.001 && ContoursAcrossMiddle(player.displayedImage) == 1,
+        @"the seam holds the last frame before the dissolve");
+    [player setValue:@0.7 forKey:@"seam"];
+    [player publish];
+    Check(player.seamMix > 0.4 && player.seamMix < 0.7 &&
+        fabs(player.nextOpacity - player.seamMix) < 1e-4 &&
+        ContoursAcrossMiddle(player.displayedImage) == 2,
+        @"the dissolve blends the end frame into the now frame");
+}
+
+// Fast play used to sweep forecast hours backwards for the whole seam. The
+// seam now holds the last hour, dissolves the end frame into now, and jumps
+// once. Sampled hours may drop only on that return.
+static void TestFastLoopsDissolveForward(void) {
+    IsobarLivePlayer *player = [IsobarLivePlayer new];
+    IsobarLiveClock *clock = [IsobarLiveClock manualClock];
+    player.clock = clock;
+    [player setValue:@3600 forKey:@"spacing"];
+    [player setValue:@YES forKey:@"spacingLocked"];
+    NSDate *start = [NSDate dateWithTimeIntervalSince1970:1700000000];
+    const double span = 3;
+    NSDate *end = [start dateByAddingTimeInterval:span * 3600];
+    [player configureRun:nil start:start end:end now:start modelIndex:^double(NSDate *date) {
+        return [date timeIntervalSinceDate:start] / 3600.0;
+    }];
+    NSMutableDictionary *frames = [NSMutableDictionary dictionary];
+    NSImage *nowFrame = ContourFrame(600), *endFrame = ContourFrame(900);
+    NSInteger steps = [[player valueForKey:@"stepCount"] integerValue];
+    for (NSInteger step = 0; step < steps; step++)
+        frames[@(step)] = step == 0 ? nowFrame : endFrame;
+    [player setValue:frames forKey:@"frames"];
+    player.hoursPerSecond = IsobarLiveHoursPerSecond(IsobarLiveSpeed256x);
+    [player playFromDate:start];
+
+    double previous = [player forecastHoursAtTime:[clock now]];
+    int drops = 0, seams = 0;
+    BOOL inSeam = NO, sawHold = NO, sawDissolve = NO;
+    NSTimeInterval seamBegan = -1;
+    for (int tick = 0; tick < 400 && seams < 4; tick++) {
+        [clock advance:kIsobarLiveDisplayTick];
+        [player tick:kIsobarLiveDisplayTick];
+        double hours = [player forecastHoursAtTime:[clock now]];
+        double ahead = [player forecastHoursAtTime:[clock now] + 0.5 * kIsobarLiveDisplayTick];
+        Check(player.playheadRate >= -1e-12, @"a playing rate is never negative");
+        if (player.playing && !player.seaming)
+            Check(player.playheadRate > 0, @"forward play reports its positive rate");
+        if (hours + 1e-3 < previous) {
+            drops++;
+            Check(hours <= 0.05 && previous >= span - 0.05,
+                @"the only backwards step is the return from the end of the run to now");
+        } else {
+            Check(hours + 1e-9 >= previous, @"forecast hours do not decrease");
+        }
+        if (player.seaming) {
+            if (!inSeam) seamBegan = [clock now];
+            inSeam = YES;
+            double elapsed = [clock now] - seamBegan;
+            double shown = [player.playhead timeIntervalSinceDate:start] / 3600.0;
+            Check(fabs(hours - span) < 1e-3 && fabs(ahead - span) < 1e-3 && fabs(shown - span) < 1e-3,
+                @"the seam holds the last forecast hour, including a sample between ticks");
+            Check(fabs([player modelIndexAtTime:[clock now]] - span) < 1e-3,
+                @"the map samples the last hour during the seam");
+            if (elapsed + 1e-9 < kIsobarLiveSeamHold) {
+                sawHold = YES;
+                Check(player.seamMix <= 0.001 && player.nextOpacity <= 0.02,
+                    @"the seam holds the last frame before it dissolves");
+            } else if (elapsed + 1e-6 >= kIsobarLiveSeamHold + kIsobarLiveDisplayTick) {
+                double mix = MIN(1, (elapsed - kIsobarLiveSeamHold) / kIsobarLiveSeamDissolve);
+                if (player.seamMix > 0.35 && player.seamMix < 0.7) {
+                    sawDissolve = YES;
+                    Check(ContoursAcrossMiddle(player.displayedImage) == 2,
+                        @"the dissolve blends the end frame into the now frame");
+                }
+                Check(fabs(player.nextOpacity - player.seamMix) < 1e-3 && fabs(player.seamMix - mix) < 0.08,
+                    @"the seam's on-screen time is the dissolve");
+            }
+            Check(ahead + 1e-9 >= hours, @"the seam does not rewind between ticks");
+        } else if (inSeam) {
+            inSeam = NO;
+            seams++;
+            seamBegan = -1;
+        }
+        if (!player.seaming)
+            Check(ahead + 1e-6 >= hours, @"a future sample does not move backwards");
+        previous = ahead;
     }
+    Check(seams >= 4 && drops == seams, @"each loop has one discontinuity back to now");
+    Check(sawHold && sawDissolve, @"each loop holds the last frame, then dissolves");
 }
 
 static void TestPlateRetentionIsBudgeted(void) {
@@ -204,7 +286,8 @@ int main(void) {
         TestRapidSpeedChangesKeepMapping();
         TestSpeedRatesAndAdvancement();
         TestMovingContourHasNoGhost();
-        TestLoopDoesNotOverlayForecasts();
+        TestLoopDissolvesTheEndpoints();
+        TestFastLoopsDissolveForward();
         TestPlateRetentionIsBudgeted();
     }
     return failures ? 1 : 0;

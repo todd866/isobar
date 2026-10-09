@@ -2512,6 +2512,9 @@ static BOOL LineCanHoldLabel(const OwnLine *line) {
 }
 
 static const double kStickyCentre = 10;
+// Chart points a label or centre may walk in one frame. Under the jank
+// tracker's 4 px "still" threshold, and above one 256× forecast step.
+static const double kLabelGlide = 3;
 
 static int MotionUpdateCentres(OwnMotionState *state, const OwnExtremum *candidates, int nCandidates,
     OwnVec *visible, double *visibleAlpha, int cap) {
@@ -2527,10 +2530,21 @@ static int MotionUpdateCentres(OwnMotionState *state, const OwnExtremum *candida
             if (d < bestDistance) { bestDistance = d; best = c; }
         }
         // A marker and its value stay still while the centre is within
-        // kStickyCentre points; a centre that has really moved fades out here
-        // and fades in at its new place.
-        if (best >= 0 && bestDistance > kStickyCentre) best = -1;
+        // kStickyCentre points. Farther, but still the same centre, it
+        // glides. Only a centre that has left the search fades out here.
+        if (best >= 0 && bestDistance > kStickyCentre) {
+            // Close only the gap past the hold, so an 8× frame that has
+            // barely left it creeps, and a 256× frame cannot jump the rest.
+            double excess = bestDistance - kStickyCentre;
+            double travel = excess > kLabelGlide ? kLabelGlide : excess;
+            double t = travel / bestDistance;
+            slot->x += (candidates[best].x - slot->x) * t;
+            slot->y += (candidates[best].y - slot->y) * t;
+        }
         if (best >= 0) {
+            // The value is the centre's pressure now, held or gliding, so a
+            // filling low reads true and the digit never changes with a move.
+            slot->value = candidates[best].value;
             used[best] = YES;
             slot->missing = 0; slot->age++;
             double before = slot->alpha;
@@ -2587,12 +2601,14 @@ static BOOL NearMotionCentre(double x, double y, double halfW, const OwnVec *cen
     return NO;
 }
 
-// A label stays still. It keeps its exact position while its isobar passes
-// within kStickyLabel points of it; once the line has drifted further, the
-// label fades out where it is and a new one fades in on the line. It also
-// retires when the contour leaves the map, shrinks below the label length, or
-// a collision or an H/L marker forces it off. One label per isobar. The
-// stroke gap is the label box, not a plate erase.
+// A label stays still while its isobar passes within kStickyLabel points.
+// Past that, but still on the same line, it glides at most kLabelGlide points
+// a frame. Replanting at the layout site jumps the digits (tens of points at
+// 256×) while the stroke stays smooth. A line that has actually left fades
+// out where it is and a new label fades in. It also retires when the contour
+// leaves the map, shrinks below the label length, or a collision or an H/L
+// marker forces it off. One label per isobar. The stroke gap is the label
+// box, not a plate erase.
 static const double kStickyLabel = 8;
 static int MotionEaseLabels(OwnMotionState *state, const OwnLabel *desired, int nDesired,
     const OwnLine *lines, int nLines, const OwnVec *centres, int nCentres, NSFont *font,
@@ -2631,9 +2647,16 @@ static int MotionEaseLabels(OwnMotionState *state, const OwnLabel *desired, int 
                     0, 0, kPanelW, kMapH, &px, &py, &arc, &tangent, &dist)) continue;
             if (dist < bestD) { bestD = dist; best = i; ax = px; ay = py; }
         }
-        if (best >= 0 && bestD > kStickyLabel) best = -1;
+        // The foot is on this isobar. Glide toward it instead of retiring the
+        // label and letting the next layout site appear somewhere else.
+        if (best >= 0 && bestD > kStickyLabel) {
+            double excess = bestD - kStickyLabel;
+            double travel = excess > kLabelGlide ? kLabelGlide : excess;
+            double t = bestD > 0 ? travel / bestD : 0;
+            slot->x += (ax - slot->x) * t;
+            slot->y += (ay - slot->y) * t;
+        }
         if (best >= 0) {
-            (void)ax; (void)ay;
             slot->missing = 0;
             slot->age++;
             slot->line = best;

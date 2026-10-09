@@ -230,6 +230,8 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
     id<MTLCommandBuffer> _scratchBuffer;
     NSUInteger _timelineEpoch;
     double _stepFloor;
+    float _dissolveMix;
+    double _dissolveFrom, _dissolveTo;
     NSTimeInterval _lastSample;
     double _lastFrameMilliseconds;
     double _lastQueueWaitMilliseconds;
@@ -854,6 +856,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 
 - (void)setFractionalStep:(double)fractionalStep {
     _fractionalStep = fractionalStep;
+    _dissolveMix = 0;
     // Scrubbing and paused seeks set the step here, not through the timeline.
     if (_source != OwnRunFieldMSLP && _placesView && !_placesView.hidden && fabs(fractionalStep - _namesStep) > 0.06)
         [self updatePlaceNames];
@@ -1287,6 +1290,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     [_lock lock];
     _renderer.pixelsPerPoint = [self pixelScale];
     NSError *error = nil;
+    [self applyEndpointMix];
     BOOL ok = [_renderer encodeTime:_fractionalStep fill:_fill isobars:YES camera:_camera
         intoCommandBuffer:buffer target:target error:&error];
     _lastQueueWaitMilliseconds += _renderer.lastSyncWaitMilliseconds;
@@ -1309,13 +1313,36 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     [buffer commit];
 }
 
+- (void)applyEndpointMix {
+    if (!_renderer) return;
+    if (_dissolveMix > 0.001)
+        [_renderer setEndpointMixFrom:_dissolveFrom to:_dissolveTo mix:_dissolveMix];
+    else
+        [_renderer setEndpointMixFrom:0 to:0 mix:0];
+}
+
 - (void)sampleTimelineAtTime:(NSTimeInterval)time {
     IsobarLivePlayer *player = self.timeline;
-    if (!player || (!player.playing && !player.seaming)) return;
+    if (!player || (!player.playing && !player.seaming)) {
+        _dissolveMix = 0;
+        return;
+    }
     if (player.playheadEpoch != _timelineEpoch) {
         _timelineEpoch = player.playheadEpoch;
         _stepFloor = -INFINITY;
     }
+    if (player.seaming) {
+        double endStep = [player seamFromModelIndex];
+        if (!isfinite(endStep)) return;
+        _fractionalStep = endStep;
+        _dissolveFrom = endStep;
+        _dissolveTo = [player seamToModelIndex];
+        _dissolveMix = (float)player.seamMix;
+        if (_source != OwnRunFieldMSLP && !_placesView.hidden && fabs(endStep - _namesStep) > 0.06)
+            [self updatePlaceNames];
+        return;
+    }
+    _dissolveMix = 0;
     double step = [player modelIndexAtTime:time];
     if (!isfinite(step)) return;
     if (player.playheadRate > 0 && step < _stepFloor) step = _stepFloor;
@@ -1409,6 +1436,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _renderer.synchronousContours = YES;
     _renderer.pixelsPerPoint = [self pixelScale];
     NSError *error = nil;
+    [self applyEndpointMix];
     CGImageRef image = [_renderer renderTime:_fractionalStep fill:_fill isobars:YES camera:_camera error:&error];
     _renderer.synchronousContours = sync;
     [_lock unlock];

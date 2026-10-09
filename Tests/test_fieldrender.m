@@ -2554,6 +2554,24 @@ static void TestFadeUnits(id<MTLDevice> device) {
         [NSString stringWithFormat:@"500 ms stall is one capped step (delta %.3f, 60 Hz step %.3f)",
             stallDelta, frameDelta]);
     IsobarFieldRenderTestingSetNow(-1);
+
+    // The injected clock may simulate a stall. The process clock must not:
+    // a late frame eases one 60 Hz quantum, so the label set does not
+    // depend on how long the render took.
+    IsobarFieldRenderer *wall = MakeRenderer(device);
+    wall.pressureSmoothDegrees = 0;
+    wall.motion = [IsobarFieldMotion new];
+    [wall setGrid:g];
+    check(Upload(wall, 0, IsobarFieldPressure, flat) && Upload(wall, 1, IsobarFieldPressure, low),
+        @"wall-clock field uploads");
+    wall.motion = [IsobarFieldMotion new];
+    CGImageRelease(Render(wall, 0, IsobarFieldPressure, YES, cam));
+    CGImageRelease(Render(wall, 1, IsobarFieldPressure, YES, cam));
+    usleep(400000);
+    CGImageRelease(Render(wall, 1, IsobarFieldPressure, YES, cam));
+    double wallStep = wall.motion.maxAnnotationAlphaStep;
+    check(wallStep > 0.02 && wallStep <= 1000.0 / 60.0 / 250.0 + 0.02,
+        [NSString stringWithFormat:@"a 400 ms wall stall eases one frame (step %.3f)", wallStep]);
     free(flat);
     free(low);
 }
@@ -3213,12 +3231,28 @@ static void TestFieldContrast(IsobarFieldRenderer *r) {
 
 int main(int argc, char **argv) {
     @autoreleasepool {
-        BOOL asyncOnly = NO, sliceOnly = NO, coastOnly = NO, contrastOnly = NO;
+        BOOL asyncOnly = NO, sliceOnly = NO, coastOnly = NO, contrastOnly = NO, notesOnly = NO;
         for (int i = 1; i < argc; i++) {
             if (strcmp(argv[i], "--async") == 0) asyncOnly = YES;
             if (strcmp(argv[i], "--slice") == 0) sliceOnly = YES;
             if (strcmp(argv[i], "--coast") == 0) coastOnly = YES;
             if (strcmp(argv[i], "--contrast") == 0) contrastOnly = YES;
+            if (strcmp(argv[i], "--annotations") == 0) notesOnly = YES;
+        }
+        if (notesOnly) {
+            id<MTLDevice> notesDevice = MTLCreateSystemDefaultDevice();
+            if (!notesDevice) {
+                printf("SKIP no Metal device\n");
+                return failures ? 1 : 0;
+            }
+            IsobarFieldRenderer *notes = MakeRenderer(notesDevice);
+            if (!notes) {
+                fprintf(stderr, "FAIL Metal device exists but the field renderer did not compile\n");
+                return 1;
+            }
+            TestAnnotations(notes);
+            fprintf(stderr, "%s\n", failures ? "FAILED" : "ok");
+            return failures ? 1 : 0;
         }
         if (coastOnly) {
             IsobarFieldRenderer *coast = MakeRenderer(nil);

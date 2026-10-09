@@ -515,6 +515,90 @@ static BOOL WritePlaybackMovie(NSArray<NSImage *> *frames, NSString *path) {
     return okay;
 }
 
+// One ProRes frame at a time, so a two-loop 256x recording does not retain
+// every bitmap. Same codec as WritePlaybackMovie: H.264 keyframes read as jumps.
+@interface SeamMovie : NSObject
+- (BOOL)openPath:(NSString *)path image:(NSImage *)first;
+- (BOOL)add:(NSImage *)image;
+- (BOOL)close;
+@property (nonatomic, readonly) NSInteger frames;
+@end
+@implementation SeamMovie {
+    AVAssetWriter *_writer;
+    AVAssetWriterInput *_input;
+    AVAssetWriterInputPixelBufferAdaptor *_adaptor;
+    int _width, _height;
+    NSInteger _frames;
+}
+- (BOOL)openPath:(NSString *)path image:(NSImage *)first {
+    CGImageRef sample = LiveCGImage(first);
+    if (!sample) return NO;
+    _width = (int)CGImageGetWidth(sample);
+    _height = (int)CGImageGetHeight(sample);
+    if (_width < 32 || _height < 32) return NO;
+    NSURL *url = [NSURL fileURLWithPath:path];
+    [NSFileManager.defaultManager createDirectoryAtURL:url.URLByDeletingLastPathComponent
+        withIntermediateDirectories:YES attributes:nil error:nil];
+    [NSFileManager.defaultManager removeItemAtURL:url error:nil];
+    NSError *failure = nil;
+    _writer = [[AVAssetWriter alloc] initWithURL:url fileType:AVFileTypeQuickTimeMovie error:&failure];
+    _input = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo outputSettings:@{
+        AVVideoCodecKey: AVVideoCodecTypeAppleProRes4444,
+        AVVideoWidthKey: @(_width),
+        AVVideoHeightKey: @(_height),
+    }];
+    _input.expectsMediaDataInRealTime = NO;
+    _adaptor = [AVAssetWriterInputPixelBufferAdaptor assetWriterInputPixelBufferAdaptorWithAssetWriterInput:_input
+        sourcePixelBufferAttributes:@{
+            (NSString *)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
+            (NSString *)kCVPixelBufferWidthKey: @(_width),
+            (NSString *)kCVPixelBufferHeightKey: @(_height),
+        }];
+    if (!_writer || ![_writer canAddInput:_input]) return NO;
+    [_writer addInput:_input];
+    if (![_writer startWriting]) return NO;
+    [_writer startSessionAtSourceTime:kCMTimeZero];
+    return [self add:first];
+}
+- (BOOL)add:(NSImage *)image {
+    CGImageRef cg = LiveCGImage(image);
+    if (!cg || (int)CGImageGetWidth(cg) != _width || (int)CGImageGetHeight(cg) != _height) return NO;
+    NSTimeInterval deadline = NSProcessInfo.processInfo.systemUptime + 10;
+    while (!_input.readyForMoreMediaData && _writer.status == AVAssetWriterStatusWriting &&
+        NSProcessInfo.processInfo.systemUptime < deadline) usleep(2000);
+    CVPixelBufferRef buffer = NULL;
+    if (!_input.readyForMoreMediaData ||
+        CVPixelBufferPoolCreatePixelBuffer(NULL, _adaptor.pixelBufferPool, &buffer) != kCVReturnSuccess) return NO;
+    CVPixelBufferLockBaseAddress(buffer, 0);
+    CGColorSpaceRef colors = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGContextRef context = CGBitmapContextCreate(CVPixelBufferGetBaseAddress(buffer), _width, _height,
+        8, CVPixelBufferGetBytesPerRow(buffer), colors, kCGBitmapByteOrder32Little | kCGImageAlphaNoneSkipFirst);
+    CGColorSpaceRelease(colors);
+    BOOL drew = context != NULL;
+    if (drew) {
+        CGContextDrawImage(context, CGRectMake(0, 0, _width, _height), cg);
+        CGContextRelease(context);
+    }
+    CVPixelBufferUnlockBaseAddress(buffer, 0);
+    BOOL appended = drew && [_adaptor appendPixelBuffer:buffer withPresentationTime:CMTimeMake(_frames, 30)];
+    CVPixelBufferRelease(buffer);
+    if (!appended) return NO;
+    _frames++;
+    return YES;
+}
+- (BOOL)close {
+    if (!_writer) return NO;
+    [_input markAsFinished];
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    [_writer finishWritingWithCompletionHandler:^{ dispatch_semaphore_signal(done); }];
+    BOOL finished = dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 120 * NSEC_PER_SEC)) == 0
+        && _writer.status == AVAssetWriterStatusCompleted;
+    if (!finished) [_writer cancelWriting];
+    return finished;
+}
+- (NSInteger)frames { return _frames; }
+@end
+
 static void CheckSmoothPlayback(TestController *c) {
     OwnRun *run = [c valueForKey:@"ownRun"];
     NSArray *times = [c valueForKey:@"sequenceTimes"];
@@ -651,6 +735,8 @@ static void WithTestReduceMotion(BOOL reduceMotion, void (^body)(void)) {
     }
 }
 
+static BOOL LockIntendedFrameSpacing(IsobarLivePlayer *player);
+
 // On-screen smoothness: drive a real popover open with no input, record the
 // displayed map for ten seconds of ambient play, then a hover sweep, and
 // write both as movies for tools/measure-jank.py (run by tests.sh). Set
@@ -703,6 +789,58 @@ static void RecordDisplayedPlayback(TestController *c, NSString *root) {
         atomically:YES encoding:NSUTF8StringEncoding error:NULL];
     Check(frames.count == 120 && WritePlaybackMovie(frames, [dir stringByAppendingPathComponent:@"hover.mov"]),
         @"a displayed hover sweep is recorded for the jank score");
+    [frames removeAllObjects];
+    live = [c valueForKey:@"live"];
+    NSInteger savedSpeed = [[c valueForKey:@"liveSpeed"] integerValue];
+    [c setValue:@(IsobarLiveSpeed256x) forKey:@"liveSpeed"];
+    live.hoursPerSecond = IsobarLiveHoursPerSecond(IsobarLiveSpeed256x);
+    Check(LockIntendedFrameSpacing(live), @"256x autoplay uses the prompt frame spacing");
+    [c startLivePlaybackFromDate:[c valueForKey:@"chartNow"]];
+    live = [c valueForKey:@"live"];
+    Check(fabs(live.hoursPerSecond - IsobarLiveHoursPerSecond(IsobarLiveSpeed256x)) < 1e-9,
+        @"256x autoplay keeps the fast rate");
+    WaitUntil(^BOOL { return live.baseImage != nil && live.rendersInFlight == 0; }, kLiveRenderCeiling);
+    NSArray *loopTimes = [c valueForKey:@"sequenceTimes"];
+    double spanHours = loopTimes.count >= 2
+        ? [loopTimes.lastObject timeIntervalSinceDate:loopTimes.firstObject] / 3600.0 : 0;
+    double loopSeconds = (spanHours > 0 && live.hoursPerSecond > 0)
+        ? spanHours / live.hoursPerSecond + kIsobarLiveSeamDuration + 1 : 30;
+    NSInteger loopCap = (NSInteger)ceil(3 * loopSeconds / kIsobarLiveDisplayTick);
+    SeamMovie *fast = [SeamMovie new];
+    NSImage *firstFast = SnapshotDisplayedMap([c timelineChart]);
+    BOOL fastOpen = firstFast && [fast openPath:[dir stringByAppendingPathComponent:@"fastplay.mov"] image:firstFast];
+    double previousHours = [live forecastHoursAtTime:[live clockNow]];
+    int fastSeams = 0, fastDrops = 0;
+    BOOL fastForward = YES, wasSeaming = live.seaming;
+    NSMutableString *seamLog = [NSMutableString string];
+    for (NSInteger i = 0; fastOpen && fastSeams < 2 && i < loopCap; i++) { @autoreleasepool {
+        [c advanceLiveTicks:1];
+        WaitUntil(^BOOL { return live.rendersInFlight == 0; }, kLiveRenderCeiling);
+        SettleController(c);
+        if (live.playheadRate < -1e-9) fastForward = NO;
+        double hours = [live forecastHoursAtTime:[live clockNow]];
+        if (hours + 0.02 < previousHours) fastDrops++;
+        else if (hours + 1e-3 < previousHours) fastForward = NO;
+        previousHours = hours;
+        // The frame about to be appended is timestamped at the current count.
+        if (live.seaming && !wasSeaming)
+            [seamLog appendFormat:@"%.3f,%.3f\n", fast.frames / 30.0, kIsobarLiveSeamDuration];
+        if (live.seaming) wasSeaming = YES;
+        else if (wasSeaming) { wasSeaming = NO; fastSeams++; }
+        NSImage *frame = SnapshotDisplayedMap([c timelineChart]);
+        if (!frame || ![fast add:frame]) fastOpen = NO;
+        if (i > 0 && i % 200 == 0)
+            fprintf(stderr, "fastplay tick %ld seams %d hours %.2f\n", (long)i, fastSeams, hours);
+    }}
+    BOOL fastClosed = fastOpen && [fast close];
+    [seamLog writeToFile:[dir stringByAppendingPathComponent:@"fastplay.seams"]
+        atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+    fprintf(stderr, "fastplay frames %ld seams %d drops %d span %.1fh\n",
+        (long)fast.frames, fastSeams, fastDrops, spanHours);
+    Check(fastClosed && fast.frames > 60 && fastSeams >= 2 && fastDrops == fastSeams && fastForward,
+        @"256x autoplay spanning two loops dissolves back to now without playing backwards");
+    [c setValue:@(savedSpeed) forKey:@"liveSpeed"];
+    live.hoursPerSecond = IsobarLiveHoursPerSecond((IsobarLiveSpeed)savedSpeed);
     [c stopPopoverPlayback];
     [c popoverWillClose:[NSNotification notificationWithName:NSPopoverWillCloseNotification object:shown]];
     c.popover = original;
@@ -738,7 +876,10 @@ static void CheckLivePlayback(TestController *c, NSString *root, NSFileManager *
     Check(fabs(IsobarLiveHoursPerSecond(IsobarLiveSpeed1x) - 1.0/60) < 1e-9 &&
         fabs(IsobarLiveHoursPerSecond(IsobarLiveSpeed8x) - 8.0/60) < 1e-9 &&
         fabs(IsobarLiveHoursPerSecond(IsobarLiveSpeed64x) - 64.0/60) < 1e-9 &&
-        fabs(kIsobarLiveFrameStep - 18) < 1e-9 && kIsobarLiveSeamDuration >= 1,
+        fabs(kIsobarLiveFrameStep - 18) < 1e-9 &&
+        fabs(kIsobarLiveSeamHold - 0.2) < 1e-9 &&
+        fabs(kIsobarLiveSeamDissolve - 0.6) < 1e-9 &&
+        fabs(kIsobarLiveSeamDuration - (kIsobarLiveSeamHold + kIsobarLiveSeamDissolve)) < 1e-9,
         @"playback multipliers are anchored at one forecast minute per second");
     Check(fabs(IsobarLiveFrameSpacing(0.003, 8.0/60) - 16) < 1e-6 &&
         fabs(IsobarLiveFrameSpacing(0.040, 8.0/60) - 24) < 1e-6 &&
@@ -903,8 +1044,8 @@ static void CheckLivePlayback(TestController *c, NSString *root, NSFileManager *
     SettleController(c);
     double maxProgress = 0;
     BOOL sawSeam = NO;
-    // The tick that opens the seam does not spend seam time. The fade is 1.5s
-    // of playback ticks, and only the tick after that returns the playhead to now.
+    // The tick that opens the seam does not spend seam time. The hold and the
+    // dissolve run on the following ticks, and the tick after that is now.
     NSUInteger seamTicks = (NSUInteger)ceil(kIsobarLiveSeamDuration / kIsobarLiveDisplayTick) + 1;
     NSDate *loopDeadline = [NSDate dateWithTimeIntervalSinceNow:60];
     while (loopDeadline.timeIntervalSinceNow > 0 && !sawSeam) {
