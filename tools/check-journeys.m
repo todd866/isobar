@@ -249,8 +249,12 @@ static void Journeys(JourneyController *c, NSView *(^root)(void), NSString *surf
     EXPECT(mode2D && mode2D.enabled, "2D mode control is available");
     if (mode2D) [mode2D performClick:nil];
     [map advanceDisplay:1.0];
-    [map scrollByX:0 y:150 atPoint:NSMakePoint(NSMidX(map.bounds),NSMidY(map.bounds)) precise:YES command:NO];
     EXPECT(fabs(map.camera.pitch)<1e-9 && SameView(map.camera,vectorCamera), "returning flat lost the wind view");
+    EXPECT(fabs([[c selectedForecastDate] timeIntervalSinceDate:vectorTime])<1, "returning flat changed forecast time");
+    double flatZoom = map.camera.zoom;
+    [map scrollByX:0 y:150 atPoint:NSMakePoint(NSMidX(map.bounds),NSMidY(map.bounds)) precise:YES command:NO];
+    EXPECT(fabs(map.camera.pitch)<1e-9 && map.camera.zoom < flatZoom,
+        "two-finger scroll in 2D should zoom out without tilting");
 }
 
 int main(int argc, const char **argv) {
