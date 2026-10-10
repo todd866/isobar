@@ -1,3 +1,4 @@
+import { IMAGERY_MATERIAL_GLSL, type ImageryMapping } from './terrain/imagery-material';
 import { TILT_CAMERA_GLSL, type TiltCamera } from './tilt-camera';
 /** WebGL2 chart plate: Lambert unproject, bicubic field sample, land/sea tint. */
 
@@ -29,6 +30,8 @@ export interface GlView {
   wrapsLongitude?: boolean;
   /** Relief strength 0–1 (terrain/terrarium.ts reliefStrength); 0 draws the flat plate. */
   relief?: number;
+  /** Visual foreground cutaway while inspecting the atmosphere, 0–1. */
+  cutaway?: number;
   /** 0–1 cover of the colour field over the plate. Omitted means fully covered. */
   fieldAlpha?: number;
 }
@@ -84,6 +87,8 @@ uniform float uN;
 uniform float uF;
 uniform float uRho0;
 uniform float uDark;
+uniform float uCutaway;
+uniform int uHasImagery;
 uniform int uProjection;
 uniform int uWrap;
 uniform sampler2D uTerrain;
@@ -209,6 +214,8 @@ float sampleField(usampler2D tex, float gx, float gy) {
   return mix(mix(a, b, tx), mix(c, d, tx), ty);
 }
 
+${IMAGERY_MATERIAL_GLSL}
+
 // Restrained hypsometric steps over the Bureau land tint: a touch deeper ochre
 // in the foothills, buff in the ranges, pale stone on the high peaks.
 const vec3 HILL_DAY = vec3(0.920, 0.880, 0.680);
@@ -302,7 +309,11 @@ void main() {
           + 0.25 * max(dot(normal, vec3(-0.7071, 0.0, 0.7071)), 0.0)
           + 0.40 * max(dot(normal, vec3(-0.5, 0.5, 0.7071)), 0.0)
           + 0.20 * max(dot(normal, vec3(0.0, 0.7071, 0.7071)), 0.0);
-        float delta = (shade - 0.7071) * uRelief * cover * mix(1.0, 0.45, fieldNeutral);
+        // Oblique distant pixels can span many DEM texels. Fade unresolved
+        // relief contrast instead of amplifying alternating slope samples.
+        float footprint=max(length(dFdx(uv)/uTerrainTexel),length(dFdy(uv)/uTerrainTexel));
+        float resolved=uTilt==1?1.0-smoothstep(2.0,10.0,footprint):1.0;
+        float delta = (shade - 0.7071) * uRelief * cover * mix(1.0, 0.45, fieldNeutral) * resolved;
         vec3 tinted = mix(LANDC, hypsometric(LANDC, here.x), uRelief * here.y * mix(1.0, 0.25, fieldNeutral));
         float darken = mix(0.75, 0.9, uDark);
         float lighten = mix(0.4, 0.25, uDark);
@@ -316,6 +327,21 @@ void main() {
     if (wu >= 0.0 && wu <= 1.0 && wv >= 0.0 && wv <= 1.0 && texture(uWater, vec2(wu, wv)).r > 0.5) landF = 0.0;
   }
   vec3 base = mix(SEA, landColour, landF);
+  if (uHasImagery == 1) {
+    vec4 photo=imageryColour(lon,lat);
+    // The source already contains cast shadows; avoid shading it twice.
+    vec3 photographic=photo.rgb*mix(1.0,.55,uDark);
+    base=mix(base,photographic,photo.a);
+  }
+  if (uTilt == 1) {
+    // Local aerial perspective suppresses unresolved distant relief, without
+    // altering elevations or weather fields. Global overview remains unchanged.
+    vec2 delta=vec2(mod(radians(lon)-uTiltCam.y+3.14159265,6.2831853)-3.14159265,radians(lat)-uTiltCam.x);
+    delta.x*=cos(uTiltCam.x);
+    float range=length(delta)*6371000.0;
+    float haze=smoothstep(2.0,8.0,range/max(500.0,uTiltCam.z*6371000.0))*.85*(1.0-smoothstep(.004,.02,uTiltCam.z));
+    base=mix(base,mix(vec3(.83,.89,.93),vec3(.035,.065,.10),uDark),haze);
+  }
   if (uHasField == 1 && uField != 0) {
     float gx = (sampleLon - uOrigin.x) / uStep.x;
     float gy = (lat - uOrigin.y) / uStep.y;
@@ -331,6 +357,9 @@ void main() {
       base = mix(base, colour.rgb, colour.a * cover * uFieldAlpha);
     }
   }
+  // A soft foreground window reveals overlaid air; DEM sampling stays intact.
+  float window = (1.0-smoothstep(-0.85, 0.2, vClip.y)) * exp(-vClip.x*vClip.x*1.5) * uCutaway;
+  base = mix(base, mix(vec3(.83,.89,.93),vec3(.035,.065,.10),uDark), window*.96);
   oColor = vec4(base, 1.0);
 }
 `;
@@ -356,6 +385,7 @@ export interface GlChart {
   setFrames(a: Uint16Array | null, b: Uint16Array | null, nx: number, ny: number): void;
   /** Elevation mosaic for relief; null clears it (flat plate). */
   setTerrain(terrain: TerrainTexture | null): void;
+  setImagery(image: ImageBitmap | null, mapping?: ImageryMapping): void;
   /** How many mosaics have finished uploading. */
   terrainEpoch(): number;
   /** Ask the next draw to keep a top-left RGBA copy of the plate. */
@@ -402,10 +432,16 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
   const texB = gl.createTexture();
   const texLand = gl.createTexture();
   const texWater = gl.createTexture();
+  let texImagery = gl.createTexture();
+  let imagery: ImageryMapping | null = null;
   // Front texture is drawn; a new mosaic fills the back one a slice per frame, then they swap.
   let texTerrain = gl.createTexture();
   let texTerrainBack = gl.createTexture();
-  const loc = (name: string) => gl.getUniformLocation(program, name);
+  const uniformLocations = new Map<string, WebGLUniformLocation | null>();
+  const loc = (name: string) => {
+    if (!uniformLocations.has(name)) uniformLocations.set(name, gl.getUniformLocation(program, name));
+    return uniformLocations.get(name)!;
+  };
 
   function uploadField(texture: WebGLTexture | null, data: Uint16Array | null, nx: number, ny: number) {
     gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -469,6 +505,10 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
   }
 
   let hasField = 0;
+  gl.bindTexture(gl.TEXTURE_2D, texImagery);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array(4));
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
   let hasWater = 0;
   let landBox: LandBox = { west: 0, south: 0, east: 1, north: 1 };
   let waterBox: LandBox = { west: 0, south: 0, east: 1, north: 1 };
@@ -507,6 +547,23 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     },
+    setImagery(image, mapping) {
+      imagery = image && mapping ? mapping : null;
+      if(!imagery){gl.deleteTexture(texImagery);texImagery=gl.createTexture();}
+      gl.activeTexture(gl.TEXTURE5);
+      gl.bindTexture(gl.TEXTURE_2D, texImagery);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      if (image && mapping) {
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,image);
+        gl.generateMipmap(gl.TEXTURE_2D);
+      } else gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array(4));
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,imagery?gl.LINEAR_MIPMAP_LINEAR:gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+      gl.activeTexture(gl.TEXTURE0);
+    },
     setTerrain(next: TerrainTexture | null) {
       if (!next) {
         terrain = null;
@@ -544,6 +601,16 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       gl.bindTexture(gl.TEXTURE_2D, texWater);
       gl.uniform1i(loc('uWater'), 4);
       gl.uniform1i(loc('uHasWater'), hasWater);
+      gl.activeTexture(gl.TEXTURE5);
+      gl.bindTexture(gl.TEXTURE_2D,texImagery);
+      gl.uniform1i(loc('uImagery'),5);
+      gl.uniform1i(loc('uHasImagery'),imagery?1:0);
+      if(imagery){
+        gl.uniform2fv(loc('uImageryOrigin'),imagery.origin);
+        gl.uniform2fv(loc('uImageryEdge'),imagery.edgeUv);
+        gl.uniform3fv(loc('uImageryU0'),imagery.u.slice(0,3));gl.uniform3fv(loc('uImageryU1'),imagery.u.slice(3));
+        gl.uniform3fv(loc('uImageryV0'),imagery.v.slice(0,3));gl.uniform3fv(loc('uImageryV1'),imagery.v.slice(3));
+      }
       gl.uniform4f(loc('uWaterBox'), waterBox.west, waterBox.south, waterBox.east, waterBox.north);
       gl.uniform1i(loc('uHasTerrain'), terrain ? 1 : 0);
       gl.uniform1f(loc('uRelief'), terrain ? Math.max(0, Math.min(1, view.relief ?? 0)) : 0);
@@ -578,6 +645,7 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       gl.uniform1f(loc('uF'), view.lambert.F);
       gl.uniform1f(loc('uRho0'), view.lambert.rho0);
       gl.uniform1f(loc('uDark'), view.dark ? 1 : 0);
+      gl.uniform1f(loc('uCutaway'), Math.max(0,Math.min(1,view.cutaway??0)));
       gl.uniform1i(loc('uProjection'), view.lambert.projection === 'equirectangular' ? 1 : 0);
       gl.uniform1i(loc('uWrap'), view.wrapsLongitude ? 1 : 0);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -608,6 +676,7 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       gl.deleteTexture(texB);
       gl.deleteTexture(texLand);
       gl.deleteTexture(texWater);
+      gl.deleteTexture(texImagery);
       gl.deleteTexture(texTerrain);
       gl.deleteTexture(texTerrainBack);
     },

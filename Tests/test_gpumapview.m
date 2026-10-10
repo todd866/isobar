@@ -995,6 +995,41 @@ static void CheckVectorSnapshots(void) {
     }
 }
 
+static double EyeDistance(IsobarCamera cam) {
+    double t = fmin(1, fmax(0, cam.pitch / (20*M_PI/180)));
+    double k = fmax(.001, t*t*(3-2*t));
+    double fit = fmin(cam.viewportW/360, cam.viewportH/180);
+    return (cam.viewportH*.5/(cam.zoom*fit/(M_PI/180)))/(tan(25*M_PI/180)*k);
+}
+static NSEvent *NavigationKey(unsigned short code, NSString *text) {
+    return [NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint modifierFlags:NSEventModifierFlagNumericPad
+        timestamp:0 windowNumber:0 context:nil characters:text charactersIgnoringModifiers:text isARepeat:NO keyCode:code];
+}
+static void CheckKeyboardNavigation(GPUMapView *view) {
+    IsobarCamera eye=MapCameraMake(-32,116,384,1,640,480);eye.pitch=.7;eye.bearing=.8;
+    double distance=EyeDistance(eye), horizontal=sin(eye.pitch)*distance, vertical=cos(eye.pitch)*distance;
+    Check(MapCameraAdjustEyeHeight(&eye,.1),@"E/Q camera operation accepts a vertical rise");
+    double after=EyeDistance(eye);
+    Check(fabs(sin(eye.pitch)*after-horizontal)<1e-9,@"eye rise preserves horizontal stand-off");
+    Check(fabs(cos(eye.pitch)*after-vertical-.1*distance)<1e-9,@"eye rises by the requested physical amount");
+    Check(fabs(eye.centreLat+32)<1e-9&&fabs(eye.centreLon-116)<1e-9&&fabs(eye.bearing-.8)<1e-9,@"eye rise retains ground focus and heading");
+    [view handleGlobeKey:@"3" repeat:NO];[view advanceDisplay:1];view.camera=eye;
+    Check([view handle3DKeyEvent:NavigationKey(124,@"")],@"3D accepts right arrow with numeric-pad flag");
+    Check(view.camera.bearing>eye.bearing,@"right arrow changes look bearing");
+    double heading=view.camera.bearing;
+    [view handleGlobeKey:@"2" repeat:NO];[view advanceDisplay:1];
+    Check(fabs(view.camera.bearing)<1e-9&&! [view handle3DKeyEvent:NavigationKey(13,@"w")],@"2D remains north-up and does not capture WASD");
+    [view handleGlobeKey:@"3" repeat:NO];[view advanceDisplay:1];
+    Check(fabs(view.camera.bearing-heading)<1e-9,@"returning to 3D restores heading");
+    IsobarCamera before=view.camera;
+    [view handle3DKeyEvent:NavigationKey(13,@"w")];
+    Check(view.camera.centreLat!=before.centreLat||view.camera.centreLon!=before.centreLon,@"W moves across the ground");
+    IsobarCamera close=view.camera;close.zoom=18000;close.bearing=0;view.camera=close;
+    [view handle3DKeyEvent:NavigationKey(13,@"w")];
+    Check(fabs(view.camera.centreLat-close.centreLat)<.001,@"close terrain navigation does not jump kilometres per key");
+    [view handleGlobeKey:@"2" repeat:NO];[view advanceDisplay:1];
+}
+
 int main(void) {
     @autoreleasepool {
         [NSApplication sharedApplication];
@@ -1011,6 +1046,7 @@ int main(void) {
         CheckPresentSurvives();
         CheckDragAndPinch(view);
         CheckPlaceAndGlobe(view);
+        CheckKeyboardNavigation(view);
         CheckStates(view);
         CheckHazards();
         CheckVectorSnapshots();

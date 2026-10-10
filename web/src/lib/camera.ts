@@ -224,10 +224,12 @@ export function frameData(geo: Lambert, width: number, height: number, box: Data
 
 /** Closest zoom, as a fraction of home: about 60 km across over Australia (owner, 9 Oct: "I need to be able to zoom in more"). */
 export const ZOOM_IN_LIMIT = 64;
+/** 222 m north–south at closest global view; measured DEM resolution is independent. */
+export const MIN_GLOBAL_HALF_HEIGHT = .001;
 
 /** Limits zoom (1/ZOOM_IN_LIMIT of home to the widest view) and keeps the whole view inside the data. */
 export function clampToData(geo: Lambert, camera: Camera, frame: DataFrame): Camera {
-  const min = geo.projection === 'equirectangular' ? .005 * camera.halfWidth / camera.halfHeight : frame.home.halfWidth / ZOOM_IN_LIMIT;
+  const min = geo.projection === 'equirectangular' ? MIN_GLOBAL_HALF_HEIGHT * camera.halfWidth / camera.halfHeight : frame.home.halfWidth / ZOOM_IN_LIMIT;
   const halfWidth = Math.min(frame.widest.halfWidth, Math.max(min, camera.halfWidth));
   const target = sized(camera, halfWidth);
   if (cameraInside(geo, target, frame.box)) return target;
@@ -242,7 +244,7 @@ export function clampToData(geo: Lambert, camera: Camera, frame: DataFrame): Cam
 export function zoomWithinData(geo: Lambert, camera: Camera, clipX: number, clipY: number, factor: number, frame: DataFrame): Camera {
   if (![clipX, clipY, factor].every(Number.isFinite) || factor <= 0 || !(camera.halfWidth > 0)) return camera;
   // Geographic zoom is independent of weather resolution; close terrain does not imply finer forecast data.
-  const floor = geo.projection === 'equirectangular' && camera.halfHeight > 0 ? .005 * (camera.halfWidth / camera.halfHeight) : frame.home.halfWidth / ZOOM_IN_LIMIT;
+  const floor = geo.projection === 'equirectangular' && camera.halfHeight > 0 ? MIN_GLOBAL_HALF_HEIGHT * (camera.halfWidth / camera.halfHeight) : frame.home.halfWidth / ZOOM_IN_LIMIT;
   const width = Math.min(frame.widest.halfWidth, Math.max(floor, camera.halfWidth * factor));
   return clampToData(geo, zoomAbout(geo, camera, clipX, clipY, width / camera.halfWidth), frame);
 }

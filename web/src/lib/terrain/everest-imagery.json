@@ -1,0 +1,78 @@
+{
+  "asset": "everest-sentinel2-wide-20261003.png",
+  "source": "Copernicus Sentinel-2B MSI L2A surface reflectance via EarthSearch Sentinel COGs",
+  "scene_id": "S2B_45RVM_20261003_0_L2A",
+  "scene_date": "2026-10-03",
+  "acquisition_datetime": "2026-10-03T05:00:49.820000Z",
+  "stac_item": "https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/S2B_45RVM_20261003_0_L2A",
+  "band_urls": {
+    "B02": "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/45/R/VM/2026/10/S2B_45RVM_20261003_0_L2A/B02.tif",
+    "B03": "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/45/R/VM/2026/10/S2B_45RVM_20261003_0_L2A/B03.tif",
+    "B04": "https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/45/R/VM/2026/10/S2B_45RVM_20261003_0_L2A/B04.tif"
+  },
+  "source_metadata_sha256": "cf211df6c211a9903d56d7360e9b7d26acef3471beeff87a26ce527fb06c3e35",
+  "source_pixels_sha256": {
+    "B04": "19a503a6b2e3404284a1123407a24c2678c91ff138ae818e24bdfde8cf90e5a6",
+    "B03": "cc0243a1a2773a8ca875c1d6c66e48db2596f554f28e95ffba2bbc5e87531023",
+    "B02": "0970b85c770d453d0de9496b74c249bba889027edc4a197fe5175d14eee21957"
+  },
+  "source_header_sha256": {
+    "B04": "59f1cc08ad4e86070beb6d92830d9243bec3359de3608817f00c056d8750a33b",
+    "B03": "8a703270255f56c0a12564a22785874e7eb14e597819cbf78d623f0d395d6539",
+    "B02": "a37049b1ef8e6e0916b6c28a43970caf0912cb35422a309f6c0d2c0bfa0dafe3"
+  },
+  "attribution": "Copernicus Sentinel data 2026, processed by ESA; accessed via Element84 EarthSearch.",
+  "license": "Copernicus Sentinel Data Terms and Conditions (free and open access)",
+  "native_pixel_size_m": 10,
+  "projection": "EPSG:32645",
+  "pixel_window": {
+    "x": 7913,
+    "y": 8932,
+    "width": 2048,
+    "height": 2048,
+    "route_pixel_bounds": {
+      "west": 8548.852612816967,
+      "east": 9325.461797874503,
+      "north": 10260.725523938145,
+      "south": 10604.80718616629
+    },
+    "clamped": true
+  },
+  "utm_bounds_m": {
+    "west": 479090.0,
+    "south": 3090240.0,
+    "east": 499570.0,
+    "north": 3110720.0
+  },
+  "geographic_bounds_wgs84": {
+    "west": 86.78709283139425,
+    "south": 27.936984290355383,
+    "east": 86.99562917128569,
+    "north": 28.12202650759522
+  },
+  "radiometry": {
+    "bands_rgb": [
+      {
+        "scale": 0.0001,
+        "offset": -0.1,
+        "nodata": 0.0
+      },
+      {
+        "scale": 0.0001,
+        "offset": -0.1,
+        "nodata": 0.0
+      },
+      {
+        "scale": 0.0001,
+        "offset": -0.1,
+        "nodata": 0.0
+      }
+    ]
+  },
+  "nodata_pixels": 3,
+  "rendering": "B04/B03/B02; scaled to surface reflectance, gamma 1/2.2, RGBA nodata alpha; no sharpening",
+  "historical_relevance": "Modern 2026 orientation material; not a 1953 observation or reconstruction.",
+  "sha256": "780595256eac0a3a64dd5110f88027029fb71a77b62070da95ed14d2e18fb9b5",
+  "bytes": 9385536,
+  "generated_at": "2026-10-10T05:02:25.230111+00:00"
+}

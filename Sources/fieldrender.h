@@ -43,6 +43,9 @@ typedef struct {
     double pitch;
     double viewportW;
     double viewportH;
+    // Heading of the camera around the local vertical, radians. Zero is
+    // north-up; this is used by the pitched 3D projection and its inverse.
+    double bearing;
 } IsobarCamera;
 
 // Screen x right, y down.

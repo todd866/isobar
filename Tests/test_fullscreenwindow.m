@@ -9,6 +9,19 @@ static void Check(BOOL ok, NSString *message) {
 @interface KeyStub : NSObject <FullscreenWindowController>
 @property NSInteger plays, lefts, rights, compares, sources, escapes;
 @end
+
+@interface MapKeyStub : NSView
+@property NSInteger handled;
+@end
+@implementation MapKeyStub
+- (BOOL)acceptsFirstResponder { return YES; }
+- (BOOL)handle3DKeyEvent:(NSEvent *)event {
+    if ((event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl |
+        NSEventModifierFlagOption | NSEventModifierFlagShift)) != 0) return NO;
+    self.handled++;
+    return YES;
+}
+@end
 @implementation KeyStub
 - (void)escapeFullscreen { self.escapes++; }
 - (void)stepFullscreenPanel:(NSInteger)delta { if (delta < 0) self.lefts++; else self.rights++; }
@@ -56,6 +69,18 @@ int main(void) {
         Check(stub.plays == 1, @"the window toggles playback once for a held space");
         Check(stub.lefts == 1, @"the window steps once for a held left arrow");
         Check(stub.compares == 1 && stub.sources == 0, @"command-modified shortcuts are not chart commands");
+        MapKeyStub *map = [MapKeyStub new];
+        window.contentView = map;
+        [window makeFirstResponder:map];
+        [window sendEvent:Key(123, @"", 0, NO)];
+        [window sendEvent:Key(124, @"", NSEventModifierFlagNumericPad, YES)];
+        [window sendEvent:Key(123, @"", NSEventModifierFlagCommand, NO)];
+        Check(map.handled == 2, @"focused 3D map owns unmodified arrow repeats, including numeric-pad flags");
+        NSTextView *editor=[[NSTextView alloc] initWithFrame:NSMakeRect(0,0,100,40)];
+        [map addSubview:editor];[window makeFirstResponder:editor];
+        [window sendEvent:Key(2,@"d",0,NO)];
+        Check(stub.compares==1&&map.handled==2,@"typing D does not navigate or compare the map");
+        Check([editor.string isEqualToString:@"d"],@"the focused text editor receives the typed character");
         [window close];
     }
     return failures ? 1 : 0;

@@ -3,8 +3,8 @@
  * Terrain off the main thread: fetches terrarium tiles nearest the view centre
  * first, decodes them (createImageBitmap + OffscreenCanvas), keeps a bounded
  * LRU of decoded tiles, and composites the equirectangular mosaic the WebGL
- * plate samples. A 404 (all-sea tile) or a failed fetch leaves its area
- * uncovered: flat tint, never invented relief.
+ * plate samples. Missing fine tiles fall back to measured ancestors; an area
+ * with no measured tile stays uncovered, never invented relief.
  */
 import {
   elevationsAlong, sampleTiles, sectionTrack, SECTION_ZOOM, type DecodedTile, type SectionSample,
@@ -51,6 +51,7 @@ let queue: TileKey[] = [];
 let current: PlanMessage | null = null;
 let composeTimer = 0;
 let template: string | undefined;
+let wanted = new Set<string>();
 
 function lookup(z: number, x: number, y: number): Uint16Array | null | undefined {
   const key = tileKey(z, x, y);
@@ -65,7 +66,8 @@ function lookup(z: number, x: number, y: number): Uint16Array | null | undefined
 function remember(key: string, tile: Uint16Array) {
   cache.set(key, tile);
   while (cache.size > CACHE_TILES) {
-    const oldest = cache.keys().next().value as string;
+    const oldest = [...cache.keys()].find(candidate => !wanted.has(candidate));
+    if (oldest === undefined) break;
     cache.delete(oldest);
   }
 }
@@ -206,14 +208,25 @@ scope.onmessage = (event: MessageEvent<PlanMessage | SectionMessage>) => {
   current = message;
   template = message.template;
   const needed = tilesForBox(message.plan.box, message.plan.z);
-  const wanted = new Set(needed.map((tile) => tileKey(tile.z, tile.x, tile.y)));
+  // Two parent levels arrive first so unavailable local high-detail tiles do
+  // not erase measured relief. Ancestors are deduplicated and share the LRU.
+  const ancestors=new Map<string,TileKey>();
+  for(const tile of needed)for(let level=2;level>=1;level--){
+    if(tile.z<level)continue;const parent={z:tile.z-level,x:tile.x>>level,y:tile.y>>level};
+    ancestors.set(tileKey(parent.z,parent.x,parent.y),parent);
+  }
+  // Keep the complete active set within the decoded cache budget, preserving
+  // every primary tile and preferring the broadest fallback coverage.
+  const parents=[...ancestors.values()].sort((a,b)=>a.z-b.z).slice(0,Math.max(0,CACHE_TILES-needed.length));
+  const candidates=[...parents,...needed];
+  wanted = new Set(candidates.map((tile) => tileKey(tile.z, tile.x, tile.y)));
   for (const [key, controller] of inflight) {
     if (!wanted.has(key)) {
       controller.abort();
       inflight.delete(key);
     }
   }
-  queue = needed.filter((tile) => lookup(tile.z, tile.x, tile.y) === undefined);
+  queue = candidates.filter((tile) => lookup(tile.z, tile.x, tile.y) === undefined);
   pump();
   // Paint what is already cached (or its ancestors) now; arrivals refine it.
   // A zoom sends plans in bursts; composite only the last of them.

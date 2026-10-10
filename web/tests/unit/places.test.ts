@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { compassFrom, dedupeNames, readingText, drawPlaces, regionalPlaces, DAY_PLACES, type PlaceRow } from '../../src/lib/places';
 
 import { globalEquirectangular } from '../../src/lib/lambert';
+import { withTilt } from '../../src/lib/tilt-navigation';
 
 describe('town names', () => {
   it('keeps the larger of two same-name places and qualifies the smaller', () => {
@@ -66,6 +67,15 @@ describe('town names', () => {
 
 
 describe('regional place selection', () => {
+  it('does not project distant towns in a tilted close view', () => {
+    const geo=globalEquirectangular();
+    const camera=withTilt(geo,{centerX:116.1,centerY:-31.9,halfWidth:1,halfHeight:.6},.9);
+    const project=vi.spyOn(camera.surface!, 'project');
+    const ctx={save(){},restore(){},measureText:()=>({width:30})} as unknown as CanvasRenderingContext2D;
+    drawPlaces(ctx,[['Perth',-31.9,116.1,1,''],['London',51.5,-.1,1,'']],geo,camera,1280,720,[],DAY_PLACES,null,40,true);
+    expect(project).toHaveBeenCalledWith(-31.9,116.1,undefined);
+    expect(project.mock.calls.some(([lat])=>lat===51.5)).toBe(false);
+  });
   it('preserves rank, reuses nearby candidates, and refreshes when panned away', () => {
     const rows: PlaceRow[] = [['A', 1, 2, 1, ''], ['B', 1, 3, 2, ''], ['C', 1, 90, 3, '']];
     const a = regionalPlaces(rows, 0, 5, -2, 2);

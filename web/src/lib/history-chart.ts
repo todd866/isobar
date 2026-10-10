@@ -77,6 +77,7 @@ export function historicalToChart(weather: HistoricalWeather, coast: Coast, even
   if (hasTemperature) variables.t2m = scales.t2m;
   const historicalPlace = (eventId ?? weather.event?.id) === 'dday'
     ? { id: 'h.normandy', name: 'Normandy', zone: 'Europe/Paris', lat: 49.35, lon: -0.85, icao: '' }
+    : (eventId ?? weather.event?.id) === 'everest-1953' ? { id: 'h.everest', name: 'Everest', zone: 'Asia/Kathmandu', lat: 27.9881, lon: 86.9250, icao: '' }
     : (eventId ?? weather.event?.id) === 'cyclone-tracy' ? { id: 'h.darwin', name: 'Darwin', zone: 'Australia/Darwin', lat: -12.46, lon: 130.84, icao: '' }
     : { id: 'sydney', name: 'Sydney', zone: 'Australia/Sydney', lat: -33.8688, lon: 151.2093, icao: 'YSSY' };
   const manifest: ChartManifest = {
@@ -102,16 +103,17 @@ export async function loadHistoricalChart(selection: { event?: string; date?: st
   const catalog = await fetchCatalog();
   const requested = selection.event ? catalog.collections.find((item) => item.id === selection.event) : catalog.collections.find((item) => item.id === 'dday') ?? catalog.collections[0];
   if (!requested) throw new Error('Historical collection unavailable');
+  const selectedDate = selection.date ?? (requested.id === 'everest-1953' ? '1953-05-29' : undefined);
   const manifest = await fetchManifest(requested.manifest);
   const manifestDays = manifest.days ?? [];
-  const availableDay = (selection.date ? [...requested.days, ...manifestDays].find((item) => item.date === selection.date) : [...requested.days, ...manifestDays].find((item) => item.complete)) ?? null;
+  const availableDay = (selectedDate ? [...requested.days, ...manifestDays].find((item) => item.date === selectedDate) : [...requested.days, ...manifestDays].find((item) => item.complete)) ?? null;
   const weatherSource = availableDay?.weather ?? manifest.weather;
   if (!weatherSource) throw new Error('Historical weather unavailable');
   const weather = await fetchWeather(weatherSource);
   if (!weather) throw new Error('Historical weather unavailable');
   if (weather.event?.id && weather.event.id !== requested.id) throw new Error('Historical weather event does not match collection');
   const days = availableDaysForWeather({ ...requested, days: [...requested.days, ...manifestDays] }, weather);
-  const day = days.find((item) => item.date === selection.date) ?? (selection.date ? undefined : days[0]);
+  const day = days.find((item) => item.date === selectedDate) ?? (selectedDate ? undefined : days[0]);
   if (!day) throw new Error('Requested historical date is unavailable');
   const frame = weather.frames.find((item) => item.time.slice(0, 10) === day.date && Number(item.time.slice(11, 13)) === (selection.hour ?? 0));
   if (!frame) throw new Error('Requested historical hour is unavailable');

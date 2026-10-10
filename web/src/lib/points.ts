@@ -99,6 +99,8 @@ export function compass(deg: number): string {
 export type SkyIcon = 'sun' | 'partly' | 'cloud' | 'drizzle' | 'rain';
 
 export interface DaySummary {
+  event?: {title: string; detail: string; source: string};
+  historical?: boolean;
   key: string;
   weekday: string;
   dayStart: number;

@@ -33,48 +33,21 @@ function hint(page: Page, id?: string) {
 async function fits(page: Page, width: number) {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
-  const box = await page.locator('[data-hint-copy]').boundingBox();
-  if (!box) return;
-  expect(box.x).toBeGreaterThanOrEqual(-1);
-  expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
-  const clipped = await page.locator('[data-map-hint]').evaluate((el) => el.scrollWidth > el.clientWidth + 1);
-  expect(clipped).toBe(false);
+  const box = await page.locator('[data-map-ready=true]').boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(-1);
+  expect(box!.x+box!.width).toBeLessThanOrEqual(width+1);
 }
 
-test('hints appear in order, leave when their action happens, and stay gone', async ({ page }) => {
-  test.setTimeout(90_000);
-  await prepare(page, 'light', 1440, 900, false, true);
-  await expect(hint(page, 'point')).toContainText('Tap the map for the air above a point');
-  await expect(hint(page, 'gesture')).toHaveCount(0);
-  await expect(hint(page, 'lens')).toHaveCount(0);
-  await expect(hint(page)).toHaveCSS('animation-name', 'none');
-
+test('fresh map stays clear of automatic coaching through navigation', async ({ page }) => {
+  await prepare(page, 'light', 390, 844);
+  await expect(hint(page)).toHaveCount(0);
   await tapPoint(page);
-  await expect(hint(page, 'point')).toHaveCount(0);
-  await expect(hint(page, 'gesture')).toContainText('Hold to pause · drag to pan · pinch to zoom · 3D: two fingers to tilt');
-
-  const canvas = page.locator('canvas[tabindex="0"]');
-  const box = (await canvas.boundingBox())!;
-  await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.35);
-  await page.mouse.wheel(0, -80);
-  await expect(hint(page, 'gesture')).toHaveCount(0);
-  await expect(hint(page, 'lens')).toContainText('Pick a lens below for rain, wind, temp or flying');
-
-  await page.getByRole('radio', { name: 'Rain', exact: true }).click();
   await expect(hint(page)).toHaveCount(0);
-
-  await page.reload();
-  await page.waitForSelector('[data-map-ready="true"]', { timeout: 60_000 });
+  await page.getByRole('radio', {name:'Rain',exact:true}).click();
   await expect(hint(page)).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => localStorage.getItem('isobar.map.hints'))).toContain('"lens":true');
-});
-
-test('dismissing a hint with × advances without doing the action', async ({ page }) => {
-  test.setTimeout(90_000);
-  await prepare(page, 'light', 1440, 900);
-  await hint(page, 'point').getByRole('button', { name: 'Dismiss hint' }).click();
-  await expect(page.locator('[data-point-panel]')).toHaveCount(0);
-  await expect(hint(page, 'gesture')).toBeVisible();
+  await page.reload();await page.waitForSelector('[data-map-ready="true"]');
+  await expect(hint(page)).toHaveCount(0);
 });
 
 test('desktop labels fit at 1280 and 1440', async ({ page }) => {
@@ -130,30 +103,24 @@ test('returning desktop does not show hints', async ({ page }) => {
     await page.screenshot({ path: path.join(OUT, `1440x900-${mode}-returning.png`) });
   }
   await prepare(page, 'dark', 1440, 900);
-  await expect(hint(page, 'point')).toBeVisible();
+  await expect(hint(page)).toHaveCount(0);
   await page.screenshot({ path: path.join(OUT, '1440x900-dark-first.png') });
 });
 
-test('phone hints fit, and a long press names an icon without pressing it', async ({ page }) => {
+test('phone starts clear, and a long press names an icon without pressing it', async ({ page }) => {
   test.setTimeout(120_000);
   fs.mkdirSync(OUT, { recursive: true });
   for (const [width, height, name] of [[390, 844, '390x844'], [375, 667, '375x667']] as const) {
     await prepare(page, 'light', width, height);
-    await expect(hint(page, 'point')).toContainText('Tap the map for the air above a point');
+    await expect(hint(page)).toHaveCount(0);
     await fits(page, width);
     if (name === '390x844') await page.screenshot({ path: path.join(OUT, '390x844-light-first.png') });
-    await hint(page).getByRole('button', { name: 'Dismiss hint' }).click();
-    await expect(hint(page, 'gesture')).toContainText('pinch to zoom');
-    await fits(page, width);
-    await hint(page).getByRole('button', { name: 'Dismiss hint' }).click();
-    await expect(hint(page, 'lens')).toContainText('Pick a lens below for rain, wind, temp or flying');
-    await fits(page, width);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
   }
 
   await prepare(page, 'dark', 390, 844);
-  await expect(hint(page, 'point')).toBeVisible();
+  await expect(hint(page)).toHaveCount(0);
   await page.screenshot({ path: path.join(OUT, '390x844-dark-first.png') });
 
   await prepare(page, 'light', 390, 844, true);

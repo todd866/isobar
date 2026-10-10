@@ -98,6 +98,8 @@ export interface Camera {
   /** Transient render projection; never stored as navigation state. */
   surface?: SurfaceProjection;
   pitch?: number;
+  /** Clockwise look bearing in 3D; zero is north. */
+  bearingRadians?: number;
   centerX: number;
   centerY: number;
   halfWidth: number;

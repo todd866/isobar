@@ -63,7 +63,7 @@ static BOOL Metrics(IsobarCamera cam, double *vw, double *vh, double *pxPerDeg,
     if (!(cam.viewportW >= 2) || !(cam.viewportH >= 2)) return NO;
     if (cam.viewportW > 8192 || cam.viewportH > 8192) return NO;
     if (!isfinite(cam.centreLat) || !isfinite(cam.centreLon) || !isfinite(cam.zoom)) return NO;
-    if (!isfinite(cam.globe) || !isfinite(cam.pitch) || !(cam.zoom > 0)) return NO;
+    if (!isfinite(cam.globe) || !isfinite(cam.pitch) || !isfinite(cam.bearing) || !(cam.zoom > 0)) return NO;
     if (!CameraCanOrbit(cam) && (cam.centreLat < -90 || cam.centreLat > 90)) return NO;
     *vw = cam.viewportW;
     *vh = cam.viewportH;
@@ -125,11 +125,14 @@ static BOOL SurfaceAtHeight(IsobarCamera cam, double lat, double dlonDeg, double
     double altitude = heightM / 6371000.0;
     double pointRadius = re + altitude;
     double pointX = pointRadius * nx, pointY = pointRadius * ny, pointZ = re * (nz - 1.0) + altitude * nz;
+    double cb = cos(cam.bearing), sb = sin(cam.bearing);
+    double rotatedX = cb * pointX - sb * pointY;
+    double rotatedY = sb * pointX + cb * pointY;
     double sn = sin(pitch), cn = cos(pitch);
     double distance = (vh * 0.5 / radius) / (tan(kPerspectiveFov) * fmax(k, 1e-3));
 
     double eyeY = -sn * distance, eyeZ = cn * distance;
-    double relX = pointX, relY = pointY - eyeY, relZ = pointZ - eyeZ;
+    double relX = rotatedX, relY = rotatedY - eyeY, relZ = pointZ - eyeZ;
     double forwardY = sn, forwardZ = -cn;
     double upY = cn, upZ = sn;
     double depth = relY * forwardY + relZ * forwardZ;
@@ -362,6 +365,11 @@ static BOOL UnprojectTilted(IsobarCamera cam, double x, double y, double *lat, d
     double t = (t0 > 0 && t1 > 0) ? fmin(t0, t1) : (t0 > 0 ? t0 : t1);
     if (!(t > 0) || !isfinite(t)) return NO;
     double hx = dx * t, hy = eyeY + dy * t, hz = eyeZ + dz * t;
+    double cb = cos(cam.bearing), sb = sin(cam.bearing);
+    double unrotatedX = cb * hx + sb * hy;
+    double unrotatedY = -sb * hx + cb * hy;
+    hx = unrotatedX;
+    hy = unrotatedY;
     double nx = hx / re, ny = hy / re, nz = (hz + re) / re;
     double phi0 = k * cam.centreLat * kDeg;
     double sp = ny * cos(phi0) + nz * sin(phi0);
@@ -457,6 +465,8 @@ IsobarCamera IsobarCameraClamp(IsobarCamera camera) {
     if (!isfinite(camera.pitch)) camera.pitch = 0;
     if (camera.pitch < 0) camera.pitch = 0;
     if (camera.pitch > kMaxCameraPitch) camera.pitch = kMaxCameraPitch;
+    if (!isfinite(camera.bearing)) camera.bearing = 0;
+    camera.bearing = atan2(sin(camera.bearing), cos(camera.bearing));
     if (!isfinite(camera.centreLon)) camera.centreLon = 0;
     if (!isfinite(camera.viewportW) || camera.viewportW < 2) camera.viewportW = 2;
     if (!isfinite(camera.viewportH) || camera.viewportH < 2) camera.viewportH = 2;
@@ -578,6 +588,7 @@ static NSString *const kShader = @""
 "    float centreLat = u.cam.x;\n"
 "    float globe = clamp(u.cam.z, 0.0, 1.0);\n"
 "    float pitch = clamp(u.cam2.x, 0.0, 1.30);\n"
+"    float bearing = u.cam2.y;\n"
 "    float vw = u.view.x, vh = u.view.y, radius = u.view.w;\n"
 "    if (pitch <= 0.0000001 || smoothstep(0.0, 1.0, pitch / 0.3490658504) < 0.001) {\n"
 "        if(pitch > 0.0000001) globe=0.0;\n"
@@ -598,6 +609,8 @@ static NSString *const kShader = @""
 "    float c0 = cos(phi0), s0 = sin(phi0), cl = cos(lam), sl = sin(lam);\n"
 "    float nx = cp * sl, ny = sp * c0 - cp * cl * s0, nz = cp * cl * c0 + sp * s0;\n"
 "    float3 point = float3(re * nx, re * ny, re * (nz - 1.0));\n"
+"    float cb = cos(bearing), sb = sin(bearing);\n"
+"    point = float3(cb * point.x - sb * point.y, sb * point.x + cb * point.y, point.z);\n"
 "    float sn = sin(pitch), cn = cos(pitch);\n"
 "    float distance = (vh * 0.5 / radius) / (0.46630766 * max(k, 0.001));\n"
 "    float3 eye = float3(0.0, -sn * distance, cn * distance);\n"
@@ -2845,7 +2858,8 @@ static BOOL ProjectMark(IsobarCamera cam, double lat, double lon, double *x, dou
 
 static BOOL CamSame(IsobarCamera a, IsobarCamera b) {
     return a.centreLat == b.centreLat && a.centreLon == b.centreLon && a.zoom == b.zoom
-        && a.globe == b.globe && a.pitch == b.pitch && a.viewportW == b.viewportW && a.viewportH == b.viewportH;
+        && a.globe == b.globe && a.pitch == b.pitch && a.viewportW == b.viewportW && a.viewportH == b.viewportH
+        && a.bearing == b.bearing;
 }
 
 static int GlyphIndex(int klass, char ch) {
@@ -5316,7 +5330,7 @@ static void LocalOf(double x, double y, double cx, double cy, double ang, double
     FieldUniform u;
     memset(&u, 0, sizeof u);
     u.cam = (simd_float4){(float)camera.centreLat, (float)camera.centreLon, (float)globe, (float)camera.zoom};
-    u.cam2 = (simd_float4){(float)camera.pitch, 0, 0, 0};
+    u.cam2 = (simd_float4){(float)camera.pitch, (float)camera.bearing, 0, 0};
     u.view = (simd_float4){(float)vw, (float)vh, (float)px, (float)radius};
     u.geo0 = (simd_float4){(float)_grid.west, (float)_grid.north, (float)_grid.step, (float)GridEast(_grid)};
     u.geo1 = (simd_float4){(float)GridSouth(_grid), (float)_grid.nLon, (float)_grid.nLat, _grid.wrapsLongitude ? 1.f : 0.f};

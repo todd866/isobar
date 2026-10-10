@@ -17,7 +17,8 @@ import { PressNote, usePressNote, type Lens } from './MapChrome';
 import { StarIcon } from './PlaceField';
 import styles from './PointPanel.module.css';
 
-export function PointPanel({ archiveOnly=false, point, name, detail, isPlace, onMakePlace, validMs, lens, terrainM, section, orographyM, mslpHpa, onClose, anchorRef, panelRef, collectorIcao }: {
+export function PointPanel({ reconstructedModel=null, archiveOnly=false, point, name, detail, isPlace, onMakePlace, validMs, lens, terrainM, section, orographyM, mslpHpa, onClose, anchorRef, panelRef, collectorIcao }: {
+  reconstructedModel?: PointModel | null;
   archiveOnly?: boolean;
   point: MapPoint; name: string; detail: string; isPlace: boolean; onMakePlace: () => 'set' | 'restored' | 'same'; validMs: number; lens: Lens;
   /** Offline ground: export orography, else the loaded DEM. Null until one exists. */
@@ -49,7 +50,7 @@ export function PointPanel({ archiveOnly=false, point, name, detail, isPlace, on
   const collectorExpired = result.key === key && !!result.model && result.model.series.icao !== 'POINT'
     && !pointProfileAt(result.model, validMs)?.levels.length;
   useEffect(() => {
-    if(archiveOnly){setResult({key,model:null});setMarine({key:marineKey,series:null});return;}
+    if(archiveOnly){setResult({key,model:reconstructedModel});setMarine({key:marineKey,series:null});return;}
     const controller = new AbortController();
     const load = async () => {
       if (collectorIcao) {
@@ -68,7 +69,7 @@ export function PointPanel({ archiveOnly=false, point, name, detail, isPlace, on
       .then((series) => { if (!controller.signal.aborted) setMarine({ key: marineKey, series }); })
       .catch(() => { if (!controller.signal.aborted) setMarine({ key: marineKey, series: null }); });
     return () => controller.abort();
-  }, [archiveOnly,point.lat, point.lon, day, key, marineKey, collectorIcao, collectorExpired]);
+  }, [reconstructedModel,archiveOnly,point.lat, point.lon, day, key, marineKey, collectorIcao, collectorExpired]);
   useEffect(() => {
     closeRef.current?.focus({ preventScroll: true });
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !event.defaultPrevented) closeAction.current(); };

@@ -1,13 +1,17 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { reportPoint } from '../lib/reports/deep-link';
+import { EVEREST_IMAGERY, loadEverestImagery } from '@/lib/terrain/imagery-loader';
+import { MAP_TRANSIT_KEY, parseMapTransit, type MapTransit } from '@/lib/map-transit';
 import { loadHistoricalChart } from '@/lib/history-chart';
 import type { HistoricalCatalog } from '@/lib/history';
 import { ATTRIBUTION } from '@/components/Attribution';
 import { australiaAspects, clampToData, frameData, insetBox, panBy, zoomWithinData, type DataFrame } from '@/lib/camera';
+import { EVEREST_DETAILS, EVEREST_EVENTS, EVEREST_ROUTE, EVEREST_SOURCE, everestAtmosphere } from '@/lib/everest';
+import { drawEverestRoute } from '@/lib/everest-route';
 import { AtmosphereMap } from './AtmosphereMap';
-import { withTilt, zoomTilt, anchorTilt, MAX_TILT, TiltFraming } from '@/lib/tilt-navigation';
+import { withTilt, zoomMountain, frameTerrainPin, anchorTilt, MAX_TILT, TiltFraming, liftCamera } from '@/lib/tilt-navigation';
 import { mapUnproject, mapProject } from '@/lib/lambert';
 import { bindTrackpadPinch } from '@/lib/trackpad';
 import {
@@ -81,8 +85,7 @@ import type { GeoPoint } from '@/lib/chart-teaching';
 import { forecastDaySummaries, forecastReading, forecastUv, loadPlaceForecast, overlayUv, peekPointModel, pointSurfaceAt, type PlaceForecast } from '@/lib/point/openmeteo';
 import { ChromeToggle, CompactForecast, DayTiles, LensBar, MapHeader, PressNote, SatelliteIcon, Timeline, TrafficIcon, Transport, usePressNote, type Lens } from './MapChrome';
 import { useTimes } from './TimesControl';
-import { MapHints, PhoneHoldNames } from './MapHints';
-import { noteHint } from '@/lib/map-hints';
+import { PhoneHoldNames } from './MapHints';
 import { ScaleBar } from './ScaleBar';
 import { readGraticule, writeGraticule } from '@/lib/graticule';
 import { drawAdminNames, parseBorders, type AdminName, type Borders } from '@/lib/borders';
@@ -230,7 +233,7 @@ function rasterLand(chart: LoadedChart): LandRaster {
 /** Camera controls and the legend, padded, in stage CSS pixels. */
 function chromeAvoid(stage: Element): { x: number; y: number; w: number; h: number }[] {
   const host = stage.getBoundingClientRect();
-  return ['.map-tools', '.map-legend', '.map-sources', '.traffic-selection', '.traffic-replay-status', '.map-hint'].flatMap((selector) => {
+  return ['.map-tools', '.map-legend', '.map-sources', '.traffic-selection', '.traffic-replay-status'].flatMap((selector) => {
     const node = stage.querySelector(selector);
     if (!(node instanceof HTMLElement)) return [];
     const rect = node.getBoundingClientRect();
@@ -245,6 +248,9 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const [historyCatalog,setHistoryCatalog]=useState<HistoricalCatalog|null>(null);
   const [historyEvent,setHistoryEvent]=useState('');
   const [historyError,setHistoryError]=useState('');
+  const transitRef=useRef<MapTransit|null>(null);
+  const transitAppliedRef=useRef(false);
+  const transitReadRef=useRef<boolean|null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const glCanvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -284,6 +290,10 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const [teaching, setTeaching] = useState(false);
   const [stageSize, setStageSize] = useState({ width: 1, height: 1 });
   const [showSources, setShowSources] = useState(false);
+  const [photoTerrain,setPhotoTerrain]=useState(false);
+  const [photoStatus,setPhotoStatus]=useState('off');
+  useEffect(()=>{try{const query=new URLSearchParams(location.search).get('terrain');const enabled=query?query==='photo':sessionStorage.getItem('isobar.terrain-photo')==='1';setPhotoTerrain(enabled);sessionStorage.setItem('isobar.terrain-photo',enabled?'1':'0');}catch{}},[]);
+  function togglePhotoTerrain(){setPhotoTerrain(value=>{const next=!value;try{sessionStorage.setItem('isobar.terrain-photo',next?'1':'0');}catch{}return next;});}
   const [flowSource, setFlowSource] = useState<WindDisplaySource>('unavailable');
   const [, refreshCamera] = useState(0);
   const glRef = useRef<GlChart | null>(null);
@@ -295,8 +305,13 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const [threeD, setThreeD] = useState(false);
   const savedTiltRef = useRef(Math.PI / 4);
   const tiltRef = useRef(0);
+  const savedBearingRef = useRef(0);
+  const mapKeysRef = useRef(new Set<string>());
+  const keyboardStepRef = useRef<(dt:number)=>boolean>(()=>false);
+  useEffect(()=>{const clear=()=>mapKeysRef.current.clear();window.addEventListener("blur",clear);document.addEventListener("visibilitychange",clear);return()=>{clear();window.removeEventListener("blur",clear);document.removeEventListener("visibilitychange",clear);};},[]);
   const tiltFramingRef = useRef(new TiltFraming());
   const [tilt, setTilt] = useState(0);
+  const atmosphereInspectionRef=useRef(0);
   const touchGestureRef = useRef<{ mode: 'pending' | 'pinch' | 'tilt'; distance: number; y: number; lastDistance: number; lastY: number } | null>(null);
   const cameraMoveRef = useRef<(CameraMove & { restore?: { camera: Camera; frame: DataFrame } }) | null>(null);
   const lastFrameRef = useRef<{ width: number; height: number } | null>(null);
@@ -381,28 +396,74 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const contoursRef = useRef<Contours>({ lines: [], centres: [] });
   const [chart, setChart] = useState<LoadedChart | null | undefined>(undefined);
   const GEO = useMemo(() => chart?.manifest.wrapsLongitude ? globalEquirectangular() : AU_GEO, [chart?.manifest.wrapsLongitude]);
-  const renderCamera = (camera: Camera) => withTilt(GEO, camera, tiltRef.current, elevationAtRef.current);
+  const renderCamera = (camera: Camera) => withTilt(GEO, camera, tiltRef.current, elevationAtRef.current, true);
+  const inspectAtmosphere=useCallback((strength:number)=>{atmosphereInspectionRef.current=strength;redrawRef.current?.();},[]);
+  function pointCameraForView(camera:Camera,frame:DataFrame,pin:MapPoint,map:Parameters<typeof pointCamera>[4],visible:Parameters<typeof pointCamera>[5]) {
+    const next=pointCamera(GEO,camera,frame,pin,map,visible);
+    if(!threeDRef.current)return next;
+    const x=((visible.left+visible.width/2-map.left)/map.width)*2-1,y=1-((visible.top+visible.height/2-map.top)/map.height)*2;
+    return frameTerrainPin(GEO,next,tiltRef.current,pin,x,y,frame,elevationAtRef.current);
+  }
+  function zoomShared(camera: Camera, x:number, y:number, factor:number, frame:DataFrame) {
+    const pin=pointRef.current;
+    const anchor=pin?mapProject(GEO,renderCamera(camera),pin.lat,pin.lon):null;
+    // A visible inspected pin is the pivot; panning it away releases the assist.
+    const onScreen=anchor&&Math.abs(anchor.x)<1&&Math.abs(anchor.y)<1;
+    const next=zoomMountain(GEO,camera,tiltRef.current,onScreen?anchor.x:x,onScreen?anchor.y:y,factor,frame,elevationAtRef.current,onScreen&&pin?pin:undefined);
+    tiltRef.current=next.pitch;setTilt(next.pitch);
+    return next.camera;
+  }
   function changeTilt(value: number) {
     if (!threeDRef.current || !glRef.current || GEO.projection !== 'equirectangular') return;
     const next = Math.max(0, Math.min(MAX_TILT, value));
     const pitch = next < .001 ? 0 : next;
-    if (cameraRef.current) cameraRef.current = tiltFramingRef.current.apply(cameraRef.current, tiltRef.current, pitch);
+    const pin=pointRef.current;
+    const anchor=pin&&cameraRef.current?mapProject(GEO,renderCamera(cameraRef.current),pin.lat,pin.lon):null;
+    if (cameraRef.current) {
+      cameraRef.current = tiltFramingRef.current.apply(cameraRef.current, tiltRef.current, pitch);
+      if(pin&&anchor&&Math.abs(anchor.x)<1&&Math.abs(anchor.y)<1&&homeRef.current)cameraRef.current=frameTerrainPin(GEO,cameraRef.current,pitch,pin,anchor.x,anchor.y,homeRef.current,elevationAtRef.current);
+    }
     tiltRef.current = pitch;
     setTilt(tiltRef.current);
     redrawRef.current?.();
   }
   function changeMapMode(enabled: boolean) {
     if (!glRef.current || GEO.projection !== 'equirectangular' || threeDRef.current === enabled) return;
-    if (!enabled) savedTiltRef.current = tiltRef.current;
+    mapKeysRef.current.clear();
+    cameraMoveRef.current=null;
+    if (!enabled) { savedTiltRef.current = tiltRef.current; savedBearingRef.current = cameraRef.current?.bearingRadians ?? 0; }
     threeDRef.current = enabled;
     setThreeD(enabled);
     const pitch = enabled ? savedTiltRef.current : 0;
+    if(cameraRef.current)cameraRef.current={...cameraRef.current,bearingRadians:enabled?savedBearingRef.current:0};
     if (cameraRef.current) cameraRef.current = tiltFramingRef.current.apply(cameraRef.current, tiltRef.current, pitch);
     tiltRef.current = pitch;
     setTilt(tiltRef.current);
     touchGestureRef.current = null;
     redrawRef.current?.();
   }
+  keyboardStepRef.current = (dt:number) => {
+    const keys=mapKeysRef.current,camera=cameraRef.current,frame=homeRef.current;
+    if(!threeDRef.current||!camera||!frame||!keys.size)return false;
+    const axis=(positive:string,negative:string)=>Number(keys.has(positive))-Number(keys.has(negative));
+    const yaw=axis('ArrowRight','ArrowLeft'),look=axis('ArrowUp','ArrowDown'),rise=axis('e','q');
+    const right=axis('d','a'),forward=axis('w','s');
+    if(!(yaw||look||rise||right||forward))return false;
+    cameraMoveRef.current=null;
+    const pin=pointRef.current,anchor=pin?mapProject(GEO,renderCamera(camera),pin.lat,pin.lon):null;
+    let next={...camera},pitch=tiltRef.current;
+    next.bearingRadians=Math.atan2(Math.sin((next.bearingRadians??0)+yaw*dt*.7),Math.cos((next.bearingRadians??0)+yaw*dt*.7));
+    if(look){const p=Math.max(0,Math.min(MAX_TILT,pitch+look*dt*.7));next=tiltFramingRef.current.apply(next,pitch,p);pitch=p;}
+    if(rise){const lifted=liftCamera(next,pitch,rise*dt*next.halfHeight*Math.PI/180*6371000*.6);next=lifted.camera;pitch=lifted.pitch;tiltFramingRef.current.synchronize(next,pitch);}
+    if((yaw||look||rise)&&pin&&anchor&&Math.abs(anchor.x)<1&&Math.abs(anchor.y)<1)next=frameTerrainPin(GEO,next,pitch,pin,anchor.x,anchor.y,frame,elevationAtRef.current);
+    if(right||forward){
+      const n=Math.max(1,Math.hypot(right,forward)),focus=mapUnproject(GEO,withTilt(GEO,next,pitch,elevationAtRef.current,true),0,0);
+      if(focus)next=anchorTilt(GEO,next,pitch,focus,-right*dt*.7/n,-forward*dt*.7/n,frame,elevationAtRef.current,true);
+    }
+    cameraRef.current=next;
+    if(pitch!==tiltRef.current){tiltRef.current=pitch;setTilt(pitch);}
+    return true;
+  };
   const shoreCoast = useMemo(() => (chart ? withLakes(chart.coast, chart.water) : null), [chart]);
   const [minute, setMinute] = useState(0);
   const [playing, setPlaying] = useState(true);
@@ -464,7 +525,6 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const { mode: clockMode } = useTimes();
   const satelliteNote = usePressNote();
   const trafficNote = usePressNote();
-  const hintHold = useRef(0);
   const chatPanelRef = useRef<HTMLElement>(null);
   const chatFocusRef = useRef<{ lat: number; lon: number } | null>(null);
   const chatViewRef = useRef<{ camera: Camera; frame: DataFrame } | null>(null);
@@ -595,7 +655,6 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       node.removeEventListener('pointercancel', cancel);
     };
   }, []);
-  useEffect(() => () => window.clearTimeout(hintHold.current), []);
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('tour') === '1') setAutoTour(true);
   }, []);
@@ -632,10 +691,16 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     let unsubscribe = () => {};
     // Pressure streams up front; a colour field loads when its lens is chosen.
     if(historical){setChart(undefined);setHistoryError('');}
+    if(transitReadRef.current!==historical){transitReadRef.current=historical;transitAppliedRef.current=false;try {transitRef.current=parseMapTransit(sessionStorage.getItem(MAP_TRANSIT_KEY),historical?'/history':'/');}catch{}}
     const load = historical ? (async()=>{
       const query=new URLSearchParams(window.location.search);
-      const result=await loadHistoricalChart(historyRequest??{event:query.get('event')??undefined,date:query.get('date')??undefined,hour:query.has('hour')?Number(query.get('hour')):undefined});
+      const result=await loadHistoricalChart(historyRequest??{event:query.get('event')??transitRef.current?.event,date:query.get('date')??transitRef.current?.date,hour:query.has('hour')?Number(query.get('hour')):transitRef.current?.hour});
       if(cancel)return null;
+      const variables = result.chart.manifest.variables;
+      if ((fieldRef.current === 'rain' && !variables.rain24) || (fieldRef.current === 'temp' && !variables.t2m) || (fieldRef.current === 'wind' && (!variables.u10 || !variables.v10))) {
+        fieldRef.current = 'none'; setField('none');
+      }
+      setFly(false); setCoastalLens(null);
       historicalStartRef.current=result.initialMs;
       setHistoryCatalog(result.catalog);setHistoryEvent(result.collection.id);
       return result.chart;
@@ -658,8 +723,10 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
         const value = localStorage.getItem('isobar.place');
         if (value && isPlaceId(value)) storedId = value;
       } catch { /* first visit */ }
-      const storedPlace = (historical?null:storedId) ?? loaded.manifest.places[0]?.id ?? 'sydney';
-      placeSourceRef.current = storedId ? 'stored' : 'default';
+      const transfer=transitAppliedRef.current?null:transitRef.current;
+      if(transfer?.pin)setPoint(transfer.pin);
+      const storedPlace = transfer ? `g.${Math.round(transfer.lat*1000)}.${Math.round(transfer.lon*1000)}` : (historical?null:storedId) ?? loaded.manifest.places[0]?.id ?? 'sydney';
+      placeSourceRef.current = transfer || storedId ? 'stored' : 'default';
       setPlaceHint(storedId ? readHint() : true);
       const storedSpeed = readStoredSpeed();
       placeRef.current = storedPlace;
@@ -760,6 +827,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     if (centre?.metres != null) return centre.metres;
     return elevationAtRef.current?.(point.lon, point.lat) ?? null;
   }, [point, sectionSamples, terrainEpoch]);
+  const reconstructedPoint = useMemo(() => historical&&historyEvent==='everest-1953'&&chart&&point?everestAtmosphere(chart,Date.parse(chart.manifest.run)+minute*60000,elevationAtRef.current).profile(point.lat,point.lon):null,[historical,historyEvent,chart,point,minute,terrainEpoch]);
   const orographyM = useMemo(() => (point && chart ? orographyMetresAt(chart, point.lon, point.lat) : null), [point, chart, terrainEpoch]);
   const mslpHpa = useMemo(() => (point && chart ? chartScalarAt(chart, 'mslp', point.lon, point.lat) : null), [point, chart, terrainEpoch]);
   useEffect(() => {
@@ -809,6 +877,8 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
         setRenderer('canvas');
       }
     }
+    if(gl&&!transitAppliedRef.current&&transitRef.current){threeDRef.current=transitRef.current.threeD;setThreeD(threeDRef.current);tiltRef.current=threeDRef.current?transitRef.current.pitch:0;setTilt(tiltRef.current);}
+    else if(gl&&!transitRef.current&&manifest.places[0]?.id==='h.everest'){threeDRef.current=true;setThreeD(true);tiltRef.current=Math.PI/4;setTilt(Math.PI/4);}
     // The DEM also generalises pressure ink in both renderers; relief stays WebGL-only.
     let terrain: TerrainLayer | null = null;
     let elevationAt: ElevationAt | undefined;
@@ -920,7 +990,12 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const box = manifest.wrapsLongitude ? manifest : insetBox(manifest, EDGE_FADE_DEG + 0.25);
       const focus = manifest.wrapsLongitude ? focusRef.current ?? undefined : undefined;
       const frame = frameData(GEO, frameW, frameH, box, focus);
-      if (!homeRef.current || !cameraRef.current) {
+      if(manifest.places[0]?.id==='h.everest'&&focus&&Math.abs(focus.lat-27.9881)<.001&&Math.abs(focus.lon-86.925)<.001){frame.home.halfHeight=.04;frame.home.halfWidth=.04*frameW/frameH;}
+      if (!transitAppliedRef.current && transitRef.current && manifest.wrapsLongitude) {
+        const t=transitRef.current;const p=project(GEO,t.lat,t.lon)!;
+        cameraRef.current={centerX:p.x,centerY:p.y,bearingRadians:t.threeD?(t.bearingRadians??0):0,halfHeight:t.degreesPerPixel?t.degreesPerPixel*frameH/2:t.halfHeight,halfWidth:t.degreesPerPixel?t.degreesPerPixel*frameW/2:t.halfHeight*frameW/frameH};transitAppliedRef.current=true;framedId.current=placeRef.current;
+        try{sessionStorage.removeItem(MAP_TRANSIT_KEY);}catch{}
+      } else if (!homeRef.current || !cameraRef.current) {
         cameraRef.current = frame.home;
       } else {
         const oldHome = homeRef.current.home;
@@ -937,6 +1012,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
           const xPerPx = (view.halfWidth * 2) / Math.max(1, sized.width);
           const yPerPx = (view.halfHeight * 2) / Math.max(1, sized.height);
           const raw = {
+            ...view,
             centerX: view.centerX,
             centerY: view.centerY,
             halfWidth: (xPerPx * frameW) / 2,
@@ -996,13 +1072,13 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
         if (rect.width < 2 || rect.height < 2) return null;
         return { x: rect.left - stageRect.left - pad, y: rect.top - stageRect.top - pad, w: rect.width + pad * 2, h: rect.height + pad * 2 };
       };
-      const uiAvoid = [uiBox('.map-tools', 8), uiBox('.map-legend', 8), uiBox('.map-chat-float', 6), uiBox('.map-hint', 8), uiBox('.map-sources', 8), uiBox('.traffic-replay-status', 8), uiBox('[data-atmosphere-instrument]', 8)].filter((box): box is LabelBox => !!box);
+      const uiAvoid = [uiBox('.map-tools', 8), uiBox('.map-legend', 8), uiBox('.map-chat-float', 6), uiBox('.map-sources', 8), uiBox('.traffic-replay-status', 8), uiBox('[data-atmosphere-instrument]', 8)].filter((box): box is LabelBox => !!box);
       // Positions matter: a control that mounts or moves (the chat float follows
       // the exposed map) must re-run label placement, not just a size change.
       const lonSpan = GEO.projection === 'equirectangular' ? (camera.halfWidth * 2) / GEO.F : (camera.halfWidth * 2 * 180) / Math.PI;
       const latSpan = GEO.projection === 'equirectangular' ? Math.abs(camera.halfHeight * 2) : Math.abs(camera.halfHeight * 2 * 180 / Math.PI);
-      const borderSet = Math.min(lonSpan, latSpan) <= 12 && bordersCloseRef.current ? bordersCloseRef.current : bordersRegionalRef.current;
-      const key = `${width.toFixed(1)}:${height.toFixed(1)}:${camera.centerX.toFixed(4)}:${camera.centerY.toFixed(4)}:${camera.halfWidth.toFixed(4)}:${camera.halfHeight.toFixed(4)}:${tiltRef.current}:${contoursRef.current.lines.length}:${contourId}:${terrainRevision}:${darkRef.current}:${fieldRef.current}:${placeRows ? placeRows.length : -1}:${uiAvoid.map((box) => `${Math.round(box.x)},${Math.round(box.y)},${Math.round(box.w)},${Math.round(box.h)}`).join(';')}:${unitKey(unitsRef.current)}:${graticuleRef.current ? 1 : 0}:${borderEpochRef.current}:${borderSet === bordersCloseRef.current ? 1 : 0}`;
+      const borderSet = historical ? null : Math.min(lonSpan, latSpan) <= 12 && bordersCloseRef.current ? bordersCloseRef.current : bordersRegionalRef.current;
+      const key = `${width.toFixed(1)}:${height.toFixed(1)}:${camera.centerX.toFixed(4)}:${camera.centerY.toFixed(4)}:${camera.halfWidth.toFixed(4)}:${camera.halfHeight.toFixed(4)}:${tiltRef.current}:${camera.bearingRadians??0}:${contoursRef.current.lines.length}:${contourId}:${terrainRevision}:${darkRef.current}:${fieldRef.current}:${placeRows ? placeRows.length : -1}:${uiAvoid.map((box) => `${Math.round(box.x)},${Math.round(box.y)},${Math.round(box.w)},${Math.round(box.h)}`).join(';')}:${unitKey(unitsRef.current)}:${graticuleRef.current ? 1 : 0}:${borderEpochRef.current}:${atmosphereInspectionRef.current}:${borderSet === bordersCloseRef.current ? 1 : 0}`;
       if (key === overlayKey) return;
       overlayKey = key;
       const degPerPixel = (camera.halfWidth * 2) / Math.max(1, width);
@@ -1018,9 +1094,15 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       // chart labels: drawOverlay returns only what it drew, so the UI boxes
       // must be carried into the place pass explicitly.
       const peaks = paintPeaks(ctx, width, height, camera, [...uiAvoid, ...avoid, ...anchor]);
-      const places = paintPlaces(ctx, width, height, camera, [...uiAvoid, ...avoid, ...peaks]);
-      labelRecords = [...avoid, ...peaks, ...places];
-      drawAdminNames(ctx, adminNamesRef.current, GEO, camera, width, height, labelRecords, darkRef.current ? NIGHT_PLACES : DAY_PLACES);
+      const camps = manifest.places[0]?.id==='h.everest' ? drawEverestRoute(ctx, GEO, camera, elevationAt ?? null, width, height, [...uiAvoid, ...avoid, ...peaks, ...anchor, toolsBox ?? {x:width-56,y:0,w:56,h:168}, {x:0,y:height-36,w:width,h:36}], darkRef.current ? NIGHT_PLACES : DAY_PLACES) : [];
+      const places = paintPlaces(ctx, width, height, camera, [...uiAvoid, ...avoid, ...peaks, ...camps]);
+      labelRecords = [...avoid, ...peaks, ...camps, ...places];
+      drawAdminNames(ctx, historical ? [] : adminNamesRef.current, GEO, camera, width, height, labelRecords, darkRef.current ? NIGHT_PLACES : DAY_PLACES);
+      if(atmosphereInspectionRef.current>0&&tiltRef.current>0){
+        ctx.save();ctx.globalCompositeOperation='destination-out';
+        const fade=ctx.createLinearGradient(0,height*.4,0,height);fade.addColorStop(0,'rgba(0,0,0,0)');fade.addColorStop(1,`rgba(0,0,0,${atmosphereInspectionRef.current*.9})`);
+        ctx.fillStyle=fade;ctx.fillRect(0,0,width,height);ctx.restore();
+      }
     };
 
     // The active lens's value at a town, at the playhead: nearest grid cell, as on the Mac.
@@ -1092,7 +1174,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
         gl?.setWater(raster.pixels, raster.width, raster.height, raster);
         canvasChart?.setWater(raster);
         overlayKey = '';
-        paintOverlay();
+        cameraMoved = true;
       })
       : null;
 
@@ -1137,7 +1219,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const view = {
         camera,
         ...camera,
-        tiltCamera: withTilt(GEO, camera, tiltRef.current).tiltCamera,
+        tiltCamera: renderCamera(camera).tiltCamera,
         lambert: GEO,
         west: manifest.west,
         north: manifest.north,
@@ -1154,7 +1236,8 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
         scale: drawSpec.scale,
         offset: drawSpec.offset,
         fill: drawSpec.fill,
-        relief: terrain ? terrain.update(GEO, camera, cssWidth, Math.min(2, window.devicePixelRatio || 1)) : 0,
+        cutaway: tiltRef.current>0?atmosphereInspectionRef.current:0,
+        relief: terrain ? terrain.update(GEO, renderCamera(camera), cssWidth, Math.min(2, window.devicePixelRatio || 1)) : 0,
       };
       gl?.draw(view);
       canvasChart?.draw(view);
@@ -1343,13 +1426,13 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const x = (clientX - rect.left) / rect.width * 2 - 1;
       const y = 1 - (clientY - rect.top) / rect.height * 2;
       cameraMoveRef.current = null;
-      cameraRef.current = zoomTilt(GEO, camera, tiltRef.current, x, y, factor, home, elevationAtRef.current);
+      cameraRef.current = zoomShared(camera, x, y, factor, home);
       cameraMoved = true;
     };
     const trackpad = bindTrackpadPinch(overlay, (factor, x, y) => {
       // iOS may deliver both pointer and gesture events. Touch pointers own
       // their pinch; this path fills Safari's trackpad-only event gap.
-      if (pointersRef.current.size < 2) { zoomAt(factor, x, y); noteHint('gesture'); }
+      if (pointersRef.current.size < 2) { zoomAt(factor, x, y); }
     });
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
@@ -1363,7 +1446,6 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const delta = Math.max(-80, Math.min(80, event.deltaY * unit));
       if (event.ctrlKey || event.metaKey || event.deltaMode !== 0 || GEO.projection !== 'equirectangular' || !gl || !threeDRef.current) zoomAt(Math.exp(delta * .012), event.clientX, event.clientY);
       else changeTilt(tiltRef.current + delta * .004);
-      noteHint('gesture');
     };
     overlay.addEventListener('wheel', onWheel, { passive: false });
     let raf = 0;
@@ -1380,6 +1462,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
         const next = advancePlayback(clockRef.current, speedRef.current === REAL_TIME ? elapsed : dt, speedRef.current, span, nowMinute());
         clockRef.current = next;
       }
+      if(keyboardStepRef.current(dt)) cameraMoved=true;
       const move = cameraMoveRef.current;
       if (move) {
         cameraRef.current = cameraDuringMove(move, now);
@@ -1392,7 +1475,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       // or panel reframe keeps the point: the layout effect brings it back.
       if (pointRef.current && cameraNow && !cameraMoveRef.current && overlay.width > 0) {
         const sizeKey = `${overlay.width}x${overlay.height}`;
-        const camKey = `${cameraNow.centerX.toFixed(4)}:${cameraNow.centerY.toFixed(4)}:${cameraNow.halfWidth.toFixed(4)}:${cameraNow.halfHeight.toFixed(4)}`;
+        const camKey = `${cameraNow.centerX.toFixed(4)}:${cameraNow.centerY.toFixed(4)}:${cameraNow.halfWidth.toFixed(4)}:${cameraNow.halfHeight.toFixed(4)}:${cameraNow.bearingRadians??0}:${tiltRef.current}`;
         const clip = mapProject(GEO, cameraNow, pointRef.current.lat, pointRef.current.lon);
         const inside = !!clip && Math.abs(clip.x) <= 1 && Math.abs(clip.y) <= 1;
         if (inside) {
@@ -1498,6 +1581,8 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       span,
       camera: () => cameraRef.current,
       tilt: () => tiltRef.current,
+      cutaway: () => atmosphereInspectionRef.current,
+      tiltGeometry: () => cameraRef.current ? renderCamera(cameraRef.current).tiltCamera?.geometry ?? null : null,
       cache: () => loaded.cacheStats?.() ?? null,
       /** Centre on a point. `heightDeg` is the geographic height of the view. */
       setView(lat: number, lon: number, heightDeg: number) {
@@ -1577,6 +1662,10 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
         placesToken += 1;
         cameraMoved = true;
       },
+      reconstructionSamples: () => manifest.places[0]?.id==='h.everest' ? manifest.forecastHours.map(hour=>({
+        time:new Date(Date.parse(manifest.run)+hour*3600000).toISOString(),
+        profiles:EVEREST_ROUTE.map(p=>everestAtmosphere(loaded,Date.parse(manifest.run)+hour*3600000,elevationAtRef.current).profile(p.lat,p.lon)),
+      })) : null,
       flowSample: () => flowLayer?.sample() ?? null,
     };
     redrawRef.current = () => { if (!dead) api.redraw(); };
@@ -1609,6 +1698,26 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       trackpad.dispose();
     };
   }, [chart]);
+
+  // Optional modern surface photography. One bounded asset, only fetched near
+  // its footprint; shader placement and the ordinary map are shared by both dates.
+  useEffect(()=>{
+    const plate=glRef.current;
+    if(!plate||!photoTerrain){setPhotoStatus('off');plate?.setImagery(null);return;}
+    const controller=new AbortController();let started=false;
+    setPhotoStatus('waiting');
+    const check=()=>{
+      const camera=cameraRef.current;if(started||!camera||!chart?.manifest.wrapsLongitude)return;
+      const g=EVEREST_IMAGERY.geographic_bounds_wgs84;
+      if(camera.halfHeight>.5||camera.centerY<g.south-.2||camera.centerY>g.north+.2||camera.centerX<g.west-.2||camera.centerX>g.east+.2)return;
+      started=true;setPhotoStatus('loading');
+      void loadEverestImagery(controller.signal).then(({image,mapping})=>{
+        try{if(!controller.signal.aborted&&glRef.current===plate){plate.setImagery(image,mapping);setPhotoStatus('ready');redrawRef.current?.();}}finally{image.close();}
+      }).catch(()=>{if(!controller.signal.aborted){setPhotoStatus('unavailable');redrawRef.current?.();}});
+    };
+    const timer=window.setInterval(check,500);check();
+    return()=>{controller.abort();clearInterval(timer);if(glRef.current===plate){plate.setImagery(null);redrawRef.current?.();}};
+  },[chart,renderer,photoTerrain]);
 
   useEffect(() => {
     if (!trafficOn) {
@@ -1726,7 +1835,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const key = `${point.lat.toFixed(4)},${point.lon.toFixed(4)}|${sheet.dataset.pointLayout ?? ''}|${Math.round(map.width)}x${Math.round(map.height)}`;
       if (pointFramedRef.current === key) return;
       pointFramedRef.current = key;
-      moveCamera(pointCamera(GEO, camera, frame, point, map, visible));
+      moveCamera(pointCameraForView(camera, frame, point, map, visible));
     };
     const schedule = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(measure); };
     const observer = new ResizeObserver(schedule);
@@ -1778,7 +1887,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       if (!chatViewRef.current) chatViewRef.current = { camera: { ...camera }, frame };
       const map = stage.getBoundingClientRect(), cover = sheet.getBoundingClientRect();
       if (!map.height || !cover.height) return;
-      moveCamera(pointCamera(GEO, camera, frame, selected, map, exposedMap(map, cover, sheet.dataset.chatLayout === 'side')));
+      moveCamera(pointCameraForView(camera, frame, selected, map, exposedMap(map, cover, sheet.dataset.chatLayout === 'side')));
     };
     const schedule = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(measure); };
     const observer = new ResizeObserver(schedule);
@@ -1810,6 +1919,19 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const validMs = chart ? runMs + (chart.manifest.forecastHours[0] * 60 + minute) * 60000 : 0;
   const zone = historical?'UTC':(place?.manifest ? place.zone : shownForecast?.zone) || 'UTC';
   const displayZone = clockZone(clockMode, zone);
+  useEffect(()=>{
+    const save=(event:MouseEvent)=>{
+      const link=(event.target as Element)?.closest?.('a');if(!link||event.button!==0||event.metaKey||event.ctrlKey)return;
+      const url=new URL(link.href,location.href),target=historical?'/':'/history';
+      if(url.origin!==location.origin||url.pathname!==target||!cameraRef.current||!chart?.manifest.wrapsLongitude)return;
+      const center=unproject(GEO,cameraRef.current.centerX,cameraRef.current.centerY);if(!center)return;
+      const old=transitRef.current;
+      const transfer:MapTransit={...center,pin:pointRef.current??undefined,halfHeight:cameraRef.current.halfHeight,degreesPerPixel:cameraRef.current.halfWidth*2/Math.max(1,stageRef.current?.clientWidth??1),pitch:tiltRef.current,bearingRadians:cameraRef.current.bearingRadians??0,threeD:threeDRef.current,target,savedAt:Date.now(),event:historical?historyEvent:old?.event,date:historical?new Date(validMs).toISOString().slice(0,10):old?.date,hour:historical?new Date(validMs).getUTCHours():old?.hour};
+      try{sessionStorage.setItem(MAP_TRANSIT_KEY,JSON.stringify(transfer));}catch{}
+    };
+    document.addEventListener('click',save,true);return()=>document.removeEventListener('click',save,true);
+  },[historical,historyEvent,chart,GEO,validMs]);
+
   const nowMs = Date.now();
   const nearNow = !historical && chart ? Math.abs(validMs - nowMs) < 90_000 : false;
   useEffect(() => {
@@ -1825,7 +1947,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const days = useMemo(() => {
     if(historical && chart){
       const dates=[...new Set(chart.manifest.forecastHours.map(hour=>new Date(Date.parse(chart.manifest.run)+hour*3600000).toISOString().slice(0,10)))];
-      return dates.map(date=>({key:date,weekday:new Date(date+'T00:00:00Z').toLocaleDateString('en-GB',{day:'2-digit',month:'short',timeZone:'UTC'}),dayStart:Date.parse(date+'T00:00:00Z'),dayEnd:Date.parse(date+'T00:00:00Z')+86400000,hi:null,lo:null,rain:null,icon:null}));
+      return dates.map(date=>({historical:true,event:historyEvent==='everest-1953'?EVEREST_EVENTS[date]:undefined,key:date,weekday:new Date(date+'T00:00:00Z').toLocaleDateString('en-GB',{day:'2-digit',month:'short',timeZone:'UTC'}),dayStart:Date.parse(date+'T00:00:00Z'),dayEnd:Date.parse(date+'T00:00:00Z')+86400000,hi:null,lo:null,rain:null,icon:null}));
     }
     if (shownForecast) {
       const today = localMidnight(Date.now(), shownForecast.zone || 'UTC');
@@ -1835,7 +1957,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     const today = localMidnight(Date.now(), place.zone || 'UTC');
     const base = daySummaries(chart.points, place.id, place.zone).filter((day) => day.dayEnd > today);
     return placeForecast ? overlayUv(base, placeForecast) : base;
-  }, [historical,chart, place?.id, place?.manifest, place?.zone, shownForecast, placeForecast]);
+  }, [historyEvent,historical,chart, place?.id, place?.manifest, place?.zone, shownForecast, placeForecast]);
   const reading = place?.manifest && chart?.points ? readingAt(chart.points, place.id, validMs) : forecastAt?.reading ?? null;
   const nowReading = place?.manifest && chart?.points ? readingAt(chart.points, place.id, nowMs) : forecastNow?.reading ?? null;
   const headerMs = nearNow ? nowMs : validMs;
@@ -1883,6 +2005,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     if (!stage) return;
     const rect = stage.getBoundingClientRect();
     const framed = frameData(GEO, Math.max(1, rect.width), Math.max(1, rect.height), chart.manifest, place);
+    if(place.id==='h.everest'){framed.home.halfHeight=.04;framed.home.halfWidth=.04*rect.width/Math.max(1,rect.height);}
     homeRef.current = framed;
     moveCamera({ ...framed.home }, true);
     framedId.current = place.id;
@@ -2270,7 +2393,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     (stageRef.current as (HTMLDivElement & { chartApi?: { redraw: () => void } }) | null)?.chartApi?.redraw();
   }
   function zoomCamera(factor: number) {
-    if (cameraRef.current && homeRef.current) cameraRef.current = zoomTilt(GEO, cameraRef.current, tiltRef.current, 0, 0, factor, homeRef.current, elevationAtRef.current);
+    if (cameraRef.current && homeRef.current) cameraRef.current = zoomShared(cameraRef.current, 0, 0, factor, homeRef.current);
     redrawCamera();
   }
 
@@ -2327,7 +2450,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     stage.chartApi?.setView(lat, lon, 12);
     const landed = cameraRef.current;
     if (landed) {
-      const target = pointCamera(GEO, landed, frame, { lat, lon }, map, visible);
+      const target = pointCameraForView(landed, frame, { lat, lon }, map, visible);
       cameraRef.current = from;
       moveCamera(target);
     }
@@ -2394,7 +2517,6 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   function changeLens(next: Lens) {
     if(historical && (['fly','surf','kite'].includes(next)||next==='rain'&&!chart?.manifest.variables.rain24||next==='temp'&&!chart?.manifest.variables.t2m)){notifyMap('This layer is unavailable for the selected date');return;}
     if (teachingRef.current || next === lens) return;
-    noteHint('lens');
     // Optional overlays are lens-scoped and reset on a lens change; the selected
     // point is the user's and survives (hidden under Fly, back when they return).
     for (const item of [...optionalRef.current]) disableOptional(item);
@@ -2515,7 +2637,6 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       setFly(false);
       setPoint({ lat, lon, ...(snapped ? { name: snapped.name } : {}) });
       trackUsage('point', { lat, lon });
-      noteHint('point');
     }
   }
   const projectedPoint = pointVisible && point && cameraRef.current ? projectPoint(GEO, point, cameraRef.current) : null;
@@ -2563,6 +2684,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     />
   ) : null;
 
+  const historyPicker = historical && historyCatalog ? <div className="history-picker flex min-w-0 items-center gap-2"><select aria-label="Historical event" value={historyEvent} onChange={e=>{setHistoryRequest({event:e.target.value});setPoint(null);}} className="min-w-0 rounded-md bg-[var(--md-surface-container-high)] px-2 py-1 text-sm">{historyCatalog.collections.map(c=><option key={c.id} value={c.id}>{c.title}{c.title.includes(c.days[0]?.date.slice(0,4)??"—")?"":` · ${c.days[0]?.date.slice(0,4)??""}`}</option>)}</select><a href="/" className="text-sm text-[var(--md-primary)]">Present day</a></div> : null;
   const timeState = chart ? historical?{live:false,label:'HISTORY'}:mapTimeState(validMs, nowMs) : null;
   const heldTraffic = !playing && heldTrafficRef.current && Math.abs(validMs - heldTrafficRef.current.selectedMs) < 1 ? heldTrafficRef.current : null;
   const trafficLive = liveTrafficAtTime(clockRef.current.followNow, playing, validMs, nowMs);
@@ -2571,7 +2693,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       <div ref={chromeRef} data-map-chrome data-collapsed={chromeCollapsed ? 'true' : 'false'} className="map-chrome shrink-0">
         <PressNote text={chromeNote.note} />
         <div ref={chromeBodyRef} className="map-chrome-body">
-          {historical&&historyCatalog?<div className="flex items-center gap-2 px-3 pt-2 md:px-4"><select aria-label="Historical event" value={historyEvent} onChange={e=>{setHistoryRequest({event:e.target.value});setPoint(null);}} className="min-w-0 rounded-md bg-[var(--md-surface-container-high)] px-2 py-1 text-sm">{historyCatalog.collections.map(c=><option key={c.id} value={c.id}>{c.title} · {c.days[0]?.date.slice(0,4)}</option>)}</select><a href="/" className="text-sm text-[var(--md-primary)]">Present day</a></div>:null}
+          {chromeCollapsed ? historyPicker : null}
           {chromeCollapsed ? (
             <CompactForecast
               placeName={place?.name ?? ''}
@@ -2587,6 +2709,8 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
           ) : (
             <>
               <MapHeader
+                leading={historyPicker}
+                historical={historical}
         graticule={graticule}
         onGraticule={() => {
           const next = !graticule;
@@ -2607,7 +2731,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                     towns={pointPlaces}
                     airports={airportRows}
                     denied={locateDenied}
-                    hint={placeHint}
+                    hint={historical ? false : placeHint}
                     located={locatedTick}
                     onSelect={(next) => selectPlace(next, 'user')}
                     onToggleSaved={toggleSaved}
@@ -2628,22 +2752,23 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                 nowMs={nowMs}
                 phoneWind={chart?.manifest.variables.u10 && chart.manifest.variables.v10 ? <button type="button" aria-label="Wind barbs" aria-pressed={windBarbs}
                   onClick={() => toggleWindBarbs(!windBarbs)}>Wind barbs<span aria-hidden="true" className="ml-auto">{windBarbs ? '✓' : ''}</span></button> : null}
-                onMenuOpen={() => { closeChat(true, false); closePoint(false); }}
+                onMenuOpen={() => { closeChat(true, false); }}
               />
               {chart ? (
                 <div className="map-deck grid shrink-0 grid-cols-1 gap-x-4 px-3 md:grid-cols-[minmax(176px,auto)_1fr] md:px-4">
                   <div className="transport-side flex items-center max-md:hidden md:row-span-2 md:pt-6">{transportNode(false)}</div>
-                  <DayTiles
+                  {historical ? <select className="history-day rounded-md bg-[var(--md-surface-container-high)] px-2" aria-label="Historical day" value={selectedKey ?? days[0]?.key} onChange={event=>{const day=days.find(d=>d.key===event.target.value);if(day&&!teachingRef.current){seek((day.dayStart-runMs)/60000-chart.manifest.forecastHours[0]*60,false);if(day.event)notifyMap(day.event.detail);}}}>{days.map(day=><option key={day.key} value={day.key}>{day.weekday}{day.event?` · ${day.event.title}`:''}</option>)}</select> : <DayTiles
                     days={days}
                     todayKey={todayKey}
                     selectedKey={selectedKey}
                     nowTemp={nowReading?.tempC ?? null}
                     onDay={(day) => {
                       if (teachingRef.current) return;
-                      const at = day.key === todayKey ? nowMs : day.dayStart + 15 * 3_600_000;
+                      const at = historical ? day.dayStart : day.key === todayKey ? nowMs : day.dayStart + 15 * 3_600_000;
+                      if(day.event)notifyMap(day.event.detail);
                       seek((at - runMs) / 60000 - chart.manifest.forecastHours[0] * 60, false);
                     }}
-                  />
+                  />}
                   <div className="time-block flex min-w-0 items-center gap-2 pt-1">
                     <div className="transport-inline shrink-0 md:hidden">{transportNode(false)}</div>
                     <div className="min-w-0 flex-1">{timelineNode(false)}</div>
@@ -2671,12 +2796,13 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
           >
             <div
               ref={stageRef}
-              data-map-ready={ready ? 'true' : 'false'}
+              data-terrain-imagery={photoStatus} data-map-ready={ready ? 'true' : 'false'}
               data-graticule={graticule ? 'on' : 'off'}
               data-isobars={isobars ? 'true' : 'false'}
               data-frames={complete ? 'complete' : 'streaming'}
               data-renderer={renderer}
               data-tilt={tilt.toFixed(4)}
+              data-bearing={(cameraRef.current?.bearingRadians??0).toFixed(4)}
               data-map-mode={threeD ? '3d' : '2d'}
               data-valid-ms={validMs}
               className="relative min-w-0 flex-1 touch-none overflow-hidden rounded-md bg-[#e9eff4] dark:bg-[#232f3e]"
@@ -2717,16 +2843,12 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                         navigator.vibrate?.(10);
                       }, 450);
                     }
-                    window.clearTimeout(hintHold.current);
-                    hintHold.current = window.setTimeout(() => noteHint('gesture'), 400);
                   } else {
                     dragRef.current.multi = true;
                     dragRef.current.armed = false;
                     window.clearTimeout(longTimerRef.current);
                     pinchRef.current = 0;
                   touchGestureRef.current = null;
-                    window.clearTimeout(hintHold.current);
-                    noteHint('gesture');
                   }
                 }}
                 onContextMenu={(event) => {
@@ -2743,8 +2865,6 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                   const rect = event.currentTarget.getBoundingClientRect();
                   const stage = stageRef.current as (HTMLDivElement & { chartApi?: { redraw: () => void } }) | null;
                   if (pointers.size >= 2) {
-                    window.clearTimeout(hintHold.current);
-                    noteHint('gesture');
                     const pts = [...pointers.values()];
                     const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
                     dragRef.current.multi = true;
@@ -2760,7 +2880,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                     if (gesture.mode === 'pinch' && gesture.lastDistance > 0 && dist > 0) {
                       const clipX = (middle.x - rect.left) / rect.width * 2 - 1;
                       const clipY = 1 - (middle.y - rect.top) / rect.height * 2;
-                      cameraRef.current = zoomTilt(GEO, cameraRef.current, tiltRef.current, clipX, clipY, gesture.lastDistance / dist, homeRef.current, elevationAtRef.current);
+                      cameraRef.current = zoomShared(cameraRef.current, clipX, clipY, gesture.lastDistance / dist, homeRef.current);
                       stage?.chartApi?.redraw();
                     }
                     gesture.lastDistance = dist; gesture.lastY = middle.y;
@@ -2778,15 +2898,12 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                   const dy = -((event.clientY - previous.y) / rect.height) * 2;
                   if (tiltRef.current > 0) {
                     const hit = mapUnproject(GEO, renderCamera(cameraRef.current), (previous.x - rect.left) / rect.width * 2 - 1, 1 - (previous.y - rect.top) / rect.height * 2);
-                    if (hit) cameraRef.current = anchorTilt(GEO, cameraRef.current, tiltRef.current, hit, (event.clientX - rect.left) / rect.width * 2 - 1, 1 - (event.clientY - rect.top) / rect.height * 2, homeRef.current, elevationAtRef.current);
+                    if (hit) cameraRef.current = anchorTilt(GEO, cameraRef.current, tiltRef.current, hit, (event.clientX - rect.left) / rect.width * 2 - 1, 1 - (event.clientY - rect.top) / rect.height * 2, homeRef.current, elevationAtRef.current, true);
                   } else cameraRef.current = clampToData(GEO, panBy(cameraRef.current, dx, dy), homeRef.current);
-                  window.clearTimeout(hintHold.current);
-                  noteHint('gesture');
                   stage?.chartApi?.redraw();
                 }}
                 onPointerUp={(event) => {
                   const canvas = event.currentTarget;
-                  window.clearTimeout(hintHold.current);
                   window.clearTimeout(longTimerRef.current);
                   // A hold freezes time. A touch that stays within 8 px opens the
                   // action chip on release; a short click still selects a point.
@@ -2800,17 +2917,24 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                 }}
                 onPointerCancel={(event) => {
                   window.clearTimeout(longTimerRef.current);
-                  window.clearTimeout(hintHold.current);
                   dragRef.current.armed = false;
                   releaseMapPointer(event.pointerId);
                 }}
                 onLostPointerCapture={(event) => {
                   window.clearTimeout(longTimerRef.current);
-                  window.clearTimeout(hintHold.current);
                   releaseMapPointer(event.pointerId);
                 }}
                 tabIndex={0}
+                onBlur={()=>mapKeysRef.current.clear()}
+                onKeyUp={(event)=>{mapKeysRef.current.delete(event.key.startsWith('Arrow')?event.key:event.key.toLowerCase());}}
                 onKeyDown={(event) => {
+                  if(event.metaKey||event.ctrlKey||event.altKey)return;
+                  const key=event.key.startsWith('Arrow')?event.key:event.key.toLowerCase();
+                  if(threeDRef.current&&['w','a','s','d','e','q','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(key)){
+                    event.preventDefault();mapKeysRef.current.add(key);
+                    if(!event.repeat){keyboardStepRef.current(1/60);redrawCamera();}
+                    return;
+                  }
                   const camera = cameraRef.current, home = homeRef.current;
                   if (!camera || !home) return;
                   if (event.key === '2' || event.key === '3') { event.preventDefault(); changeMapMode(event.key === '3'); return; }
@@ -2818,12 +2942,12 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                   if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', '+', '=', '-', 'Home'].includes(event.key)) {
                     event.preventDefault();
                     if (event.key === 'Home') { cameraMoveRef.current = null; cameraRef.current = { ...home.home }; }
-                    else if (event.key === '+' || event.key === '=' || event.key === '-') cameraRef.current = zoomTilt(GEO, camera, tiltRef.current, 0, 0, event.key === '-' ? 1.2 : 1 / 1.2, home, elevationAtRef.current);
+                    else if (event.key === '+' || event.key === '=' || event.key === '-') cameraRef.current = zoomShared(camera, 0, 0, event.key === '-' ? 1.2 : 1 / 1.2, home);
                     else {
                       const dx = event.key === 'ArrowLeft' ? .12 : event.key === 'ArrowRight' ? -.12 : 0;
                       const dy = event.key === 'ArrowUp' ? -.12 : event.key === 'ArrowDown' ? .12 : 0;
                       const focus = tiltRef.current ? mapUnproject(GEO, renderCamera(camera), 0, 0) : null;
-                      cameraRef.current = focus ? anchorTilt(GEO, camera, tiltRef.current, focus, dx, dy, home, elevationAtRef.current) : clampToData(GEO, panBy(camera, dx, dy), home);
+                      cameraRef.current = focus ? anchorTilt(GEO, camera, tiltRef.current, focus, dx, dy, home, elevationAtRef.current, true) : clampToData(GEO, panBy(camera, dx, dy), home);
                     }
                     redrawCamera();
                   }
@@ -2834,7 +2958,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
               <canvas ref={trafficCanvasRef} data-traffic-layer className="pointer-events-none absolute" aria-hidden="true" />
               {cameraRef.current && GEO.projection === 'equirectangular' && Number.isFinite(validMs) ? <AtmosphereMap camera={renderCamera(cameraRef.current)} geo={GEO}
                 lat={cameraRef.current.centerY} lon={((cameraRef.current.centerX / GEO.F + GEO.lon0 + 540) % 360) - 180}
-                validMs={validMs} width={stageSize.width} height={stageSize.height} active={tilt > .02} /> : null}
+                validMs={validMs} width={stageSize.width} height={stageSize.height} active={tilt > .02} onInspection={inspectAtmosphere} reconstruction={historical&&historyEvent==='everest-1953'?{chart,elevation:elevationAtRef.current}:undefined} /> : null}
               {trafficOn && trafficReplay ? <span className="traffic-replay-status" data-traffic-replay={trafficReplay} title="Recorded during this viewing session. Earlier history and gaps are unavailable.">{trafficReplay === 'replay' ? 'Replay · session' : 'No recorded traffic'}</span> : null}
               {trafficOn && selectedTraffic.length ? <TrafficCards selected={selectedTraffic} trails={heldTraffic?.trails ?? trailsRef.current} routes={heldTraffic?.routes ?? routesRef.current} zone={displayZone} nowMs={heldTraffic?.epoch ?? nowMs} replayMs={trafficLive || heldTraffic ? undefined : validMs} onRemove={selectTraffic} /> : null}
               {mapNotice ? <div className="map-notice" role="status" aria-live="polite">{mapNotice}</div> : null}
@@ -2871,15 +2995,15 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                 </div>
                 {renderer === 'webgl2' && GEO.projection === 'equirectangular' ? <div className="map-zoom">
                   <button type="button" aria-label="2D map" aria-pressed={!threeD} title="2D map · 2" onClick={() => changeMapMode(false)}>2D</button>
-                  <button type="button" aria-label="3D map" aria-pressed={threeD} title="3D map · 3 · two-finger swipe to tilt" onClick={() => changeMapMode(true)}>3D</button>
+                  <button type="button" aria-label="3D map" aria-pressed={threeD} title="3D map · WASD move · arrows look · E/Q rise/descend · pinch zoom · two-finger tilt" onClick={() => changeMapMode(true)}>3D</button>
                 </div> : null}
                 <span className="relative grid"><button type="button" aria-label="Recenter map" onClick={() => { cameraMoveRef.current = null; cameraRef.current = homeRef.current ? { ...homeRef.current.home } : null; redrawCamera(); recenterNote.show('Recentered'); }}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.7" /><path fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" d="M12 3v3M12 18v3M3 12h3M18 12h3" /></svg></button><PressNote text={recenterNote.note} /></span>
                 {/* One control per viewport: phones carry the lens-scoped overlay toggles here; wider surfaces keep them in the lens row. */}
-                {phone && ['pressure', 'rain', 'temp'].includes(lens) ? <span className="relative grid"><button type="button" aria-label="Satellite" aria-pressed={satellite} onClick={() => { satelliteNote.show(satellite ? 'Satellite off' : 'Satellite on'); toggleSatellite(!satellite); }}><SatelliteIcon /></button><PressNote text={satelliteNote.note} /></span> : null}
+                {phone && !historical && ['pressure', 'rain', 'temp'].includes(lens) ? <span className="relative grid"><button type="button" aria-label="Satellite" aria-pressed={satellite} onClick={() => { satelliteNote.show(satellite ? 'Satellite off' : 'Satellite on'); toggleSatellite(!satellite); }}><SatelliteIcon /></button><PressNote text={satelliteNote.note} /></span> : null}
                 {phone && lens === 'fly' ? <span className="relative grid"><button type="button" aria-label="Traffic" aria-pressed={trafficOn} onClick={() => { trafficNote.show(trafficOn ? 'Traffic off' : 'Traffic on'); toggleTraffic(!trafficOn); }}><TrafficIcon /></button><PressNote text={trafficNote.note} /></span> : null}
                 <button type="button" aria-label="Data sources" title="Data sources" aria-expanded={showSources} onClick={() => setShowSources((v) => !v)}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.7" /><path fill="currentColor" d="M11.2 10.2h1.6V16h-1.6zM11.2 7.4h1.6V9h-1.6z" /></svg></button>
                 </div>
-                {showSources ? <div className="map-sources"><div ref={setExplainHost} /><p role="note">{flowWindLegend(flowSource)}. {threeD ? 'Atmospheric layers use synthetic data with scale-adapted height and emphasised vertical motion. ' : ''}{historical?chart.manifest.attribution.map(a=>`${a.source} · ${a.licence}`).join('; '):ATTRIBUTION}</p></div> : null}
+                {showSources ? <div className="map-sources" style={{maxWidth:'calc(100vw - 7rem)'}}><label className="flex items-center gap-2 px-2 py-1"><input type="checkbox" checked={photoTerrain} onChange={togglePhotoTerrain} />Photo terrain</label>{photoTerrain?<p>Everest · {EVEREST_IMAGERY.acquisition_datetime.slice(0,10)} · {EVEREST_IMAGERY.attribution} Modern surface imagery; historical weather retains its selected date.{photoStatus==='unavailable'?' Imagery unavailable; switch off and on to retry.':''}</p>:null}{historyEvent==='everest-1953'?<p>{EVEREST_DETAILS} <a href={EVEREST_SOURCE} target="_blank" rel="noreferrer">Expedition observations</a> · <a href="https://teara.govt.nz/en/interactive/28428/final-ascent-of-everest" target="_blank" rel="noreferrer">Ascent route</a></p>:null}<div ref={setExplainHost} /><p role="note">{flowWindLegend(flowSource)}. {threeD ? 'Atmospheric layers use synthetic data with scale-adapted height and emphasised vertical motion. ' : ''}{historical?chart.manifest.attribution.map(a=>`${a.source} · ${a.licence}`).join('; '):ATTRIBUTION}</p></div> : null}
               </div> : null}
               {teachHere || teaching ? <MapTeaching geo={GEO} chart={chart} complete={complete} minute={minute} camera={cameraRef.current} width={stageSize.width} height={stageSize.height}
                 onActive={(active, at) => {
@@ -2894,7 +3018,6 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                 }}
                 onFocus={focusFeature} onField={(f) => remember({ field: f })} explainHost={explainHost} autoTour={autoTour} onStarted={() => setShowSources(false)} /> : null}
               {phone && !teaching ? <div className="map-chat-float"><ChatButton open={chatOpen} onClick={toggleChat} /></div> : null}
-              {!historical && !threeD ? <MapHints phone={phone} /> : null}
               <PhoneHoldNames active={phone} />
               {windBarbs ? <span className="pointer-events-none absolute bottom-16 right-2 rounded bg-[var(--md-surface)]/90 px-2 py-1 text-[10px] sm:bottom-6">10 m wind · barb = 10 kt · half = 5</span> : null}
               <div className="map-legend pointer-events-none absolute bottom-2 left-2 flex items-center gap-2 px-2 py-0.5 text-[11px] tabular-nums" data-pressure-legend={units.pressure} data-pressure-state={pressureLegend} aria-busy={!!pendingField}>
@@ -2916,7 +3039,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
               {chart.manifest.attribution.some((a) => a.source.startsWith('Synthetic')) ? <span className="chart-fixture-note pointer-events-none text-[10px] font-medium text-[var(--md-on-surface-variant)]">Synthetic chart · test data</span> : null}
             </div>
             {fly && flyDetail && !chatOpen && airport ? <FlyPanel airport={airport} place={place ?? null} zone={displayZone} validMs={validMs} nowMs={nowMs} onClose={() => toggleSection(false)} anchorRef={panelRef} /> : null}
-            {pointVisible && point && !chatOpen && !coastalLens ? <PointPanel archiveOnly={historical} point={point} name={pointTitle} detail={pointDetail} isPlace={place?.id === placeForPoint(point.lat, point.lon, manifestList, pointPlaces, airportRows, { atSea: pointAtSea(chart, point.lat, point.lon) }).id} onMakePlace={() => makeThisPlace(point.lat, point.lon)} validMs={validMs} lens={lens} terrainM={terrainM} section={sectionSamples} orographyM={orographyM} mslpHpa={mslpHpa}
+            {pointVisible && point && !chatOpen && !coastalLens ? <PointPanel reconstructedModel={reconstructedPoint} archiveOnly={historical} point={point} name={pointTitle} detail={pointDetail} isPlace={place?.id === placeForPoint(point.lat, point.lon, manifestList, pointPlaces, airportRows, { atSea: pointAtSea(chart, point.lat, point.lon) }).id} onMakePlace={() => makeThisPlace(point.lat, point.lon)} validMs={validMs} lens={lens} terrainM={terrainM} section={sectionSamples} orographyM={orographyM} mslpHpa={mslpHpa}
               collectorIcao={chart.aviation?.airports.find((item) => distanceBearing(point.lat, point.lon, item.lat, item.lon).km < 1)?.icao}
               onClose={() => closePoint()} anchorRef={panelRef} panelRef={pointPanelRef} /> : null}
             {coastalLens && !teaching && !chatOpen && (point || place) ? <CoastalPanel
@@ -2972,6 +3095,8 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
           <div className="map-lens-wrap flex min-w-0 flex-1 items-center gap-1" style={groupWidth > 0 ? { maxWidth: groupWidth } : undefined}>
           <LensBar
             lens={lens}
+            availableLenses={historical ? ['pressure', 'wind', ...(chart.manifest.variables.rain24 ? ['rain' as const] : []), ...(chart.manifest.variables.t2m ? ['temp' as const] : [])] : undefined}
+            satelliteAvailable={!historical}
             onLens={changeLens}
             phone={phone}
             section={flyDetail}

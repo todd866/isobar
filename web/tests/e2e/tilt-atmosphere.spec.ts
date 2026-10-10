@@ -127,24 +127,24 @@ test('profile geometry, altitude marker and section use the shared forecast cloc
 
 test('GLSL rays agree with CPU at world, regional and close terrain scales',async({page})=>{
   await page.goto('/');
-  for(const [half,lat,pitch] of [[60,-30,.08],[60,0,1.2],[.3,-33.8,1],[.005,-31.9,1.2]]) {
-    const c=createTiltCamera({lat,lon:150.8,halfHeightDeg:half,aspect:2,tiltRadians:pitch});
+  for(const [half,lat,pitch,height,bearing] of [[60,-30,.08,0,0],[60,0,1.2,0,.8],[.3,-33.8,1,0,-1.2],[.005,-31.9,1.2,0,2.8],[.04,27.9881,.7,8500,1.6],[.0075,27.9881,1.2,8500,-2.4],[.04,27.9881,0,0,1.5]]) {
+    const c=createTiltCamera({lat,lon:150.8,halfHeightDeg:half,aspect:2,tiltRadians:pitch,targetElevationM:height,bearingRadians:bearing});
     const target={lat:lat+half*.15,lon:150.8+half*.3};
-    const projected=forwardProject(c,target.lat,target.lon)!;
-    const value=await page.evaluate(({source,c,x,y})=>{
+    const projected=forwardProject(c,target.lat,target.lon,height)!;
+    const value=await page.evaluate(({source,c,x,y,height})=>{
       const canvas=document.createElement('canvas');canvas.width=canvas.height=1;const gl=canvas.getContext('webgl2')!;
       try { if(!gl.getExtension('EXT_color_buffer_float'))throw Error('float render target unsupported');
         const p=gl.createProgram()!;
         function shader(kind:number,s:string){const sh=gl.createShader(kind)!;gl.shaderSource(sh,s);gl.compileShader(sh);if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(sh)!);gl.attachShader(p,sh);return sh;}
         const vs=shader(gl.VERTEX_SHADER,'#version 300 es\nvoid main(){vec2 a=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(a*2.-1.,0.,1.);}');
         const g=c.geometry,vec=(v:readonly number[])=>'vec3('+v.map(n=>n.toFixed(12)).join(',')+')';
-        const fs=shader(gl.FRAGMENT_SHADER,`#version 300 es\nprecision highp float;out vec4 color;${source}\nvoid main(){float lat,lon;bool ok=variableGeo(vec2(${x.toFixed(12)},${y.toFixed(12)}),vec4(${(c.lat*Math.PI/180).toFixed(12)},${(c.lon*Math.PI/180).toFixed(12)},${c.halfHeightRadians.toFixed(12)},${c.tiltRadians.toFixed(12)}),${c.aspect.toFixed(12)},${g.curvature.toFixed(12)},${vec(g.cameraPositionNormalized)},${vec(g.forward)},${vec(g.up)},0.,lat,lon);color=vec4(degrees(lat),degrees(lon),ok?1.:0.,1.);}`);
+        const fs=shader(gl.FRAGMENT_SHADER,`#version 300 es\nprecision highp float;out vec4 color;${source}\nvoid main(){float lat,lon;bool ok=variableGeo(vec2(${x.toFixed(12)},${y.toFixed(12)}),vec4(${(c.lat*Math.PI/180).toFixed(12)},${(c.lon*Math.PI/180).toFixed(12)},${c.halfHeightRadians.toFixed(12)},${c.tiltRadians.toFixed(12)}),${c.aspect.toFixed(12)},${g.curvature.toFixed(12)},${vec(g.cameraPositionNormalized)},${vec(g.forward)},${vec(g.up)},${height.toFixed(1)},lat,lon);color=vec4(degrees(lat),degrees(lon),ok?1.:0.,1.);}`);
         gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p)!);gl.useProgram(p);
         const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,1,1,0,gl.RGBA,gl.FLOAT,null);
         const fb=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);gl.viewport(0,0,1,1);gl.drawArrays(gl.TRIANGLES,0,3);
         const out=new Float32Array(4);gl.readPixels(0,0,1,1,gl.RGBA,gl.FLOAT,out);gl.deleteFramebuffer(fb);gl.deleteTexture(tex);gl.deleteProgram(p);gl.deleteShader(vs);gl.deleteShader(fs);return Array.from(out);
       }finally{gl.getExtension('WEBGL_lose_context')?.loseContext();}
-    },{source:TILT_CAMERA_GLSL,c,x:projected.x,y:projected.y});
+    },{source:TILT_CAMERA_GLSL,c,x:projected.x,y:projected.y,height});
     expect(value[2]).toBe(1);expect(value[0]).toBeCloseTo(target.lat,3);expect(value[1]).toBeCloseTo(target.lon,3);
   }
 });
@@ -199,6 +199,8 @@ test('keyboard navigation and enlarged section remain usable after resize',async
   await page.keyboard.press('+');
   await expect.poll(async()=>(await camera(page)).halfWidth).toBeLessThan(before.halfWidth);
   await page.keyboard.press('ArrowRight');
+  expect((await camera(page)).bearingRadians).toBeGreaterThan(0);
+  await page.keyboard.press('d');
   expect((await camera(page)).centerX).not.toBe(before.centerX);
   const utc=await map.getAttribute('data-valid-ms');
   await page.addStyleTag({content:'html{font-size:200% !important}'});
@@ -247,4 +249,42 @@ test('2D and 3D are explicit modes; overhead tilt does not leave 3D', async ({ p
   for (const key of ['centerX','centerY','halfWidth','halfHeight'] as const) expect((await camera(page))[key]).toBeCloseTo(cameraBefore[key], 8);
   expect(await map.getAttribute('data-valid-ms')).toBe(timeBefore);
   await page.screenshot({ path: testInfo.outputPath('explicit-map-modes.png') });
+});
+
+test('3D keyboard flies across the ground, looks around, rises and leaves typing alone',async({page})=>{
+  await open(page);
+  await page.getByRole('button',{name:'3D map',exact:true}).click();
+  const canvas=await stage(page).locator('canvas[tabindex="0"]');
+  await canvas.focus();
+  await page.keyboard.down('ArrowUp');await page.waitForTimeout(350);await page.keyboard.up('ArrowUp');
+  expect(Number(await stage(page).getAttribute('data-tilt'))).toBeGreaterThan(.1);
+  const before=await camera(page),time=await stage(page).getAttribute('data-valid-ms');
+  await page.keyboard.down('ArrowRight');await page.waitForTimeout(300);await page.keyboard.up('ArrowRight');
+  expect(Number(await stage(page).getAttribute('data-bearing'))).toBeGreaterThan(.1);
+  expect((await camera(page)).centerX).toBeCloseTo(before.centerX,7);
+  expect((await camera(page)).centerY).toBeCloseTo(before.centerY,7);
+  const yaw=await stage(page).screenshot();
+  await page.keyboard.down('w');await page.waitForTimeout(300);await page.keyboard.up('w');
+  const moved=await camera(page);
+  expect(Math.hypot(moved.centerX-before.centerX,moved.centerY-before.centerY)).toBeGreaterThan(.001);
+  const pitch=Number(await stage(page).getAttribute('data-tilt'));
+  await page.keyboard.down('e');await page.waitForTimeout(300);await page.keyboard.up('e');
+  expect(Number(await stage(page).getAttribute('data-tilt'))).toBeLessThan(pitch);
+  expect(await pixelsChanged(yaw,await stage(page).screenshot())).toBeGreaterThan(.001);
+  expect(await stage(page).getAttribute('data-valid-ms')).toBe(time);
+  await page.keyboard.down('w');
+  await page.getByRole('button',{name:'2D map',exact:true}).focus();
+  const stopped=await camera(page);await page.waitForTimeout(200);expect(await camera(page)).toEqual(stopped);
+  await page.keyboard.up('w');
+  await page.evaluate(()=>{const input=document.createElement('input');input.id='typing-check';document.body.append(input);input.focus();});
+  await page.keyboard.type('wasdqe');expect(await page.locator('#typing-check').inputValue()).toBe('wasdqe');expect(await camera(page)).toEqual(stopped);
+  await page.locator('#typing-check').evaluate(el=>el.remove());
+  await page.getByRole('button',{name:'2D map',exact:true}).click();
+  expect(Number(await stage(page).getAttribute('data-bearing'))).toBe(0);
+  await canvas.focus();const flat=await camera(page);await page.keyboard.press('ArrowRight');
+  expect((await camera(page)).centerX).not.toBe(flat.centerX);
+  await page.screenshot({path:'/tmp/isobar-keyboard-2d.png'});
+  await page.getByRole('button',{name:'3D map',exact:true}).click();
+  expect(Number(await stage(page).getAttribute('data-bearing'))).toBeGreaterThan(.1);
+  await page.screenshot({path:'/tmp/isobar-keyboard-3d.png'});
 });

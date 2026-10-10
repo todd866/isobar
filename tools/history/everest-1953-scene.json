@@ -1,0 +1,211 @@
+{
+  "schema_version": 1,
+  "kind": "historical-scene",
+  "event": {
+    "id": "everest-1953",
+    "label": "Everest 1953",
+    "focus_date": "1953-05-29",
+    "calendar": "Gregorian"
+  },
+  "geography": {
+    "summit": {
+      "lat": 27.9881,
+      "lon": 86.925,
+      "name": "Everest summit",
+      "precision": "approximate"
+    },
+    "route_points": [
+      {
+        "id": "base-camp",
+        "name": "Base Camp",
+        "lat": 28.002,
+        "lon": 86.852
+      },
+      {
+        "id": "icefall",
+        "name": "Khumbu Icefall",
+        "lat": 27.991,
+        "lon": 86.869
+      },
+      {
+        "id": "western-cwm",
+        "name": "Western Cwm",
+        "lat": 27.98,
+        "lon": 86.898
+      },
+      {
+        "id": "south-col",
+        "name": "South Col",
+        "lat": 27.971,
+        "lon": 86.929
+      },
+      {
+        "id": "camp-9",
+        "name": "Camp 9",
+        "lat": 27.982,
+        "lon": 86.931
+      },
+      {
+        "id": "summit",
+        "name": "Summit",
+        "lat": 27.9881,
+        "lon": 86.925
+      }
+    ],
+    "route_classification": "approximate schematic anchors; not a surveyed track; no precise camp or ascent path inferred"
+  },
+  "documentary_temperature_anchors": {
+    "source_receipt": {
+      "url": "https://www.cambridge.org/core/services/aop-cambridge-core/content/view/E895474FE6DD9C0B32F0C765D29EA100/S0022143000025284a.pdf/notes-on-temperature-and-snow-conditions-in-the-everest-region-in-spring-1952-and-1953.pdf",
+      "sha256": "6548cf43992bdf3b2fe737b0a672f33ea07c2f1380b7c7271f2dbb178f50a085",
+      "bytes": 2848872,
+      "retrieved_at": "2026-10-10T03:55:07.803384+00:00",
+      "locator": "Journal of Glaciology, Table II, p. 364 (PDF page 2)",
+      "rights": "Cambridge Core terms of use; source is retained for provenance, not redistributed as a public asset"
+    },
+    "interpretation": "Published atmospheric readings transcribed from Table II. Published local clock values are retained as text; timezone and UTC conversion are unknown. These are documentary anchors, not a complete hourly station series.",
+    "records": [
+      {
+        "date": "1953-04-12",
+        "place": "Base Camp",
+        "elevation_ft": 18000,
+        "temperature_f": 15,
+        "temperature_c": -9.4,
+        "time_local_published": "19:30",
+        "time_qualifier": null
+      },
+      {
+        "date": "1953-04-16",
+        "place": "Base Camp",
+        "elevation_ft": 18000,
+        "temperature_f": 15,
+        "temperature_c": -9.4,
+        "time_local_published": "07:00",
+        "time_qualifier": null
+      },
+      {
+        "date": "1953-04-21",
+        "place": "Base Camp",
+        "elevation_ft": 18000,
+        "temperature_f": -4,
+        "temperature_c": -20.0,
+        "time_local_published": null,
+        "time_qualifier": "time printed as ?"
+      },
+      {
+        "date": "1953-04-24",
+        "place": "Base Camp",
+        "elevation_ft": 18000,
+        "temperature_f": 0.5,
+        "temperature_c": -17.5,
+        "time_local_published": null,
+        "time_qualifier": "minimum temperature"
+      },
+      {
+        "date": "1953-04-27",
+        "place": "Base Camp",
+        "elevation_ft": 18000,
+        "temperature_f": 12,
+        "temperature_c": -11.0,
+        "time_local_published": null,
+        "time_qualifier": "minimum temperature"
+      },
+      {
+        "date": "1953-04-28",
+        "place": "Base Camp",
+        "elevation_ft": 18000,
+        "temperature_f": 10.5,
+        "temperature_c": -12.0,
+        "time_local_published": null,
+        "time_qualifier": "minimum temperature"
+      },
+      {
+        "date": "1953-05-03",
+        "place": "Base Camp",
+        "elevation_ft": 18000,
+        "temperature_f": -9,
+        "temperature_c": -23.0,
+        "time_local_published": null,
+        "time_qualifier": "minimum temperature"
+      },
+      {
+        "date": "1953-04-30",
+        "place": "Camp 2",
+        "elevation_ft": 19500,
+        "temperature_f": 10,
+        "temperature_c": -12.2,
+        "time_local_published": null,
+        "time_qualifier": "time printed as ?"
+      },
+      {
+        "date": "1953-05-11",
+        "place": "Camp 3",
+        "elevation_ft": 20500,
+        "temperature_f": 15,
+        "temperature_c": -9.4,
+        "time_local_published": "06:30",
+        "time_qualifier": null
+      },
+      {
+        "date": "1953-05-12",
+        "place": "Camp 3",
+        "elevation_ft": 20500,
+        "temperature_f": 13,
+        "temperature_c": -10.6,
+        "time_local_published": "21:30",
+        "time_qualifier": null
+      },
+      {
+        "date": "1953-05-24",
+        "place": "Camp 4",
+        "elevation_ft": 21200,
+        "temperature_f": 17,
+        "temperature_c": -8.3,
+        "time_local_published": "21:15",
+        "time_qualifier": null
+      },
+      {
+        "date": "1953-05-25",
+        "place": "Camp 4",
+        "elevation_ft": 21200,
+        "temperature_f": 18,
+        "temperature_c": -7.8,
+        "time_local_published": "21:00",
+        "time_qualifier": null
+      },
+      {
+        "date": "1953-05-26",
+        "place": "Camp 7",
+        "elevation_ft": 24000,
+        "temperature_f": -13,
+        "temperature_c": -25.0,
+        "time_local_published": "03:00",
+        "time_qualifier": "recorded by E. P. Hillary"
+      },
+      {
+        "date": "1953-05-27",
+        "place": "Camp 8",
+        "elevation_ft": 25800,
+        "temperature_f": -13,
+        "temperature_c": -25.0,
+        "time_local_published": "03:00",
+        "time_qualifier": "recorded by E. P. Hillary"
+      },
+      {
+        "date": "1953-05-29",
+        "place": "Camp 9",
+        "elevation_ft": 27900,
+        "temperature_f": -17,
+        "temperature_c": -27.2,
+        "time_local_published": "03:00",
+        "time_qualifier": "recorded by E. P. Hillary"
+      }
+    ]
+  },
+  "weather_link": {
+    "source": "everest-1953-weather.json",
+    "kind": "ERA5 reanalysis",
+    "period": "1953-05-28 through 1953-05-29 UTC",
+    "sampling": "2.5 degree global display sample; not a summit observation"
+  }
+}

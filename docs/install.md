@@ -1,6 +1,6 @@
 # Isobar for Mac
 
-[Download Isobar 1.11.0 for Mac](https://github.com/todd866/isobar/releases/download/v1.11.0/Isobar-1.11.0-macOS-arm64.dmg),
+[Download Isobar 1.11.1 for Mac](https://github.com/todd866/isobar/releases/download/v1.11.1/Isobar-1.11.1-macOS-arm64.dmg),
 or [use Isobar in your browser](https://isobar.md).
 
 **Apple silicon (M1 or newer) · macOS 15 or later**
@@ -18,7 +18,7 @@ access for nearby weather, or choose a place.
 Click the menu bar temperature to open the map. Hover or drag along the timeline
 to explore the forecast. Hold the map to freeze time; release to resume.
 Click-drag pans, pinch zooms, and the **2D / 3D** toggle selects the map mode. Two-finger scroll tilts only in 3D. Use **Now**
-to return to the current time.
+to return to the current time. With the 3D map focused, **WASD** moves across the ground, **arrow keys** look around, and **E / Q** raises or lowers the camera.
 
 To update, quit Isobar and replace the copy in Applications with the newer one.
 Your preferences and downloaded weather stay in place.

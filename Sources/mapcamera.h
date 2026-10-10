@@ -18,3 +18,6 @@ IsobarCamera MapCameraMake(double latitude, double longitude, double zoom, doubl
 // globe. Intermediate morphs use the flat solution so a drag does not run the
 // renderer's front-face search on the pointer thread.
 BOOL MapCameraAnchor(IsobarCamera *camera, double latitude, double longitude, double x, double y);
+// Adjusts the physical vertical eye position while preserving geographic
+// focus and horizontal stand-off.
+BOOL MapCameraAdjustEyeHeight(IsobarCamera *camera, double delta);

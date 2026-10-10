@@ -1,4 +1,5 @@
 import { mapProject, mapUnproject } from './lambert';
+import { visibleTerrainBounds, type TiltCamera } from './tilt-camera';
 /**
  * Town names on a regional view: Natural Earth 1:10m populated places (public
  * domain; public/places/world-places.json from scripts/pack-places.mjs), ranked
@@ -140,7 +141,9 @@ export function drawPlaces(
   const equirect = geo.projection === 'equirectangular';
   const centreLon = equirect ? geo.lon0 + camera.centerX / geo.F : 0;
   const halfLon = span / 2;
-  const candidates = equirect && !camera.surface
+  const tilt = (camera as Camera & {tiltCamera?: TiltCamera}).tiltCamera;
+  const cap = camera.surface && tilt ? visibleTerrainBounds(tilt) : null;
+  const candidates = cap ? regionalPlaces(rows, cap.west, cap.east, cap.south, cap.north) : equirect && !camera.surface
     ? regionalPlaces(rows, centreLon - halfLon, centreLon + halfLon, camera.centerY - camera.halfHeight, camera.centerY + camera.halfHeight) : rows;
   for (const row of candidates) {
     const [name, lat, lon, rank, region] = row;

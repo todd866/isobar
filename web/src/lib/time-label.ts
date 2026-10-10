@@ -12,10 +12,19 @@ export interface ZonedStamp {
 
 const cache = new Map<string, Intl.DateTimeFormat>();
 
+// Construction loads ICU zone data; reuse formatters, never formatted dates,
+// so historical dates and daylight-saving transitions still use their instant.
+function cachedFormat(key: string, locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const previous = cache.get(key);
+  if (previous) return previous;
+  const created = new Intl.DateTimeFormat(locale, options);
+  if (cache.size >= 128) cache.delete(cache.keys().next().value!);
+  cache.set(key, created);
+  return created;
+}
+
 function formatter(zone: string): Intl.DateTimeFormat {
-  const existing = cache.get(zone);
-  if (existing) return existing;
-  const created = new Intl.DateTimeFormat('en-AU', {
+  return cachedFormat(`stamp:${zone}`, 'en-AU', {
     timeZone: zone,
     weekday: 'short',
     year: 'numeric',
@@ -26,8 +35,6 @@ function formatter(zone: string): Intl.DateTimeFormat {
     hourCycle: 'h12',
     timeZoneName: 'short',
   });
-  cache.set(zone, created);
-  return created;
 }
 
 export function zonedStamp(ms: number, zone: string): ZonedStamp {
@@ -63,7 +70,7 @@ const AU_OFFSET: Record<number, string> = {
 export function zoneAbbreviation(ms: number, zone: string): string {
   const names = ['en-AU', 'en-GB', 'en-US'].map((locale) => {
     try {
-      const parts = new Intl.DateTimeFormat(locale, { timeZone: zone, timeZoneName: 'short' }).formatToParts(new Date(ms));
+      const parts = cachedFormat(`name:${locale}:${zone}`, locale, { timeZone: zone, timeZoneName: 'short' }).formatToParts(new Date(ms));
       return parts.find((part) => part.type === 'timeZoneName')?.value ?? '';
     } catch {
       return '';
@@ -105,7 +112,7 @@ export function formatClock(ms: number, zone: string, weekday = true): string {
 
 /** "0604Z" — UTC hours and minutes, no colon. */
 export function zuluLabel(ms: number): string {
-  const parts = new Intl.DateTimeFormat('en-GB', {
+  const parts = cachedFormat('zulu', 'en-GB', {
     timeZone: 'UTC',
     hour: '2-digit',
     minute: '2-digit',
@@ -129,7 +136,7 @@ export function clockLabel(ms: number, zone: string): string {
 
 /** Local calendar day key yyyy-mm-dd in `zone`. */
 export function localDayKey(ms: number, zone: string): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
+  const parts = cachedFormat(`day:${zone}`, 'en-CA', {
     timeZone: zone,
     year: 'numeric',
     month: '2-digit',
@@ -148,7 +155,7 @@ export function localMidnight(ms: number, zone: string): number {
 }
 
 function zonedOffset(ms: number, zone: string): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
+  const parts = cachedFormat(`offset:${zone}`, 'en-US', {
     timeZone: zone,
     hourCycle: 'h23',
     year: 'numeric',

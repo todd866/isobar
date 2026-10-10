@@ -38,6 +38,7 @@ IsobarCamera MapCameraMake(double lat, double lon, double zoom, double globe, do
     cam.zoom = zoom;
     cam.globe = globe;
     cam.pitch = 0;
+    cam.bearing = 0;
     cam.viewportW = w;
     cam.viewportH = h;
     return cam;
@@ -175,5 +176,36 @@ BOOL MapCameraAnchor(IsobarCamera *camera, double lat, double lon, double x, dou
         if (!ScreenOf(cam, lat, lon, x, y, &err, NULL, NULL) || err > 1) return NO;
     }
     *camera = cam;
+    return YES;
+}
+
+BOOL MapCameraAdjustEyeHeight(IsobarCamera *camera, double delta) {
+    if (!camera || !isfinite(delta) || !isfinite(camera->pitch) || !(camera->zoom > 0) ||
+        !(camera->viewportW >= 2) || !(camera->viewportH >= 2)) return NO;
+    const double fov = 25.0 * kDeg;
+    double t = camera->pitch / (20.0 * kDeg);
+    if (t <= 0) t = 0;
+    else if (t >= 1) t = 1;
+    else t = t * t * (3.0 - 2.0 * t);
+    t = fmax(t, 1e-3);
+    double fit = fmin(camera->viewportW / 360.0, camera->viewportH / 180.0);
+    double radius = camera->zoom * fit / kDeg;
+    double distance = (camera->viewportH * 0.5 / radius) / tan(fov) / t;
+    double horizontal = sin(camera->pitch) * distance;
+    double vertical = cos(camera->pitch) * distance;
+    double maxPitch = 1.30;
+    double newVertical = fmax(100.0 / 6371000.0, horizontal / tan(maxPitch));
+    newVertical = fmax(newVertical, vertical + delta * distance);
+    double newDistance = hypot(horizontal, newVertical);
+    if (!(distance > 1e-6) || !(newDistance > 1e-6)) return NO;
+    camera->pitch = atan2(horizontal, newVertical);
+    double newT = camera->pitch / (20.0 * kDeg);
+    if (newT <= 0) newT = 0;
+    else if (newT >= 1) newT = 1;
+    else newT = newT * newT * (3.0 - 2.0 * newT);
+    newT = fmax(newT, 1e-3);
+    camera->zoom *= distance / newDistance * t / newT;
+    camera->globe = fmax(0, fmin(1, camera->pitch / (20.0 * kDeg)));
+    *camera = IsobarCameraClamp(*camera);
     return YES;
 }

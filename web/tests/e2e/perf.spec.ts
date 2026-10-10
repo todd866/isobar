@@ -91,3 +91,21 @@ test('first chart and frame timing', async ({ page }) => {
   fs.writeFileSync(path.join(out, 'perf.json'), `${JSON.stringify(results, null, 2)}\n`);
   console.log(JSON.stringify(results, null, 2));
 });
+
+test('held 3D navigation keeps frame cadence',async({page})=>{
+  await page.setViewportSize({width:1280,height:720});
+  await page.goto('/');await firstChart(page);
+  const stage=page.locator('[data-api="1"]');
+  await page.getByRole('button',{name:'Pause',exact:true}).click();
+  await stage.evaluate((el:any)=>el.chartApi.setView(-31.9,116.1,.6));
+  await page.getByRole('button',{name:'3D map',exact:true}).click();
+  await stage.locator('canvas[tabindex="0"]').focus();
+  await page.keyboard.press('PageDown');await page.keyboard.press('PageDown');
+  await page.waitForTimeout(1500);
+  try {
+    await page.keyboard.down('w');await page.keyboard.down('ArrowRight');
+    const result=await frames(page,3500);
+    console.log('held3D',JSON.stringify(result));
+    expect(Math.round(result.p95*10)/10).toBeLessThanOrEqual(16.8);
+  } finally {await page.keyboard.up('w');await page.keyboard.up('ArrowRight');}
+});

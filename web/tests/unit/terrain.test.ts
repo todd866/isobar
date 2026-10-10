@@ -130,6 +130,12 @@ describe('mosaic', () => {
     expect(mosaic.data.every((v) => v === 0)).toBe(true);
   });
 
+  it('uses measured parent relief when the fine tile is unavailable', () => {
+    const parent = ramp();
+    const mosaic = compositeMosaic({ west: -124, east: -120, south: 46, north: 49 }, 40, 30, 7, z => z === 5 ? parent : null);
+    expect(mosaic.covered).toBe(40 * 30);
+  });
+
   it('falls back to a loaded ancestor while the zoom tile is still arriving', () => {
     const parent = ramp();
     const mosaic = compositeMosaic({ west: -124, east: -120, south: 46, north: 49 }, 40, 30, 7, (z) => (z === 5 ? parent : undefined));

@@ -159,6 +159,11 @@ static void Journeys(JourneyController *c, NSView *(^root)(void), NSString *surf
         for (NSDictionary *layer in drawn[@"layers"]) [bases addObject:@(llround([layer[@"baseFtAmsl"] doubleValue]))];
         printf("%s J8 sky %s %s bases %s\n", surface.UTF8String, [drawn[@"icao"] description].UTF8String,
             [drawn[@"source"] description].UTF8String, [bases componentsJoinedByString:@","].UTF8String);
+        if (!([drawn[@"source"] isEqual:@"TAF"] && [bases containsObject:@3067])) {
+            fprintf(stderr, "Fly sky diagnostics: selected=%s skyTime=%s ready=%d drawnTime=%s source=%s\n",
+                [[c selectedForecastDate] description].UTF8String, [sky.time description].UTF8String,
+                sky.pageReady, [drawn[@"timeMs"] description].UTF8String, [drawn[@"source"] description].UTF8String);
+        }
         EXPECT([drawn[@"source"] isEqual:@"TAF"] && [bases containsObject:@3067],
             "Fly sky at 12Z does not show the TAF's SCT030 at 3,067 ft AMSL (%s)", [bases componentsJoinedByString:@","].UTF8String);
         [c inspectPopoverMovieFraction:[c motionFractionForDate:before2]];

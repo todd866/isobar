@@ -1,42 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import {
-  bindHintSink, currentHint, dismissHint, hintCopy, noteHint, readHintState, writeHintState,
-  type HintState,
-} from '@/lib/map-hints';
-
-function browserStorage(): Storage | null {
-  try { return window.localStorage; } catch { return null; }
-}
-
-/** One coach line, near the thing it names. The map stays clickable; only × takes the pointer. */
-export function MapHints({ phone }: { phone: boolean }) {
-  const [state, setState] = useState<HintState | null>(null);
-  useEffect(() => {
-    const storage = browserStorage();
-    setState(readHintState(storage));
-    bindHintSink((id) => {
-      setState((prev) => {
-        const base = prev ?? readHintState(storage);
-        const next = dismissHint(base, id);
-        if (next === base) return base;
-        writeHintState(storage, next);
-        return next;
-      });
-    });
-    return () => bindHintSink(null);
-  }, []);
-  const id = state ? currentHint(state) : null;
-  if (!id) return null;
-  return (
-    <div className={`map-hint map-hint-${id}`} data-map-hint={id} role="status">
-      <span data-hint-copy>{hintCopy(id, phone)}</span>
-      <button type="button" aria-label="Dismiss hint" onClick={() => noteHint(id)}>×</button>
-    </div>
-  );
-}
-
 function iconOnly(button: HTMLButtonElement): boolean {
   return button.innerText.trim() === '' && !!button.getAttribute('aria-label');
 }

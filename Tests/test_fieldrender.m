@@ -33,6 +33,7 @@ static IsobarCamera Cam(double lat, double lon, double zoom, double globe, doubl
     c.pitch = 0;
     c.viewportW = w;
     c.viewportH = h;
+    c.bearing = 0;
     return c;
 }
 
@@ -157,6 +158,17 @@ static void TestCamera(void) {
         }
         check(displaced,
             @"tilt produces a perspective displacement away from the focus");
+    }
+    for (double bearing = -0.8; bearing <= 0.8; bearing += 0.4) {
+        IsobarCamera headed = Cam(-2, 35, 3, 1, 640, 420);
+        headed.pitch = 0.7;
+        headed.bearing = bearing;
+        double x = 0, y = 0, lat = 0, lon = 0;
+        check(IsobarCameraProject(headed, -4, 39, &x, &y),
+            [NSString stringWithFormat:@"bearing %.2f projects a front point", bearing]);
+        check(IsobarCameraUnproject(headed, x, y, &lat, &lon) &&
+            fabs(lat + 4) < 0.03 && LonErr(lon, 39) < 0.03,
+            [NSString stringWithFormat:@"bearing %.2f CPU round trip", bearing]);
     }
     IsobarCamera altitudeCam = Cam(-18, 137, 2, 1, 640, 420);
     altitudeCam.pitch = 0.9;
@@ -837,17 +849,18 @@ static void TestTiltedMetalPick(IsobarFieldRenderer *r) {
     for (size_t i = 0; i < count; i++) values[i] = 1000;
     check(Upload(r, 0, IsobarFieldPressure, values), @"tilted pick field uploads");
     free(values);
-    struct { double lat, lon, zoom, pitch; const char *name; } cameras[] = {
-        {-31.95, 115.86, 2, .1, "Perth world"},
-        {-31.95, 115.86, 16, .6, "Perth local"},
-        {-33.87, 151.21, 2, 1.3, "Sydney world"},
-        {-33.87, 151.21, 16, .6, "Sydney local"},
-        {0, 179, 2, .6, "dateline"},
-        {12, -45, 1, 1.3, "global"},
+    struct { double lat, lon, zoom, pitch, bearing; const char *name; } cameras[] = {
+        {-31.95, 115.86, 2, .1, 0, "Perth world"},
+        {-31.95, 115.86, 16, .6, 0, "Perth local"},
+        {-33.87, 151.21, 2, 1.3, 0, "Sydney world"},
+        {-33.87, 151.21, 16, .6, 0, "Sydney local"},
+        {0, 179, 2, .6, .35, "dateline bearing"},
+        {12, -45, 1, 1.3, -.42, "global bearing"},
     };
     for (NSUInteger ci = 0; ci < sizeof(cameras) / sizeof(cameras[0]); ci++) {
         IsobarCamera cam = Cam(cameras[ci].lat, cameras[ci].lon, cameras[ci].zoom, 1, 640, 420);
         cam.pitch = cameras[ci].pitch;
+        cam.bearing = cameras[ci].bearing;
         double points[][2] = {
             {cam.centreLat, cam.centreLon},
             {cam.centreLat + .8, cam.centreLon + .9},

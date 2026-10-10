@@ -1,4 +1,5 @@
 #import "fullscreenwindow.h"
+#import "gpumapview.h"
 
 static const NSTimeInterval kArrowRepeatInterval = 0.15;
 
@@ -44,7 +45,14 @@ ChartKeyAction ChartKeyActionFor(unsigned short keyCode, NSString *characters, N
 }
 - (void)sendEvent:(NSEvent *)event {
     if (event.type == NSEventTypeKeyDown) {
+        if ([self.firstResponder isKindOfClass:NSTextView.class] ||
+        ([self.firstResponder isKindOfClass:NSTextField.class] && [(NSTextField *)self.firstResponder isEditable])) { [super sendEvent:event]; return; }
         unsigned short key = event.keyCode;
+        // The 3D map owns navigation while focused. This lets arrow repeats
+        // yaw/pitch there without stealing arrows from the timeline or text
+        // fields elsewhere in the fullscreen window.
+        if ([self.firstResponder respondsToSelector:@selector(handle3DKeyEvent:)] &&
+            [(id)self.firstResponder handle3DKeyEvent:event]) return;
         if ([self.firstResponder isKindOfClass:NSClassFromString(@"TimelineStrip")] && (key == 123 || key == 124)) {
             [super sendEvent:event];
             return;
@@ -59,6 +67,8 @@ ChartKeyAction ChartKeyActionFor(unsigned short keyCode, NSString *characters, N
 }
 - (void)cancelOperation:(id)sender { (void)sender; [self.controller escapeFullscreen]; }
 - (void)keyDown:(NSEvent *)e {
+    if ([self.firstResponder respondsToSelector:@selector(handle3DKeyEvent:)] &&
+        [(GPUMapView *)self.firstResponder handle3DKeyEvent:e]) return;
     ChartKeyAction action = [self actionForEvent:e];
     if (action == ChartKeyPass) { [super keyDown:e]; return; }
     [self performChartKey:action];

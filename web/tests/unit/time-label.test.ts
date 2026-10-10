@@ -20,6 +20,12 @@ describe('place clocks', () => {
     expect(zoneAbbreviation(NOW, 'Asia/Kolkata')).toBe('GMT+5:30');
   });
 
+  it('reuses zone rules across a daylight-saving change without caching the old name', () => {
+    expect(formatClock(Date.parse('2026-10-03T15:59:00Z'), 'Australia/Sydney')).toBe('Sun 1:59 am AEST');
+    expect(formatClock(Date.parse('2026-10-03T16:00:00Z'), 'Australia/Sydney')).toBe('Sun 3:00 am AEDT');
+    expect(formatClock(Date.parse('2026-10-03T15:59:00Z'), 'Australia/Sydney')).toBe('Sun 1:59 am AEST');
+  });
+
   it('resolves the three menu modes', () => {
     expect(clockZone('place', 'Australia/Perth')).toBe('Australia/Perth');
     expect(clockZone('utc', 'Australia/Perth')).toBe('UTC');

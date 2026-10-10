@@ -1,0 +1,1510 @@
+{
+  "schema_version": 1,
+  "kind": "synthetic-terrain-following",
+  "receipt": {
+    "source": "Mapterhorn Terrarium terrain tiles from Copernicus GLO-30 and national elevation models",
+    "source_template": "https://tiles.mapterhorn.com/{z}/{x}/{y}.webp",
+    "zoom": 12,
+    "tile_sha256": {
+      "3035-1714.webp": "524a33d2a63114403f4f65a19141c008b6ec5cac8493a92221e2b63ca49ce42b",
+      "3035-1715.webp": "8a0636ec018db5e721ac020392437d89d1de83d7c45569951e7c006132223fea",
+      "3035-1716.webp": "c8798e6cc4f10629290a062b834bcac5dc9ff4b1726691523650a6d62b4d045c",
+      "3036-1714.webp": "1455d26a8f965d4394f650e7a08e4d03095faccaa24192a0aa585ccb84093576",
+      "3036-1715.webp": "cfe23739bb279ac39f701a9e3725c2e3603b624bacfedfb2466ba159d6b1a61c",
+      "3036-1716.webp": "ef8f46b4ce4d2b31c2303905ccdee61a7d2b47ad79ad771e1cd344af9db254d4",
+      "3037-1714.webp": "625a6af7990d2f9f2b946308a44048d3edf02a8ab35934d8d006edbb999e0548",
+      "3037-1715.webp": "9a74c6788a76efdc8edaf3c29bfa2e0018e35dd796a5fbd1254c6ff25acf40d8",
+      "3037-1716.webp": "f4a4d0e358033cca2c921ab3a95635b1a31b8b10e05871cb5e2e1d1dfab1c277"
+    },
+    "historical_sources": [
+      "https://nzhistory.govt.nz/edmund-hillary-and-tensing-norgay-reach-summit-of-everest",
+      "https://teara.govt.nz/en/interactive/28428/final-ascent-of-everest",
+      "https://www.himalayanclub.org/hj/18/1/everest-1953-1/",
+      "https://www.alpinejournal.org.uk/Contents/Contents_1954_files/AJ59%201954%20235-238%20Hillary%20Everest%20%284%29.pdf"
+    ],
+    "method": "bounded slope-cost route solver; 75 m nominal steps; named feature anchors approximate",
+    "caveat": "Synthetic terrain-following geometry. The exact 1953 trail, especially through the Icefall and upper ridge, is not reconstructed or claimed surveyed.",
+    "generated_at": "2026-10-10T05:20:07.471252+00:00",
+    "point_count": 204,
+    "stage_anchors": [
+      {
+        "name": "Base Camp",
+        "lat": 28.002,
+        "lon": 86.852
+      },
+      {
+        "name": "Khumbu Icefall",
+        "lat": 27.991,
+        "lon": 86.869
+      },
+      {
+        "name": "Western Cwm",
+        "lat": 27.98,
+        "lon": 86.898
+      },
+      {
+        "name": "Lhotse Face",
+        "lat": 27.965,
+        "lon": 86.922
+      },
+      {
+        "name": "South Col",
+        "lat": 27.971,
+        "lon": 86.929
+      },
+      {
+        "name": "Camp IX",
+        "lat": 27.982,
+        "lon": 86.931
+      },
+      {
+        "name": "South Summit",
+        "lat": 27.987,
+        "lon": 86.9265
+      },
+      {
+        "name": "Southeast Ridge",
+        "lat": 27.988,
+        "lon": 86.9258
+      },
+      {
+        "name": "Everest",
+        "lat": 27.9881,
+        "lon": 86.925
+      }
+    ],
+    "route_length_m": 14854.414231656992,
+    "straight_length_m": 7318.874339836795,
+    "max_step_m": 75.00543357030143
+  },
+  "points": [
+    {
+      "lat": 28.002,
+      "lon": 86.852,
+      "elevation_m": 5278.82,
+      "stage": "Base Camp",
+      "synthetic": true
+    },
+    {
+      "lat": 28.0021028,
+      "lon": 86.8527554,
+      "elevation_m": 5277.87,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 28.0016448,
+      "lon": 86.8533168,
+      "elevation_m": 5278.2,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 28.0012335,
+      "lon": 86.8539228,
+      "elevation_m": 5283.45,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 28.0008222,
+      "lon": 86.8545288,
+      "elevation_m": 5287.68,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 28.0004109,
+      "lon": 86.8551348,
+      "elevation_m": 5288.15,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 28.0006133,
+      "lon": 86.8558639,
+      "elevation_m": 5288.32,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 28.0002296,
+      "lon": 86.8564927,
+      "elevation_m": 5281.62,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9997135,
+      "lon": 86.8569852,
+      "elevation_m": 5292.87,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.999895,
+      "lon": 86.8577214,
+      "elevation_m": 5291.64,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9994454,
+      "lon": 86.8582914,
+      "elevation_m": 5286.03,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9989958,
+      "lon": 86.8588615,
+      "elevation_m": 5281.01,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9989163,
+      "lon": 86.8596205,
+      "elevation_m": 5280.24,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.99845,
+      "lon": 86.860173,
+      "elevation_m": 5271.8,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9977829,
+      "lon": 86.8600573,
+      "elevation_m": 5290.2,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.99795,
+      "lon": 86.8607978,
+      "elevation_m": 5312.49,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9972831,
+      "lon": 86.8606806,
+      "elevation_m": 5325.64,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9968444,
+      "lon": 86.8612615,
+      "elevation_m": 5358.91,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9964058,
+      "lon": 86.8618423,
+      "elevation_m": 5392.81,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9965167,
+      "lon": 86.8625962,
+      "elevation_m": 5428.95,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9958437,
+      "lon": 86.862539,
+      "elevation_m": 5459.5,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.995957,
+      "lon": 86.8632925,
+      "elevation_m": 5533.18,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9960214,
+      "lon": 86.8640533,
+      "elevation_m": 5590.92,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9960334,
+      "lon": 86.8648175,
+      "elevation_m": 5626.37,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9959895,
+      "lon": 86.8655802,
+      "elevation_m": 5637.48,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9958283,
+      "lon": 86.8663224,
+      "elevation_m": 5639.45,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9956661,
+      "lon": 86.8670643,
+      "elevation_m": 5669.57,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9950809,
+      "lon": 86.8666835,
+      "elevation_m": 5744.14,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9949248,
+      "lon": 86.8674271,
+      "elevation_m": 5818.83,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9946883,
+      "lon": 86.8681429,
+      "elevation_m": 5896.58,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9943673,
+      "lon": 86.8688152,
+      "elevation_m": 5931.6,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.993959,
+      "lon": 86.8694238,
+      "elevation_m": 5945.57,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9934638,
+      "lon": 86.869943,
+      "elevation_m": 5950.18,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9928873,
+      "lon": 86.8703404,
+      "elevation_m": 5952.31,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9922295,
+      "lon": 86.8705111,
+      "elevation_m": 5967.8,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9917722,
+      "lon": 86.869949,
+      "elevation_m": 5987.4,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9913148,
+      "lon": 86.869387,
+      "elevation_m": 6003.58,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.991,
+      "lon": 86.869,
+      "elevation_m": 6012.57,
+      "stage": "Khumbu Icefall",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9904593,
+      "lon": 86.8694573,
+      "elevation_m": 6012.72,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9899614,
+      "lon": 86.8699733,
+      "elevation_m": 6011.93,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9894685,
+      "lon": 86.8704953,
+      "elevation_m": 6010.69,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9891179,
+      "lon": 86.8711483,
+      "elevation_m": 6010.09,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9889887,
+      "lon": 86.8718985,
+      "elevation_m": 6012.24,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9889146,
+      "lon": 86.8726581,
+      "elevation_m": 6012.43,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9887205,
+      "lon": 86.8733901,
+      "elevation_m": 6015.09,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9884691,
+      "lon": 86.8740994,
+      "elevation_m": 6021.92,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9882178,
+      "lon": 86.8748086,
+      "elevation_m": 6027.19,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9879665,
+      "lon": 86.8755179,
+      "elevation_m": 6030.15,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9877152,
+      "lon": 86.8762272,
+      "elevation_m": 6033.18,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9874638,
+      "lon": 86.8769365,
+      "elevation_m": 6038.07,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9872125,
+      "lon": 86.8776458,
+      "elevation_m": 6042.88,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9869612,
+      "lon": 86.878355,
+      "elevation_m": 6052.78,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9867099,
+      "lon": 86.8790643,
+      "elevation_m": 6060.93,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9868054,
+      "lon": 86.8798209,
+      "elevation_m": 6067.56,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.986542,
+      "lon": 86.8805245,
+      "elevation_m": 6078.33,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9865659,
+      "lon": 86.8812883,
+      "elevation_m": 6090.42,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9869136,
+      "lon": 86.8819433,
+      "elevation_m": 6100.01,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9866178,
+      "lon": 86.8826302,
+      "elevation_m": 6123.7,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9859513,
+      "lon": 86.8827499,
+      "elevation_m": 6135.64,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9856785,
+      "lon": 86.8834489,
+      "elevation_m": 6163.69,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9850303,
+      "lon": 86.8836616,
+      "elevation_m": 6177.79,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9845394,
+      "lon": 86.884186,
+      "elevation_m": 6187.1,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.984304,
+      "lon": 86.8849023,
+      "elevation_m": 6192.72,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9840687,
+      "lon": 86.8856185,
+      "elevation_m": 6203.57,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9838333,
+      "lon": 86.8863348,
+      "elevation_m": 6216.7,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.983598,
+      "lon": 86.887051,
+      "elevation_m": 6227.48,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9833626,
+      "lon": 86.8877673,
+      "elevation_m": 6239.11,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9831272,
+      "lon": 86.8884835,
+      "elevation_m": 6253.33,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9827362,
+      "lon": 86.8891064,
+      "elevation_m": 6263.39,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9825142,
+      "lon": 86.889828,
+      "elevation_m": 6273.37,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9819065,
+      "lon": 86.8901606,
+      "elevation_m": 6274.79,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9816171,
+      "lon": 86.8908509,
+      "elevation_m": 6282.41,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9814496,
+      "lon": 86.8915912,
+      "elevation_m": 6292.52,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9812822,
+      "lon": 86.8923315,
+      "elevation_m": 6302.8,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9811147,
+      "lon": 86.8930718,
+      "elevation_m": 6313.34,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9809473,
+      "lon": 86.8938122,
+      "elevation_m": 6322.98,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9807235,
+      "lon": 86.8945331,
+      "elevation_m": 6332.46,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9805683,
+      "lon": 86.8952768,
+      "elevation_m": 6341.35,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9804131,
+      "lon": 86.8960206,
+      "elevation_m": 6351.03,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9802579,
+      "lon": 86.8967643,
+      "elevation_m": 6363.68,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9801027,
+      "lon": 86.897508,
+      "elevation_m": 6376.97,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.98,
+      "lon": 86.898,
+      "elevation_m": 6388.4,
+      "stage": "Western Cwm",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9796102,
+      "lon": 86.8986238,
+      "elevation_m": 6405.42,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.979091,
+      "lon": 86.8991121,
+      "elevation_m": 6418.07,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9786583,
+      "lon": 86.8996985,
+      "elevation_m": 6432.26,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9782269,
+      "lon": 86.9002862,
+      "elevation_m": 6442.62,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9778437,
+      "lon": 86.9009152,
+      "elevation_m": 6451.61,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9774605,
+      "lon": 86.9015443,
+      "elevation_m": 6458.07,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9770773,
+      "lon": 86.9021734,
+      "elevation_m": 6460.9,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9766942,
+      "lon": 86.9028024,
+      "elevation_m": 6464.48,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9768161,
+      "lon": 86.903554,
+      "elevation_m": 6467.86,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9770363,
+      "lon": 86.9042764,
+      "elevation_m": 6478.43,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9772386,
+      "lon": 86.9050054,
+      "elevation_m": 6495.84,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9774224,
+      "lon": 86.9057407,
+      "elevation_m": 6508.92,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9775872,
+      "lon": 86.9064817,
+      "elevation_m": 6516.2,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9777326,
+      "lon": 86.907228,
+      "elevation_m": 6518.37,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9776235,
+      "lon": 86.9079821,
+      "elevation_m": 6525.49,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9771417,
+      "lon": 86.9085172,
+      "elevation_m": 6551.88,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9764688,
+      "lon": 86.9085764,
+      "elevation_m": 6567.08,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.975862,
+      "lon": 86.9089108,
+      "elevation_m": 6573.74,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9753999,
+      "lon": 86.9094677,
+      "elevation_m": 6584.13,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9749377,
+      "lon": 86.9100246,
+      "elevation_m": 6604.15,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9745202,
+      "lon": 86.910625,
+      "elevation_m": 6626.59,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.974056,
+      "lon": 86.9111797,
+      "elevation_m": 6647.27,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9736363,
+      "lon": 86.911778,
+      "elevation_m": 6662.65,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9731698,
+      "lon": 86.9123302,
+      "elevation_m": 6677.74,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9725027,
+      "lon": 86.9122142,
+      "elevation_m": 6686.89,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9718362,
+      "lon": 86.9123343,
+      "elevation_m": 6687.95,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9711654,
+      "lon": 86.9124183,
+      "elevation_m": 6687.57,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9704907,
+      "lon": 86.912404,
+      "elevation_m": 6697.91,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9707442,
+      "lon": 86.9131121,
+      "elevation_m": 6714.38,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9700708,
+      "lon": 86.9131629,
+      "elevation_m": 6745.35,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.970268,
+      "lon": 86.9138936,
+      "elevation_m": 6775.07,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9695945,
+      "lon": 86.9139423,
+      "elevation_m": 6810.03,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9689249,
+      "lon": 86.9140375,
+      "elevation_m": 6827.89,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.968262,
+      "lon": 86.9141811,
+      "elevation_m": 6844.85,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9685442,
+      "lon": 86.9148753,
+      "elevation_m": 6885.11,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9678809,
+      "lon": 86.915016,
+      "elevation_m": 6919.87,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9672289,
+      "lon": 86.9152133,
+      "elevation_m": 6957.03,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9675623,
+      "lon": 86.9158777,
+      "elevation_m": 6992.4,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9669093,
+      "lon": 86.9160709,
+      "elevation_m": 7028.56,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9672464,
+      "lon": 86.9167328,
+      "elevation_m": 7067.06,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9665923,
+      "lon": 86.9169206,
+      "elevation_m": 7106.1,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9669344,
+      "lon": 86.9175792,
+      "elevation_m": 7135.43,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9662785,
+      "lon": 86.9177595,
+      "elevation_m": 7174.82,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9666277,
+      "lon": 86.9184134,
+      "elevation_m": 7210.25,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9659696,
+      "lon": 86.9185828,
+      "elevation_m": 7245.47,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9663291,
+      "lon": 86.9192294,
+      "elevation_m": 7284.5,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9656678,
+      "lon": 86.9193816,
+      "elevation_m": 7322.37,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9659939,
+      "lon": 86.9200506,
+      "elevation_m": 7358.97,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.965342,
+      "lon": 86.9202484,
+      "elevation_m": 7395.8,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9657049,
+      "lon": 86.9208926,
+      "elevation_m": 7423.5,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9650507,
+      "lon": 86.9210803,
+      "elevation_m": 7471.99,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9655784,
+      "lon": 86.9215567,
+      "elevation_m": 7480.88,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9649479,
+      "lon": 86.9212841,
+      "elevation_m": 7496.25,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9654658,
+      "lon": 86.9216991,
+      "elevation_m": 7498.92,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9649471,
+      "lon": 86.9218533,
+      "elevation_m": 7535.22,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.965,
+      "lon": 86.922,
+      "elevation_m": 7541.76,
+      "stage": "Lhotse Face",
+      "synthetic": true
+    },
+    {
+      "lat": 27.965547,
+      "lon": 86.9224476,
+      "elevation_m": 7541.3,
+      "stage": "South Col",
+      "synthetic": true
+    },
+    {
+      "lat": 27.966088,
+      "lon": 86.9229043,
+      "elevation_m": 7542.53,
+      "stage": "South Col",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9665429,
+      "lon": 86.9234687,
+      "elevation_m": 7544.05,
+      "stage": "South Col",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9670774,
+      "lon": 86.9239352,
+      "elevation_m": 7542.13,
+      "stage": "South Col",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9676037,
+      "lon": 86.9244135,
+      "elevation_m": 7544.37,
+      "stage": "South Col",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9682153,
+      "lon": 86.9247367,
+      "elevation_m": 7547.46,
+      "stage": "South Col",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9688552,
+      "lon": 86.9249793,
+      "elevation_m": 7549.46,
+      "stage": "South Col",
+      "synthetic": true
+    },
+    {
+      "lat": 27.969522,
+      "lon": 86.9250971,
+      "elevation_m": 7553.03,
+      "stage": "South Col",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9701681,
+      "lon": 86.9253179,
+      "elevation_m": 7600.66,
+      "stage": "South Col",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9697748,
+      "lon": 86.9259388,
+      "elevation_m": 7622.46,
+      "stage": "South Col",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9694829,
+      "lon": 86.9266278,
+      "elevation_m": 7658.69,
+      "stage": "South Col",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9701561,
+      "lon": 86.9266823,
+      "elevation_m": 7679.79,
+      "stage": "South Col",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9698968,
+      "lon": 86.9273878,
+      "elevation_m": 7695.89,
+      "stage": "South Col",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9705663,
+      "lon": 86.927484,
+      "elevation_m": 7734.64,
+      "stage": "South Col",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9703129,
+      "lon": 86.9281922,
+      "elevation_m": 7772.18,
+      "stage": "South Col",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9704176,
+      "lon": 86.9289471,
+      "elevation_m": 7826.67,
+      "stage": "South Col",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9709809,
+      "lon": 86.9287713,
+      "elevation_m": 7853.14,
+      "stage": "South Col",
+      "synthetic": true
+    },
+    {
+      "lat": 27.971,
+      "lon": 86.929,
+      "elevation_m": 7865.31,
+      "stage": "South Col",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9716491,
+      "lon": 86.9287909,
+      "elevation_m": 7866.57,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9722805,
+      "lon": 86.9290607,
+      "elevation_m": 7866.75,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.972618,
+      "lon": 86.9297224,
+      "elevation_m": 7862.94,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9730349,
+      "lon": 86.9303234,
+      "elevation_m": 7861.32,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9734333,
+      "lon": 86.9309402,
+      "elevation_m": 7857.63,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9740157,
+      "lon": 86.9313263,
+      "elevation_m": 7857.06,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9746411,
+      "lon": 86.9310392,
+      "elevation_m": 7857.42,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9750725,
+      "lon": 86.9304515,
+      "elevation_m": 7858.57,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9754692,
+      "lon": 86.9310698,
+      "elevation_m": 7877.96,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9761349,
+      "lon": 86.9311954,
+      "elevation_m": 7884.19,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9768094,
+      "lon": 86.9311729,
+      "elevation_m": 7892.48,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9774501,
+      "lon": 86.931413,
+      "elevation_m": 7913.7,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9779239,
+      "lon": 86.9319573,
+      "elevation_m": 7931.19,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9784536,
+      "lon": 86.9324307,
+      "elevation_m": 7946.37,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9790358,
+      "lon": 86.9328173,
+      "elevation_m": 7959.95,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9796634,
+      "lon": 86.9330983,
+      "elevation_m": 7958.12,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9803338,
+      "lon": 86.9331859,
+      "elevation_m": 7956.64,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9810086,
+      "lon": 86.9331966,
+      "elevation_m": 7980.87,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9816507,
+      "lon": 86.9329613,
+      "elevation_m": 8016.38,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9822128,
+      "lon": 86.9325384,
+      "elevation_m": 8059.86,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9817042,
+      "lon": 86.9320361,
+      "elevation_m": 8097.01,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9822426,
+      "lon": 86.9315752,
+      "elevation_m": 8151.01,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9816873,
+      "lon": 86.9314703,
+      "elevation_m": 8152.81,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9822069,
+      "lon": 86.9314906,
+      "elevation_m": 8159.63,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.982,
+      "lon": 86.931,
+      "elevation_m": 8198.63,
+      "stage": "Camp IX",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9826705,
+      "lon": 86.9310868,
+      "elevation_m": 8199.06,
+      "stage": "South Summit",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9833405,
+      "lon": 86.9311787,
+      "elevation_m": 8205.75,
+      "stage": "South Summit",
+      "synthetic": true
+    },
+    {
+      "lat": 27.984008,
+      "lon": 86.9310662,
+      "elevation_m": 8205.62,
+      "stage": "South Summit",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9846483,
+      "lon": 86.9308247,
+      "elevation_m": 8205.59,
+      "stage": "South Summit",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9852678,
+      "lon": 86.9305215,
+      "elevation_m": 8207.24,
+      "stage": "South Summit",
+      "synthetic": true
+    },
+    {
+      "lat": 27.985858,
+      "lon": 86.930151,
+      "elevation_m": 8205.97,
+      "stage": "South Summit",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9864902,
+      "lon": 86.9298834,
+      "elevation_m": 8212.48,
+      "stage": "South Summit",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9870728,
+      "lon": 86.9294976,
+      "elevation_m": 8260.14,
+      "stage": "South Summit",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9875776,
+      "lon": 86.9289905,
+      "elevation_m": 8312.59,
+      "stage": "South Summit",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9869949,
+      "lon": 86.9286051,
+      "elevation_m": 8363.68,
+      "stage": "South Summit",
+      "synthetic": true
+    },
+    {
+      "lat": 27.986519,
+      "lon": 86.9280632,
+      "elevation_m": 8406.95,
+      "stage": "South Summit",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9870987,
+      "lon": 86.927672,
+      "elevation_m": 8449.95,
+      "stage": "South Summit",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9866609,
+      "lon": 86.9270904,
+      "elevation_m": 8486.77,
+      "stage": "South Summit",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9871579,
+      "lon": 86.9266669,
+      "elevation_m": 8523.55,
+      "stage": "South Summit",
+      "synthetic": true
+    },
+    {
+      "lat": 27.987,
+      "lon": 86.9265,
+      "elevation_m": 8535.26,
+      "stage": "South Summit",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9876738,
+      "lon": 86.9265437,
+      "elevation_m": 8537.95,
+      "stage": "Southeast Ridge",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9873509,
+      "lon": 86.9258726,
+      "elevation_m": 8586.4,
+      "stage": "Southeast Ridge",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9879194,
+      "lon": 86.9262348,
+      "elevation_m": 8591.1,
+      "stage": "Southeast Ridge",
+      "synthetic": true
+    },
+    {
+      "lat": 27.988,
+      "lon": 86.9258,
+      "elevation_m": 8652.1,
+      "stage": "Southeast Ridge",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9875069,
+      "lon": 86.9252782,
+      "elevation_m": 8662.15,
+      "stage": "Everest",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9880483,
+      "lon": 86.9256688,
+      "elevation_m": 8670.02,
+      "stage": "Everest",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9875942,
+      "lon": 86.9252373,
+      "elevation_m": 8670.82,
+      "stage": "Everest",
+      "synthetic": true
+    },
+    {
+      "lat": 27.9881,
+      "lon": 86.925,
+      "elevation_m": 8713.34,
+      "stage": "Everest",
+      "synthetic": true
+    }
+  ]
+}

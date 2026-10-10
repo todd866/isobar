@@ -1,3 +1,4 @@
+import { visibleTerrainBounds, type TiltCamera } from './tilt-camera';
 import { mapProject, mapUnproject } from './lambert';
 import { project, unproject, type Camera, type Lambert } from './lambert';
 import { INK } from './field-color';
@@ -372,6 +373,8 @@ function strokeRingCacheEntry(lon: ArrayLike<number>, lat: ArrayLike<number>, cl
  * test, so crossing chunks and source indices remain intact. */
 function computeSurfaceStrokeBounds(camera: Camera, width: number, height: number, padding: number): { west: number; east: number; south: number; north: number } | null {
   if (!camera.surface || width <= 0 || height <= 0) return null;
+  const tilt=(camera as Camera & {tiltCamera?:TiltCamera}).tiltCamera;
+  const fallback=()=>tilt?visibleTerrainBounds(tilt):null;
   const samples: { lat: number; lon: number }[] = [];
   const steps = 32;
   const boundary: [number, number][] = [];
@@ -381,7 +384,7 @@ function computeSurfaceStrokeBounds(camera: Camera, width: number, height: numbe
   for (let i = steps - 1; i > 0; i -= 1) boundary.push([-1, (i / steps) * 2 - 1]);
   for (const [x, y] of boundary) {
     const point = camera.surface.unproject(x, y);
-    if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lon) || Math.abs(point.lat) >= 88.5) return null;
+    if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lon) || Math.abs(point.lat) >= 88.5) return fallback();
     samples.push(point);
   }
   if (!samples.length) return null;
@@ -392,7 +395,7 @@ function computeSurfaceStrokeBounds(camera: Camera, width: number, height: numbe
     unwrapped.push(lon);
   }
   const west = Math.min(...unwrapped), east = Math.max(...unwrapped);
-  if (!(east >= west) || east - west >= 180) return null;
+  if (!(east >= west) || east - west >= 180) return fallback();
   const south = Math.min(...samples.map((point) => point.lat));
   const north = Math.max(...samples.map((point) => point.lat));
   const padLon = Math.max(0.25, 2 * padding * camera.halfWidth / width);
@@ -431,10 +434,18 @@ export function projectedStrokePaths(geo: Lambert, camera: Camera, width: number
   const copies: { points: (Point | null)[]; closed: boolean }[] = [];
   for (let copy = lo; copy <= hi && copy < lo + 3; copy += 1) {
     const shift = copy * 360;
+    let first=0;
+    while(first<cache.chunks.length){
+      const c=cache.chunks[first];
+      if(!(c.east+shift<west||c.west+shift>east||c.north<south||c.south>north))break;
+      first++;
+    }
+    if(first===cache.chunks.length)continue;
     const points: (Point | null)[] = new Array(lon.length).fill(null);
     let visible = false;
-    for (const chunk of cache.chunks) {
-      if (chunk.east + shift < west || chunk.west + shift > east || chunk.north < south || chunk.south > north) continue;
+    for (let c=first;c<cache.chunks.length;c++) {
+      const chunk=cache.chunks[c];
+      if(chunk.east+shift<west||chunk.west+shift>east||chunk.north<south||chunk.south>north)continue;
       visible = true;
       for (let k = chunk.start - 1; k <= chunk.end; k += 1) {
         if (!closed && (k < 0 || k >= lon.length)) continue;
@@ -633,7 +644,10 @@ function drawGraticule(
 
 /** Lat/lon window of the camera, padded so a curved Lambert edge still draws. */
 function borderWindow(lambert: Lambert, camera: Camera): { south: number; north: number; west: number; east: number } | null {
-  if (camera.surface) return { south: -90, north: 90, west: -180, east: 180 };
+  if (camera.surface) {
+    const tilt=(camera as Camera & {tiltCamera?:TiltCamera}).tiltCamera;
+    return (tilt?visibleTerrainBounds(tilt):null) ?? {south:-90,north:90,west:-180,east:180};
+  }
   if (lambert.projection === 'equirectangular') {
     const halfLon = camera.halfWidth / lambert.F;
     const centre = lambert.lon0 + camera.centerX / lambert.F;
@@ -804,7 +818,7 @@ export function drawOverlay(
   ctx.clearRect(0, 0, width, height);
   const screen = (lon: number, lat: number) => toScreen(lambert, camera, width, height, lon, lat);
   const span = latitudeSpan(lambert, camera);
-  const coastWindow = !camera.surface ? borderWindow(lambert, camera) : null;
+  const coastWindow = camera.surface ? surfaceStrokeBounds(camera,width,height,4) : borderWindow(lambert, camera);
   const coastRings = coastWindow ? borderRingsInView(coast.rings, coastWindow) : coast.rings;
   const waterBox = water ? viewGeoBox(lambert, camera) : null;
   const lakes = water && waterBox ? lakesInView(water, waterBox, span) : [];

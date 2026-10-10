@@ -132,6 +132,9 @@ NSString *GPUMapMenuTitle(NSString *title, BOOL classicOnly, BOOL note);
 - (void)recenter;
 - (void)animateGlobeTo:(double)target reducedMotion:(BOOL)reduced;
 - (BOOL)handleGlobeKey:(NSString *)characters repeat:(BOOL)repeat;
+// Keyboard navigation is active only while the view is explicitly in 3D.
+// Modifiers remain available to AppKit and text controls.
+- (BOOL)handle3DKeyEvent:(NSEvent *)event;
 // Morphs the globe and redraws. Does not change `fractionalStep` unless a
 // playing timeline is attached, in which case `displayAtTime:` samples it first.
 - (void)advanceDisplay:(double)dt;

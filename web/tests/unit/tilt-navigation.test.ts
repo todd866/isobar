@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { frameData, type Camera } from '../../src/lib/camera';
 import { globalEquirectangular, mapUnproject } from '../../src/lib/lambert';
-import { anchorTilt, MAX_TILT, withTilt, zoomTilt } from '../../src/lib/tilt-navigation';
+import { TiltFraming, liftCamera, terrainEye, anchorTilt, MAX_TILT, withTilt, zoomTilt } from '../../src/lib/tilt-navigation';
 
 const GEO = globalEquirectangular();
 const BOX = { west: -180, east: 180, south: -90, north: 90 };
@@ -66,4 +66,41 @@ describe('tilt navigation', () => {
     expect(flatHit.lat).toBeCloseTo(tilted.centerY + 0.16 * tilted.halfHeight, 6);
     expect(flatHit.lon).toBeCloseTo(tilted.centerX - 0.22 * tilted.halfWidth, 6);
   });
+});
+
+
+it('rises vertically rather than dollying along the view, and cannot descend through the focus',()=>{
+  const camera={centerX:86.925,centerY:27.9881,halfHeight:.04,halfWidth:.064,bearingRadians:1.1};
+  const before=withTilt(GEO,camera,1,null,true).tiltCamera!;
+  const raised=liftCamera(camera,1,250);
+  const after=withTilt(GEO,raised.camera,raised.pitch,null,true).tiltCamera!;
+  expect(after.geometry.cameraPositionM[0]).toBeCloseTo(before.geometry.cameraPositionM[0],6);
+  expect(after.geometry.cameraPositionM[1]).toBeCloseTo(before.geometry.cameraPositionM[1],6);
+  expect(after.geometry.cameraPositionM[2]-before.geometry.cameraPositionM[2]).toBeCloseTo(250,6);
+  const lowered=liftCamera(camera,1,-1e6);
+  expect(lowered.pitch).toBeLessThanOrEqual(MAX_TILT);
+  expect(terrainEye(withTilt(GEO,lowered.camera,lowered.pitch).tiltCamera!).heightM).toBeGreaterThan(0);
+});
+
+it('retains heading through terrain sampling, pinching and pan picking',()=>{
+  const camera={centerX:86.925,centerY:27.9881,halfHeight:.04,halfWidth:.064,bearingRadians:1.1};
+  const p=point(camera,1,.2,-.2)!;
+  const next=zoomTilt(GEO,camera,1,.2,-.2,.75,FRAME);
+  const q=point(next,1,.2,-.2)!;
+  expect(q.lat).toBeCloseTo(p.lat,4);expect(q.lon).toBeCloseTo(p.lon,4);
+  expect(next.bearingRadians).toBe(camera.bearingRadians);
+  const eye=terrainEye(withTilt(GEO,camera,1).tiltCamera!);
+  expect(eye.lon).toBeLessThan(camera.centerX);
+});
+
+
+it('does not jump when a look follows vertical eye movement',()=>{
+  const framing=new TiltFraming();
+  const base={centerX:0,centerY:0,halfHeight:1,halfWidth:1.6};
+  const tilted=framing.apply(base,0,.8);
+  const lifted=liftCamera(tilted,.8,1000);
+  framing.synchronize(lifted.camera,lifted.pitch);
+  expect(framing.apply(lifted.camera,lifted.pitch,lifted.pitch).halfHeight).toBeCloseTo(lifted.camera.halfHeight,10);
+  const changed=framing.apply(lifted.camera,lifted.pitch,lifted.pitch+.001);
+  expect(Math.abs(changed.halfHeight-lifted.camera.halfHeight)).toBeLessThan(.001);
 });

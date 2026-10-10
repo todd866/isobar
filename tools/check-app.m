@@ -1069,9 +1069,9 @@ static int CheckPopoverMap(AcceptanceController *c, NSString *store) {
             [window sendEvent:Scroll(window, loc, NSEventPhaseChanged, -36)];
             [window sendEvent:Scroll(window, loc, NSEventPhaseEnded, 0)];
             IsobarCamera tilted = gpu.camera;
-            if (!(tilted.pitch > cam.pitch + .05) || fabs(tilted.zoom - cam.zoom) > 1e-8 ||
+            if (!(tilted.pitch > cam.pitch + .05) || !(tilted.zoom > cam.zoom) ||
                 fabs(tilted.centreLat - cam.centreLat) > 1e-8 || fabs(tilted.centreLon - cam.centreLon) > 1e-8)
-                POPFAIL("two-finger scroll tilts in selected 3D while retaining focus and scale");
+                POPFAIL("two-finger scroll tilts and frames the atmosphere while retaining geographic focus");
             if (fabs([[c selectedForecastDate] timeIntervalSinceDate:scrubbed]) > 1)
                 POPFAIL("tilt preserves forecast time");
             [gpu frameAustralia];

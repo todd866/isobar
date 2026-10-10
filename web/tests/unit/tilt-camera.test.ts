@@ -1,3 +1,4 @@
+import {visibleTerrainBounds} from '../../src/lib/tilt-camera';
 import { describe, expect, it } from 'vitest';
 import { createTiltCamera, forwardProject, inverseAtAltitude, inverseUnproject, EARTH_RADIUS_M, TILT_CAMERA_GLSL } from '../../src/lib/tilt-camera';
 
@@ -90,4 +91,47 @@ describe('tilt camera', () => {
     expect(TILT_CAMERA_GLSL).toContain('variableGeo');
     expect(TILT_CAMERA_GLSL).toContain('6371000.0');
   });
+});
+
+it('keeps the eye above an 8 km focus through tilt and aspect changes',()=>{
+  for(const aspect of [.5,1.8,4.5])for(const tiltRadians of [.1,.7,1.2]){
+    const c=createTiltCamera({lat:27.9881,lon:86.925,halfHeightDeg:.015,aspect,tiltRadians,targetElevationM:8000});
+    expect(c.geometry.cameraPositionM[2]).toBeGreaterThan(8000);
+    const p=forwardProject(c,c.lat,c.lon,8000)!;
+    expect(p.x).toBeCloseTo(0,7);expect(p.y).toBeCloseTo(0,7);
+    const back=inverseAtAltitude(c,p.x,p.y,8000)!;
+    expect(back.lat).toBeCloseTo(c.lat,5);expect(back.lon).toBeCloseTo(c.lon,5);
+  }
+});
+
+it('orbits around a fixed terrain focus with matching picking at every bearing', () => {
+  for (const bearingRadians of [-Math.PI, -.8, 0, Math.PI / 2, 2.7]) {
+    for (const tiltRadians of [0, .1, .8, 1.2]) {
+      const c = createTiltCamera({ lat: 27.9881, lon: 86.925, halfHeightDeg: .08, aspect: 1.7, tiltRadians, bearingRadians, targetElevationM: 8000 });
+      const focus = forwardProject(c, c.lat, c.lon, 8000)!;
+      expect(focus.x).toBeCloseTo(0, 7);
+      expect(focus.y).toBeCloseTo(0, 7);
+      for (const [lat, lon] of [[27.98, 86.93], [28.01, 86.9]]) {
+        const p = forwardProject(c, lat, lon, 8100)!;
+        expect(p.visible).toBe(true);
+        const back = inverseAtAltitude(c, p.x, p.y, 8100)!;
+        expect(back.lat).toBeCloseTo(lat, 5);
+        expect(back.lon).toBeCloseTo(lon, 5);
+      }
+    }
+  }
+});
+
+it('terrain cap includes visible elevated points across bearing, dateline and poles',()=>{
+  for(const lat0 of [-85,-32,28,85])for(const lon0 of [116,179])for(const pitch of [.2,.7,1.3])for(const bearing of [0,1.7]){
+    const c=createTiltCamera({lat:lat0,lon:lon0,halfHeightDeg:.3,aspect:1.5,tiltRadians:pitch,bearingRadians:bearing,targetElevationM:8000});
+    const bounds=visibleTerrainBounds(c)!;expect(bounds).toBeTruthy();
+    for(let lat=-90;lat<=90;lat+=3)for(let lon=-180;lon<180;lon+=3){
+      const p=forwardProject(c,lat,lon,12000)!;
+      if(!p.visible)continue;
+      const x=lon+360*Math.round(((bounds.west+bounds.east)/2-lon)/360);
+      expect(lat).toBeGreaterThanOrEqual(bounds.south-1e-6);expect(lat).toBeLessThanOrEqual(bounds.north+1e-6);
+      expect(x).toBeGreaterThanOrEqual(bounds.west-1e-6);expect(x).toBeLessThanOrEqual(bounds.east+1e-6);
+    }
+  }
 });

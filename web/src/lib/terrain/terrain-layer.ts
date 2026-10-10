@@ -4,6 +4,8 @@
  * here decodes or composites; the main thread only plans and uploads.
  */
 import { mapUnproject, unproject, type Camera, type Lambert } from '../lambert';
+import { inverseUnproject } from '../tilt-camera';
+import type { TiltedCamera } from '../tilt-navigation';
 import type { SectionSample } from '../point/terrain-section';
 import { boxContains, planMosaic, reliefStrength, MERCATOR_LIMIT, type GeoBox, type TerrainPlan } from './terrarium';
 
@@ -37,12 +39,16 @@ export function viewGeoBox(geo: Lambert, camera: Camera): GeoBox | null {
   for (let k = 0; k <= steps; k += 1) {
     const t = (k / steps) * 2 - 1;
     for (const [cx, cy] of [[t, -1], [t, 1], [-1, t], [1, t]]) {
-      const point = mapUnproject(geo, camera, cx, cy);
-      if (!point) continue;
-      west = Math.min(west, point.lon);
-      east = Math.max(east, point.lon);
-      south = Math.min(south, point.lat);
-      north = Math.max(north, point.lat);
+      // The GPU starts its DEM iteration on the sea-level shell. Keep those
+      // seed points covered too, even after the refined terrain footprint shrinks.
+      const tilted = (camera as TiltedCamera).tiltCamera;
+      for (const point of [mapUnproject(geo, camera, cx, cy), tilted ? inverseUnproject(tilted, cx, cy) : null]) {
+        if (!point) continue;
+        west = Math.min(west, point.lon);
+        east = Math.max(east, point.lon);
+        south = Math.min(south, point.lat);
+        north = Math.max(north, point.lat);
+      }
     }
   }
   if (!Number.isFinite(west) || !(east > west) || !(north > south)) return null;
@@ -94,7 +100,10 @@ export function createTerrainLayer(onMosaic: (mosaic: TerrainMosaic) => void, op
       if (!(view.north > view.south)) return strength;
       // About one texel per CSS pixel, a little finer on a dense display.
       const density = Math.min(1.5, Math.max(1, dpr));
-      const pxPerDegree = (cssWidth * density) / (view.east - view.west);
+      const footprintDensity = (cssWidth * density) / (view.east - view.west);
+      // A high mountain's distant ray footprint must not decide the detail at
+      // the inspected foreground. Spend the existing tile/texel budget there.
+      const pxPerDegree = terrainDetailDensity(geo, camera, footprintDensity, cssWidth * density);
       const phone = cssWidth < 700;
       const plan = planMosaic(view, pxPerDegree, phone ? 1_500_000 : 6_000_000);
       const stale = !requested
@@ -136,4 +145,9 @@ export function createTerrainLayer(onMosaic: (mosaic: TerrainMosaic) => void, op
       worker.terminate();
     },
   };
+}
+
+export function terrainDetailDensity(geo:Lambert,camera:Camera,footprintDensity:number,pixels:number):number {
+  if(!camera.surface||geo.projection!=='equirectangular'||camera.halfHeight>=.3)return footprintDensity;
+  return Math.max(footprintDensity,Math.min(footprintDensity*4,pixels/(2*camera.halfWidth/geo.F)));
 }

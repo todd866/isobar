@@ -485,6 +485,7 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
     BOOL _userMoved;
     BOOL _threeDMode;
     double _last3DGlobe;
+    double _last3DBearing;
     double _fitW, _fitH;
     CAMetalLayer *_metal;
     NSUInteger _presentedCount;
@@ -525,6 +526,8 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
 }
 
 static const NSUInteger kGPUSyncContourCells = 160000;
+static const double kKeyboardYawStep = 3.0 * M_PI / 180.0;
+static const double kKeyboardArrowTiltStep = 3.0 * M_PI / 180.0;
 
 static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     NSUInteger n = (NSUInteger)grid.nLon * (NSUInteger)grid.nLat;
@@ -568,6 +571,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _camera = MapCameraMake(-33.87, 151.21, kGPUZoom, 0, 640, 480);
     _threeDMode = NO;
     _last3DGlobe = 1.0;
+    _last3DBearing = 0;
     _metal = [CAMetalLayer layer];
     _metal.device = device;
     _metal.pixelFormat = MTLPixelFormatBGRA8Unorm;
@@ -1517,6 +1521,72 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     return YES;
 }
 
+- (void)commitKeyboardCamera:(IsobarCamera)camera {
+    _morphing = NO;
+    _camera = IsobarCameraClamp(camera);
+    self.didPlaceCamera = YES;
+    [self noteUserMoved];
+    [self syncViewport];
+    [self syncSlider];
+    [self syncModeControls];
+    [self placeMarker];
+    if (self.onCameraChanged) self.onCameraChanged(_camera);
+}
+
+- (void)moveGroundByForward:(double)forward right:(double)right {
+    if (!_threeDMode || !isfinite(forward) || !isfinite(right)) return;
+    double zoom = fmax(1.0, _camera.zoom);
+    double step = fmin(10.0, 6.0 / zoom);
+    double bearing = _camera.bearing;
+    double east = sin(bearing) * forward + cos(bearing) * right;
+    double north = cos(bearing) * forward - sin(bearing) * right;
+    double lat = _camera.centreLat + north * step;
+    double c = cos(lat * M_PI / 180.0);
+    if (fabs(c) < 1e-5) c = c < 0 ? -1e-5 : 1e-5;
+    IsobarCamera next = _camera;
+    next.centreLat = lat;
+    next.centreLon = MapWrap180(_camera.centreLon + east * step / c);
+    [self commitKeyboardCamera:next];
+}
+
+- (void)stepBearingBy:(double)delta {
+    if (!_threeDMode || !isfinite(delta)) return;
+    IsobarCamera next = _camera;
+    if (next.pitch <= 1e-7) next.pitch = kKeyboardArrowTiltStep;
+    next.globe = MIN(1.0, MAX(0.0, next.pitch / kFullTiltPitch));
+    next.bearing += delta;
+    [self commitKeyboardCamera:next];
+}
+
+- (void)stepEyeHeightBy:(double)delta {
+    if (!_threeDMode || !isfinite(delta)) return;
+    IsobarCamera next = _camera;
+    if (!MapCameraAdjustEyeHeight(&next, delta)) return;
+    [self commitKeyboardCamera:next];
+}
+
+- (BOOL)handle3DKeyEvent:(NSEvent *)event {
+    if (!_threeDMode || !event) return NO;
+    NSEventModifierFlags mods = event.modifierFlags & (NSEventModifierFlagCommand |
+        NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagShift);
+    if (mods != 0) return NO;
+    switch (event.keyCode) {
+        case 123: [self stepBearingBy:-kKeyboardYawStep]; return YES;
+        case 124: [self stepBearingBy:kKeyboardYawStep]; return YES;
+        case 125: [self stepTiltBy:-kKeyboardArrowTiltStep]; return YES;
+        case 126: [self stepTiltBy:kKeyboardArrowTiltStep]; return YES;
+        default: break;
+    }
+    NSString *ch = event.charactersIgnoringModifiers.lowercaseString ?: @"";
+    if ([ch isEqualToString:@"w"]) { [self moveGroundByForward:1 right:0]; return YES; }
+    if ([ch isEqualToString:@"s"]) { [self moveGroundByForward:-1 right:0]; return YES; }
+    if ([ch isEqualToString:@"a"]) { [self moveGroundByForward:0 right:-1]; return YES; }
+    if ([ch isEqualToString:@"d"]) { [self moveGroundByForward:0 right:1]; return YES; }
+    if ([ch isEqualToString:@"e"]) { [self stepEyeHeightBy:0.1]; return YES; }
+    if ([ch isEqualToString:@"q"]) { [self stepEyeHeightBy:-0.1]; return YES; }
+    return NO;
+}
+
 - (void)goFlat:(id)sender {
     (void)sender;
     if (!_threeDMode) {
@@ -1533,7 +1603,9 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
         return;
     }
     _last3DGlobe = MIN(1.0, MAX(0.0, _camera.globe));
+    _last3DBearing = _camera.bearing;
     _threeDMode = NO;
+    _camera.bearing = 0;
     [self syncModeControls];
     [self animateGlobeTo:0 reducedMotion:[self reducedNow]];
 }
@@ -1545,6 +1617,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
         return;
     }
     _threeDMode = YES;
+    _camera.bearing = _last3DBearing;
     [self syncModeControls];
     [self animateGlobeTo:_last3DGlobe reducedMotion:[self reducedNow]];
 }
@@ -2371,6 +2444,7 @@ static const NSUInteger kHazardFrameCache = 24;
         if ([ch isEqualToString:@"="] || [ch isEqualToString:@"+"]) { [self zoomBy:1.25]; return; }
         if ([ch isEqualToString:@"-"] || [ch isEqualToString:@"_"]) { [self zoomBy:1.0 / 1.25]; return; }
     }
+    if ([self handle3DKeyEvent:event]) return;
     if (!event.isARepeat) {
         NSString *characters = event.charactersIgnoringModifiers ?: @"";
         if ([characters rangeOfString:[NSString stringWithFormat:@"%C", (unichar)NSPageUpFunctionKey]].location != NSNotFound) {

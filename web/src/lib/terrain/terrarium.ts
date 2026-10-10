@@ -176,8 +176,8 @@ const HALF_ONE = 0x3c00;
 /**
  * Reprojects Web Mercator tiles into an equirectangular lat/lon texture over
  * `box`. Each texel takes the tile at zoom z, or the nearest loaded ancestor
- * (up to `fallback` levels) while z is still arriving. A tile known to be
- * missing (404, offline) leaves its texels uncovered: flat tint, no relief.
+ * (up to `fallback` levels) while z is still arriving. Missing fine tiles retain a measured ancestor when one is available.
+ * If no level has data, texels remain uncovered: flat tint, no relief.
  */
 export function compositeMosaic(box: GeoBox, width: number, height: number, z: number, lookup: TileLookup, fallback = 4): Mosaic {
   const table = halfTableLookup();
@@ -215,7 +215,7 @@ export function compositeMosaic(box: GeoBox, width: number, height: number, z: n
         for (let level = 0; level <= fallback && z - level >= 0; level += 1) {
           memoTile = lookup(z - level, tx, tyy);
           memoLevel = level;
-          if (memoTile !== undefined) break;
+          if (memoTile) break;
           tx >>= 1;
           tyy >>= 1;
         }

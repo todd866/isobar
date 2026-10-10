@@ -57,6 +57,12 @@ describe('3D stroke chunk culling', () => {
     }
   });
 
+  it('rejects remote coastlines even when a real close camera sees the horizon', () => {
+    const tilted=withTilt(geo,{centerX:116,centerY:-32,halfWidth:.2,halfHeight:.1,bearingRadians:1},1.2);
+    const lon=Float64Array.from({length:257},(_,i)=>i/100),lat=new Float64Array(257);
+    expect(projectedStrokePaths(geo,tilted,1200,800,lon,lat,false)).toHaveLength(0);
+  });
+
   it('caches the expensive surface footprint by projection and viewport', () => {
     let calls = 0;
     const s = surface((x, y) => { calls += 1; return { lat: y * 5, lon: x * 5 }; });

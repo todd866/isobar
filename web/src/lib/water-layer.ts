@@ -34,6 +34,13 @@ export interface WaterLayer {
   destroy(): void;
 }
 
+/** Keep the measured water raster while a gesture stays inside its margin.
+ * Rebuild before leaving coverage or changing detail by more than a quarter. */
+export function reuseWaterRaster(box:LonLatBox|null,view:LonLatBox,span:number,nextSpan:number):boolean {
+  return !!box&&span>0&&nextSpan/span>=.8&&nextSpan/span<=1.25&&closeWater(span)===closeWater(nextSpan)
+    &&view.west>=box.west&&view.east<=box.east&&view.south>=box.south&&view.north<=box.north;
+}
+
 export function createWaterLayer(water: Water, onRaster: (raster: WaterRaster) => void): WaterLayer {
   let worker: Worker | null = null;
   try {
@@ -47,6 +54,7 @@ export function createWaterLayer(water: Water, onRaster: (raster: WaterRaster) =
   let span = 0;
   let width = 2;
   let height = 2;
+  let viewportWidth=0,viewportHeight=0;
   let base: Uint8Array | null = null;
   let template: Promise<string> | null = null;
   const tiles = new Map<string, DecodedRing[]>();
@@ -103,20 +111,24 @@ export function createWaterLayer(water: Water, onRaster: (raster: WaterRaster) =
       const view = viewGeoBox(geo, camera);
       if (!view) return;
       const nextSpan = latitudeSpan(geo, camera);
-      const size = waterRasterSize(view, cssWidth, cssHeight);
+      if(viewportWidth===cssWidth&&viewportHeight===cssHeight&&reuseWaterRaster(box,view,span,nextSpan))return;
+      viewportWidth=cssWidth;viewportHeight=cssHeight;
+      const dx=(view.east-view.west)*.25,dy=(view.north-view.south)*.25;
+      const rasterView={west:view.west-dx,east:view.east+dx,south:Math.max(-90,view.south-dy),north:Math.min(90,view.north+dy)};
+      const size = waterRasterSize(rasterView, cssWidth*1.5, cssHeight*1.5);
       const nextKey = `${view.west.toFixed(3)}:${view.south.toFixed(3)}:${view.east.toFixed(3)}:${view.north.toFixed(3)}:${size.width}x${size.height}:${nextSpan.toFixed(2)}`;
       if (nextKey === key) return;
       id += 1; // Invalidate close-zoom replies even when the next view requests no tiles.
       key = nextKey;
-      box = view;
+      box = rasterView;
       span = nextSpan;
       width = size.width;
       height = size.height;
-      const lakes = lakesInView(water, view, nextSpan);
-      base = rasterRings(lakes, view, width, height);
+      const lakes = lakesInView(water, rasterView, nextSpan);
+      base = rasterRings(lakes, rasterView, width, height);
       if (!closeWater(nextSpan)) tiles.clear();
       publish();
-      requestTiles(view);
+      requestTiles(rasterView);
     },
     destroy() {
       id += 1;

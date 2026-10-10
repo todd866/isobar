@@ -32,6 +32,22 @@ describe('historical shared chart adapter', () => {
     fetcher.mockRestore();
   });
 
+  it('opens Everest on the summit date and honours another available day', async () => {
+    const frames = Array.from({length:48}, (_,i)=>({...weather.frames[i%24],time:`1953-05-${i<24?'28':'29'}T${String(i%24).padStart(2,'0')}:00Z`}));
+    const archive={...weather,event:{id:'everest-1953'},frames,times:frames.map(f=>f.time)};
+    const fetcher=vi.spyOn(globalThis,'fetch').mockImplementation(async input=>{
+      const url=String(input);
+      if(url.endsWith('/history/catalog.json'))return new Response(JSON.stringify({schema_version:1,collections:[{id:'everest-1953',title:'Everest',manifest:'/history/everest-test.json',days:['1953-05-28','1953-05-29'].map(date=>({date,complete:true}))}]}));
+      if(url.endsWith('/history/everest-test.json'))return new Response(JSON.stringify(archive));
+      if(url.endsWith('/history/world-coast.bin'))return new Response(new Uint8Array());
+      throw new Error(`Unexpected request ${url}`);
+    });
+    try {
+      expect((await loadHistoricalChart({event:'everest-1953'})).day.date).toBe('1953-05-29');
+      expect((await loadHistoricalChart({event:'everest-1953',date:'1953-05-28'})).day.date).toBe('1953-05-28');
+    } finally {fetcher.mockRestore();}
+  });
+
   it('rejects invalid hours and oversized archives', async () => {
     expect(() => historicalToChart({ ...weather, frames: Array.from({ length: 169 }, (_, index) => weather.frames[index % 24]!) }, { rings: [] })).toThrow('too many frames');
     await expect(loadHistoricalChart({ hour: 24 })).rejects.toThrow('0–23');

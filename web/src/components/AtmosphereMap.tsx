@@ -4,9 +4,14 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { buildAtmosphereProfile } from '@/lib/atmosphere-profile';
 import { syntheticAtmosphereProfile, syntheticAtmosphereVectors, drawAtmosphereFlow } from '@/lib/atmosphere-flow';
 import type { Camera, Lambert } from '@/lib/lambert';
+import { everestAtmosphere, drawEverestClouds, type EverestVector } from '@/lib/everest';
+import type { LoadedChart } from '@/lib/chart-store';
+import type { ElevationAt } from '@/lib/map-generalise';
 import styles from './AtmosphereMap.module.css';
 
-export function AtmosphereMap({ camera, geo, lat, lon, validMs, width, height, active }: {
+export function AtmosphereMap({ camera, geo, lat, lon, validMs, width, height, active, reconstruction, onInspection }: {
+  onInspection?: (strength:number)=>void;
+  reconstruction?: {chart: LoadedChart; elevation: ElevationAt | null};
   camera: Camera; geo: Lambert; lat: number; lon: number; validMs: number; width: number; height: number; active: boolean;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -14,13 +19,16 @@ export function AtmosphereMap({ camera, geo, lat, lon, validMs, width, height, a
   const [section, setSection] = useState(false);
   const [aircraftFt, setAircraftFt] = useState(5000);
   const selectedLat = Math.round(lat * 10) / 10, selectedLon = Math.round(lon * 10) / 10;
-  const vectorTime = Math.floor(validMs / 300000) * 300000;
-  const vectors = useMemo(() => syntheticAtmosphereVectors(lat, lon, camera.halfHeight, width / Math.max(1, height), vectorTime), [lat, lon, camera.halfHeight, width, height, vectorTime]);
-  const model = useMemo(() => syntheticAtmosphereProfile(selectedLat, selectedLon, validMs), [selectedLat, selectedLon, validMs]);
-  const profile = useMemo(() => buildAtmosphereProfile(model, validMs), [model, validMs]);
+  const vectorTime = Math.floor(validMs / (reconstruction?60000:300000)) * (reconstruction?60000:300000);
+  const reconstructed = useMemo(() => reconstruction ? everestAtmosphere(reconstruction.chart, vectorTime, reconstruction.elevation) : null, [reconstruction?.chart, reconstruction?.elevation, vectorTime]);
+  const vectors = useMemo(() => reconstructed ? reconstructed.vectors(lat, lon, camera.halfHeight, width / Math.max(1, height)) : syntheticAtmosphereVectors(lat, lon, camera.halfHeight, width / Math.max(1, height), vectorTime), [reconstructed, lat, lon, camera.halfHeight, width, height, vectorTime]);
+  const model = useMemo(() => reconstructed ? reconstructed.profile(lat, lon) : syntheticAtmosphereProfile(selectedLat, selectedLon, validMs), [reconstructed, lat, lon, selectedLat, selectedLon, validMs]);
+  const profile = useMemo(() => model ? buildAtmosphereProfile(model, validMs) : null, [model, validMs]);
   const ground = profile?.terrainM ?? null;
   const aircraftM = Math.max(aircraftFt * .3048, ground == null ? 0 : ground + 100);
   const ceiling = Math.max(12000, aircraftM + 500, ...(profile?.layers.map(l => l.topM + 500) ?? []));
+  const inspection=section&&active?Math.min(1,.35+Math.max(0,aircraftM-(ground??0))/2500):0;
+  useEffect(()=>{onInspection?.(inspection);return()=>onInspection?.(0);},[inspection,onInspection]);
   useEffect(() => {
     if (!section) return;
     const close = (e: KeyboardEvent) => { if (e.key === 'Escape') { setSection(false); sectionButton.current?.focus(); e.preventDefault(); } };
@@ -39,6 +47,7 @@ export function AtmosphereMap({ camera, geo, lat, lon, validMs, width, height, a
     const draw = (now: number) => {
       if (now - last >= 32) {
         last = now; ctx.clearRect(0, 0, width, height);
+        node.dataset.cloudPatches=String(active&&reconstructed?drawEverestClouds(ctx,vectors as EverestVector[],geo,camera,width,height,document.documentElement.classList.contains('dark')):0);
         const drawn = active ? drawAtmosphereFlow(ctx, vectors, geo, camera, width, height, now / 1000, document.documentElement.classList.contains('dark')) : {layers: 0, flows: 0};
         node.dataset.layers = String(drawn.layers); node.dataset.flows = String(drawn.flows);
       }
@@ -46,7 +55,7 @@ export function AtmosphereMap({ camera, geo, lat, lon, validMs, width, height, a
     };
     draw(performance.now());
     return () => cancelAnimationFrame(request);
-  }, [active, vectors, camera, geo, width, height]);
+  }, [active, reconstructed, vectors, camera, geo, width, height]);
   if (!active) return null;
   const y = (m: number) => 180 - m / ceiling * 168;
   const knownCloud = !!profile?.levels.some(l => l.cloudFractionPct != null);

@@ -160,6 +160,8 @@ export function WindArrow({ from, className }: { from: number | null; className?
 /* ---------- header ---------- */
 
 export function MapHeader({
+  leading,
+  historical = false,
   place,
   placeName,
   reading,
@@ -175,6 +177,8 @@ export function MapHeader({
   graticule,
   onGraticule,
 }: {
+  leading?: ReactNode;
+  historical?: boolean;
   /** The place search. One control, in this row. */
   place: ReactNode;
   placeName: string;
@@ -232,8 +236,9 @@ export function MapHeader({
   const forecastTitle = forecast ? readingTitle(forecast, forecast.valid) : 'Model 2 m temperature';
   return (
     <header ref={header} data-compact-wind={compactWind} className="map-header relative z-20 flex h-12 shrink-0 items-center gap-2 px-3 md:gap-3 md:px-4">
+      {leading}
       {place}
-      <span
+      {!historical ? <span
         className="map-reading flex min-w-0 items-center gap-1.5 whitespace-nowrap text-[15px] font-semibold tabular-nums"
         data-reading
         data-forecast-source={forecast?.source}
@@ -248,7 +253,7 @@ export function MapHeader({
           {wind ? <span aria-hidden="true"> · </span> : null}
           {validMs != null ? <ClockFace ms={validMs} zone={zone} zulu /> : '—'}
         </span>
-      </span>
+      </span> : null}
       <Link href="/train" data-learn-link className="map-header-learn ml-auto hidden h-9 shrink-0 items-center gap-1.5 rounded-md px-2 text-[15px] font-semibold text-[var(--md-on-surface)] hover:bg-[var(--md-surface-container-high)] md:flex">
         <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 9.5 12 5l9.5 4.5L12 14z" /><path d="M6.5 11.5v4.2c1.4 1.4 3.3 2.1 5.5 2.1s4.1-.7 5.5-2.1v-4.2M21.5 9.5v5" /></svg>
         Learn
@@ -383,11 +388,12 @@ export function DayTiles({
             type="button"
             role="listitem"
             aria-pressed={selected}
-            title={`${day.key}${rainTitle}${windTitle}${uvTitle}${day.protection ? ` · ${day.protection}` : ''}`}
+            title={`${day.key}${day.event?` · ${day.event.detail}`:''}${rainTitle}${windTitle}${uvTitle}${day.protection ? ` · ${day.protection}` : ''}`}
             onClick={() => onDay(day)}
             className={`flex min-w-0 flex-col items-center rounded-lg px-0.5 pt-1 pb-1.5 md:px-1 ${selected ? 'bg-[var(--md-primary-container)]/60' : 'hover:bg-[var(--md-surface-container-high)]'}`}
           >
             <span className="text-[13px] font-medium text-[var(--md-on-surface-variant)]">{today ? 'Today' : day.weekday}</span>
+            {day.historical ? <span className="day-values max-w-full px-1 py-2 text-[13px] font-medium"><span className="block truncate">{day.event?.title ?? '—'}</span></span> : <>
             <span className="day-sky flex max-w-full items-center justify-center gap-0.5">
               <SkyGlyph icon={day.icon} className="sky-glyph h-5 w-5 shrink-0 text-[var(--md-on-surface)]" />
               {uv ? <UvFigure index={uv.index} category={uv.category} protection={day.protection ?? null} /> : null}
@@ -421,6 +427,7 @@ export function DayTiles({
                 />
               ) : null}
             </span>
+            </>}
           </button>
         );
       })}
@@ -584,6 +591,8 @@ export function LensBar({
   traffic,
   onTraffic,
   flyEnabled = true,
+  availableLenses,
+  satelliteAvailable = true,
   section = false,
   onSection,
   sectionAvailable = false,
@@ -600,6 +609,8 @@ export function LensBar({
   onTraffic: (value: boolean) => void;
   /** False when no aerodrome report is within 50 km. */
   flyEnabled?: boolean;
+  availableLenses?: readonly Lens[];
+  satelliteAvailable?: boolean;
   section?: boolean;
   onSection?: () => void;
   sectionAvailable?: boolean;
@@ -646,7 +657,7 @@ export function LensBar({
     <>
     <nav ref={nav} aria-label="Map lens" className="flex h-12 min-w-0 flex-1 items-center gap-2" data-lens-bar>
       <div role="radiogroup" aria-label="Lens" className="flex min-w-0 flex-1 items-center rounded-lg bg-[var(--md-surface-container)] p-0.5 md:flex-none">
-        {items.map((item) => {
+        {items.filter(item => !availableLenses || availableLenses.includes(item.id)).map((item) => {
           const selected = lens === item.id;
           return (
             <button
@@ -681,7 +692,7 @@ export function LensBar({
           <BarbIcon className="h-5 w-5" />
         </button>
       ) : null}
-      {(['pressure', 'rain', 'temp'].includes(lens)) ? <button
+      {satelliteAvailable && (['pressure', 'rain', 'temp'].includes(lens)) ? <button
         type="button"
         aria-pressed={satellite}
         aria-label="Satellite"

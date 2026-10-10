@@ -31,6 +31,7 @@ export function pointCamera(geo: Lambert, camera: Camera, frame: DataFrame, poin
   const clipX = ((visible.left + visible.width / 2 - map.left) / map.width) * 2 - 1;
   const clipY = 1 - ((visible.top + visible.height / 2 - map.top) / map.height) * 2;
   const atScale = (scale: number): Camera => ({
+    ...camera,
     centerX: p.x - clipX * camera.halfWidth * scale,
     centerY: p.y - clipY * camera.halfHeight * scale,
     halfWidth: camera.halfWidth * scale, halfHeight: camera.halfHeight * scale,
@@ -58,6 +59,7 @@ export function reframeCamera(geo: Lambert, camera: Camera, old: DataFrame, next
   const scaleX = next.home.halfWidth / old.home.halfWidth;
   const scaleY = next.home.halfHeight / old.home.halfHeight;
   return clampToData(geo, {
+    ...camera,
     centerX: next.home.centerX + (camera.centerX - old.home.centerX) * scaleX,
     centerY: next.home.centerY + (camera.centerY - old.home.centerY) * scaleY,
     halfWidth: camera.halfWidth * scaleX,
@@ -79,5 +81,6 @@ export function cameraDuringMove(move: CameraMove, now: number): Camera {
   if (t === 1) return { ...move.to };
   const ease = move.ease === 'out' ? 1 - (1 - t) ** 3 : t * t * (3 - 2 * t);
   const mix = (key: 'centerX' | 'centerY' | 'halfWidth' | 'halfHeight') => move.from[key] + (move.to[key] - move.from[key]) * ease;
-  return { centerX: mix('centerX'), centerY: mix('centerY'), halfWidth: mix('halfWidth'), halfHeight: mix('halfHeight') };
+  const bearing = move.from.bearingRadians ?? 0, delta = (move.to.bearingRadians ?? 0) - bearing;
+  return { ...move.from, ...(move.from.bearingRadians !== undefined || move.to.bearingRadians !== undefined ? {bearingRadians: bearing + Math.atan2(Math.sin(delta), Math.cos(delta)) * ease} : {}), centerX: mix('centerX'), centerY: mix('centerY'), halfWidth: mix('halfWidth'), halfHeight: mix('halfHeight') };
 }
