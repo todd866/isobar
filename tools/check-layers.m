@@ -275,10 +275,14 @@ int main(int argc, const char **argv) {
                 [speedControl selectItem:item];
                 [NSApp sendAction:speedControl.action to:speedControl.target from:speedControl];
                 Check([c.testPreferences integerForKey:kPlaybackSpeedKey] == item.tag &&
-                    fabs([[c valueForKey:@"live"] hoursPerSecond]-item.tag/60.0)<1e-9,
-                    @"visible speed control updates playback and saves the multiplier");
+                    fabs([[c valueForKey:@"live"] hoursPerSecond]-(item.tag == 0 ? 1.0/3600.0 : item.tag/60.0))<1e-9,
+                    @"visible speed control applies and saves real time or forecast minutes per second");
             }
-            Check([multipliers isEqual:@[@1,@2,@4,@8,@16,@32,@64,@128,@256]],@"visible speed control has all nine rates");
+            Check([multipliers isEqual:@[@0,@1,@2,@4,@8,@16,@32,@64,@128,@256]],
+                @"visible speed control offers real time and all nine accelerated rates");
+            Check([[speedControl.menu itemWithTag:0].title isEqual:@"Real time"] &&
+                [[speedControl.menu itemWithTag:1].title isEqual:@"1 min/s"],
+                @"real time is distinct from one forecast minute per second");
             Check(!playheadBefore || [playheadBefore isEqual:[[c valueForKey:@"live"] playhead]],
                 @"changing visible speed preserves the playhead");
             Save(c.popover.contentViewController.view,output,@"speed-256-compact");
