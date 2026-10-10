@@ -1,0 +1,22 @@
+#!/bin/sh
+# Isobar guard: this is a PRIVATE development repo. Only *-private remotes may receive pushes.
+# Public releases go through ~/Projects/.isobar-public-release/<repo> (see AGENTS.md).
+case "$2" in
+  *todd866/isobar-private*)
+    root=$(git rev-parse --show-toplevel) || exit 1
+    while read -r local_ref local_sha remote_ref remote_sha; do
+      # Deleting a ref does not publish untested source.
+      [ "$local_sha" = 0000000000000000000000000000000000000000 ] && continue
+      case "$remote_ref" in
+        refs/heads/local-ci/native-*)
+          python3 "$root/tools/native-gate.py" verify-proof "$local_sha" || exit 1 ;;
+        refs/heads/*)
+          python3 "$root/tools/native-gate.py" verify "$local_sha" || exit 1 ;;
+      esac
+    done
+    exit 0 ;;
+  *todd866/isobar-data-private*) exit 0 ;;
+esac
+echo "isobar pre-push: refusing to push private history to '$2'." >&2
+echo "Only todd866/isobar-private or todd866/isobar-data-private are allowed. Publish via the reviewed public mirror." >&2
+exit 1
