@@ -1597,6 +1597,7 @@ static void CheckTimeLens(NSString *root) {
     TestController *controller = [TestController new];
     controller.availableSize = NSMakeSize(1440, 900);
     [controller replaceLocations:DefaultLocations()];
+    [controller useManualLiveClock]; // This scenario pins Now to its fixture date.
     [controller setChartNow:now];
     [controller reloadStoreAtPath:root];
     for (NSDictionary *place in DefaultLocations()) {
