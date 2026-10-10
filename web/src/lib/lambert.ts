@@ -96,6 +96,10 @@ export interface SurfaceProjection {
 }
 
 export interface Camera {
+  /** Atmospheric display only; terrain and physical samples retain their heights. */
+  atmosphereDisplay?: {baseM:number;scale:number};
+  /** Optional teaching-column focus above terrain; 2D ignores it. */
+  focusHeightM?: number;
   /** Optional geographic cut through terrain and every atmospheric level. */
   slice?: AtmosphereSlice;
   /** Transient render projection; never stored as navigation state. */

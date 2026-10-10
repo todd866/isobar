@@ -1058,7 +1058,7 @@ static int CheckPopoverMap(AcceptanceController *c, NSString *store) {
             cam = gpu.camera;
             IsobarCameraUnproject(cam, mid.x * scale, mid.y * scale, &lat, &lon);
             [window sendEvent:Scroll(window, loc, NSEventPhaseBegan, 0)];
-            [window sendEvent:Scroll(window, loc, NSEventPhaseChanged, -36)];
+            [window sendEvent:Scroll(window, loc, NSEventPhaseChanged, 36)];
             [window sendEvent:Scroll(window, loc, NSEventPhaseEnded, 0)];
             if (!(gpu.camera.zoom > cam.zoom) || gpu.camera.pitch != 0 || gpu.camera.globe != 0)
                 POPFAIL("two-finger scroll zooms in 2D without tilting");

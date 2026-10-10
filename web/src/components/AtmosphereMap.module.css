@@ -22,3 +22,7 @@
 
 .cloudControls { display:flex; align-items:center; gap:6px; padding-right:8px; }
 .cloudControls select { min-width:0; max-width:160px; min-height:36px; font-size:.8rem; color:inherit; background:var(--md-surface-container-high); border:1px solid var(--md-outline-soft); border-radius:5px; }
+
+.row select { min-width:0; flex:1; min-height:36px; color:inherit; background:var(--md-surface-container-high); border:1px solid var(--md-outline-soft); border-radius:5px; padding:0 6px; }
+
+@media (max-width:600px) { .instrument:has(.section) { max-width:calc(100% - 138px); } .row { gap:4px; } }

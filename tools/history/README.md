@@ -210,3 +210,49 @@ on the unchanged world map. They are software evidence only. The closure
 fragment under `build/history/tracy-v6/closure` contains hashed weather,
 manifest, catalog-entry and receipt files; the release owner must merge this
 entry into the full candidate catalog and validate the combined closure.
+
+### Curated scenes: Shackleton, Gallipoli and Sydney–Hobart
+
+`expansion-scenes.json` adds reusable event framing, dated geographic features,
+short map labels, relevant layer groups and source references. The initial queue
+covers 24 April 1916 (James Caird departure), 25 April 1915 (Gallipoli landings)
+and 27 December 1998 (Sydney–Hobart storm). These are first-day slices, not complete
+voyages or campaigns. Later Shackleton anchors are retained for expansion but are
+not selectable until their weather is acquired.
+
+Run one selected queue item with `ingest_campaign.py --event EVENT_ID --jobs 1`.
+The script stages locally; it does not deploy. Each collection uses the same
+historical camera, transport, pressure/wind/temperature layers and Sources panel.
+Sydney–Hobart uses global hourly ERA5. Its displayed course is a reference estimate,
+not any yacht's track. Shackleton's first-day marker is a synthetic playback path;
+Gallipoli has approximate landing-place anchors and the River Clyde event marker.
+The original source accounts remain linked separately from these authored shapes.
+
+The older days use `import_20cr.py` and NCAR's 20CRv3 ensemble-mean archive.
+Install `tools/history/requirements.txt` into an isolated environment. The adapter
+reads HDF5 over exact HTTP byte ranges, validates the Gaussian source axes and
+units, then linearly interpolates nine 3-hourly planes to 24 hourly frames. It
+samples the source to a regular 2.5° global display grid. This is reanalysis, not a
+local terrain simulation. Full annual files are not downloaded. `--max-mb` caps
+aggregate new transfers, and verified blocks resume from `--input-dir`. Each block
+has a SHA-256 companion and its source URL/size/Last-Modified identity. The output
+has a `.receipts.json` companion; preserve the referenced cache directories for
+reproduction. 31 December currently fails explicitly because interpolation needs
+the following year's file. Publication must wait for a complete validated day.
+
+### Katrina: peak and Gulf Coast landfall
+
+Katrina covers 28–29 August 2005 with global hourly ERA5 and the NHC post-analysis
+track. Import both dates with `import_arco.py`, then run
+`prepare_katrina.py --day build/history/katrina-global.json --output build/history/katrina-prepared.json`
+before `publish_catalog.py`. The preparer accepts one 48-hour input or two daily
+inputs, enforces dates/units/time agreement, rejects invalid track fixes and
+preserves original weather arrays. It requires a new output path.
+
+`katrina-track.json` retains the NHC PDF URL and SHA-256. The optional cyclone
+profile controls CPU wind, GPU shading and pressure contours consistently;
+Tracy's defaults are unchanged. Katrina's fixed synthetic 55 km maximum-wind
+radius and exponent 1.75 approximate the documented landfall wind extents.
+The detailed method and bounds are in `docs/design/history-katrina-20261010.md`.
+The map uses the existing event/date controls, Sources disclosure and full-world
+camera. No storm-surge or flood extent is implied by the wind reconstruction.

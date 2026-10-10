@@ -1,11 +1,18 @@
 import { atmosphereSliceWeight, sliceSegmentRange, slicePoint, type AtmosphereSlice } from './atmosphere-slice';
 /** Spatial pressure-level vectors. Motion is illustrative; direction and height are sampled. */
 import { mapProject, type Camera, type Lambert } from './lambert';
+import { sampleTeachingAtmosphere, type TeachingAtmosphereContext } from './atmosphere-teaching';
 import type { PointModel } from './point/openmeteo';
-export interface AtmosphereVector { lat: number; lon: number; heightM: number; u: number; v: number; w: number | null; pressure: number; phase: number; }
+export interface AtmosphereVector { lat: number; lon: number; heightM: number; u: number; v: number; w: number | null; pressure: number; phase: number; teaching?: TeachingAtmosphereContext; cloudPct?: number; }
 export interface AtmosphereTrajectoryPoint { lat: number; lon: number; heightM: number; time: number; }
 export type AtmosphereTerrain = (lon: number, lat: number) => number | null;
 const LEVELS = [[925, 750], [850, 1500], [700, 3000], [500, 5500], [300, 9000]] as const;
+/** Additional boundary-layer levels resolve the onshore and return branches. */
+export function atmosphereLevels(teaching?: TeachingAtmosphereContext): ReadonlyArray<readonly [number, number]> {
+  if (!teaching) return LEVELS;
+  const heights = teaching.kind === 'sea-breeze' ? [150, 450, 800, 1200, 1600, 2050, 2350] : [300, 900, 1800, 3000, 4500, 6500, 8500, 9500];
+  return heights.map(z => [Math.round(1013.25 * Math.exp(-(teaching.groundM + z) / 8400)), teaching.groundM + z] as const);
+}
 const CELL_TOP_M = 10000;
 const CELL_W_MAX = 2.5;
 /** Orbit latitude can pass the poles; sample the equivalent physical location. */
@@ -38,7 +45,7 @@ export function syntheticAtmosphereWind(lat: number, lon: number, heightM: numbe
     v: -5 + 16 * z + vCell,
     w: wCell };
 }
-export function syntheticAtmosphereProfile(lat: number, lon: number, timeMs: number, terrain?: AtmosphereTerrain): PointModel {
+export function syntheticAtmosphereProfile(lat: number, lon: number, timeMs: number, terrain?: AtmosphereTerrain, teaching?: TeachingAtmosphereContext): PointModel {
   ({lat, lon} = geographicCentre(lat, lon));
   const sampledGround = terrain?.(lon, lat);
   const ground = sampledGround != null && Number.isFinite(sampledGround) ? sampledGround : 0;
@@ -46,27 +53,47 @@ export function syntheticAtmosphereProfile(lat: number, lon: number, timeMs: num
   return {latitude: lat, longitude: lon, elevationM: ground, surface: [],
     provenance: {source: 'Synthetic', model: 'Illustrative', run, cycle: false},
     series: {icao: 'ILLUSTRATIVE', lat, lon, elevationFt: ground / .3048, coastKm: null, source: 'Synthetic', model: 'Illustrative', run, runKnown: false,
-      time: [timeMs - 3600000, timeMs + 3600000], levels: LEVELS.map(([hPa, z]) => {
-        const wind = syntheticAtmosphereWind(lat, lon, z, timeMs);
+      time: [timeMs - 3600000, timeMs + 3600000], levels: atmosphereLevels(teaching).map(([hPa, z]) => {
+        const thermodynamics = teaching ? sampleTeachingAtmosphere(teaching, lat, lon, z) : null;
+        const wind = thermodynamics ?? syntheticAtmosphereWind(lat, lon, z, timeMs);
         const speed = Math.hypot(wind.u, wind.v) / .514444;
         const from = (Math.atan2(-wind.u, -wind.v) * 180 / Math.PI + 360) % 360;
         const heightM = z;
         if (sampledGround != null && Number.isFinite(sampledGround) && heightM < ground + 50) return null;
-        return {hPa, z: [heightM, heightM], t: [25 - heightM * .0065, 25 - heightM * .0065], rh: [65, 65],
-          cc: [hPa === 850 || hPa === 700 ? 65 : 0, hPa === 850 || hPa === 700 ? 65 : 0],
+        return {hPa, z: [heightM, heightM], t: [thermodynamics?.temperatureC ?? 25 - heightM * .0065, thermodynamics?.temperatureC ?? 25 - heightM * .0065], rh: [thermodynamics?.rhPct ?? 65, thermodynamics?.rhPct ?? 65],
+          cc: [thermodynamics?.cloudPct ?? 0, thermodynamics?.cloudPct ?? 0],
           ws: [speed, speed], wd: [from, from], w: [wind.w, wind.w]};
       }).filter((level): level is NonNullable<typeof level> => level !== null)}};
 }
-export function syntheticAtmosphereVectors(lat: number, lon: number, halfHeight: number, aspect: number, timeMs: number, slice?: AtmosphereSlice, terrain?: AtmosphereTerrain): AtmosphereVector[] {
+export function syntheticAtmosphereVectors(lat: number, lon: number, halfHeight: number, aspect: number, timeMs: number, slice?: AtmosphereSlice, terrain?: AtmosphereTerrain, teaching?: TeachingAtmosphereContext): AtmosphereVector[] {
   if (![lat, lon, halfHeight, aspect, timeMs].every(Number.isFinite) || halfHeight <= 0 || halfHeight >= 6 || aspect <= 0) return [];
   ({lat, lon} = geographicCentre(lat, lon));
   if(slice){
     const result:AtmosphereVector[]=[];
     for(let x=-6;x<=6;x++)for(const y of [-.55,0,.55]){
       const point=slicePoint(slice,x/7*slice.halfWidthM,y*slice.halfDepthM);if(!point)continue;
-      for(const [pressure,heightM] of LEVELS){const ground=terrain?.(point.lon,point.lat);if(ground!=null&&Number.isFinite(ground)&&heightM<ground+50)continue;const wind=syntheticAtmosphereWind(point.lat,point.lon,heightM,timeMs);result.push({...point,heightM,...wind,pressure,phase:((x+6)*.618+(y+.55)*.37)%1});}
+      for(const [pressure,heightM] of atmosphereLevels(teaching)){const ground=terrain?.(point.lon,point.lat);if(ground!=null&&Number.isFinite(ground)&&heightM<ground+50)continue;const wind=teaching?sampleTeachingAtmosphere(teaching,point.lat,point.lon,heightM):syntheticAtmosphereWind(point.lat,point.lon,heightM,timeMs);result.push({...point,heightM,...wind,teaching,pressure,phase:((x+6)*.618+(y+.55)*.37)%1});}
     }
     return result;
+  }
+  if(teaching){
+    // Resolve the cell core even when a camera-sized lattice misses it. The
+    // geographic seeds stay fixed while the view pans, tilts or changes width.
+    const vectors:AtmosphereVector[]=[];
+    const step=teaching.kind==='sea-breeze'?1500:2000;
+    for(let x=-8;x<=8;x++)for(let y=-3;y<=3;y++){
+      const a=teaching.lat+y*step/111320;
+      const o=teaching.lon+x*step/(111320*Math.max(.2,Math.cos(teaching.lat*Math.PI/180)));
+      if(Math.abs(a-lat)>halfHeight*3||Math.abs(o-lon)>halfHeight*aspect*4)continue;
+      const ground=terrain?.(o,a);
+      for(const [pressure,heightM] of atmosphereLevels(teaching)){
+        if(ground!=null&&Number.isFinite(ground)&&heightM<ground+50)continue;
+        const wind=sampleTeachingAtmosphere(teaching,a,o,heightM);
+        if(Math.hypot(wind.u,wind.v,wind.w)<.2)continue;
+        vectors.push({lat:a,lon:o,heightM,...wind,teaching,pressure,phase:((Math.sin(x*57+y*31+pressure)*43758.5)%1+1)%1});
+      }
+    }
+    return vectors;
   }
   // Geographic lattice stays fixed during a drag, instead of travelling with the camera.
   const spacing = 2 ** Math.ceil(Math.log2(halfHeight / 1.5));
@@ -77,22 +104,22 @@ export function syntheticAtmosphereVectors(lat: number, lon: number, halfHeight:
   const east = lon + halfHeight * aspect * 2;
   const vectors: AtmosphereVector[] = [];
   for (let y = south; y <= north && vectors.length < 1800; y += spacing) for (let x = west; x <= east && vectors.length < 1800; x += lonSpacing) {
-    for (const [pressure, agl] of LEVELS) {
+    for (const [pressure, agl] of atmosphereLevels(teaching)) {
       const ground = terrain?.(x, y);
       const heightM = agl;
       if (ground != null && Number.isFinite(ground) && heightM < ground + 50) continue;
-      const wind = syntheticAtmosphereWind(y, x, heightM, timeMs);
-      vectors.push({lat: y, lon: x, heightM, ...wind, pressure, phase: ((Math.sin(y * 57 + x * 31 + pressure) * 43758.5) % 1 + 1) % 1});
+      const wind = teaching ? sampleTeachingAtmosphere(teaching, y, x, heightM) : syntheticAtmosphereWind(y, x, heightM, timeMs);
+      vectors.push({lat: y, lon: x, heightM, ...wind, teaching, pressure, phase: ((Math.sin(y * 57 + x * 31 + pressure) * 43758.5) % 1 + 1) % 1});
     }
   }
   return vectors;
 }
 
-function advanceTrajectoryPoint(point: AtmosphereTrajectoryPoint, dt: number, timeMs: number): AtmosphereTrajectoryPoint {
+function advanceTrajectoryPoint(point: AtmosphereTrajectoryPoint, dt: number, timeMs: number, teaching?: TeachingAtmosphereContext): AtmosphereTrajectoryPoint {
   const velocity = (sample: AtmosphereTrajectoryPoint) => {
     // The selected forecast field is frozen while tracers move through it.
     // Animation is visual transport, not a second forecast-time clock.
-    const wind = syntheticAtmosphereWind(sample.lat, sample.lon, sample.heightM, timeMs);
+    const wind = teaching ? sampleTeachingAtmosphere(teaching, sample.lat, sample.lon, sample.heightM) : syntheticAtmosphereWind(sample.lat, sample.lon, sample.heightM, timeMs);
     return {lat: wind.v / 111132, lon: wind.u / (111320 * Math.max(.1, Math.cos(sample.lat * Math.PI / 180))), heightM: wind.w ?? 0};
   };
   const first = velocity(point);
@@ -112,20 +139,20 @@ const TRAJECTORY_MAX_TIME = 180;
 const TRAJECTORY_STEP = 15;
 
 function cachedAtmosphereTrajectory(vector: AtmosphereVector, timeMs: number): AtmosphereTrajectoryPoint[] {
-  const key = `${vector.lat}:${vector.lon}:${vector.heightM}:${timeMs}`;
+  const key = `${vector.lat}:${vector.lon}:${vector.heightM}:${timeMs}:${JSON.stringify(vector.teaching ?? null)}`;
   const cached = trajectoryCache.get(key);
   if (cached) { trajectoryCache.delete(key); trajectoryCache.set(key, cached); return cached; }
   let point: AtmosphereTrajectoryPoint = {lat: vector.lat, lon: vector.lon, heightM: vector.heightM, time: 0};
   const backward: AtmosphereTrajectoryPoint[] = [point];
   for (let t = 0; t > TRAJECTORY_MIN_TIME; t -= TRAJECTORY_STEP) {
-    point = advanceTrajectoryPoint(point, -TRAJECTORY_STEP, timeMs);
+    point = advanceTrajectoryPoint(point, -TRAJECTORY_STEP, timeMs, vector.teaching);
     backward.push(point);
   }
   backward.reverse();
   point = {lat: vector.lat, lon: vector.lon, heightM: vector.heightM, time: 0};
   const forward: AtmosphereTrajectoryPoint[] = [point];
   for (let t = 0; t < TRAJECTORY_MAX_TIME; t += TRAJECTORY_STEP) {
-    point = advanceTrajectoryPoint(point, TRAJECTORY_STEP, timeMs);
+    point = advanceTrajectoryPoint(point, TRAJECTORY_STEP, timeMs, vector.teaching);
     forward.push(point);
   }
   const result = [...backward.slice(0, -1), ...forward];
@@ -159,7 +186,7 @@ export function buildAtmosphereTrajectory(vector: AtmosphereVector, timeMs: numb
 export function drawAtmosphereFlow(ctx: CanvasRenderingContext2D, vectors: readonly AtmosphereVector[], geo: Lambert, camera: Camera, width: number, height: number, seconds: number, dark: boolean, terrain?: AtmosphereTerrain, selectedTimeMs = 0): {layers: number; flows: number} {
   const layers = new Set<number>(); let flows = 0;
   // Visual separation adapts to map scale; the source profile keeps true model heights.
-  const separation = 1 + (Math.min(8, Math.max(1, camera.halfHeight / .15)) - 1) * Math.sin(camera.pitch ?? 0);
+  const separation = 1; // Wind, clouds, terrain and height marks share true world heights.
   ctx.save(); ctx.lineCap = 'round'; ctx.lineWidth = 1.25;
   // Higher levels first. No cloud cylinders or displaced example column.
   for (let i = vectors.length - 1; i >= 0; i--) {
@@ -202,7 +229,7 @@ export function drawAtmosphereFlow(ctx: CanvasRenderingContext2D, vectors: reado
     for(let segment=visible.length-1;segment>=0&&remaining>0;segment--) {
       const item=visible[segment], segmentLength=Math.hypot(item.b.x-item.a.x,item.b.y-item.a.y);
       const fraction=Math.min(1,remaining/segmentLength), startX=item.b.x+(item.a.x-item.b.x)*fraction, startY=item.b.y+(item.a.y-item.b.y)*fraction;
-      const colourWind=syntheticAtmosphereWind(item.end.lat,item.end.lon,item.end.heightM,selectedTimeMs);
+      const colourWind=v.teaching?sampleTeachingAtmosphere(v.teaching,item.end.lat,item.end.lon,item.end.heightM):syntheticAtmosphereWind(item.end.lat,item.end.lon,item.end.heightM,selectedTimeMs);
       ctx.strokeStyle = colourWind.w > .05 ? (dark ? '#eeb172' : '#aa652f') : colourWind.w < -.05 ? (dark ? '#84c6de' : '#246b89') : dark ? '#c4d8e1' : '#37596b';
       ctx.beginPath(); ctx.moveTo(startX,startY); ctx.lineTo(item.b.x,item.b.y); ctx.stroke();
       remaining-=segmentLength*fraction;
@@ -213,7 +240,7 @@ export function drawAtmosphereFlow(ctx: CanvasRenderingContext2D, vectors: reado
     const length = Math.hypot(b.x - previous.x, b.y - previous.y);
     if (48-remaining < 1 || length < .001) continue;
     const angle = Math.atan2(b.y - previous.y, b.x - previous.x), head = Math.min(3, (48-remaining) / 3);
-    const colourWind=syntheticAtmosphereWind(last.end.lat,last.end.lon,last.end.heightM,selectedTimeMs);
+    const colourWind=v.teaching?sampleTeachingAtmosphere(v.teaching,last.end.lat,last.end.lon,last.end.heightM):syntheticAtmosphereWind(last.end.lat,last.end.lon,last.end.heightM,selectedTimeMs);
     ctx.strokeStyle = colourWind.w > .05 ? (dark ? '#eeb172' : '#aa652f') : colourWind.w < -.05 ? (dark ? '#84c6de' : '#246b89') : dark ? '#c4d8e1' : '#37596b';
     ctx.beginPath();
     ctx.moveTo(b.x - head * Math.cos(angle - .55), b.y - head * Math.sin(angle - .55)); ctx.lineTo(b.x, b.y); ctx.lineTo(b.x - head * Math.cos(angle + .55), b.y - head * Math.sin(angle + .55)); ctx.stroke();

@@ -8,7 +8,7 @@ export function withTilt(geo: Lambert, camera: Camera, pitch: number, elevation?
   if ((pitch <= 0 && !camera.bearingRadians) || geo.projection !== 'equirectangular') return camera;
   const center = unproject(geo, camera.centerX, camera.centerY);
   if (!center) return camera;
-  let tiltCamera = createTiltCamera({ ...center, halfHeightDeg: camera.halfHeight, aspect: camera.halfWidth / camera.halfHeight, tiltRadians: pitch, bearingRadians: camera.bearingRadians ?? 0, targetElevationM: terrainTarget ? Math.max(0,elevation?.(center.lon,center.lat) ?? 0) : 0 });
+  let tiltCamera = createTiltCamera({ ...center, halfHeightDeg: camera.halfHeight, aspect: camera.halfWidth / camera.halfHeight, tiltRadians: pitch, bearingRadians: camera.bearingRadians ?? 0, targetElevationM: (terrainTarget ? Math.max(0,elevation?.(center.lon,center.lat) ?? 0) : 0) + Math.max(0,camera.focusHeightM??0)*Math.sin(pitch) });
   // Keep the eye above the terrain underneath it, not just above the focus.
   // Limited iterations and existing DEM samples keep gestures synchronous.
   if (terrainTarget && elevation) for (let i=0;i<3;i++) {
@@ -159,4 +159,24 @@ export function liftCamera(camera: Camera, pitch: number, metres: number): {came
   const nextPitch=Math.atan2(horizontal,vertical), nextDistance=Math.hypot(horizontal,vertical);
   const halfHeight=nextDistance*Math.tan(25*rad)*Math.max(.001,k(nextPitch))/EARTH_RADIUS_M/rad;
   return {camera:{...camera,halfHeight,halfWidth:camera.halfWidth*halfHeight/camera.halfHeight},pitch:nextPitch};
+}
+
+/** Fit a teaching column without changing its geographic anchor or bearing.
+ * Forward projection is the oracle, including phone aspect and near-max tilt. */
+export function frameAtmosphere(geo:Lambert,camera:Camera,pitch:number,topM:number,elevation?:((lon:number,lat:number)=>number|null)|null,radiusM=0):Camera {
+  const centre=unproject(geo,camera.centerX,camera.centerY);
+  if(!centre||!Number.isFinite(topM)||topM<=0||pitch<=0)return camera;
+  const ground=elevation?.(centre.lon,centre.lat)??0;
+  const aspect=camera.halfWidth/camera.halfHeight;
+  let halfHeight=.015;
+  const focusHeightM=topM*.45;
+  for(let i=0;i<36;i++){
+    const candidate={...camera,focusHeightM,halfHeight,halfWidth:halfHeight*aspect};
+    const view=withTilt(geo,candidate,pitch,elevation,true);
+    const points=[0,topM*.5,topM].map(h=>mapProject(geo,view,centre.lat,centre.lon,ground+h));
+    if(radiusM>0)for(const sign of [-1,1])points.push(mapProject(geo,view,centre.lat,centre.lon+sign*radiusM/(111320*Math.max(.2,Math.cos(centre.lat*Math.PI/180))),ground+topM*.5));
+    if(points.every(p=>p&&Math.abs(p.x)<.65&&p.y>-.72&&p.y<.72))return candidate;
+    halfHeight*=1.15;
+  }
+  return {...camera,focusHeightM,halfHeight,halfWidth:halfHeight*aspect};
 }

@@ -12,10 +12,14 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--jobs',type=int,default=1)
     parser.add_argument('--max-mb',type=int,default=512,help='per-job download cap')
+    parser.add_argument('--event',help='run only this curated event')
     args=parser.parse_args()
     if not 1<=args.jobs<=5:parser.error('1–5 new jobs per invocation')
     root=Path(__file__).resolve().parents[2]
     queue=json.loads((root/'tools/history/campaign.json').read_text())['jobs']
+    if args.event:
+        queue=[job for job in queue if job['id']==args.event]
+        if not queue:parser.error('unknown curated event')
     remaining=args.jobs
     for job in queue:
         output=root/'build/history'/f'{job["id"]}-global.json'
@@ -27,8 +31,15 @@ def main():
                 raise ValueError('cached job differs from queue; inspect before replacement')
         if cached is None:
             if not remaining: break
-            command=[sys.executable,str(root/'tools/history/import_arco.py'),'--start-date',job['start'],'--end-date',job['end'],
-                '--event-id',job['id'],'--label',job['label'],'--output',str(output),'--max-mb',str(args.max_mb)]
+            if job.get('archive','era5')=='20cr':
+                if job['start']!=job['end']:raise ValueError('20CR campaign jobs must name one UTC day')
+                command=[sys.executable,str(root/'tools/history/import_20cr.py'),'--date',job['start'],
+                    '--input-dir',str(root/'build/history/20cr-cache'),
+                    '--event-id',job['id'],'--label',job['label'],'--output',str(output),'--max-mb',str(args.max_mb)]
+            elif job.get('archive','era5')=='era5':
+                command=[sys.executable,str(root/'tools/history/import_arco.py'),'--start-date',job['start'],'--end-date',job['end'],
+                    '--event-id',job['id'],'--label',job['label'],'--output',str(output),'--max-mb',str(args.max_mb)]
+            else:raise ValueError('unknown archive provider')
             subprocess.run(['/usr/bin/python3',str(Path.home()/'.codex/power/battery_guard.py'),'run','--',*command],cwd=root,check=True)
             remaining-=1
         maps=json.loads((root/job['maps']).read_text()) if job.get('maps') else []

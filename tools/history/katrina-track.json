@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "kind": "best-track",
+  "event": {
+    "id": "katrina-2005",
+    "label": "Hurricane Katrina"
+  },
+  "coverage": {
+    "start": "2005-08-28T00:00Z",
+    "end": "2005-08-30T18:00Z",
+    "time_basis": "UTC",
+    "source_sampling": "NHC Tropical Cyclone Report best-track fixes; 6-hourly regular fixes plus explicit landfall fixes at 1110 and 1445 UTC 29 August."
+  },
+  "observations": [
+    {
+      "time": "2005-08-28T00:00Z",
+      "lat": 24.8,
+      "lon": -85.9,
+      "pressure_hpa": 941,
+      "wind_kt": 100,
+      "source": "NHC best track",
+      "special_fix": false
+    },
+    {
+      "time": "2005-08-28T06:00Z",
+      "lat": 25.2,
+      "lon": -86.7,
+      "pressure_hpa": 930,
+      "wind_kt": 125,
+      "source": "NHC best track",
+      "special_fix": false
+    },
+    {
+      "time": "2005-08-28T12:00Z",
+      "lat": 25.7,
+      "lon": -87.7,
+      "pressure_hpa": 909,
+      "wind_kt": 145,
+      "source": "NHC best track",
+      "special_fix": false
+    },
+    {
+      "time": "2005-08-28T18:00Z",
+      "lat": 26.3,
+      "lon": -88.6,
+      "pressure_hpa": 902,
+      "wind_kt": 150,
+      "source": "NHC best track",
+      "special_fix": false
+    },
+    {
+      "time": "2005-08-29T00:00Z",
+      "lat": 27.2,
+      "lon": -89.2,
+      "pressure_hpa": 905,
+      "wind_kt": 140,
+      "source": "NHC best track",
+      "special_fix": false
+    },
+    {
+      "time": "2005-08-29T06:00Z",
+      "lat": 28.2,
+      "lon": -89.6,
+      "pressure_hpa": 913,
+      "wind_kt": 125,
+      "source": "NHC best track",
+      "special_fix": false
+    },
+    {
+      "time": "2005-08-29T11:10Z",
+      "lat": 29.3,
+      "lon": -89.6,
+      "pressure_hpa": 920,
+      "wind_kt": 110,
+      "source": "NHC best track",
+      "special_fix": true
+    },
+    {
+      "time": "2005-08-29T12:00Z",
+      "lat": 29.5,
+      "lon": -89.6,
+      "pressure_hpa": 923,
+      "wind_kt": 110,
+      "source": "NHC best track",
+      "special_fix": false
+    },
+    {
+      "time": "2005-08-29T14:45Z",
+      "lat": 30.2,
+      "lon": -89.6,
+      "pressure_hpa": 928,
+      "wind_kt": 105,
+      "source": "NHC best track",
+      "special_fix": true
+    },
+    {
+      "time": "2005-08-29T18:00Z",
+      "lat": 31.1,
+      "lon": -89.6,
+      "pressure_hpa": 948,
+      "wind_kt": 80,
+      "source": "NHC best track",
+      "special_fix": false
+    },
+    {
+      "time": "2005-08-30T00:00Z",
+      "lat": 32.6,
+      "lon": -89.1,
+      "pressure_hpa": 961,
+      "wind_kt": 50,
+      "source": "NHC best track",
+      "special_fix": false
+    },
+    {
+      "time": "2005-08-30T06:00Z",
+      "lat": 34.1,
+      "lon": -88.6,
+      "pressure_hpa": 978,
+      "wind_kt": 40,
+      "source": "NHC best track",
+      "special_fix": false
+    },
+    {
+      "time": "2005-08-30T12:00Z",
+      "lat": 35.6,
+      "lon": -88.0,
+      "pressure_hpa": 985,
+      "wind_kt": 30,
+      "source": "NHC best track",
+      "special_fix": false
+    },
+    {
+      "time": "2005-08-30T18:00Z",
+      "lat": 37.0,
+      "lon": -87.0,
+      "pressure_hpa": 990,
+      "wind_kt": 30,
+      "source": "NHC best track",
+      "special_fix": false
+    }
+  ],
+  "provenance": {
+    "record_url": "https://www.nhc.noaa.gov/data/tcr/AL122005_Katrina.pdf",
+    "record_sha256": "e53e9c3a333bb79718f0db218af6e547958e98d3a519762d53b60f7d04868fc6",
+    "record_local_path": "build/history/katrina/AL122005_Katrina.pdf",
+    "publisher": "NOAA National Hurricane Center",
+    "license": "U.S. government public information; retain NHC attribution",
+    "evidence": "Table 1, Best track for Hurricane Katrina, 23\u201330 August 2005 (PDF pages 17\u201318). Peak 150 kt/902 mb at 1800 UTC 28 August; first Louisiana landfall 1110 UTC 29 August at 110 kt/920 mb; final landfall near LA/MS border 1445 UTC at 105 kt/928 mb.",
+    "size_assumption": "Synthetic compact-vortex rmw 55 km, exponent 1.75, blend 370\u2013600 km. NHC reports hurricane-force winds extending about 90 nmi and tropical-storm-force winds about 200 nmi from the center late 28 August; these parameters are a fixed visualization assumption for the large landfall wind field, not a measured RMW or dynamically resolved eyewall."
+  }
+}

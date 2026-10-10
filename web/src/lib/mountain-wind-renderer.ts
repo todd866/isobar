@@ -10,10 +10,10 @@ type ScreenPath={points:ScreenPoint[];duration:number;phase:number};
 const colour=(w:number,dark:boolean)=>w>.15?(dark?'#ffbd75':'#ad4e17'):w<-.15?(dark?'#83d9ff':'#126d9a'):(dark?'#d3e7f1':'#29536a');
 export function createMountainWindRenderer(){
  let lastPaths:readonly MountainStreamline[]|null=null,lastKey='',projected:ScreenPath[]=[];
- return (ctx:CanvasRenderingContext2D,paths:readonly MountainStreamline[],geo:Lambert,camera:Camera,width:number,height:number,seconds:number,dark:boolean)=>{
+ return (ctx:CanvasRenderingContext2D,paths:readonly MountainStreamline[],geo:Lambert,camera:Camera,width:number,height:number,seconds:number,dark:boolean,guides=false)=>{
   const slice=camera.slice;
   const sliceKey=slice?[slice.lat,slice.lon,slice.bearingRadians,slice.halfWidthM,slice.halfDepthM,slice.baseM]:[];
-  const key=[camera.centerX,camera.centerY,camera.halfHeight,camera.halfWidth,camera.pitch,camera.bearingRadians,(camera as TiltedCamera).tiltCamera?.targetElevationM,width,height,...sliceKey].join(':');
+  const key=[camera.atmosphereDisplay?.baseM,camera.atmosphereDisplay?.scale,camera.centerX,camera.centerY,camera.halfHeight,camera.halfWidth,camera.pitch,camera.bearingRadians,(camera as TiltedCamera).tiltCamera?.targetElevationM,width,height,...sliceKey].join(':');
   if(lastPaths!==paths||lastKey!==key){
    // Small shared-view depth grid, rebuilt only for a new camera or wind field.
    const depth=new Float32Array(32*24);depth.fill(Infinity);
@@ -40,7 +40,20 @@ export function createMountainWindRenderer(){
    });lastPaths=paths;lastKey=key;
   }
   let flows=0;const heights=new Set<number>();ctx.save();ctx.lineCap='round';ctx.lineJoin='round';
+  let pathIndex=0;
   for(const path of projected){
+   // Sparse integral curves connect the moving vectors through height. They
+   // share clipping and terrain occlusion; a pixel budget prevents long rods.
+   if(guides && pathIndex++%(paths.length<=12?1:4)===0){
+    let remaining=paths.length<=12?1800:220;ctx.lineWidth=1;ctx.globalAlpha=paths.length<=12?.3:.16;
+    for(let j=1;j<path.points.length&&remaining>0;j++){
+      const a=path.points[j-1],b=path.points[j];
+      if(!a.visible||!b.visible||Math.min(a.weight,b.weight)<=0)continue;
+      const distance=Math.hypot(b.x-a.x,b.y-a.y);if(distance<.01)continue;
+      const fraction=Math.min(1,remaining/distance);ctx.strokeStyle=colour(b.source.w,dark);
+      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(a.x+(b.x-a.x)*fraction,a.y+(b.y-a.y)*fraction);ctx.stroke();remaining-=distance*fraction;
+    }
+   }
    if(path.duration<=0)continue;
    let shown=false;
    // Keep the physical path, but reveal only small advecting parcels. A pixel
@@ -51,6 +64,7 @@ export function createMountainWindRenderer(){
     const a=path.points[index-1],b=path.points[index];if(!a.visible||!b.visible||Math.min(a.weight,b.weight)<=0)continue;
     const mix=(t-a.time)/Math.max(.001,b.time-a.time);
     let x=a.x+(b.x-a.x)*mix,y=a.y+(b.y-a.y)*mix,left=22;
+    const tipX=x,tipY=y;
     // Fade at path boundaries; never draw a connection across the wrap.
     const fade=Math.min(1,t/Math.min(8,path.duration*.12),(path.duration-t)/Math.min(8,path.duration*.12));
     for(let j=index-1;j>=0&&left>0;j--){
@@ -66,6 +80,11 @@ export function createMountainWindRenderer(){
      ctx.globalAlpha=1;ctx.strokeStyle=gradient;ctx.lineWidth=1.8;
      ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(nx,ny);ctx.stroke();
      shown=true;left-=length;x=nx;y=ny;
+    }
+    if(guides && shown){
+      const angle=Math.atan2(b.y-a.y,b.x-a.x),head=3;
+      ctx.globalAlpha=.85*fade*Math.min(a.weight,b.weight);ctx.strokeStyle=colour(b.source.w,dark);ctx.lineWidth=1.2;
+      ctx.beginPath();ctx.moveTo(tipX-head*Math.cos(angle-.55),tipY-head*Math.sin(angle-.55));ctx.lineTo(tipX,tipY);ctx.lineTo(tipX-head*Math.cos(angle+.55),tipY-head*Math.sin(angle+.55));ctx.stroke();
     }
    }
    if(shown){flows++;heights.add(Math.round(path.points[0].source.heightM/1000));}

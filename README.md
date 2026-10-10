@@ -5,7 +5,7 @@ Watch pressure systems develop, scrub to a day and hour, then explore the rain,
 temperature, wind, surf or flying conditions underneath.
 
 **[Open Isobar in your browser](https://isobar.md)** ·
-**[Download Isobar 1.11.2 for Mac](https://github.com/todd866/isobar/releases/download/v1.11.2/Isobar-1.11.2-macOS-arm64.dmg)** ·
+**[Download Isobar 1.11.3 for Mac](https://github.com/todd866/isobar/releases/download/v1.11.3/Isobar-1.11.3-macOS-arm64.dmg)** ·
 [Run your own website](docs/hosting.md)
 
 The Mac app is for **Apple silicon (M1 or newer), macOS 15+**. The signed,
@@ -40,7 +40,8 @@ temperature fields, plus [ATPL practice](https://isobar.md/train), an
 [E6-B computer](https://isobar.md/e6b) and an [instrument lab](https://isobar.md/lab).
 The web and Mac apps have different feature sets. Web Kite and Surf show
 local wind and sea forecasts, while Fly adds an atmospheric cross-section.
-**Historical** opens D-Day, Everest 1953 and Cyclone Tracy in the shared map.
+**Historical** opens D-Day, Everest 1953, Cyclone Tracy, Gallipoli, Shackleton,
+the 1998 Sydney–Hobart race and Katrina in the shared map.
 D-Day adds dated forces and estimated ship movements; Everest includes the ascent
 and detailed terrain. Tracy combines coarse reanalysis with a compact cyclone
 reconstructed from best-track positions and intensity. Assumptions and sources
@@ -50,7 +51,12 @@ map; the native history map is still a parity item.
 In web 3D, Slice narrows terrain and atmospheric wind together. Orbit changes its
 bearing and the slider moves it across the landscape; the point cross-section
 follows the same cut. Both maps use bounded curved trails for illustrative
-upper-air motion. These are still developing teaching views, not resolved storm simulations.
+upper-air motion. Choose Convection, Sea breeze, Thunderstorm or Mountain wave in Atmosphere.
+Wind and profile values share one idealized field; the web cloud volume samples
+that same field. Frame atmosphere fits the active column. Sea-breeze height is
+shown at 3× for readability, with physical altitude labels. These are stylized
+teaching models, not resolved storm simulations. Native cloud volume and global
+terrain occlusion remain open.
 Aircraft replay uses observations captured during the current viewing session;
 it cannot recover flights from before capture began.
 
@@ -114,6 +120,7 @@ Isobar can also generate weather movies for a wall display. See
 Bug reports and pull requests are welcome. For a visual or interaction bug,
 include the window size, selected layer and a screenshot if possible.
 
+See [maintenance priorities](docs/maintenance.md) for the structural work.
 
 ## In development
 

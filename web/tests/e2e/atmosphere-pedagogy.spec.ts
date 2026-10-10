@@ -49,10 +49,13 @@ for (const phone of [false, true]) test(`atmospheric teaching sequence: ${phone 
   await expect(stage).toHaveAttribute('data-slice','ready',{timeout:45000});
   await expect.poll(async()=>Number(await flow.getAttribute('data-flows'))).toBeGreaterThan(0);
   await expect(flow).toBeVisible();
+  await expect.poll(async()=>await flow.getAttribute('data-rendered-slice')).toBe(await flow.getAttribute('data-slice-key'));
   const firstPaint=await paintedMotion();expect(firstPaint.painted).toBeGreaterThan(100);
   for (let frame=0;frame<4;frame++) {
     await page.waitForTimeout(250);
     const paint=await paintedMotion();
+    await writeFile(info.outputPath(`motion-${frame}.json`),JSON.stringify({paint,data:await flow.evaluate(e=>({...((e as HTMLElement).dataset)})),camera:await stage.evaluate((e:any)=>e.chartApi.camera())},null,2));
+    await page.screenshot({path:info.outputPath(`slice-motion-${frame}.png`)});
     expect(paint.painted).toBeGreaterThan(100);expect(paint.changed).toBeGreaterThan(50);
     expect(paint.rowSpan).toBeGreaterThan(paint.height*.15);
     await expect(stage).toHaveAttribute('data-valid-ms',time!);

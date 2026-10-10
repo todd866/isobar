@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {DDAY_FEATURES,DDAY_SOURCES,featurePosition,featureVisible,historyLayer} from '../../src/lib/historical-scenes';
+import {DDAY_FEATURES,DDAY_SOURCES,HISTORICAL_SCENES,historicalScene,sceneForPlace,sceneLayers,featurePosition,featureVisible,historyLayer} from '../../src/lib/historical-scenes';
 describe('D-Day scene',()=>{
  it('has bounded supported geometry and resolvable provenance',()=>{
   expect(new Set(DDAY_FEATURES.map(f=>f.id)).size).toBe(DDAY_FEATURES.length);
@@ -29,5 +29,28 @@ describe('D-Day scene',()=>{
    expect(featurePosition(f,a)).toEqual(t[0].coordinates);
    featurePosition(f,(a+b)/2)!.forEach((v,j)=>expect(v).toBeCloseTo((t[0].coordinates[j]+t[1].coordinates[j])/2,10));
   }
+ });
+});
+
+describe('reusable historical scenes',()=>{
+ it('resolves independent event framing, valid timezones and only relevant controls',()=>{
+  for(const scene of HISTORICAL_SCENES){
+   expect(historicalScene(scene.id)).toBe(scene);
+   expect(sceneForPlace(scene.id==='dday'?'h.normandy':`h.${scene.id}`)).toBe(scene);
+   expect(Number.isInteger(scene.focusHour)&&scene.focusHour>=0&&scene.focusHour<=23).toBe(true);
+   expect(()=>new Intl.DateTimeFormat('en',{timeZone:scene.focus.zone})).not.toThrow();
+   expect(scene.features.length).toBeGreaterThan(0);
+   const instant=Date.parse(`${scene.focusDate}T${String(scene.focusHour).padStart(2,'0')}:00Z`);
+   const zoom=Math.log2(360*580/(256*scene.focus.halfHeight*2));
+   expect(scene.features.some(f=>featureVisible(f,instant,zoom))).toBe(true);
+   for(const f of scene.features){
+    expect(f.date_validity.date_start<=f.date_validity.date_end).toBe(true);
+    expect(['Point','LineString','MultiLineString']).toContain(f.geometry.type);
+    for(const id of f.source_refs)expect(scene.provenance.sources.some(s=>s.id===id)).toBe(true);
+    if(f.track)expect(featurePosition(f,Date.parse(f.track[0].time))).toEqual(f.track[0].coordinates);
+   }
+  }
+  expect(sceneLayers(historicalScene('sydney-hobart-1998')!)).toEqual(['routes']);
+  expect(sceneLayers(historicalScene('shackleton-1916')!)).toEqual(['ships','routes']);
  });
 });

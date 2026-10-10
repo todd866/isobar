@@ -1,6 +1,6 @@
 import { mosaicElevation } from './terrain/elevation';
 import { buildTerrainSliceMesh, atmosphereSliceKey, type AtmosphereSlice } from './atmosphere-slice';
-import {CYCLONE_GLSL,type CycloneState} from './historical-cyclone';
+import {CYCLONE_GLSL,cycloneProfile,DEFAULT_CYCLONE_PROFILE,type CycloneState} from './historical-cyclone';
 import { IMAGERY_MATERIAL_GLSL, type ImageryMapping } from './terrain/imagery-material';
 import { TILT_CAMERA_GLSL, type TiltCamera } from './tilt-camera';
 /** WebGL2 chart plate: Lambert unproject, bicubic field sample, land/sea tint. */
@@ -706,6 +706,7 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       }
       gl.uniform1f(loc('uBlend'), view.blend);
       const storm=view.cyclone;gl.uniform4f(loc('uCyclone'),storm?.lon??0,storm?.lat??0,storm?.windKt??0,storm?.rmwKm??0);
+      const profile=storm?cycloneProfile(storm):DEFAULT_CYCLONE_PROFILE;gl.uniform3f(loc('uCycloneProfile'),profile.exponent,profile.blendStartKm,profile.blendEndKm);
       gl.uniform1i(loc('uKite'), view.field === 'wind' && view.kiteBand ? 1 : 0);
       gl.uniform2f(loc('uKiteBand'), view.kiteBand?.min ?? 15, view.kiteBand?.max ?? 25);
       gl.uniform1i(loc('uField'), view.field === 'rain' ? 1 : view.field === 'temp' ? 2 : view.field === 'wind' ? 3 : 0);

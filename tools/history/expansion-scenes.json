@@ -1,0 +1,727 @@
+{
+  "schema_version": 1,
+  "kind": "historical-scene-registry",
+  "coordinate_reference": "WGS84 longitude/latitude degrees",
+  "status": "estimated-scene-v1",
+  "provenance_policy": "Named places and documented event anchors are separated from synthetic route or area estimates. No feature is an exact track unless its source supplies a coordinate and time basis.",
+  "events": [
+    {
+      "id": "shackleton-1916",
+      "title": "Shackleton · James Caird voyage",
+      "focusDate": "1916-04-24",
+      "focusHour": 12,
+      "focus": {
+        "lat": -61.1,
+        "lon": -54.86,
+        "halfHeight": 0.7,
+        "name": "Elephant Island",
+        "zone": "UTC"
+      },
+      "provenance": {
+        "summary": "The James Caird left Elephant Island on 24 April 1916 and reached South Georgia in May. The sea route is shown as a bounded synthetic reconstruction between documented departure and landfall, not as Worsley's complete navigational track.",
+        "sources": [
+          {
+            "id": "sl-nsw-elephant-island",
+            "title": "State Library of New South Wales · Marooned on Elephant Island",
+            "url": "https://www2.sl.nsw.gov.au/archive/discover_collections/natural_world/antarctica/hurley/shackleton/elephant_island.html",
+            "role": "departure date and expedition context",
+            "rights": "collection-specific"
+          },
+          {
+            "id": "worsley-log-navigation",
+            "title": "Navigation of the James Caird on the Shackleton Expedition",
+            "url": "https://cms.canterburymuseum.com/assets/Navigation-of-the-James-Caird-on-the-Shackleton-Expedition.pdf",
+            "role": "transcribed Worsley navigational-log pages for 24 April–13 May 1916",
+            "rights": "publisher/source terms apply"
+          },
+          {
+            "id": "bas-shackleton-crossing",
+            "title": "British Antarctic Survey · Shackleton Crossing map",
+            "url": "https://www.bas.ac.uk/news/new-map-of-south-georgia-wins-award/",
+            "role": "South Georgia landfall/crossing context",
+            "rights": "BAS page rights apply"
+          }
+        ]
+      },
+      "features": [
+        {
+          "id": "james-caird-elephant-island",
+          "kind": "departure-anchor",
+          "title": "Elephant Island · James Caird departure",
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -54.86,
+              -61.1
+            ]
+          },
+          "source_refs": [
+            "sl-nsw-elephant-island",
+            "worsley-log-navigation"
+          ],
+          "synthetic": true,
+          "precision_m": 5000,
+          "detail_zoom": 6,
+          "geometry_method": "Approximate named-place anchor from source account; modern coordinate used for display",
+          "note": "Documented departure place; coordinate is not a log fix.",
+          "layer": "routes",
+          "date_validity": {
+            "date_start": "1916-04-24",
+            "date_end": "1916-04-24",
+            "time_basis": "date-only; launch time not asserted"
+          },
+          "status": "estimated",
+          "label": "Point Wild"
+        },
+        {
+          "id": "james-caird-coastal-departure",
+          "kind": "ship-marker",
+          "title": "James Caird",
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -54.86,
+              -61.04
+            ]
+          },
+          "source_refs": [
+            "worsley-log-navigation"
+          ],
+          "synthetic": true,
+          "precision_m": 12000,
+          "detail_zoom": 5,
+          "geometry_method": "Authored offshore playback estimate north of Elephant Island, offset from the generalized coastline within the stated positional scale; not a surveyed track or an asserted launch position.",
+          "note": "Moving marker samples are a playback aid only; source log positions remain separate.",
+          "layer": "ships",
+          "date_validity": {
+            "date_start": "1916-04-24",
+            "date_end": "1916-04-24",
+            "time_basis": "authored UTC playback estimate; source log is not assigned UTC"
+          },
+          "track": [
+            {
+              "time": "1916-04-24T12:00:00Z",
+              "coordinates": [
+                -54.86,
+                -61.04
+              ]
+            },
+            {
+              "time": "1916-04-24T14:00:00Z",
+              "coordinates": [
+                -54.98,
+                -61.02
+              ]
+            },
+            {
+              "time": "1916-04-24T18:00:00Z",
+              "coordinates": [
+                -55.25,
+                -61.0
+              ]
+            },
+            {
+              "time": "1916-04-24T23:59:59Z",
+              "coordinates": [
+                -55.55,
+                -61.1
+              ]
+            }
+          ],
+          "status": "estimated"
+        },
+        {
+          "id": "james-caird-open-ocean",
+          "kind": "voyage-route",
+          "title": "James Caird · open-ocean route estimate",
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                -55.55,
+                -61.1
+              ],
+              [
+                -52.0,
+                -60.3
+              ],
+              [
+                -47.0,
+                -58.4
+              ],
+              [
+                -43.0,
+                -56.0
+              ],
+              [
+                -40.0,
+                -54.8
+              ],
+              [
+                -37.4,
+                -54.2
+              ]
+            ]
+          },
+          "source_refs": [
+            "worsley-log-navigation"
+          ],
+          "synthetic": true,
+          "precision_m": 50000,
+          "detail_zoom": 3,
+          "geometry_method": "Sparse open-ocean waypoints estimated from documented departure/landfall and voyage period; no straight-line land crossing",
+          "note": "Synthetic route envelope, not Worsley's daily positions.",
+          "layer": "routes",
+          "date_validity": {
+            "date_start": "1916-04-25",
+            "date_end": "1916-05-10",
+            "time_basis": "date-only; log time retained separately in source"
+          },
+          "status": "estimated"
+        },
+        {
+          "id": "james-caird-king-haakon-bay",
+          "kind": "landfall-anchor",
+          "title": "South Georgia · King Haakon Bay landfall",
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -37.23,
+              -54.15
+            ]
+          },
+          "source_refs": [
+            "worsley-log-navigation",
+            "bas-shackleton-crossing"
+          ],
+          "synthetic": true,
+          "precision_m": 10000,
+          "detail_zoom": 6,
+          "geometry_method": "Approximate named-bay anchor from source route context; not a landing coordinate",
+          "note": "Documented South Georgia landfall area; exact landing point omitted.",
+          "layer": "routes",
+          "date_validity": {
+            "date_start": "1916-05-10",
+            "date_end": "1916-05-10",
+            "time_basis": "date-only; landing date"
+          },
+          "status": "estimated",
+          "label": "King Haakon Bay"
+        },
+        {
+          "id": "james-caird-stromness",
+          "kind": "destination-anchor",
+          "title": "South Georgia · Stromness rescue destination",
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -36.71,
+              -54.16
+            ]
+          },
+          "source_refs": [
+            "bas-shackleton-crossing"
+          ],
+          "synthetic": true,
+          "precision_m": 10000,
+          "detail_zoom": 6,
+          "geometry_method": "Approximate named-destination anchor; the inland crossing is not drawn as a sea route",
+          "note": "Separate from the James Caird sea voyage; included as the rescue destination context.",
+          "layer": "routes",
+          "date_validity": {
+            "date_start": "1916-05-19",
+            "date_end": "1916-05-20",
+            "time_basis": "date-only; later overland crossing"
+          },
+          "status": "estimated",
+          "label": "Stromness"
+        }
+      ]
+    },
+    {
+      "id": "gallipoli-1915",
+      "title": "Gallipoli landings",
+      "focusDate": "1915-04-25",
+      "focusHour": 4,
+      "focus": {
+        "lat": 40.25,
+        "lon": 26.28,
+        "halfHeight": 0.24,
+        "name": "Anzac Cove",
+        "zone": "Europe/Istanbul"
+      },
+      "provenance": {
+        "summary": "The first-day scene separates documented landing places at Anzac and Cape Helles from the River Clyde's documented V Beach grounding. Coordinates are approximate named-place anchors; no warship track is inferred.",
+        "sources": [
+          {
+            "id": "awm-landing",
+            "title": "Australian War Memorial · The landing",
+            "url": "https://www.awm.gov.au/learn/schools/resources/understanding-gallipoli/landing",
+            "role": "Ari Burnu/Anzac landing and 25 April 1915 context",
+            "rights": "AWM collection rights apply"
+          },
+          {
+            "id": "awm-british-landings",
+            "title": "Australian War Memorial · The British landings",
+            "url": "https://www.awm.gov.au/visit/exhibitions/dawn/plan/british",
+            "role": "W, V and other Cape Helles landing beaches",
+            "rights": "AWM collection rights apply"
+          },
+          {
+            "id": "awm-river-clyde",
+            "title": "Australian War Memorial · River Clyde at Cape Helles",
+            "url": "https://www.awm.gov.au/collection/C172158",
+            "role": "River Clyde grounding at V Beach",
+            "rights": "Item marked public domain; verify collection terms"
+          },
+          {
+            "id": "awm-loutit-map",
+            "title": "Australian War Memorial · annotated Gallipoli relief map",
+            "url": "https://www.awm.gov.au/visit/exhibitions/anzac-voices/landing",
+            "role": "contemporaneous landing-map context and terrain uncertainty",
+            "rights": "AWM collection rights apply"
+          }
+        ]
+      },
+      "features": [
+        {
+          "id": "gallipoli-anzac-cove",
+          "kind": "landing-anchor",
+          "title": "Anzac Cove / Ari Burnu",
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              26.28,
+              40.25
+            ]
+          },
+          "source_refs": [
+            "awm-landing",
+            "awm-loutit-map"
+          ],
+          "synthetic": true,
+          "precision_m": 2500,
+          "detail_zoom": 7,
+          "geometry_method": "Approximate named-place anchor from AWM source account and modern coastline",
+          "note": "Landing-place context, not a troop fix.",
+          "layer": "military",
+          "date_validity": {
+            "date_start": "1915-04-25",
+            "date_end": "1915-04-25",
+            "time_basis": "date-only; source accounts use local/event times"
+          },
+          "status": "estimated",
+          "label": "Anzac Cove"
+        },
+        {
+          "id": "gallipoli-w-beach",
+          "kind": "landing-anchor",
+          "title": "W Beach / Lancashire Landing",
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              26.17,
+              40.04
+            ]
+          },
+          "source_refs": [
+            "awm-british-landings"
+          ],
+          "synthetic": true,
+          "precision_m": 2500,
+          "detail_zoom": 7,
+          "geometry_method": "Approximate named-place anchor from AWM British landing account",
+          "note": "Landing-place context, not a unit boundary.",
+          "layer": "military",
+          "date_validity": {
+            "date_start": "1915-04-25",
+            "date_end": "1915-04-25",
+            "time_basis": "date-only; source accounts use local/event times"
+          },
+          "status": "estimated",
+          "label": "W Beach"
+        },
+        {
+          "id": "gallipoli-river-clyde",
+          "kind": "vessel-event",
+          "title": "V Beach · River Clyde",
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              26.18,
+              40.05
+            ]
+          },
+          "source_refs": [
+            "awm-river-clyde",
+            "awm-british-landings"
+          ],
+          "synthetic": true,
+          "precision_m": 3000,
+          "detail_zoom": 7,
+          "geometry_method": "Approximate event marker at documented V Beach grounding site; no vessel approach track inferred",
+          "note": "Named vessel event, not a navigational position.",
+          "layer": "ships",
+          "date_validity": {
+            "date_start": "1915-04-25",
+            "date_end": "1915-04-25",
+            "time_basis": "event date; AWM account does not establish a UTC timestamp"
+          },
+          "status": "estimated",
+          "label": "River Clyde · V Beach"
+        },
+        {
+          "id": "gallipoli-helles-context",
+          "kind": "landing-anchor",
+          "title": "Cape Helles · landing area context",
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              26.21,
+              40.04
+            ]
+          },
+          "source_refs": [
+            "awm-british-landings"
+          ],
+          "synthetic": true,
+          "precision_m": 6000,
+          "detail_zoom": 7,
+          "geometry_method": "Approximate named-area anchor from AWM British landing account; no beach boundary inferred",
+          "note": "Context anchor only; separate from the V Beach event marker.",
+          "layer": "military",
+          "date_validity": {
+            "date_start": "1915-04-25",
+            "date_end": "1915-04-25",
+            "time_basis": "date-only"
+          },
+          "status": "estimated",
+          "label": "Cape Helles"
+        }
+      ]
+    },
+    {
+      "id": "sydney-hobart-1998",
+      "title": "Sydney–Hobart · 1998 storm race",
+      "focusDate": "1998-12-27",
+      "focusHour": 12,
+      "focus": {
+        "lat": -38.5,
+        "lon": 149.5,
+        "halfHeight": 5.4,
+        "name": "Bass Strait",
+        "zone": "Australia/Hobart"
+      },
+      "provenance": {
+        "summary": "Reconstructed reference course and Bass Strait storm context for 27 December 1998. Original race accounts and weather sources are linked below; the displayed course is an estimate, with no individual yacht fixes.",
+        "sources": [
+          {
+            "id": "cyca-1998-recap",
+            "title": "Cruising Yacht Club of Australia · 1998 race recap",
+            "url": "https://rolexsydneyhobart.com/race/1998/recap/",
+            "role": "official race date, route, fleet and storm account",
+            "rights": "CYCA site rights apply"
+          },
+          {
+            "id": "sydney-hobart-coroners-report",
+            "title": "1998 Sydney–Hobart Race Coroner's Report",
+            "url": "https://www.ussailing.org/wp-content/uploads/2018/01/Sydney-to-Hobart-Race-Coroners-Report-1998.pdf",
+            "role": "official/inquiry weather-service and casualty record",
+            "rights": "report terms apply"
+          },
+          {
+            "id": "csiro-tasman-waypoints",
+            "title": "CSIRO Tasman Sea waypoints",
+            "url": "https://www.cmar.csiro.au/data/reporting/get_file.cfm?eov_pub_id=98",
+            "role": "Cape Raoul waypoint reference for coarse route context",
+            "rights": "CSIRO data/report terms apply"
+          }
+        ]
+      },
+      "features": [
+        {
+          "id": "sydney-hobart-start",
+          "kind": "race-anchor",
+          "title": "Sydney Heads · race start",
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              151.28,
+              -33.85
+            ]
+          },
+          "source_refs": [
+            "cyca-1998-recap"
+          ],
+          "synthetic": true,
+          "precision_m": 3000,
+          "detail_zoom": 4,
+          "geometry_method": "Approximate start-area anchor from official race route context",
+          "note": "Fleet start area; no individual yacht position.",
+          "layer": "routes",
+          "date_validity": {
+            "date_start": "1998-12-26",
+            "date_end": "1998-12-29",
+            "time_basis": "race date; start time omitted"
+          },
+          "status": "estimated",
+          "label": "Sydney Heads"
+        },
+        {
+          "id": "sydney-hobart-east-coast-route",
+          "kind": "race-route",
+          "title": "Sydney–Hobart course",
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                151.28,
+                -33.85
+              ],
+              [
+                151.35,
+                -34.1
+              ],
+              [
+                151.35,
+                -35.25
+              ],
+              [
+                151,
+                -36.55
+              ],
+              [
+                150.3,
+                -37.85
+              ],
+              [
+                149.2,
+                -38.65
+              ],
+              [
+                148.8,
+                -40.3
+              ],
+              [
+                148.7,
+                -41.7
+              ],
+              [
+                148.1,
+                -43.25
+              ],
+              [
+                147.8,
+                -43.28
+              ],
+              [
+                147.5,
+                -43.2
+              ],
+              [
+                147.4,
+                -43.05
+              ],
+              [
+                147.33,
+                -42.88
+              ]
+            ]
+          },
+          "source_refs": [
+            "cyca-1998-recap"
+          ],
+          "synthetic": true,
+          "precision_m": 30000,
+          "detail_zoom": 4,
+          "geometry_method": "Authored offshore reference course between Sydney Heads, eastern Tasmania and the Derwent; not an individual yacht track.",
+          "note": "Fleet corridor only; not a track for any named yacht.",
+          "layer": "routes",
+          "date_validity": {
+            "date_start": "1998-12-26",
+            "date_end": "1998-12-29",
+            "time_basis": "race dates; no yacht-specific times"
+          },
+          "status": "estimated"
+        },
+        {
+          "id": "sydney-hobart-bass-strait-storm",
+          "kind": "weather-area",
+          "title": "Bass Strait",
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              148.0,
+              -39.6
+            ]
+          },
+          "source_refs": [
+            "cyca-1998-recap",
+            "sydney-hobart-coroners-report"
+          ],
+          "synthetic": true,
+          "precision_m": 100000,
+          "detail_zoom": 4,
+          "geometry_method": "Geographic context anchor for the storm-affected region; the weather field comes from ERA5, not this marker.",
+          "note": "Not a low-pressure centre or fleet position.",
+          "layer": "routes",
+          "date_validity": {
+            "date_start": "1998-12-26",
+            "date_end": "1998-12-29",
+            "time_basis": "weather event dates; no claim of a sharp boundary"
+          },
+          "status": "estimated"
+        },
+        {
+          "id": "sydney-hobart-cape-raoul",
+          "kind": "race-anchor",
+          "title": "Tasmanian east coast / Cape Raoul approach",
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              147.8,
+              -43.24
+            ]
+          },
+          "source_refs": [
+            "cyca-1998-recap",
+            "csiro-tasman-waypoints"
+          ],
+          "synthetic": true,
+          "precision_m": 10000,
+          "detail_zoom": 4,
+          "geometry_method": "Approximate Cape Raoul route anchor using the official race corridor and CSIRO waypoint reference",
+          "note": "Shared route context; no individual yacht fix.",
+          "layer": "routes",
+          "date_validity": {
+            "date_start": "1998-12-26",
+            "date_end": "1998-12-29",
+            "time_basis": "race dates; no yacht-specific times"
+          },
+          "status": "estimated",
+          "label": "Cape Raoul"
+        },
+        {
+          "id": "sydney-hobart-hobart-finish",
+          "kind": "race-anchor",
+          "title": "Hobart · Derwent finish",
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              147.33,
+              -42.88
+            ]
+          },
+          "source_refs": [
+            "cyca-1998-recap"
+          ],
+          "synthetic": true,
+          "precision_m": 3000,
+          "detail_zoom": 4,
+          "geometry_method": "Approximate finish-area anchor from official race route context",
+          "note": "Finish area; no yacht-specific position.",
+          "layer": "routes",
+          "date_validity": {
+            "date_start": "1998-12-26",
+            "date_end": "1998-12-29",
+            "time_basis": "race dates; individual finish times omitted"
+          },
+          "status": "estimated",
+          "label": "Hobart finish"
+        }
+      ]
+    },
+    {
+      "id": "katrina-2005",
+      "title": "Hurricane Katrina",
+      "focusDate": "2005-08-29",
+      "focusHour": 11,
+      "focus": {
+        "lat": 29.2,
+        "lon": -89.4,
+        "halfHeight": 3.2,
+        "name": "Gulf Coast",
+        "zone": "America/Chicago"
+      },
+      "features": [
+        {
+          "id": "katrina-best-track",
+          "kind": "storm-route",
+          "title": "Katrina best track",
+          "layer": "routes",
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                -85.9,
+                24.8
+              ],
+              [
+                -86.7,
+                25.2
+              ],
+              [
+                -87.7,
+                25.7
+              ],
+              [
+                -88.6,
+                26.3
+              ],
+              [
+                -89.2,
+                27.2
+              ],
+              [
+                -89.6,
+                28.2
+              ],
+              [
+                -89.6,
+                29.3
+              ],
+              [
+                -89.6,
+                29.5
+              ],
+              [
+                -89.6,
+                30.2
+              ],
+              [
+                -89.6,
+                31.1
+              ],
+              [
+                -89.1,
+                32.6
+              ]
+            ]
+          },
+          "date_validity": {
+            "date_start": "2005-08-28",
+            "date_end": "2005-08-29",
+            "time_basis": "UTC"
+          },
+          "source_refs": [
+            "nhc-katrina"
+          ],
+          "status": "best-track-interpolation",
+          "precision_m": 10000,
+          "detail_zoom": 2,
+          "geometry_method": "Straight interpolation between NHC best-track fixes; the cyclone wind field moves along the same fixes."
+        }
+      ],
+      "provenance": {
+        "summary": "NHC best-track position, pressure and intensity over global ERA5 weather. The detailed radial wind field is a synthetic reconstruction; no storm-surge or flood extent is inferred.",
+        "sources": [
+          {
+            "id": "nhc-katrina",
+            "title": "NHC · Hurricane Katrina report",
+            "url": "https://www.nhc.noaa.gov/data/tcr/AL122005_Katrina.pdf"
+          }
+        ]
+      }
+    }
+  ]
+}

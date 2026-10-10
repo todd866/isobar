@@ -270,7 +270,7 @@ static void Journeys(JourneyController *c, NSView *(^root)(void), NSString *surf
         "returning flat must retain the current focus and remove only the tilt dolly");
     EXPECT(fabs([[c selectedForecastDate] timeIntervalSinceDate:vectorTime])<1, "returning flat changed forecast time");
     double flatZoom = map.camera.zoom;
-    [map scrollByX:0 y:150 atPoint:NSMakePoint(NSMidX(map.bounds),NSMidY(map.bounds)) precise:YES command:NO];
+    [map scrollByX:0 y:-150 atPoint:NSMakePoint(NSMidX(map.bounds),NSMidY(map.bounds)) precise:YES command:NO];
     EXPECT(fabs(map.camera.pitch)<1e-9 && map.camera.zoom < flatZoom,
         "two-finger scroll in 2D should zoom out without tilting");
 }

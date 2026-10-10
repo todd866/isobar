@@ -12,11 +12,15 @@
 @end
 @interface SeedProbe : AtmosphereMapView
 @property(nonatomic) NSUInteger projectedSeeds;
+@property(nonatomic,strong) NSMutableSet<NSString *> *seedKeys;
 @end
 @implementation SeedProbe
 - (BOOL)projectLat:(double)lat lon:(double)lon height:(double)height x:(double *)x y:(double *)y {
     (void)lat; (void)lon; (void)height; (void)x; (void)y;
-    self.projectedSeeds++; return NO;
+    self.projectedSeeds++;
+    if (!self.seedKeys) self.seedKeys=[NSMutableSet set];
+    [self.seedKeys addObject:[NSString stringWithFormat:@"%.5f:%.5f:%.0f",lat,lon,height]];
+    return NO;
 }
 @end
 static int failures;
@@ -108,47 +112,25 @@ static void WriteScreenshot(NSBitmapImageRep *bitmap) {
     [png writeToFile:path atomically:YES];
 }
 
-static double WindComponent(AtmosphereMapView *view, NSString *key, double height, double latitude, double longitude) {
-    return [[view syntheticWindAtHeight:height latitude:latitude longitude:longitude][key] doubleValue];
-}
-
 static void CheckSyntheticCell(AtmosphereMapView *view) {
     const double latitude=-31.94, longitude=115.97;
-    Check(fabs(WindComponent(view,@"verticalMS",0,latitude,longitude))<1e-12,
-          @"synthetic cell has zero vertical flow at floor");
-    Check(fabs(WindComponent(view,@"verticalMS",10000,latitude,longitude))<1e-12,
-          @"synthetic cell has zero vertical flow at top");
-
-    double lowEast=WindComponent(view,@"eastMS",2500,latitude,longitude)-13.0;
-    double highEast=WindComponent(view,@"eastMS",7500,latitude,longitude)-23.0;
-    double lowNorth=WindComponent(view,@"northMS",2500,latitude,longitude)-(-1.0);
-    double highNorth=WindComponent(view,@"northMS",7500,latitude,longitude)-7.0;
-    Check(lowEast*highEast+lowNorth*highNorth<0,
-          @"synthetic cell reverses horizontal perturbation across midlevel");
-
-    // The analytic partners cancel in local metres, within finite-difference
-    // error from the latitude-dependent longitude scale.
-    const double dLat=.0005, dLon=.0005, dHeight=1.0;
-    for (NSArray *point in @[@[@(-31.94),@(115.97),@(2500)],
-                             @[@(-12.0),@(40.0),@(5000)],
-                             @[@(32.0),@(-110.0),@(7500)]]) {
-        double lat=[point[0] doubleValue], lon=[point[1] doubleValue], h=[point[2] doubleValue];
-        double du=(WindComponent(view,@"eastMS",h,lat,lon+dLon)-WindComponent(view,@"eastMS",h,lat,lon-dLon))
-            /(2*dLon*111320.0*MAX(.1,cos(lat*M_PI/180.0)));
-        double dv=(WindComponent(view,@"northMS",h,lat+dLat,lon)-WindComponent(view,@"northMS",h,lat-dLat,lon))
-            /(2*dLat*111132.0);
-        double dw=(WindComponent(view,@"verticalMS",h+dHeight,lat,lon)-WindComponent(view,@"verticalMS",h-dHeight,lat,lon))/(2*dHeight);
-        Check(fabs(du+dv+dw)<5e-7, @"synthetic cell is locally divergence-free");
-    }
-
-    NSDate *base=view.date;
-    NSDictionary *baseline=[view syntheticWindAtHeight:2500 latitude:latitude longitude:longitude];
-    view.date=[base dateByAddingTimeInterval:299];
-    NSDictionary *before=[view syntheticWindAtHeight:2500 latitude:latitude longitude:longitude];
+    ATTeachingContext context={ATTeachingCirculation,latitude,longitude,0,view.date.timeIntervalSince1970*1000.0};
+    ATTeachingSample floor=at_teaching_sample(context,latitude,longitude,0), top=at_teaching_sample(context,latitude,longitude,10000);
+    Check(floor.w==0 && floor.cloudPct==0 && top.w==0 && top.cloudPct==0, @"teaching cell closes flow and cloud at floor/lid");
+    ATTeachingSample c=at_teaching_sample(context,latitude+.01,longitude+.01,4220);
+    NSDictionary *native=[view syntheticWindAtHeight:4220 latitude:latitude+.01 longitude:longitude+.01];
+    Check(fabs([native[@"verticalMS"] doubleValue]-c.w)<1e-9, @"native wind samples shared C field");
+    view.teachingKind=ATTeachingSeaBreeze; NSDate *base=view.date; NSDictionary *baseline=[view syntheticWindAtHeight:500 latitude:latitude longitude:longitude]; view.date=[base dateByAddingTimeInterval:299];
+    NSDictionary *before=[view syntheticWindAtHeight:500 latitude:latitude longitude:longitude];
     view.date=[base dateByAddingTimeInterval:300];
-    NSDictionary *after=[view syntheticWindAtHeight:2500 latitude:latitude longitude:longitude];
-    Check([baseline isEqual:before] && ![baseline isEqual:after], @"synthetic field is quantized to five-minute forecast steps");
-    view.date=base;
+    NSDictionary *after=[view syntheticWindAtHeight:500 latitude:latitude longitude:longitude];
+    Check([baseline isEqual:before] && ![before isEqual:after], @"native context time changes at the five-minute boundary"); view.date=base;
+    view.teachingKind=ATTeachingSeaBreeze;
+    NSDictionary *ocean=[view syntheticWindAtHeight:470 latitude:latitude longitude:longitude-.35];
+    NSDictionary *land=[view syntheticWindAtHeight:470 latitude:latitude longitude:longitude+.35];
+    NSDictionary *returnFlow=[view syntheticWindAtHeight:1870 latitude:latitude longitude:longitude];
+    Check([ocean[@"eastMS"] doubleValue]>0 && [ocean[@"verticalMS"] doubleValue]<0 && [land[@"verticalMS"] doubleValue]>0 && [returnFlow[@"eastMS"] doubleValue]<0, @"sea breeze has onshore, return, rise, and descent branches");
+    view.teachingKind=ATTeachingCirculation;
 }
 
 int main(void) { @autoreleasepool {
@@ -181,14 +163,42 @@ int main(void) { @autoreleasepool {
     [badge performClick:nil];
     NSSlider *slider = [view valueForKey:@"altitudeSlider"];
     Check(view.disclosureOpen && slider != nil && !slider.hidden, @"badge opens profile section and altitude slider");
+    NSPopUpButton *selector=[view valueForKey:@"teachingSelector"];
+    [window displayIfNeeded];
+    __block BOOL framed=NO;
+    __weak AtmosphereMapView *weakView=view;
+    view.onFrameCamera=^(IsobarCamera camera){framed=YES;weakView.camera=camera;};
+    NSButton *frameButton=[view valueForKey:@"frameButton"];[frameButton performClick:nil];
+    Check(framed,@"frame action requests shared map camera update");
+    Check(isfinite(view.camera.centreLat) && isfinite(view.camera.centreLon) && isfinite(view.camera.zoom) && isfinite(view.camera.pitch) && isfinite(view.camera.globe), @"framing leaves a finite camera");
+    double frameX=0,frameY=0;Check(IsobarCameraProjectAltitude(view.camera,view.latitude,view.longitude,10020,&frameX,&frameY) && frameY>=view.camera.viewportH*.14 && frameY<view.camera.viewportH*.4,@"framing makes the physical column visible");
+    Check(selector != nil && [view hitTest:NSMakePoint(NSMidX(selector.frame),NSMidY(selector.frame))] == selector, @"teaching scenario selector is interactive");
     NSBitmapImageRep *low = Capture(view, window);
-    slider.doubleValue = 11000;
+    slider.doubleValue = 9000;
     [slider sendAction:slider.action to:slider.target];
-    Check(fabs(view.aircraftAltitudeM - 11000) < 0.1, @"altitude control updates the reference height");
+    Check(fabs(view.aircraftAltitudeM - 9000) < 0.1, @"altitude control updates the reference height");
     [view setNeedsDisplay:YES];
     NSBitmapImageRep *high = Capture(view, window);
     Check(Difference(low, high) > 100, @"changing reference altitude changes rendered pixels");
     WriteScreenshot(high);
+    NSEvent *escape=[NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint modifierFlags:0 timestamp:0 windowNumber:window.windowNumber context:nil characters:@"\x1b" charactersIgnoringModifiers:@"\x1b" isARepeat:NO keyCode:53];
+    [view keyDown:escape];Check(!view.disclosureOpen && selector.hidden && frameButton.hidden,@"Escape closes all native atmosphere instruments");
+
+    NSDictionary *anchorWind=[view syntheticWindAtHeight:470 latitude:view.latitude longitude:view.longitude];
+    IsobarCamera moved=view.camera; moved.centreLat=-31.72; moved.centreLon=116.32; view.camera=moved;
+    NSDictionary *stillAnchor=[view syntheticWindAtHeight:470 latitude:view.latitude longitude:view.longitude];
+    Check([anchorWind isEqual:stillAnchor], @"teaching field anchor remains fixed while camera pans");
+    NSDictionary *pannedSample=[view sample]; NSDictionary *pannedLevel=pannedSample[@"levels"][0];
+    ATTeachingContext pannedContext={view.teachingKind,view.latitude,view.longitude,20,date.timeIntervalSince1970*1000.0};
+    ATTeachingSample pannedField=at_teaching_sample(pannedContext,moved.centreLat,moved.centreLon,[pannedLevel[@"heightM"] doubleValue]);
+    Check(fabs([pannedLevel[@"verticalVelocityMS"] doubleValue]-pannedField.w)<1e-9, @"profile follows camera centre while field anchor stays fixed");
+
+    double anchorLat=[[view valueForKey:@"anchorLat"] doubleValue], anchorLon=[[view valueForKey:@"anchorLon"] doubleValue], anchorGround=[[view valueForKey:@"anchorGroundM"] doubleValue];
+    view.latitude=-32.15; view.longitude=116.85; view.product=@{@"elevation":@8848};
+    Check(fabs([[view valueForKey:@"anchorLat"] doubleValue]-anchorLat)<1e-12 && fabs([[view valueForKey:@"anchorLon"] doubleValue]-anchorLon)<1e-12 && fabs([[view valueForKey:@"anchorGroundM"] doubleValue]-anchorGround)<1e-12,
+          @"airport/product coordinate updates preserve the established teaching anchor");
+    Check(fabs([[view valueForKey:@"groundHeight"] doubleValue]-anchorGround)<1e-12, @"profile axis and displayed field retain the same anchor ground after product change");
+    view.product=product;
 
     view.product = nil;
     view.date = nil;
@@ -205,12 +215,33 @@ int main(void) { @autoreleasepool {
     NSBitmapImageRep *syntheticBitmap=Capture(synthetic,window);
     NSButton *syntheticBadge=[synthetic valueForKey:@"disclosureButton"];
     Check(!syntheticBadge.hidden && InkPixels(syntheticBitmap)>20, @"synthetic layered wind renders without a product");
+    for (NSInteger kind=0;kind<4;kind++) {
+        AtmosphereMapView *scenario=[[AtmosphereMapView alloc] initWithFrame:NSMakeRect(0,0,640,420)];
+        scenario.camera=MapCameraMake(-31.94,115.97,1200,0,640,420); IsobarCamera scenarioCamera=scenario.camera; scenarioCamera.pitch=.8; scenario.camera=scenarioCamera;
+        scenario.date=date; scenario.latitude=-31.94; scenario.longitude=115.97; scenario.teachingKind=(ATTeachingKind)kind;
+        for(NSNumber *ground in @[@0,@8848])for(NSValue *size in @[[NSValue valueWithSize:NSMakeSize(640,420)],[NSValue valueWithSize:NSMakeSize(390,600)],[NSValue valueWithSize:NSMakeSize(844,390)]]) {
+            scenario.product=@{@"elevation":ground}; scenario.teachingKind=(ATTeachingKind)kind; IsobarCamera c=scenario.camera;c.viewportW=size.sizeValue.width;c.viewportH=size.sizeValue.height;c.zoom=3;scenario.camera=c;
+            [(NSButton *)[scenario valueForKey:@"frameButton"] performClick:nil];
+            double top=kind==1?2500:kind==3?12000:10000,x=0,y=0;
+            double displayTop=ground.doubleValue+(kind==1?top*3.0:top);
+            Check(IsobarCameraProjectAltitude(scenario.camera,scenario.latitude,scenario.longitude,displayTop,&x,&y) && y>=c.viewportH*.14 && y<c.viewportH*.4,@"every framed native model has a visible lid at low and high terrain");
+            if (kind==1) {
+                double lateral=8000.0/(111320.0*MAX(.2,cos(scenario.latitude*M_PI/180.0))),westX=0,westY=0,eastX=0,eastY=0;
+                Check(IsobarCameraProjectAltitude(scenario.camera,scenario.latitude,scenario.longitude-lateral,ground.doubleValue+1250*3.0,&westX,&westY) && IsobarCameraProjectAltitude(scenario.camera,scenario.latitude,scenario.longitude+lateral,ground.doubleValue+1250*3.0,&eastX,&eastY) && westX>=c.viewportW*.08 && eastX<=c.viewportW*.92 && westY>=c.viewportH*.12 && westY<=c.viewportH*.88 && eastY>=c.viewportH*.12 && eastY<=c.viewportH*.88,@"sea-breeze frame keeps the full lateral cell visible");
+            }
+        }
+        scenario.product=nil;scenario.camera=scenarioCamera;[(NSButton *)[scenario valueForKey:@"frameButton"] performClick:nil];
+        NSBitmapImageRep *scenarioBitmap=Capture(scenario,window);
+        [[scenarioBitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:[NSString stringWithFormat:@"build/atmosphere/native-scenario-%ld.png",(long)kind] atomically:YES];
+        Check(InkPixels(scenarioBitmap)>20, @"each teaching scenario renders a bounded close regional profile");
+    }
     SeedProbe *probe=[[SeedProbe alloc] initWithFrame:NSMakeRect(0,0,640,420)]; probe.date=date;
     for (NSNumber *latitude in @[@93,@106,@(-93),@(-106),@89.99,@(-89.99)]) {
         IsobarCamera orbit=MapCameraMake(latitude.doubleValue,12,10000,0,640,420);
         orbit.centreLat=latitude.doubleValue; orbit.pitch=.8; probe.camera=orbit;
-        probe.projectedSeeds=0; [probe drawSyntheticFlows];
+        probe.projectedSeeds=0; probe.seedKeys=[NSMutableSet set]; [probe drawSyntheticFlows];
         Check(probe.projectedSeeds>0,@"pole orbit retains atmosphere seeds at close zoom");
+        Check(probe.seedKeys.count>1,@"fixed atmosphere lattice projects distinct trajectory seeds");
         NSDictionary *orbital=[probe sample];
         if (fabs(latitude.doubleValue)>90) {
             orbit.centreLat=latitude.doubleValue>0?180-latitude.doubleValue:-180-latitude.doubleValue;

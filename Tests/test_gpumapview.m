@@ -18,6 +18,7 @@ static int failures = 0;
 
 @interface GPUMapView (GestureTestEvents)
 - (void)magnifyWithEvent:(NSEvent *)event;
+- (void)scrollWheel:(NSEvent *)event;
 @end
 
 @interface SyntheticMagnifyEvent : NSEvent
@@ -30,6 +31,22 @@ static int failures = 0;
 - (CGFloat)magnification { return self.testMagnification; }
 - (NSPoint)locationInWindow { return self.testLocation; }
 - (NSEventPhase)phase { return self.testPhase; }
+@end
+
+@interface SyntheticScrollEvent : NSEvent
+@property(nonatomic) CGFloat testDeltaX;
+@property(nonatomic) CGFloat testDeltaY;
+@property(nonatomic) NSPoint testLocation;
+@property(nonatomic) BOOL testPrecise;
+@property(nonatomic) NSEventModifierFlags testFlags;
+@end
+
+@implementation SyntheticScrollEvent
+- (CGFloat)scrollingDeltaX { return self.testDeltaX; }
+- (CGFloat)scrollingDeltaY { return self.testDeltaY; }
+- (NSPoint)locationInWindow { return self.testLocation; }
+- (BOOL)hasPreciseScrollingDeltas { return self.testPrecise; }
+- (NSEventModifierFlags)modifierFlags { return self.testFlags; }
 @end
 
 static void Check(BOOL ok, NSString *message) {
@@ -351,20 +368,20 @@ static void CheckDragAndPinch(GPUMapView *view) {
     Check(view.camera.globe == 0 && view.camera.pitch == 0, @"switching to 2D reaches the flat camera");
     IsobarCamera flatBeforeSwipe = view.camera;
     double flatZoomBeforeSwipe = view.camera.zoom;
-    [view scrollByX:0 y:-1000 atPoint:at precise:YES command:NO];
+    [view scrollByX:0 y:1000 atPoint:at precise:YES command:NO];
     Check(flat.state == NSControlStateValueOn && sphere.state == NSControlStateValueOff,
         @"selecting 2D updates the mutually exclusive mode controls");
     Check(fabs(view.camera.pitch - flatBeforeSwipe.pitch) < 1e-9 && fabs(view.camera.globe - flatBeforeSwipe.globe) < 1e-9 &&
         view.camera.zoom > flatZoomBeforeSwipe, @"a two-finger swipe in 2D zooms without activating 3D");
     Check(!((NSSlider *)FindID(view, @"gpumap.globe")).enabled, @"the tilt slider is disabled in 2D");
     double flatZoom = view.camera.zoom;
-    [view scrollByX:0 y:-40 atPoint:at precise:NO command:NO];
+    [view scrollByX:0 y:40 atPoint:at precise:NO command:NO];
     Check(view.camera.zoom > flatZoom, @"a non-precise wheel event still zooms in 2D");
     [sphere performClick:nil];
     [view advanceDisplay:1.0];
     Check(fabs(view.camera.globe - saved3DGlobe) < 1e-9, @"switching back to 3D restores the last tilt");
     [flat performClick:nil];
-    [view scrollByX:0 y:-1000 atPoint:at precise:YES command:NO];
+    [view scrollByX:0 y:1000 atPoint:at precise:YES command:NO];
     Check(flat.state == NSControlStateValueOn && fabs(view.camera.globe) < 1e-9 && fabs(view.camera.pitch) < 1e-9,
         @"2D input during the mode transition settles the camera overhead");
     // A pinch at either zoom limit keeps its geographic anchor even when the
@@ -385,6 +402,36 @@ static void CheckDragAndPinch(GPUMapView *view) {
     Check(fabs(view.camera.centreLat - finiteGuard.centreLat) < 1e-9 &&
         fabs(view.camera.centreLon - finiteGuard.centreLon) < 1e-9,
         @"non-finite scroll input is ignored");
+
+    // AppKit's scrollingDeltaY is already adjusted for the user's natural
+    // scrolling preference: positive is an upward two-finger scroll. Exercise
+    // the real scrollWheel: adapter so this contract is not hidden by direct
+    // scrollByX:y: calls.
+    view.camera = MapCameraMake(-35, 140, 6, 0, 480, 360);
+    SyntheticScrollEvent *scroll = [SyntheticScrollEvent new];
+    scroll.testLocation = [view convertPoint:at toView:nil];
+    scroll.testPrecise = YES;
+    scroll.testDeltaY = 40;
+    IsobarCamera adapterStart = view.camera;
+    [view scrollWheel:scroll];
+    Check(view.camera.zoom > adapterStart.zoom,
+        @"positive precise scrollingDeltaY zooms in through the native adapter");
+    adapterStart = view.camera;
+    scroll.testDeltaY = -40;
+    [view scrollWheel:scroll];
+    Check(view.camera.zoom < adapterStart.zoom,
+        @"negative precise scrollingDeltaY zooms out through the native adapter");
+    scroll.testPrecise = NO;
+    scroll.testDeltaY = 40;
+    adapterStart = view.camera;
+    [view scrollWheel:scroll];
+    Check(view.camera.zoom > adapterStart.zoom,
+        @"positive non-precise scrollingDeltaY zooms in through the native adapter");
+    adapterStart = view.camera;
+    scroll.testDeltaY = -40;
+    [view scrollWheel:scroll];
+    Check(view.camera.zoom < adapterStart.zoom,
+        @"negative non-precise scrollingDeltaY zooms out through the native adapter");
 
     view.camera = MapCameraMake(-35, 140, 6, 0, 480, 360);
     IsobarCamera beforeMagnify = view.camera;

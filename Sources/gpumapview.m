@@ -606,6 +606,14 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _atmosphereView=[AtmosphereMapView new];
     _atmosphereView.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
     _atmosphereView.frame=self.bounds; [self addSubview:_atmosphereView];
+    __weak GPUMapView *weakSelf = self;
+    _atmosphereView.onFrameCamera = ^(IsobarCamera camera) {
+        GPUMapView *strongSelf = weakSelf;
+        if (!strongSelf) return;
+        [strongSelf commitKeyboardCamera:camera];
+        [strongSelf syncVectorOverlays];
+        [strongSelf presentNow];
+    };
     _windView = [[WindMapView alloc] initWithFrame:self.bounds];
     _windView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     _windView.hidden = YES;
@@ -1916,11 +1924,11 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     if (!precise || command) {
         _morphing = NO;
         double notches = dy / 40.0;
-        [self pinchFactor:exp(-notches * 0.12) atPoint:point];
+        [self pinchFactor:exp(notches * 0.12) atPoint:point];
         return;
     }
     if (!_threeDMode) {
-        [self pinchFactor:exp(-dy / 40.0 * 0.12) atPoint:point];
+        [self pinchFactor:exp(dy / 40.0 * 0.12) atPoint:point];
         return;
     }
     _morphing = NO;

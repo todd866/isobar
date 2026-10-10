@@ -10,8 +10,8 @@ fi
 
 SHORT=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
 BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist)
-if [[ "$SHORT" != "1.11.2" || "$BUILD" != "38" ]]; then
-    echo "tests.sh: Info.plist version is ${SHORT} (${BUILD}); expected 1.11.2 (38)." >&2
+if [[ "$SHORT" != "1.11.3" || "$BUILD" != "39" ]]; then
+    echo "tests.sh: Info.plist version is ${SHORT} (${BUILD}); expected 1.11.3 (39)." >&2
     exit 1
 fi
 
@@ -140,6 +140,10 @@ fi
     Sources/fieldrender.m Sources/ownchart.m tools/own-chart.m Sources/pure.m Sources/atmosphere.m Sources/atmospheremapview.m Sources/mapcamera.m Tests/test_atmospheremapview.m \
     -framework Cocoa -framework Metal -framework QuartzCore -framework CoreText -framework Accelerate -lz -o "$WORK_DIR/atmospheremap_tests"
 "$WORK_DIR/atmospheremap_tests"
+
+"$CC" -std=c11 -Wall -Wextra -Werror -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
+    tools/check-atmosphere-teaching.c -lm -o "$WORK_DIR/atmosphere_teaching_c_tests"
+"$WORK_DIR/atmosphere_teaching_c_tests"
 
 for TEST in rain aviation solar atmosphere aircraft traffic trafficroute; do
     "$CC" -fobjc-arc -Wall -Wextra -Werror \

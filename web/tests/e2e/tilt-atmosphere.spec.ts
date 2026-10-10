@@ -115,7 +115,7 @@ test('profile geometry, altitude marker and section use the shared forecast cloc
   await expect(page.locator('[data-atmosphere-layer]')).toHaveAttribute('data-profile-state','ready');
   await expect.poll(async()=>Number(await page.locator('[data-atmosphere-layer]').getAttribute('data-layers'))).toBeGreaterThan(0);
   await page.getByRole('button',{name:'Atmospheric section',exact:true}).click();
-  await expect(page.locator('[data-atmosphere-section]')).toContainText('Illustrative profile');
+  await expect(page.getByRole('combobox',{name:'Atmosphere model'})).toHaveValue('circulation');
   await expect(page.locator('[data-atmosphere-section]')).toContainText('↕ m/s');
   const a=await stage(page).screenshot();
   await page.getByRole('slider',{name:'Reference aircraft altitude'}).fill('10000');

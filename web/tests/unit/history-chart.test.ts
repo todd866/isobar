@@ -54,3 +54,23 @@ describe('historical shared chart adapter', () => {
     await expect(loadHistoricalChart({ hour: 24 })).rejects.toThrow('0–23');
   });
 });
+
+it('opens Katrina at landfall and keeps the cyclone through the last available hour',async()=>{
+ const frames=Array.from({length:48},(_,i)=>({...weather.frames[i%24],time:`2005-08-${i<24?'28':'29'}T${String(i%24).padStart(2,'0')}:00Z`}));
+ const archive={...weather,event:{id:'katrina-2005'},times:frames.map(f=>f.time),frames,cyclone:{method:'compact-vortex-v1',rmwKm:55,profile:{exponent:1.75,blendStartKm:370,blendEndKm:600},source:'https://www.nhc.noaa.gov/data/tcr/AL122005_Katrina.pdf',track:[{time:'2005-08-28T00:00Z',lat:24.8,lon:-85.9,windKt:100,pressureHpa:941},{time:'2005-08-30T00:00Z',lat:32.6,lon:-89.1,windKt:50,pressureHpa:961}]}};
+ const fetcher=vi.spyOn(globalThis,'fetch').mockImplementation(async input=>{
+  const url=String(input);
+  if(url.endsWith('/history/catalog.json'))return new Response(JSON.stringify({collections:[{id:'katrina-2005',title:'Katrina',manifest:'/history/katrina-test.json',days:['2005-08-28','2005-08-29'].map(date=>({date,complete:true}))}]}));
+  if(url.endsWith('/history/katrina-test.json'))return new Response(JSON.stringify(archive));
+  if(url.endsWith('/history/world-coast.bin'))return new Response(new Uint8Array());
+  throw Error(`unexpected request ${url}`);
+ });
+ try{
+  const result=await loadHistoricalChart({event:'katrina-2005'});
+  expect(result.initialMs).toBe(Date.parse('2005-08-29T11:00Z'));
+  expect(result.chart.cyclone?.profile?.blendEndKm).toBe(600);
+  const end=await loadHistoricalChart({event:'katrina-2005',date:'2005-08-29',hour:23});
+  expect(end.initialMs).toBe(Date.parse('2005-08-29T23:00Z'));
+  expect(end.chart.cyclone?.track.at(-1)?.time).toBe('2005-08-30T00:00Z');
+ }finally{fetcher.mockRestore();}
+});

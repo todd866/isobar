@@ -25,6 +25,27 @@
       "label": "VE Day · World",
       "start": "1945-05-08",
       "end": "1945-05-08"
+    },
+    {
+      "id": "sydney-hobart-1998",
+      "label": "Sydney–Hobart 1998",
+      "start": "1998-12-27",
+      "end": "1998-12-27",
+      "archive": "era5"
+    },
+    {
+      "id": "shackleton-1916",
+      "label": "Shackleton 1916",
+      "start": "1916-04-24",
+      "end": "1916-04-24",
+      "archive": "20cr"
+    },
+    {
+      "id": "gallipoli-1915",
+      "label": "Gallipoli 1915",
+      "start": "1915-04-25",
+      "end": "1915-04-25",
+      "archive": "20cr"
     }
   ]
 }

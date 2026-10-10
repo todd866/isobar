@@ -1,3 +1,4 @@
+import {atmosphereDisplayHeight} from './atmosphere-display';
 /** Optional low-resolution ray-marched 3D cloud layer. No camera-facing sprites. */
 import type { TiltedCamera } from './tilt-navigation';
 import type { TiltCamera } from './tilt-camera';
@@ -9,10 +10,10 @@ export function cloudWorldPoint(camera:TiltCamera,lat:number,lon:number,height:n
   const n=[Math.cos(p)*Math.sin(l),Math.sin(p)*Math.cos(p0)-Math.cos(p)*Math.cos(l)*Math.sin(p0),Math.cos(p)*Math.cos(l)*Math.cos(p0)+Math.sin(p)*Math.sin(p0)];
   return [n[0]*(re+height),n[1]*(re+height),re*(n[2]-1)+n[2]*height];
 }
-export function cloudWorldBounds(camera:TiltCamera,data:CloudDensityTexture){
+export function cloudWorldBounds(camera:TiltCamera,data:CloudDensityTexture,display?:{baseM:number;scale:number}){
   const b=data.bounds,min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];
   for(const lat of [b.south,(b.south+b.north)/2,b.north])for(const lon of [b.west,(b.west+b.east)/2,b.east])for(const h of [b.minHeight,b.maxHeight]){
-    const p=cloudWorldPoint(camera,lat,lon,h);for(let i=0;i<3;i++){min[i]=Math.min(min[i],p[i]-100);max[i]=Math.max(max[i],p[i]+100);}
+    const p=cloudWorldPoint(camera,lat,lon,atmosphereDisplayHeight(h,display));for(let i=0;i<3;i++){min[i]=Math.min(min[i],p[i]-100);max[i]=Math.max(max[i],p[i]+100);}
   }return {min,max};
 }
 const VERT=`#version 300 es
@@ -24,8 +25,8 @@ in vec2 clip;out vec4 colour;
 uniform sampler3D volume;uniform sampler2D ground;uniform sampler2D depthMap;
 uniform vec4 box;uniform vec2 heights;uniform vec3 eye;uniform vec3 forward;uniform vec3 up;
 uniform vec3 minimum;uniform vec3 maximum;uniform vec3 lightStep;uniform vec4 camera;uniform vec2 projection;
-uniform vec4 slice;uniform vec2 sliceSize;
-uniform float dark;uniform float inspection;
+uniform vec4 slice;uniform vec2 sliceSize;uniform vec2 heightDisplay;
+uniform float dark;uniform float inspection;uniform float opacityLimit;
 const float R=6371000.0;
 vec3 geographical(vec3 p){
  float k=camera.z,re=R/k,r=length(p+vec3(0,0,re));
@@ -35,7 +36,7 @@ vec3 geographical(vec3 p){
  float h=(dot(p,p)+2.0*re*p.z)/(r+re);
  return vec3(degrees(lon),degrees(lat),h);
 }
-vec3 uvw(vec3 g){return vec3((g.xy-box.xy)/(box.zw-box.xy),(g.z-heights.x)/(heights.y-heights.x));}
+vec3 uvw(vec3 g){return vec3((g.xy-box.xy)/(box.zw-box.xy),((heightDisplay.x+(g.z-heightDisplay.x)/heightDisplay.y)-heights.x)/(heights.y-heights.x));}
 float sliceWeight(vec2 lonLat){
  if(slice.w<.5)return 1.0;
  float east=mod(lonLat.x-slice.y+540.0,360.0)-180.0;
@@ -83,11 +84,11 @@ void main(){
      if(sum.a>.985)break;
    }
  }
- colour=sum;
+ colour=sum*(sum.a>opacityLimit?opacityLimit/max(.0001,sum.a):1.0);
 }`;
 export interface CloudVolumeLayer {
  setData(data:CloudDensityTexture):void;
- draw(camera:TiltedCamera,width:number,height:number,dark:boolean,inspection:number):void;
+ draw(camera:TiltedCamera,width:number,height:number,dark:boolean,inspection:number,opacityLimit?:number):void;
  clear():void;
  destroy():void;
 }
@@ -113,13 +114,13 @@ export function createCloudVolumeLayer(canvas:HTMLCanvasElement):CloudVolumeLaye
    gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_3D,textures[0]);gl.texImage3D(gl.TEXTURE_3D,0,gl.R8,next.width,next.height,next.depth,0,gl.RED,gl.UNSIGNED_BYTE,next.density);textureParameters(gl.TEXTURE_3D,gl.LINEAR);
    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,textures[1]);gl.texImage2D(gl.TEXTURE_2D,0,gl.R32F,next.terrainSize,next.terrainSize,0,gl.RED,gl.FLOAT,next.terrain);textureParameters(gl.TEXTURE_2D,gl.NEAREST);
   },
-  draw(view,width,height,dark,inspection){const camera=view.tiltCamera;if(!camera||!data||camera.geometry.curvature<.001){clear();return;}
+  draw(view,width,height,dark,inspection,opacityLimit=1){const camera=view.tiltCamera;if(!camera||!data||camera.geometry.curvature<.001){clear();return;}
    // Half CSS resolution, capped independently of devicePixelRatio.
    const scale=Math.min(.5,640/Math.max(1,width));const w=Math.max(1,Math.round(width*scale)),h=Math.max(1,Math.round(height*scale));if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}gl.viewport(0,0,w,h);gl.useProgram(program);gl.bindVertexArray(vao);
    const sliceConfig=view.slice;
    const sliceKey=sliceConfig?[sliceConfig.lat,sliceConfig.lon,sliceConfig.bearingRadians,sliceConfig.halfWidthM,sliceConfig.halfDepthM,sliceConfig.baseM]:[];
-   const key=[camera.lat,camera.lon,camera.halfHeightDeg,camera.aspect,camera.tiltRadians,camera.bearingRadians,camera.targetElevationM,...sliceKey].join(':');
-   const drawKey=[key,w,h,dark,inspection,revision].join(':');
+   const key=[camera.lat,camera.lon,camera.halfHeightDeg,camera.aspect,camera.tiltRadians,camera.bearingRadians,camera.targetElevationM,view.atmosphereDisplay?.baseM,view.atmosphereDisplay?.scale,...sliceKey].join(':');
+   const drawKey=[key,w,h,dark,inspection,opacityLimit,revision].join(':');
    if(drawKey===lastDraw)return;
    if(key!==lastCamera){
     const pixels=new Float32Array(48*32);const sliceDepth=sliceConfig&&view.surface?cachedAtmosphereSliceDepthGrid(view,sliceConfig):null;
@@ -129,7 +130,8 @@ export function createCloudVolumeLayer(canvas:HTMLCanvasElement):CloudVolumeLaye
     }
     gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,textures[2]);gl.texImage2D(gl.TEXTURE_2D,0,gl.R32F,48,32,0,gl.RED,gl.FLOAT,pixels);textureParameters(gl.TEXTURE_2D,gl.NEAREST);lastCamera=key;
    }
-   const bounds=cloudWorldBounds(camera,data),b=data.bounds,g=camera.geometry;
+   const bounds=cloudWorldBounds(camera,data,view.atmosphereDisplay),b=data.bounds,g=camera.geometry;
+   gl.uniform2f(loc('heightDisplay'),view.atmosphereDisplay?.baseM??0,view.atmosphereDisplay?.scale??1);
    gl.uniform1i(loc('volume'),0);gl.uniform1i(loc('ground'),1);gl.uniform1i(loc('depthMap'),2);
    gl.uniform3f(loc('lightStep'),-360/((b.east-b.west)*111320*Math.max(.01,Math.cos((b.north+b.south)*.5*RAD))),180/((b.north-b.south)*111132),420/(b.maxHeight-b.minHeight));
    gl.uniform4f(loc('box'),b.west,b.south,b.east,b.north);gl.uniform2f(loc('heights'),b.minHeight,b.maxHeight);
@@ -137,6 +139,7 @@ export function createCloudVolumeLayer(canvas:HTMLCanvasElement):CloudVolumeLaye
    gl.uniform3f(loc('eye'),...g.cameraPositionM);gl.uniform3f(loc('forward'),...g.forward);gl.uniform3f(loc('up'),...g.up);
    gl.uniform3fv(loc('minimum'),bounds.min);gl.uniform3fv(loc('maximum'),bounds.max);
    gl.uniform4f(loc('camera'),camera.lat*RAD,camera.lon*RAD,g.curvature,0);gl.uniform2f(loc('projection'),g.tangentHalfHeight,camera.aspect);
+   gl.uniform1f(loc('opacityLimit'),Math.max(0,Math.min(1,opacityLimit)));
    gl.uniform1f(loc('dark'),dark?1:0);gl.uniform1f(loc('inspection'),Math.max(0,Math.min(1,inspection)));
    clear();gl.drawArrays(gl.TRIANGLES,0,3);lastDraw=drawKey;
   },clear,

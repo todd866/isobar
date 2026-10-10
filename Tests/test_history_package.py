@@ -12,17 +12,23 @@ sys.path.insert(0, str(Path(__file__).parent))
 from test_history_catalog import weather
 
 class PackageTests(unittest.TestCase):
+    image=b'verified terrain image'
+    receipt={'sha256':hashlib.sha256(image).hexdigest(),'bytes':len(image)}
+    def package(self,root,destination):
+        return package(root,destination,imagery_receipt=self.receipt)
+
     def setup_assets(self,base):
         root=base/'assets';src=base/'weather.json';src.write_text(json.dumps(weather()))
         publish(src,root,[{'url':'/history/private-scan.jpg','source':'https://example.com'}])
         (root/'world-coast.bin').write_bytes(b'coast')
         (root/'themes').mkdir();(root/'themes/wwii-paper.png').write_bytes(b'paper')
+        (root/'imagery').mkdir();(root/'imagery'/f"{self.receipt['sha256']}.png").write_bytes(self.image)
         (root/'orphan.json').write_text('unused')
         return root
     def test_exact_closure_compact_and_hashed_without_scan_or_orphans(self):
         with tempfile.TemporaryDirectory() as t:
             base=Path(t);root=self.setup_assets(base);dest=base/'bundle'
-            inventory=package(root,dest)
+            inventory=self.package(root,dest)
             actual={str(p.relative_to(dest)) for p in (dest/'history').rglob('*') if p.is_file()}
             self.assertEqual(actual,{f['path'] for f in inventory['files']})
             for f in inventory['files']:
@@ -30,16 +36,16 @@ class PackageTests(unittest.TestCase):
             self.assertFalse(any('orphan' in p or 'scan' in p for p in actual))
             c=json.loads((dest/'history/catalog.json').read_text())['collections'][0]
             m=json.loads((dest/c['manifest'].lstrip('/')).read_text());self.assertEqual(m['maps'],[])
-            with self.assertRaises(ValueError):package(root,dest)
+            with self.assertRaises(ValueError):self.package(root,dest)
     def test_inconsistent_catalog_fails_before_output(self):
         with tempfile.TemporaryDirectory() as t:
             base=Path(t);root=self.setup_assets(base);p=root/'catalog.json';c=json.loads(p.read_text());c['collections'][0]['days']=[];p.write_text(json.dumps(c))
-            with self.assertRaises(ValueError):package(root,base/'bundle')
+            with self.assertRaises(ValueError):self.package(root,base/'bundle')
             self.assertFalse((base/'bundle').exists())
     def test_path_escape_rejected(self):
         with tempfile.TemporaryDirectory() as t:
             base=Path(t);root=self.setup_assets(base);p=root/'catalog.json';c=json.loads(p.read_text());c['collections'][0]['manifest']='/history/../weather.json';p.write_text(json.dumps(c))
-            with self.assertRaises(ValueError):package(root,base/'bundle')
+            with self.assertRaises(ValueError):self.package(root,base/'bundle')
 
     def test_daily_assets_are_packaged_deduplicated_and_keep_default(self):
         with tempfile.TemporaryDirectory() as t:
@@ -59,7 +65,7 @@ class PackageTests(unittest.TestCase):
             entries=[{'date':'1944-06-06','complete':True},{'date':'1944-06-07','complete':True},
                      {'date':'1953-03-10','complete':True,'weather':'/history/'+daily_name}]
             entry['days']=entries;manifest['days']=entries;manifest_path.write_text(json.dumps(manifest));(root/'catalog.json').write_text(json.dumps(catalog))
-            inventory=package(root,base/'bundle')
+            inventory=self.package(root,base/'bundle')
             bundled=json.loads((base/'bundle/history/catalog.json').read_text())['collections'][0]
             bundled_manifest=json.loads((base/'bundle'/bundled['manifest'].lstrip('/')).read_text())
             self.assertTrue(bundled_manifest['weather'])
@@ -77,4 +83,15 @@ class PackageTests(unittest.TestCase):
                 if mutate=='mismatch':
                     wrong=weather();wrong['event']['id']='other';(root/'daily.json').write_text(json.dumps(wrong))
                 manifest_path.write_text(json.dumps(manifest));(root/'catalog.json').write_text(json.dumps(catalog))
-                with self.assertRaises(ValueError):package(root,base/'bundle')
+                with self.assertRaises(ValueError):self.package(root,base/'bundle')
+
+    def test_renderer_asset_missing_or_corrupt_fails_before_output(self):
+        for corruption in ('missing','bytes','digest'):
+            with self.subTest(corruption=corruption), tempfile.TemporaryDirectory() as t:
+                base=Path(t);root=self.setup_assets(base)
+                asset=root/'imagery'/f"{self.receipt['sha256']}.png"
+                if corruption=='missing':asset.unlink()
+                elif corruption=='bytes':asset.write_bytes(self.image+b'!')
+                else:asset.write_bytes(b'x'*len(self.image))
+                with self.assertRaises(ValueError):self.package(root,base/'bundle')
+                self.assertFalse((base/'bundle').exists())

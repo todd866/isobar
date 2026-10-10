@@ -82,5 +82,5 @@ export function cameraDuringMove(move: CameraMove, now: number): Camera {
   const ease = move.ease === 'out' ? 1 - (1 - t) ** 3 : t * t * (3 - 2 * t);
   const mix = (key: 'centerX' | 'centerY' | 'halfWidth' | 'halfHeight') => move.from[key] + (move.to[key] - move.from[key]) * ease;
   const bearing = move.from.bearingRadians ?? 0, delta = (move.to.bearingRadians ?? 0) - bearing;
-  return { ...move.from, ...(move.from.bearingRadians !== undefined || move.to.bearingRadians !== undefined ? {bearingRadians: bearing + Math.atan2(Math.sin(delta), Math.cos(delta)) * ease} : {}), centerX: mix('centerX'), centerY: mix('centerY'), halfWidth: mix('halfWidth'), halfHeight: mix('halfHeight') };
+  return { ...move.from, focusHeightM:(move.from.focusHeightM??0)+((move.to.focusHeightM??0)-(move.from.focusHeightM??0))*ease, ...(move.from.bearingRadians !== undefined || move.to.bearingRadians !== undefined ? {bearingRadians: bearing + Math.atan2(Math.sin(delta), Math.cos(delta)) * ease} : {}), centerX: mix('centerX'), centerY: mix('centerY'), halfWidth: mix('halfWidth'), halfHeight: mix('halfHeight') };
 }

@@ -16,12 +16,12 @@ import type { HistoricalCatalog } from '@/lib/history';
 import { ATTRIBUTION } from '@/components/Attribution';
 import { australiaAspects, clampToData, frameData, insetBox, panBy, zoomWithinData, type DataFrame } from '@/lib/camera';
 import { EVEREST_DETAILS, EVEREST_EVENTS, EVEREST_ROUTE, EVEREST_SOURCE, everestAtmosphere } from '@/lib/everest';
-import { drawHistoricalScene } from '@/lib/historical-scene-renderer';
-import type { HistoryLayer } from '@/lib/historical-scenes';
+import { drawHistoricalScene, historicalShipBoxes } from '@/lib/historical-scene-renderer';
+import { sceneForPlace, historicalScene, type HistoryLayer } from '@/lib/historical-scenes';
 import { HistoricalSceneControls } from './HistoricalSceneControls';
 import { drawEverestRoute } from '@/lib/everest-route';
 import { AtmosphereMap } from './AtmosphereMap';
-import { withTilt, terrainEye, zoomMountain, frameTerrainPin, anchorTilt, panTilt, MAX_TILT, TiltFraming, liftCamera } from '@/lib/tilt-navigation';
+import { withTilt, terrainEye, zoomMountain, frameTerrainPin, anchorTilt, panTilt, MAX_TILT, TiltFraming, liftCamera, frameAtmosphere } from '@/lib/tilt-navigation';
 import { mapUnproject, mapProject } from '@/lib/lambert';
 import { bindTrackpadPinch } from '@/lib/trackpad';
 import {
@@ -305,7 +305,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const [cloudLegend, setCloudLegend] = useState<string | null>(null);
   const [teaching, setTeaching] = useState(false);
   const [stageSize, setStageSize] = useState({ width: 1, height: 1 });
-  const [historyLayers, setHistoryLayers] = useState<Record<HistoryLayer,boolean>>({political:true,military:true,ships:true});
+  const [historyLayers, setHistoryLayers] = useState<Record<HistoryLayer,boolean>>({political:true,military:true,ships:true,routes:true});
   const historyLayersRef=useRef(historyLayers);historyLayersRef.current=historyLayers;
   const [showSources, setShowSources] = useState(false);
   const [photoTerrain,setPhotoTerrain]=useState(false);
@@ -455,6 +455,14 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     const next=offsetAtmosphereSlice(rotated,sliceOffsetRef.current/100*rotated.halfWidthM*.6);
     if(next){sliceOriginRef.current=rotated;sliceRef.current=next;}
   }
+  const fitAtmosphere=useCallback((topM:number,anchor?:{lat:number;lon:number},radiusM=0)=>{
+    const camera=cameraRef.current;if(!camera||!threeDRef.current)return;
+    const p=anchor?project(GEO,anchor.lat,anchor.lon):null;
+    tiltRef.current=Math.max(1.05,tiltRef.current);setTilt(tiltRef.current);
+    const next=frameAtmosphere(GEO,p?{...camera,centerX:p.x,centerY:p.y}:camera,tiltRef.current,topM,elevationAtRef.current,radiusM);
+    tiltFramingRef.current.synchronize(next,tiltRef.current);
+    moveCamera(next,true);
+  },[GEO]);
   const inspectAtmosphere=useCallback((strength:number)=>{atmosphereInspectionRef.current=strength;redrawRef.current?.();},[]);
   function pointCameraForView(camera:Camera,frame:DataFrame,pin:MapPoint,map:Parameters<typeof pointCamera>[4],visible:Parameters<typeof pointCamera>[5]) {
     const next=pointCamera(GEO,camera,frame,pin,map,visible);
@@ -519,7 +527,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     mapKeysRef.current.clear();
     cameraMoveRef.current=null;
     if (!enabled) { savedTiltRef.current = tiltRef.current; savedBearingRef.current = cameraRef.current?.bearingRadians ?? 0; }
-    if (!enabled) clearSlice();
+    if (!enabled) {clearSlice();if(cameraRef.current)cameraRef.current={...cameraRef.current,focusHeightM:0};}
     threeDRef.current = enabled;
     setThreeD(enabled);
     const pitch = enabled ? savedTiltRef.current : 0;
@@ -1111,7 +1119,8 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const box = manifest.wrapsLongitude ? manifest : insetBox(manifest, EDGE_FADE_DEG + 0.25);
       const focus = manifest.wrapsLongitude ? focusRef.current ?? undefined : undefined;
       const frame = frameData(GEO, frameW, frameH, box, focus);
-      if(manifest.places[0]?.id==='h.normandy'&&focus&&Math.abs(focus.lat-49.35)<.01&&Math.abs(focus.lon+.85)<.01){frame.home.halfHeight=.32;frame.home.halfWidth=.32*frameW/frameH;}
+      const scene=sceneForPlace(manifest.places[0]?.id);
+      if(scene&&focus&&Math.abs(focus.lat-scene.focus.lat)<.01&&Math.abs(focus.lon-scene.focus.lon)<.01){frame.home.halfHeight=scene.focus.halfHeight;frame.home.halfWidth=scene.focus.halfHeight*frameW/frameH;}
       if(loaded.cyclone&&focus&&Math.abs(focus.lat+12.46)<.01&&Math.abs(focus.lon-130.84)<.01){frame.home.halfHeight=1.3;frame.home.halfWidth=1.3*frameW/frameH;}
       if(manifest.places[0]?.id==='h.everest'&&focus&&Math.abs(focus.lat-27.9881)<.001&&Math.abs(focus.lon-86.925)<.001){frame.home.halfHeight=.04;frame.home.halfWidth=.04*frameW/frameH;}
       if (!transitAppliedRef.current && transitRef.current && manifest.wrapsLongitude) {
@@ -1202,8 +1211,9 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const latSpan = GEO.projection === 'equirectangular' ? Math.abs(camera.halfHeight * 2) : Math.abs(camera.halfHeight * 2 * 180 / Math.PI);
       const borderSet = historical ? null : Math.min(lonSpan, latSpan) <= 12 && bordersCloseRef.current ? bordersCloseRef.current : bordersRegionalRef.current;
       const sceneTime=Date.parse(manifest.run)+(manifest.forecastHours[0]*60+clockRef.current.minute)*60000;
-      const sceneKey=manifest.places[0]?.id==='h.normandy'?`${Math.floor(sceneTime/1000)}:${Object.values(historyLayersRef.current).join(',')}`:'';
-      const key = `${sceneKey}:${width.toFixed(1)}:${height.toFixed(1)}:${camera.centerX.toFixed(4)}:${camera.centerY.toFixed(4)}:${camera.halfWidth.toFixed(4)}:${camera.halfHeight.toFixed(4)}:${tiltRef.current}:${camera.bearingRadians??0}:${contoursRef.current.lines.length}:${contourId}:${terrainRevision}:${darkRef.current}:${fieldRef.current}:${placeRows ? placeRows.length : -1}:${uiAvoid.map((box) => `${Math.round(box.x)},${Math.round(box.y)},${Math.round(box.w)},${Math.round(box.h)}`).join(';')}:${unitKey(unitsRef.current)}:${graticuleRef.current ? 1 : 0}:${borderEpochRef.current}:${atmosphereInspectionRef.current}:${sliced}:${sliceRef.current?JSON.stringify(sliceRef.current):""}:${borderSet === bordersCloseRef.current ? 1 : 0}:${manifest.places[0]?.id==='h.everest'?Math.floor(clockRef.current.minute):''}`;
+      const sceneDefinition=sceneForPlace(manifest.places[0]?.id);
+      const sceneKey=sceneDefinition?`${Math.floor(sceneTime/1000)}:${Object.values(historyLayersRef.current).join(',')}`:'';
+      const key = `${sceneKey}:${width.toFixed(1)}:${height.toFixed(1)}:${camera.centerX.toFixed(4)}:${camera.centerY.toFixed(4)}:${camera.halfWidth.toFixed(4)}:${camera.halfHeight.toFixed(4)}:${tiltRef.current}:${camera.bearingRadians??0}:${camera.focusHeightM??0}:${contoursRef.current.lines.length}:${contourId}:${terrainRevision}:${darkRef.current}:${fieldRef.current}:${placeRows ? placeRows.length : -1}:${uiAvoid.map((box) => `${Math.round(box.x)},${Math.round(box.y)},${Math.round(box.w)},${Math.round(box.h)}`).join(';')}:${unitKey(unitsRef.current)}:${graticuleRef.current ? 1 : 0}:${borderEpochRef.current}:${atmosphereInspectionRef.current}:${sliced}:${sliceRef.current?JSON.stringify(sliceRef.current):""}:${borderSet === bordersCloseRef.current ? 1 : 0}:${manifest.places[0]?.id==='h.everest'?Math.floor(clockRef.current.minute):''}`;
       if (key === overlayKey) return;
       overlayKey = key;
       const degPerPixel = (camera.halfWidth * 2) / Math.max(1, width);
@@ -1216,14 +1226,15 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const storm=cycloneAt(loaded.cyclone,Date.parse(manifest.run)+(manifest.forecastHours[0]*60+clockRef.current.minute)*60000);
       const centre=storm?mapProject(GEO,camera,storm.lat,storm.lon):null;
       const stormBox=centre?[{x:(centre.x+1)*width/2-28,y:(1-centre.y)*height/2-30,w:56,h:64}]:[];
-      const anchor = paintPlaces(ctx, width, height, camera, [...uiAvoid,...stormBox], true).slice(0, 1);
-      const avoid = drawOverlay(ctx, width, height, dpr, GEO, camera, loaded.coastLod[lod] ?? loaded.coast, contoursRef.current.lines, contoursRef.current.centres, !gl && !canvasChart?.usable(), manifest, darkRef.current ? NIGHT_INK : DAY_INK, [...uiAvoid, ...anchor], unitsRef.current, elevationAt, graticuleRef.current, borderSet, loaded.water,loaded.cyclone?10:0);
+      const shipBoxes=sceneDefinition?historicalShipBoxes(sceneDefinition,GEO,camera,elevationAt??null,width,height,sceneTime,historyLayersRef.current):[];
+      const anchor = paintPlaces(ctx, width, height, camera, [...uiAvoid,...stormBox,...shipBoxes], true).slice(0, 1);
+      const avoid = drawOverlay(ctx, width, height, dpr, GEO, camera, loaded.coastLod[lod] ?? loaded.coast, contoursRef.current.lines, contoursRef.current.centres, !gl && !canvasChart?.usable(), manifest, darkRef.current ? NIGHT_INK : DAY_INK, [...uiAvoid, ...anchor,...shipBoxes], unitsRef.current, elevationAt, graticuleRef.current, borderSet, loaded.water,loaded.cyclone?10:0);
       // Town names keep clear of the map's own controls too, not just the
       // chart labels: drawOverlay returns only what it drew, so the UI boxes
       // must be carried into the place pass explicitly.
-      const peaks = paintPeaks(ctx, width, height, camera, [...uiAvoid, ...avoid, ...anchor]);
+      const peaks = paintPeaks(ctx, width, height, camera, [...uiAvoid, ...avoid, ...anchor,...shipBoxes]);
       const camps = manifest.places[0]?.id==='h.everest' ? drawEverestRoute(ctx, GEO, camera, elevationAt ?? null, width, height, [...uiAvoid, ...avoid, ...peaks, ...anchor, toolsBox ?? {x:width-56,y:0,w:56,h:168}, {x:0,y:height-36,w:width,h:36}], darkRef.current ? NIGHT_PLACES : DAY_PLACES, {timeMs:Date.parse(manifest.run)+(manifest.forecastHours[0]*60+clockRef.current.minute)*60000,chart:loaded}) : [];
-      const scene=manifest.places[0]?.id==='h.normandy'?drawHistoricalScene(ctx,GEO,camera,elevationAt??null,width,height,sceneTime,historyLayersRef.current,[...uiAvoid,...avoid,...peaks,...camps],darkRef.current?NIGHT_PLACES:DAY_PLACES):{labels:[],markers:[]};
+      const scene=sceneDefinition?drawHistoricalScene(ctx,sceneDefinition,GEO,camera,elevationAt??null,width,height,sceneTime,historyLayersRef.current,[...uiAvoid,...avoid,...peaks,...camps],darkRef.current?NIGHT_PLACES:DAY_PLACES):{labels:[],markers:[]};
       const places = paintPlaces(ctx, width, height, camera, [...uiAvoid, ...avoid, ...peaks, ...camps,...scene.labels,...scene.markers]);
       labelRecords = [...avoid, ...peaks, ...camps,...scene.labels, ...places];
       drawAdminNames(ctx, historical ? [] : adminNamesRef.current, GEO, camera, width, height, labelRecords, darkRef.current ? NIGHT_PLACES : DAY_PLACES);
@@ -3147,7 +3158,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
               />
               <canvas data-wind-barbs ref={windCanvasRef} className="pointer-events-none absolute" aria-hidden="true" />
               <canvas ref={trafficCanvasRef} data-traffic-layer className="pointer-events-none absolute" aria-hidden="true" />
-              {cameraRef.current && GEO.projection === 'equirectangular' && Number.isFinite(validMs) ? <AtmosphereMap camera={renderCamera(cameraRef.current)} geo={GEO} elevation={elevationAtRef.current} terrainEpoch={terrainEpoch}
+              {cameraRef.current && GEO.projection === 'equirectangular' && Number.isFinite(validMs) ? <AtmosphereMap onFrame={fitAtmosphere} origin={place?{lat:place.lat,lon:place.lon}:undefined} camera={renderCamera(cameraRef.current)} geo={GEO} elevation={elevationAtRef.current} terrainEpoch={terrainEpoch}
                 lat={cameraRef.current.centerY} lon={((cameraRef.current.centerX / GEO.F + GEO.lon0 + 540) % 360) - 180}
                 validMs={validMs} width={stageSize.width} height={stageSize.height} active={tilt > .02} onInspection={inspectAtmosphere} reconstruction={historical&&historyEvent==='everest-1953'?{chart,elevation:elevationAtRef.current}:undefined} /> : null}
               {trafficOn && trafficReplay ? <span className="traffic-replay-status" data-traffic-replay={trafficReplay} title="Recorded during this viewing session. Earlier history and gaps are unavailable.">{trafficReplay === 'replay' ? 'Replay · session' : 'No recorded traffic'}</span> : null}
@@ -3196,7 +3207,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                 {phone && lens === 'fly' ? <span className="relative grid"><button type="button" aria-label="Traffic" aria-pressed={trafficOn} onClick={() => { trafficNote.show(trafficOn ? 'Traffic off' : 'Traffic on'); toggleTraffic(!trafficOn); }}><TrafficIcon /></button><PressNote text={trafficNote.note} /></span> : null}
                 <button type="button" aria-label="Data sources" title="Data sources" aria-expanded={showSources} onClick={() => setShowSources((v) => !v)}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.7" /><path fill="currentColor" d="M11.2 10.2h1.6V16h-1.6zM11.2 7.4h1.6V9h-1.6z" /></svg></button>
                 </div>
-                {showSources ? <div className="map-sources" style={{maxWidth:'calc(100vw - 7rem)'}}><label className="flex items-center gap-2 px-2 py-1"><input type="checkbox" checked={photoTerrain} onChange={togglePhotoTerrain} />Photo terrain</label>{photoTerrain?<p>Everest · {EVEREST_IMAGERY.acquisition_datetime.slice(0,10)} · {EVEREST_IMAGERY.attribution} Modern surface imagery; historical weather retains its selected date.{photoStatus==='unavailable'?' Imagery unavailable; switch off and on to retry.':''}</p>:null}{historyEvent==='everest-1953'?<p>{EVEREST_DETAILS} <a href={EVEREST_SOURCE} target="_blank" rel="noreferrer">Expedition observations</a> · <a href="https://teara.govt.nz/en/interactive/28428/final-ascent-of-everest" target="_blank" rel="noreferrer">Ascent route</a></p>:null}{chart.cyclone?<p>Best-track cyclone reconstruction over ERA5. The 11 km maximum-wind radius, radial profile and 15° inflow are synthetic; track and intensity follow BOM records. <a href={chart.cyclone.source} target="_blank" rel="noreferrer">Best track</a></p>:null}{historyEvent==='dday'?<HistoricalSceneControls layers={historyLayers} onToggle={layer=>setHistoryLayers(v=>({...v,[layer]:!v[layer]}))}/>:null}<div ref={setExplainHost} /><p role="note">{flowWindLegend(flowSource)}. {threeD ? 'Atmospheric layers use synthetic data with scale-adapted height and emphasised vertical motion. ' : ''}{historical?chart.manifest.attribution.map(a=>`${a.source} · ${a.licence}`).join('; '):ATTRIBUTION}</p></div> : null}
+                {showSources ? <div className="map-sources" style={{maxWidth:'calc(100vw - 7rem)'}}><label className="flex items-center gap-2 px-2 py-1"><input type="checkbox" checked={photoTerrain} onChange={togglePhotoTerrain} />Photo terrain</label>{photoTerrain?<p>Everest · {EVEREST_IMAGERY.acquisition_datetime.slice(0,10)} · {EVEREST_IMAGERY.attribution} Modern surface imagery; historical weather retains its selected date.{photoStatus==='unavailable'?' Imagery unavailable; switch off and on to retry.':''}</p>:null}{historyEvent==='everest-1953'?<p>{EVEREST_DETAILS} <a href={EVEREST_SOURCE} target="_blank" rel="noreferrer">Expedition observations</a> · <a href="https://teara.govt.nz/en/interactive/28428/final-ascent-of-everest" target="_blank" rel="noreferrer">Ascent route</a></p>:null}{chart.cyclone?<p>Best-track cyclone reconstruction over ERA5. The {chart.cyclone.rmwKm} km maximum-wind radius, radial profile and 15° inflow are synthetic; track and intensity follow the linked best-track records. <a href={chart.cyclone.source} target="_blank" rel="noreferrer">Best track</a></p>:null}{historicalScene(historyEvent)?<HistoricalSceneControls scene={historicalScene(historyEvent)!} layers={historyLayers} onToggle={layer=>setHistoryLayers(v=>({...v,[layer]:!v[layer]}))}/>:null}<div ref={setExplainHost} /><p role="note">{flowWindLegend(flowSource)}. {threeD ? 'Atmospheric layers use synthetic data with scale-adapted height and emphasised vertical motion. ' : ''}{historical?chart.manifest.attribution.map(a=>`${a.source} · ${a.licence}`).join('; '):ATTRIBUTION}</p></div> : null}
               </div> : null}
               {teachHere || teaching ? <MapTeaching geo={GEO} chart={chart} complete={complete} minute={minute} camera={cameraRef.current} width={stageSize.width} height={stageSize.height}
                 onActive={(active, at) => {
