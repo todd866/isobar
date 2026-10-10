@@ -1,0 +1,612 @@
+{
+  "schema_version": 1,
+  "kind": "historical-scene",
+  "event": {
+    "id": "dday",
+    "label": "D-Day \u00b7 Normandy \u00b7 6 June 1944",
+    "focus_date": "1944-06-06",
+    "calendar": "Gregorian"
+  },
+  "coordinate_reference": "WGS84 longitude/latitude degrees",
+  "status": "estimated-scene-v1",
+  "provenance": {
+    "interpretation": "Best-guess dated scene constrained by historical beach, unit and vessel assignments. Geometry and between-anchor movement are synthetic, with per-feature sources and uncertainty.",
+    "source_geometry_policy": "Source chart fixes and authored estimates are distinguished per feature; estimated points must not be rendered as exact tracks.",
+    "modern_reference": "Natural Earth coastline is used only as a present-day projection reference; it is not evidence of the 1944 tide line, obstacles, or beach edge.",
+    "political_context": "No political-border geometry is included in this first slice: the verified source set does not provide a bounded, dated border shape suitable for this scene.",
+    "created_at": "2026-10-10",
+    "sources": [
+      {
+        "id": "loc-dday-normandy",
+        "title": "D-Day the 6th of June: Normandy 1944",
+        "url": "https://www.loc.gov/item/94681943/",
+        "role": "Normandy invasion routes and beach-sector context; Center of Military History map held by the Library of Congress",
+        "date": "1944",
+        "rights": "Library of Congress rights advisory applies"
+      },
+      {
+        "id": "cmh-dday-map",
+        "title": "D-Day: The 6th of June",
+        "url": "https://history.army.mil/portals/143/Images/Publications/catalog/69-6-1.pdf",
+        "role": "D-Day phase line, beach labels, unit symbols and drop-zone context",
+        "date": "1944 depiction; later CMH publication",
+        "rights": "U.S. government publication; verify asset reuse context"
+      },
+      {
+        "id": "cmh-cross-channel-attack",
+        "title": "Cross-Channel Attack",
+        "url": "https://history.army.mil/portals/143/Images/Publications/catalog/7-4.pdf",
+        "role": "82nd and 101st Airborne planned drop-zone and actual-landing-dot map",
+        "date": "1944 operation; later official history",
+        "rights": "U.S. government publication; verify asset reuse context"
+      },
+      {
+        "id": "nhhc-texas-firing-plan",
+        "title": "D-Day Map Firing Plan, USS Texas (BB-35)",
+        "url": "https://www.history.navy.mil/our-collections/artifacts/Navigation/maps-and-map-plates/d-day-map-firing-plan-uss-texas--bb-35-.html",
+        "role": "Annotated chart with USS Texas approach and anchor/fire-support marks",
+        "date": "6 June 1944 chart use",
+        "rights": "Naval History and Heritage Command collection rights apply"
+      },
+      {
+        "id": "nhhc-overlord",
+        "title": "Operation Overlord: Invasion of Normandy",
+        "url": "https://www.history.navy.mil/content/history/nhhc/browse-by-topic/wars-conflicts-and-operations/world-war-ii/1944/overlord.html",
+        "role": "Five beach areas, swept channels, transport and fire-support terminology",
+        "date": "6 June 1944 operation",
+        "rights": "Naval History and Heritage Command collection rights apply"
+      },
+      {
+        "id": "nhhc-ships",
+        "title": "D-Day: U.S. Navy Ships",
+        "url": "https://www.history.navy.mil/content/history/museums/nmusn/explore/photography/wwii/wwii-europe/operation-overlord/invasion-normandy/us-navy-ships.html/1000",
+        "role": "Named battleships and cruisers assigned to Utah and Omaha; ship geometry and movement are authored estimates",
+        "rights": "U.S. Naval History and Heritage Command"
+      },
+      {
+        "id": "juno-centre",
+        "title": "Juno Beach Centre",
+        "url": "https://www.junobeach.org/wp-content/uploads/2022/03/Brochure-Juno-secteur-canadien-Plages-du-Debarquement-Normandie-2022.pdf",
+        "role": "Canadian beach-sector towns",
+        "rights": "Source linked, no source imagery redistributed"
+      }
+    ]
+  },
+  "validity": {
+    "date_start": "1944-06-05",
+    "date_end": "1944-06-06",
+    "time_basis": "UTC; per-feature validity, source facts and synthetic timing remain separate"
+  },
+  "features": [
+    {
+      "id": "beach-utah",
+      "kind": "assault-sector",
+      "title": "Utah Beach",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.18,
+          49.42
+        ]
+      },
+      "source_refs": [
+        "loc-dday-normandy",
+        "cmh-dday-map"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-06",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Authored point anchor from source map label and modern coastline reference; no sector boundary inferred",
+      "status": "estimated",
+      "precision_m": 5000,
+      "detail_zoom": 7,
+      "note": "Sector anchor, not a complete landing-front boundary."
+    },
+    {
+      "id": "beach-omaha",
+      "kind": "assault-sector",
+      "title": "Omaha Beach",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.86,
+          49.37
+        ]
+      },
+      "source_refs": [
+        "loc-dday-normandy",
+        "cmh-dday-map"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-06",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Authored point anchor from source map label and modern coastline reference; no sector boundary inferred",
+      "status": "estimated",
+      "precision_m": 5000,
+      "detail_zoom": 7,
+      "note": "Sector anchor; source beach charts are not treated as georeferenced here."
+    },
+    {
+      "id": "beach-gold",
+      "kind": "assault-sector",
+      "title": "Gold Beach",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.57,
+          49.34
+        ]
+      },
+      "source_refs": [
+        "loc-dday-normandy",
+        "cmh-dday-map"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-06",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Authored point anchor from source map label and modern coastline reference; no sector boundary inferred",
+      "status": "estimated",
+      "precision_m": 5000,
+      "detail_zoom": 7,
+      "note": "Sector anchor, not a landing-craft route."
+    },
+    {
+      "id": "beach-juno",
+      "kind": "assault-sector",
+      "title": "Juno Beach",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.454,
+          49.337
+        ]
+      },
+      "source_refs": [
+        "loc-dday-normandy",
+        "cmh-dday-map"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-06",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Authored point anchor from source map label and modern coastline reference; no sector boundary inferred",
+      "status": "estimated",
+      "precision_m": 5000,
+      "detail_zoom": 7,
+      "note": "Sector anchor, not a complete unit boundary."
+    },
+    {
+      "id": "beach-sword",
+      "kind": "assault-sector",
+      "title": "Sword Beach",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.306,
+          49.3
+        ]
+      },
+      "source_refs": [
+        "loc-dday-normandy",
+        "cmh-dday-map"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-06",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Authored point anchor from source map label and modern coastline reference; no sector boundary inferred",
+      "status": "estimated",
+      "precision_m": 5000,
+      "detail_zoom": 7,
+      "note": "Sector anchor, not a complete unit boundary."
+    },
+    {
+      "id": "drop-82-t",
+      "kind": "airborne-drop-zone",
+      "title": "82nd Airborne T zone",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.4,
+          49.431
+        ]
+      },
+      "source_refs": [
+        "cmh-cross-channel-attack"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-06",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Synthetic area anchor around the named planned drop zone; approximate position, not actual scattered landings",
+      "status": "estimated",
+      "precision_m": 3500,
+      "detail_zoom": 8,
+      "note": "Planned zone estimate; not the plotted actual landing dots."
+    },
+    {
+      "id": "drop-82-n",
+      "kind": "airborne-drop-zone",
+      "title": "82nd Airborne N zone",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.385,
+          49.369
+        ]
+      },
+      "source_refs": [
+        "cmh-cross-channel-attack"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-06",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Synthetic area anchor around the named planned drop zone; approximate position, not actual scattered landings",
+      "status": "estimated",
+      "precision_m": 3500,
+      "detail_zoom": 8,
+      "note": "Planned zone estimate; not the plotted actual landing dots."
+    },
+    {
+      "id": "drop-101-a",
+      "kind": "airborne-drop-zone",
+      "title": "101st Airborne A zone",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.259,
+          49.404
+        ]
+      },
+      "source_refs": [
+        "cmh-cross-channel-attack"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-06",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Synthetic area anchor around the named planned drop zone; approximate position, not actual scattered landings",
+      "status": "estimated",
+      "precision_m": 3500,
+      "detail_zoom": 8,
+      "note": "Planned zone estimate; source distinguishes actual landings separately."
+    },
+    {
+      "id": "drop-101-c",
+      "kind": "airborne-drop-zone",
+      "title": "101st Airborne C zone",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.265,
+          49.361
+        ]
+      },
+      "source_refs": [
+        "cmh-cross-channel-attack"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-06",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Synthetic area anchor around the named planned drop zone; approximate position, not actual scattered landings",
+      "status": "estimated",
+      "precision_m": 3500,
+      "detail_zoom": 8,
+      "note": "Planned zone estimate; not a complete unit disposition."
+    },
+    {
+      "id": "drop-101-d",
+      "kind": "airborne-drop-zone",
+      "title": "101st Airborne D zone",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.264,
+          49.31
+        ]
+      },
+      "source_refs": [
+        "cmh-cross-channel-attack"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-06",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Synthetic area anchor around the named planned drop zone; approximate position, not actual scattered landings",
+      "status": "estimated",
+      "precision_m": 3500,
+      "detail_zoom": 8,
+      "note": "Planned zone estimate; not a plotted actual landing distribution."
+    },
+    {
+      "id": "uss-texas",
+      "kind": "ship-marker",
+      "title": "USS Texas",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.03,
+          49.445
+        ]
+      },
+      "source_refs": [
+        "nhhc-ships"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-05",
+        "date_end": "1944-06-06",
+        "time_basis": "UTC synthetic interpolation; not a navigational log"
+      },
+      "geometry_method": "Estimated vessel station within its documented beach-support sector; synthetic Channel approach between authored waypoints",
+      "status": "estimated",
+      "precision_m": 8000,
+      "detail_zoom": 8,
+      "track": [
+        {
+          "time": "1944-06-05T18:00:00Z",
+          "coordinates": [
+            -1.18,
+            50.35
+          ]
+        },
+        {
+          "time": "1944-06-05T23:00:00Z",
+          "coordinates": [
+            -1.11,
+            49.92
+          ]
+        },
+        {
+          "time": "1944-06-06T03:00:00Z",
+          "coordinates": [
+            -1.03,
+            49.445
+          ]
+        },
+        {
+          "time": "1944-06-06T23:59:59Z",
+          "coordinates": [
+            -1.0150000000000001,
+            49.451
+          ]
+        }
+      ],
+      "note": "Vessel presence and beach assignment are sourced; this location, arrival time and subsequent slow movement are synthetic."
+    },
+    {
+      "id": "uss-arkansas",
+      "kind": "ship-marker",
+      "title": "USS Arkansas",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.87,
+          49.433
+        ]
+      },
+      "source_refs": [
+        "nhhc-ships"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-05",
+        "date_end": "1944-06-06",
+        "time_basis": "UTC synthetic interpolation; not a navigational log"
+      },
+      "geometry_method": "Estimated vessel station within its documented beach-support sector; synthetic Channel approach between authored waypoints",
+      "status": "estimated",
+      "precision_m": 8000,
+      "detail_zoom": 8,
+      "track": [
+        {
+          "time": "1944-06-05T18:00:00Z",
+          "coordinates": [
+            -1.02,
+            50.35
+          ]
+        },
+        {
+          "time": "1944-06-05T23:00:00Z",
+          "coordinates": [
+            -0.95,
+            49.92
+          ]
+        },
+        {
+          "time": "1944-06-06T03:00:00Z",
+          "coordinates": [
+            -0.87,
+            49.433
+          ]
+        },
+        {
+          "time": "1944-06-06T23:59:59Z",
+          "coordinates": [
+            -0.855,
+            49.439
+          ]
+        }
+      ],
+      "note": "Vessel presence and beach assignment are sourced; this location, arrival time and subsequent slow movement are synthetic."
+    },
+    {
+      "id": "uss-nevada",
+      "kind": "ship-marker",
+      "title": "USS Nevada",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.105,
+          49.447
+        ]
+      },
+      "source_refs": [
+        "nhhc-ships"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-05",
+        "date_end": "1944-06-06",
+        "time_basis": "UTC synthetic interpolation; not a navigational log"
+      },
+      "geometry_method": "Estimated vessel station within its documented beach-support sector; synthetic Channel approach between authored waypoints",
+      "status": "estimated",
+      "precision_m": 8000,
+      "detail_zoom": 8,
+      "track": [
+        {
+          "time": "1944-06-05T18:00:00Z",
+          "coordinates": [
+            -1.255,
+            50.35
+          ]
+        },
+        {
+          "time": "1944-06-05T23:00:00Z",
+          "coordinates": [
+            -1.185,
+            49.92
+          ]
+        },
+        {
+          "time": "1944-06-06T03:00:00Z",
+          "coordinates": [
+            -1.105,
+            49.447
+          ]
+        },
+        {
+          "time": "1944-06-06T23:59:59Z",
+          "coordinates": [
+            -1.09,
+            49.453
+          ]
+        }
+      ],
+      "note": "Vessel presence and beach assignment are sourced; this location, arrival time and subsequent slow movement are synthetic."
+    },
+    {
+      "id": "uss-tuscaloosa",
+      "kind": "ship-marker",
+      "title": "USS Tuscaloosa",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.08,
+          49.49
+        ]
+      },
+      "source_refs": [
+        "nhhc-ships"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-05",
+        "date_end": "1944-06-06",
+        "time_basis": "UTC synthetic interpolation; not a navigational log"
+      },
+      "geometry_method": "Estimated vessel station within its documented beach-support sector; synthetic Channel approach between authored waypoints",
+      "status": "estimated",
+      "precision_m": 8000,
+      "detail_zoom": 8,
+      "track": [
+        {
+          "time": "1944-06-05T18:00:00Z",
+          "coordinates": [
+            -1.23,
+            50.35
+          ]
+        },
+        {
+          "time": "1944-06-05T23:00:00Z",
+          "coordinates": [
+            -1.1600000000000001,
+            49.92
+          ]
+        },
+        {
+          "time": "1944-06-06T03:00:00Z",
+          "coordinates": [
+            -1.08,
+            49.49
+          ]
+        },
+        {
+          "time": "1944-06-06T23:59:59Z",
+          "coordinates": [
+            -1.0650000000000002,
+            49.496
+          ]
+        }
+      ],
+      "note": "Vessel presence and beach assignment are sourced; this location, arrival time and subsequent slow movement are synthetic."
+    },
+    {
+      "id": "uss-quincy",
+      "kind": "ship-marker",
+      "title": "USS Quincy",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.14,
+          49.52
+        ]
+      },
+      "source_refs": [
+        "nhhc-ships"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-05",
+        "date_end": "1944-06-06",
+        "time_basis": "UTC synthetic interpolation; not a navigational log"
+      },
+      "geometry_method": "Estimated vessel station within its documented beach-support sector; synthetic Channel approach between authored waypoints",
+      "status": "estimated",
+      "precision_m": 8000,
+      "detail_zoom": 8,
+      "track": [
+        {
+          "time": "1944-06-05T18:00:00Z",
+          "coordinates": [
+            -1.2899999999999998,
+            50.35
+          ]
+        },
+        {
+          "time": "1944-06-05T23:00:00Z",
+          "coordinates": [
+            -1.22,
+            49.92
+          ]
+        },
+        {
+          "time": "1944-06-06T03:00:00Z",
+          "coordinates": [
+            -1.14,
+            49.52
+          ]
+        },
+        {
+          "time": "1944-06-06T23:59:59Z",
+          "coordinates": [
+            -1.125,
+            49.526
+          ]
+        }
+      ],
+      "note": "Vessel presence and beach assignment are sourced; this location, arrival time and subsequent slow movement are synthetic."
+    }
+  ]
+}

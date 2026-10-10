@@ -66,7 +66,7 @@ for (const [width, height] of [[1440, 900], [2000, 1290]] as const) {
         await page.keyboard.press('Escape');
         await expect(explain).toHaveCount(0);
         await page.getByRole('button', { name: 'Recenter map', exact: true }).click();
-        await expect(page.getByRole('status', { name: 'Recentered' })).toBeVisible();
+        await expect(page.getByRole('status', { name: 'Back to Perth' })).toBeVisible();
         await page.screenshot({ path: path.join(OUT, '1440x900-light-recentered.png') });
       }
 

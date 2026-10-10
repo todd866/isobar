@@ -1,3 +1,4 @@
+import type {HistoricalCyclone} from './historical-cyclone';
 import { decodeUint16 } from './quantise';
 import { decodeFrameBytes } from './frame-codec';
 import { parseCoast, simplifyCoast, type Coast } from './coast';
@@ -38,6 +39,7 @@ export const FRAME_MISSING = 2;
 export const FRAME_FAILED = 3;
 
 export interface LoadedChart {
+  cyclone?: HistoricalCyclone;
   manifest: ChartManifest;
   /** Batch/legacy storage. Interactive callers use chartFrame rather than assuming a whole variable. */
   packed: Record<string, Uint16Array>;

@@ -830,6 +830,7 @@ export function drawOverlay(
   graticule = false,
   borders: Borders | null = null,
   water?: Water | null,
+  labelGap = 0,
 ): DrawnLabel[] {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
@@ -971,9 +972,10 @@ export function drawOverlay(
       if (!periodicWorld && grid && gridEdgeDistance(grid, item.line.lon[i], item.line.lat[i]) <= EDGE_FADE_DEG + 1) continue;
       if (!(point.x > 14 && point.y > 14 && point.x < width - 14 && point.y < height - 14)) continue;
       const box = { x: point.x - boxW / 2, y: point.y - boxH / 2, w: boxW, h: boxH };
-      const hits = hitsBox(box)
-        || labels.some((label) => overlaps(box, label.box))
-        || centreBoxes.some((centre) => overlaps(box, centre));
+      const spaced = {x:box.x-labelGap,y:box.y-labelGap,w:box.w+2*labelGap,h:box.h+2*labelGap};
+      const hits = hitsBox(spaced)
+        || labels.some((label) => overlaps(spaced, label.box))
+        || centreBoxes.some((centre) => overlaps(spaced, centre));
       if (hits) continue;
       labels.push({ text, x: point.x, y: point.y, box, alpha: item.alpha });
       perLevel.set(text, (perLevel.get(text) ?? 0) + 1);

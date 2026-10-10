@@ -13,6 +13,6 @@ test('history keeps dated navigation compact and only offers usable lenses',asyn
   const box=await map.boundingBox();expect(box!.height).toBeGreaterThan(720*.7);
   await page.getByRole('radio',{name:'Wind',exact:true}).click();
   await expect(page.getByRole('radio',{name:'Wind',exact:true})).toHaveAttribute('aria-checked','true');
-  await page.getByRole('link',{name:'Present day',exact:true}).click();
+  await page.getByRole('link',{name:'Back to present day',exact:true}).click();
   await expect(page.getByRole('radio',{name:'Kite',exact:true})).toBeVisible();
 });

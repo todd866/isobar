@@ -1,3 +1,4 @@
+import {cycloneAt,cycloneWind} from './historical-cyclone';
 import { blendReady, chartFrame, type LoadedChart } from './chart-store';
 import { frameBlend } from './interpolate';
 import * as flow from './flow';
@@ -66,7 +67,7 @@ export function createWindSampler(
     return Object.assign((lon: number, lat: number) => {
       const u = flow.sampleBlended(u0, u1, blend.t, lon, lat, uGrid);
       const v = flow.sampleBlended(v0, v1, blend.t, lon, lat, vGrid);
-      return u == null || v == null ? null : { u, v };
+      return cycloneWind(cycloneAt(chart.cyclone,Date.parse(manifest.run)+(manifest.forecastHours[0]*60+minute)*60000),lon,lat,u == null || v == null ? null : { u, v });
     }, { source: 'model' as const });
   }
 

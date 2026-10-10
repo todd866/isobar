@@ -1,5 +1,6 @@
 import { mosaicElevation } from './terrain/elevation';
 import { buildTerrainSliceMesh, atmosphereSliceKey, type AtmosphereSlice } from './atmosphere-slice';
+import {CYCLONE_GLSL,type CycloneState} from './historical-cyclone';
 import { IMAGERY_MATERIAL_GLSL, type ImageryMapping } from './terrain/imagery-material';
 import { TILT_CAMERA_GLSL, type TiltCamera } from './tilt-camera';
 /** WebGL2 chart plate: Lambert unproject, bicubic field sample, land/sea tint. */
@@ -9,6 +10,7 @@ import { fieldBaseToGlsl, fieldStopsToGlsl, type FieldId } from './field-color';
 import type { Lambert } from './lambert';
 
 export interface GlView {
+  cyclone?: CycloneState|null;
   tiltCamera?: TiltCamera;
   slice?: AtmosphereSlice;
   centerX: number;
@@ -102,6 +104,7 @@ precision highp float;
 precision highp int;
 precision highp usampler2D;
 
+${CYCLONE_GLSL}
 uniform usampler2D uA;
 uniform usampler2D uB;
 uniform sampler2D uLand;
@@ -403,7 +406,9 @@ void main() {
     float a = sampleField(uA, gx, gy);
     float b = sampleField(uB, gx, gy);
     if (a > -1e20 && b > -1e20) {
-      vec4 colour = tint(uField, mix(a, b, uBlend));
+      float value=mix(a,b,uBlend);
+      if(uField==3)value=cycloneSpeed(lon,lat,value);
+      vec4 colour = tint(uField, value);
       // The field fades out over the last half degree of the data grid; the camera keeps that edge off screen.
       float edge = min(gy, uSize.y - 1.0 - gy);
       if (uWrap == 0) edge = min(edge, min(gx, uSize.x - 1.0 - gx));
@@ -700,6 +705,7 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
         gl.uniform2f(loc('uTerrainTexel'), 1 / terrain.width, 1 / terrain.height);
       }
       gl.uniform1f(loc('uBlend'), view.blend);
+      const storm=view.cyclone;gl.uniform4f(loc('uCyclone'),storm?.lon??0,storm?.lat??0,storm?.windKt??0,storm?.rmwKm??0);
       gl.uniform1i(loc('uKite'), view.field === 'wind' && view.kiteBand ? 1 : 0);
       gl.uniform2f(loc('uKiteBand'), view.kiteBand?.min ?? 15, view.kiteBand?.max ?? 25);
       gl.uniform1i(loc('uField'), view.field === 'rain' ? 1 : view.field === 'temp' ? 2 : view.field === 'wind' ? 3 : 0);

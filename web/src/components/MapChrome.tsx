@@ -173,6 +173,7 @@ export function MapHeader({
   phoneWind,
   phone,
   onMenuOpen,
+  onMenuChange,
   uv,
   graticule,
   onGraticule,
@@ -193,6 +194,7 @@ export function MapHeader({
   phoneWind?: ReactNode;
   phone: boolean;
   onMenuOpen: () => void;
+  onMenuChange?: (open: boolean) => void;
   /** Hourly UV beside the temperature, only while that hour rounds to 3 or more. */
   uv?: { index: number; category: UvCategory; protection: string | null } | null;
   graticule: boolean;
@@ -258,7 +260,7 @@ export function MapHeader({
         <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 9.5 12 5l9.5 4.5L12 14z" /><path d="M6.5 11.5v4.2c1.4 1.4 3.3 2.1 5.5 2.1s4.1-.7 5.5-2.1v-4.2M21.5 9.5v5" /></svg>
         Learn
       </Link>
-      <MapMenu graticule={graticule} onGraticule={onGraticule} wind={phoneWind} phone={phone} onOpen={onMenuOpen} run={runMs > 0 ? <span title={runDetail} aria-label={runDetail} className={`inline-flex items-center gap-1 ${stale ? 'text-[var(--md-warning)]' : ''}`}>{stale ? <span className="stale-run" aria-hidden="true" /> : null}run {runText} · {ageH} h old</span> : 'Run unavailable'} />
+      <MapMenu graticule={graticule} onGraticule={onGraticule} wind={phoneWind} phone={phone} onOpen={onMenuOpen} onOpenChange={onMenuChange} run={runMs > 0 ? <span title={runDetail} aria-label={runDetail} className={`inline-flex items-center gap-1 ${stale ? 'text-[var(--md-warning)]' : ''}`}>{stale ? <span className="stale-run" aria-hidden="true" /> : null}run {runText} · {ageH} h old</span> : 'Run unavailable'} />
     </header>
   );
 }

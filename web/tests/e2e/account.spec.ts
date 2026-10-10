@@ -56,12 +56,11 @@ async function mail(page: Page) {
 async function openSheet(page: Page) {
   // The map has no rail or tab bar. Its account trigger lives in the map Menu;
   // training, E6-B, and account pages retain their own direct trigger.
-  const menuButton = page.getByRole('button', { name: 'Menu', exact: true });
-  if (await menuButton.isVisible().catch(() => false) && await menuButton.getAttribute('aria-expanded') !== 'true') {
-    await menuButton.click();
-    await expect(page.locator('[data-map-menu]')).toBeVisible();
-  }
   const button = page.locator('[data-account-button]:visible');
+  if (!await button.isVisible()) {
+    await page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await expect(button).toBeVisible();
+  }
   await button.click();
   await expect(page.locator('[data-account-sheet]')).toBeVisible();
 }

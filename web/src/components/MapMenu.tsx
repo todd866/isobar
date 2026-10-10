@@ -23,15 +23,18 @@ function LearnLevelValue() {
 }
 
 /** Secondary destinations and settings. The map has no training navigation rail. */
-export function MapMenu({ run, wind, onOpen, phone, graticule, onGraticule }: {
+export function MapMenu({ run, wind, onOpen, onOpenChange, phone, graticule, onGraticule }: {
   phone: boolean;
   wind?: ReactNode;
   run: ReactNode;
   onOpen: () => void;
+  onOpenChange?: (open: boolean) => void;
   graticule: boolean;
   onGraticule: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => { onOpenChange?.(open); }, [open, onOpenChange]);
+  useEffect(() => () => { onOpenChange?.(false); }, [onOpenChange]);
   const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const { user, open: accountOpen, setOpen: openAccount } = useAccount();

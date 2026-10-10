@@ -6,7 +6,7 @@ test('Everest uses shared transport, collision-free labels and continuous camera
   await page.goto('/history?event=everest-1953');
   const stage=page.locator('[data-map-ready=true]');await stage.waitFor();
   await page.getByRole('button',{name:'Pause',exact:true}).click();
-  const state=()=>stage.evaluate((e:any)=>({camera:e.chartApi.camera(),labels:e.chartApi.labels(),terrain:e.chartApi.terrain(),geometry:e.chartApi.tiltGeometry()}));
+  const state=()=>stage.evaluate((e:any)=>({camera:e.chartApi.camera(),labels:e.chartApi.labels(),terrain:e.chartApi.terrain(),geometry:e.chartApi.tiltGeometry(),eye:e.chartApi.eyeClearance()}));
   await expect.poll(async()=>(await state()).terrain?.painted,{timeout:30_000}).toBeTruthy();
   expect(new Date(Number(await stage.getAttribute('data-valid-ms'))).toISOString().slice(0,10)).toBe('1953-05-29');
   const before=(await state()).camera;
@@ -23,7 +23,8 @@ test('Everest uses shared transport, collision-free labels and continuous camera
   await page.waitForTimeout(2000);await page.screenshot({path:info.outputPath('close-tilted.png')});
   for(let i=0;i<3;i++){await page.mouse.wheel(0,-35);await page.waitForTimeout(100);}
   await page.setViewportSize({width:844,height:390});await page.waitForTimeout(3000);
-  const s=await state();expect(s.geometry.cameraPositionM[2]).toBeGreaterThan(8849);
+  const s=await state();expect(s.geometry.cameraPositionM.every(Number.isFinite)).toBe(true);
+  expect(s.eye.ground).not.toBeNull();expect(s.eye.clearance).toBeGreaterThanOrEqual(99.9);
   for(let i=0;i<s.labels.length;i++)for(let j=i+1;j<s.labels.length;j++){
     const a=s.labels[i],b=s.labels[j];expect(a.x<b.x+b.w&&b.x<a.x+a.w&&a.y<b.y+b.h&&b.y<a.y+a.h,`${a.text} overlaps ${b.text}`).toBe(false);
   }
@@ -51,7 +52,7 @@ test('mountain handoff keeps screen scale and pitch; cutaway restores; missing f
   await expect.poll(async()=>(await state()).cutaway).toBe(1);
   await page.screenshot({path:info.outputPath('cutaway.png')});
   await page.keyboard.press('Escape');await expect.poll(async()=>(await state()).cutaway).toBe(0);
-  await page.getByRole('link',{name:'Present day',exact:true}).click();
+  await page.getByRole('link',{name:'Back to present day',exact:true}).click();
   await page.waitForURL(url=>url.pathname==='/');await stage.waitFor();
   await expect.poll(async()=>(await state()).terrain?.covered,{timeout:30_000}).toBeGreaterThan(0);
   const current=await state();
@@ -80,12 +81,14 @@ test('selected mountain pin stays framed through zoom and survives both data mod
   await stage.locator('canvas[tabindex="0"]').focus();
   await page.keyboard.down('ArrowRight');await page.waitForTimeout(500);await page.keyboard.up('ArrowRight');
   const orbited=(await pin.boundingBox())!;expect(Math.abs(orbited.x-after.x)).toBeLessThan(4);expect(Math.abs(orbited.y-after.y)).toBeLessThan(4);
-  const bearing=Number(await stage.getAttribute('data-bearing'));expect(bearing).toBeGreaterThan(.2);
-  await page.getByRole('link',{name:'Present day',exact:true}).click();await page.waitForURL(url=>url.pathname==='/');
-  await stage.waitFor();expect(Number(await stage.getAttribute('data-bearing'))).toBeCloseTo(bearing,3);
+  // Read the live camera: data-bearing updates only on React renders and can
+  // lag the last keyboard frame. Key-up has synchronously stopped rotation.
+  const bearing=await stage.evaluate((e:any)=>e.chartApi.camera().bearingRadians);expect(bearing).toBeGreaterThan(.2);
+  await page.getByRole('link',{name:'Back to present day',exact:true}).click();await page.waitForURL(url=>url.pathname==='/');
+  await stage.waitFor();await expect.poll(()=>stage.evaluate((e:any)=>e.chartApi.camera().bearingRadians)).toBeCloseTo(bearing,6);
   await expect(pin).toHaveAttribute('data-lat',lat!);await expect(pin).toHaveAttribute('data-lon',lon!);
   await page.getByRole('button',{name:'Show daily forecast',exact:true}).click();
   await page.getByRole('button',{name:'Menu',exact:true}).click();
   const history=page.getByRole('link',{name:'Historical',exact:true});await history.focus();await page.keyboard.press('Enter');
-  await page.waitForURL(url=>url.pathname==='/history');await stage.waitFor();expect(Number(await stage.getAttribute('data-bearing'))).toBeCloseTo(bearing,3);await expect(pin).toHaveAttribute('data-lat',lat!);await expect(pin).toHaveAttribute('data-lon',lon!);
+  await page.waitForURL(url=>url.pathname==='/history');await stage.waitFor();await expect.poll(()=>stage.evaluate((e:any)=>e.chartApi.camera().bearingRadians)).toBeCloseTo(bearing,6);await expect(pin).toHaveAttribute('data-lat',lat!);await expect(pin).toHaveAttribute('data-lon',lon!);
 });

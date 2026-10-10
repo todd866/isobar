@@ -20,7 +20,8 @@ to choose a time, hold the map to freeze it, and press Now to return to the
 present at **Real time** speed. Accelerated playback is labelled in forecast
 minutes per second. Hover waits briefly before moving the timeline, so passing
 the pointer across it does not change the time. Click-drag pans; pinch zooms;
-the 2D/3D toggle selects the map mode, and two-finger scroll tilts in 3D. Lenses add detail
+the 2D/3D toggle selects the map mode, and two-finger vertical movement tilts and horizontal movement orbits in 3D.
+North-up restores orientation; Recenter returns to the chosen place. Lenses add detail
 for the activity you are planning:
 
 - **Rain:** when it arrives, how much to expect, and the hourly breakdown.
@@ -39,9 +40,17 @@ temperature fields, plus [ATPL practice](https://isobar.md/train), an
 [E6-B computer](https://isobar.md/e6b) and an [instrument lab](https://isobar.md/lab).
 The web and Mac apps have different feature sets. Web Kite and Surf show
 local wind and sea forecasts, while Fly adds an atmospheric cross-section.
-**Historical** opens prepared global weather reconstructions for D-Day and
-Cyclone Tracy, with hourly playback and sources. These coarse reanalysis fields
-show large-scale weather, not an exact reconstruction of local conditions.
+**Historical** opens D-Day, Everest 1953 and Cyclone Tracy in the shared map.
+D-Day adds dated forces and estimated ship movements; Everest includes the ascent
+and detailed terrain. Tracy combines coarse reanalysis with a compact cyclone
+reconstructed from best-track positions and intensity. Assumptions and sources
+are available in Data sources. **Present day** returns to current weather. The
+web history views use the same map, timeline and lens vocabulary as the present
+map; the native history map is still a parity item.
+In web 3D, Slice narrows terrain and atmospheric wind together. Orbit changes its
+bearing and the slider moves it across the landscape; the point cross-section
+follows the same cut. Both maps use bounded curved trails for illustrative
+upper-air motion. These are still developing teaching views, not resolved storm simulations.
 Aircraft replay uses observations captured during the current viewing session;
 it cannot recover flights from before capture began.
 
@@ -58,6 +67,13 @@ available offline. METAR, TAF and SIGMET products are collected automatically.
 For NOTAMs, open Aviation Notices and choose **NOTAC** to add your own key and
 refresh. Isobar stores the key in the Mac Keychain. You can also import a
 briefing. [How the collector works](https://github.com/todd866/isobar-data#notac-connection).
+
+| Workflow | Web | Mac |
+|---|---|---|
+| Map, timeline, lenses, pan/zoom and 2D/3D camera | Shared interaction model, including historical map routes | Native map, offline archive, 2D/3D camera and local products |
+| Point detail and atmosphere | General point/sounding, marine and terrain panels | Airport and upper-air atmosphere views; general point parity remains open |
+| Historical weather | Shared map, timeline and event/day views | Data readers exist; user-facing history map remains open |
+| Learn and Ask | Newer Learn flows and Ask Isobar | Bundled Training window; native Learn/Ask parity remains open |
 
 ## Build the Mac app
 
@@ -101,10 +117,13 @@ include the window size, selected layer and a screenshot if possible.
 
 ## In development
 
-The web app at isobar.md leads: worldwide place and aerodrome search, units
-(AUS / US / local), the point sounding, Ask Isobar and Learn ship there first
-and reach the Mac app afterwards. A zoomed-in view draws 2 hPa isobars and
-names the nearby towns.
+The web app at isobar.md currently leads on worldwide place and aerodrome
+search, units (AUS / US / local), general point sounding, historical map
+workflows, Ask Isobar and the newer Learn profile and review flows. Native and
+web share the map camera, timeline and weather-lens interaction model, but
+native Ask, the history map, general point/sounding parity and the newer Learn
+semantics remain in development. A zoomed-in view draws 2 hPa isobars and
+names nearby towns.
 
 GitHub builds the native app and runs its tests on pushes and pull requests.
 The CI build skips the bundled collector; release packaging has separate checks

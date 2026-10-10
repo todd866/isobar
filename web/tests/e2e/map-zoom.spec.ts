@@ -86,10 +86,10 @@ test('zoom in reaches the terrain-scale floor and then stops', async ({ page }) 
   });
   const floored = await camera(page);
   const across = widthKm(floored);
-  expect(across).toBeLessThan(3);
-  expect(across).toBeGreaterThan(0.5);
-  expect(floored.halfHeight).toBeGreaterThan(0.0049);
-  expect(floored.halfHeight).toBeLessThan(0.0051);
+  expect(across).toBeLessThan(0.5);
+  expect(across).toBeGreaterThan(0.2);
+  expect(floored.halfHeight).toBeGreaterThan(0.00099);
+  expect(floored.halfHeight).toBeLessThan(0.00101);
   await page.getByRole('button', { name: 'Zoom in' }).click();
   const again = await camera(page);
   expect(again.halfWidth).toBeCloseTo(floored.halfWidth, 4);

@@ -50,6 +50,7 @@ export function PointPanel({ reconstructedModel=null, archiveOnly=false, point, 
   const [result, setResult] = useState<{ key: string; model: PointModel | null }>({ key: '', model: null });
   const [marine, setMarine] = useState<{ key: string; series: MarineSeries | null }>({ key: '', series: null });
   const [activeId, setActiveId] = useState('surface');
+  const [retry, setRetry] = useState(0);
   const collectorExpired = result.key === key && !!result.model && result.model.series.icao !== 'POINT'
     && !pointProfileAt(result.model, validMs)?.levels.length;
   useEffect(() => {
@@ -72,7 +73,7 @@ export function PointPanel({ reconstructedModel=null, archiveOnly=false, point, 
       .then((series) => { if (!controller.signal.aborted) setMarine({ key: marineKey, series }); })
       .catch(() => { if (!controller.signal.aborted) setMarine({ key: marineKey, series: null }); });
     return () => controller.abort();
-  }, [reconstructedModel,archiveOnly,point.lat, point.lon, day, key, marineKey, collectorIcao, collectorExpired]);
+  }, [reconstructedModel,archiveOnly,point.lat, point.lon, day, key, marineKey, collectorIcao, collectorExpired, retry]);
   useEffect(() => {
     closeRef.current?.focus({ preventScroll: true });
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !event.defaultPrevented) closeAction.current(); };
@@ -97,21 +98,24 @@ export function PointPanel({ reconstructedModel=null, archiveOnly=false, point, 
     ? Math.min(baseHeight, Math.max(220, anchor.bottom - Math.max(anchor.top, anchor.ceiling) - 220))
     : baseHeight;
   const loading = result.key !== key;
+  const compact = !profile || !state;
   const identity = model ? { source: model.provenance.source, model: model.provenance.model, run: model.provenance.run, cycle: model.provenance.cycle } : null;
   const frame = soundingFrame(rows, elevation);
   const groundText = elevation == null ? null : formatGround(elevation);
   return (
-    <aside ref={panelRef} aria-label="Point section" data-point-panel data-point-layout={desktop ? 'side' : 'sheet'} data-point-emphasis={lens} data-point-location={`${point.lat},${point.lon}`}
-      className={`${styles.panel} ${desktop ? styles.side : styles.sheet}`}
-      style={!desktop ? (anchor && height > 0 ? { left: anchor.left, width: anchor.width, top: anchor.bottom - height, height } : { visibility: 'hidden' }) : undefined}
+    <aside ref={panelRef} aria-label="Point section" data-point-panel data-point-layout={desktop ? (compact ? 'compact' : 'side') : 'sheet'} data-point-state={loading ? 'loading' : compact ? 'unavailable' : 'ready'} data-point-emphasis={lens} data-point-location={`${point.lat},${point.lon}`}
+      className={`${styles.panel} ${desktop ? styles.side : styles.sheet} ${compact ? styles.compact : ''}`}
+      style={!desktop ? (anchor && height > 0 ? { left: anchor.left, width: anchor.width, ...(compact ? { bottom: viewport - anchor.bottom, maxHeight: height } : { top: anchor.bottom - height, height }) } : { visibility: 'hidden' }) : undefined}
       onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); onClose(); } }}>
       <div className={styles.heading}>
-        <span className={styles.identity}>
+        <span className={styles.identity} data-point-source title={identity ? `${forecastRunLabel(identity)} · ${forecastRunTitle(identity)}` : undefined}>
           <strong data-point-title>{name}</strong>
-          {detail ? <span className={styles.coords} data-point-coords>{detail}</span> : null}
+          <span className={styles.datum}>
+            {detail ? <span className={styles.coords} data-point-coords>{detail}</span> : null}
+            {groundText ? <span className={styles.elevation} data-point-elevation>{groundText}</span> : null}
+          </span>
         </span>
-        <span className={styles.source} data-point-source title={identity ? forecastRunTitle(identity) : undefined}>{identity ? forecastRunLabel(identity) : '…'}</span>
-        {groundText ? <span className={styles.elevation} data-point-elevation>{groundText}</span> : null}
+
         <span className={styles.mark}>
           <button type="button" data-set-place aria-pressed={isPlace} aria-label="Set as my place" onClick={() => { const outcome = onMakePlace(); placeNote.show(outcome === 'restored' ? 'Restored' : outcome === 'same' ? 'Your place' : 'Set as my place'); }}>
             <StarIcon filled={isPlace} />
@@ -125,7 +129,7 @@ export function PointPanel({ reconstructedModel=null, archiveOnly=false, point, 
           <Sounding rows={rows} sea={sea} layers={state.layers} icing={state.icing} freezingFt={state.freezingFt} bottomFt={frame.bottomFt} groundFt={frame.groundFt} section={section} sectionGeometry={sectionGeometry} sectionExpedition={sectionExpedition} sectionTimeMs={validMs} modelGroundM={modelGroundM} emphasis={emphasis} activeId={active?.id ?? 'surface'} onActive={setActiveId} temp={units.temp} />
           <p className={styles.readout} data-readout>{active ? soundingReadout(active, units) : ''}</p>
         </>
-      ) : <div className={styles.status} role="status">{loading ? '…' : 'Profile unavailable'}</div>}
+      ) : <div className={styles.status}><span role="status">{loading ? 'Loading profile…' : 'Profile unavailable'}</span>{!loading && !archiveOnly ? <button type="button" onClick={() => { setResult({ key: '', model: null }); setRetry(n => n + 1); }}>Retry</button> : null}</div>}
     </aside>
   );
 }

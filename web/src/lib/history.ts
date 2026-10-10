@@ -31,6 +31,7 @@ export interface HistoricalWeatherFrame {
 }
 
 export interface HistoricalWeather {
+  cyclone?: unknown;
   schema_version: number;
   product: 'isobar-historical-weather' | string;
   event?: { id?: string; label?: string; start_date?: string; end_date?: string };

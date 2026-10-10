@@ -8,6 +8,7 @@
 @interface AtmosphereMapView (TestSampling)
 - (NSDictionary *)sample;
 - (void)drawSyntheticFlows;
+- (NSDictionary *)syntheticWindAtHeight:(double)height latitude:(double)latitude longitude:(double)longitude;
 @end
 @interface SeedProbe : AtmosphereMapView
 @property(nonatomic) NSUInteger projectedSeeds;
@@ -107,6 +108,49 @@ static void WriteScreenshot(NSBitmapImageRep *bitmap) {
     [png writeToFile:path atomically:YES];
 }
 
+static double WindComponent(AtmosphereMapView *view, NSString *key, double height, double latitude, double longitude) {
+    return [[view syntheticWindAtHeight:height latitude:latitude longitude:longitude][key] doubleValue];
+}
+
+static void CheckSyntheticCell(AtmosphereMapView *view) {
+    const double latitude=-31.94, longitude=115.97;
+    Check(fabs(WindComponent(view,@"verticalMS",0,latitude,longitude))<1e-12,
+          @"synthetic cell has zero vertical flow at floor");
+    Check(fabs(WindComponent(view,@"verticalMS",10000,latitude,longitude))<1e-12,
+          @"synthetic cell has zero vertical flow at top");
+
+    double lowEast=WindComponent(view,@"eastMS",2500,latitude,longitude)-13.0;
+    double highEast=WindComponent(view,@"eastMS",7500,latitude,longitude)-23.0;
+    double lowNorth=WindComponent(view,@"northMS",2500,latitude,longitude)-(-1.0);
+    double highNorth=WindComponent(view,@"northMS",7500,latitude,longitude)-7.0;
+    Check(lowEast*highEast+lowNorth*highNorth<0,
+          @"synthetic cell reverses horizontal perturbation across midlevel");
+
+    // The analytic partners cancel in local metres, within finite-difference
+    // error from the latitude-dependent longitude scale.
+    const double dLat=.0005, dLon=.0005, dHeight=1.0;
+    for (NSArray *point in @[@[@(-31.94),@(115.97),@(2500)],
+                             @[@(-12.0),@(40.0),@(5000)],
+                             @[@(32.0),@(-110.0),@(7500)]]) {
+        double lat=[point[0] doubleValue], lon=[point[1] doubleValue], h=[point[2] doubleValue];
+        double du=(WindComponent(view,@"eastMS",h,lat,lon+dLon)-WindComponent(view,@"eastMS",h,lat,lon-dLon))
+            /(2*dLon*111320.0*MAX(.1,cos(lat*M_PI/180.0)));
+        double dv=(WindComponent(view,@"northMS",h,lat+dLat,lon)-WindComponent(view,@"northMS",h,lat-dLat,lon))
+            /(2*dLat*111132.0);
+        double dw=(WindComponent(view,@"verticalMS",h+dHeight,lat,lon)-WindComponent(view,@"verticalMS",h-dHeight,lat,lon))/(2*dHeight);
+        Check(fabs(du+dv+dw)<5e-7, @"synthetic cell is locally divergence-free");
+    }
+
+    NSDate *base=view.date;
+    NSDictionary *baseline=[view syntheticWindAtHeight:2500 latitude:latitude longitude:longitude];
+    view.date=[base dateByAddingTimeInterval:299];
+    NSDictionary *before=[view syntheticWindAtHeight:2500 latitude:latitude longitude:longitude];
+    view.date=[base dateByAddingTimeInterval:300];
+    NSDictionary *after=[view syntheticWindAtHeight:2500 latitude:latitude longitude:longitude];
+    Check([baseline isEqual:before] && ![baseline isEqual:after], @"synthetic field is quantized to five-minute forecast steps");
+    view.date=base;
+}
+
 int main(void) { @autoreleasepool {
     [NSApplication sharedApplication];
     [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
@@ -157,6 +201,7 @@ int main(void) { @autoreleasepool {
     synthetic.camera=MapCameraMake(-31.94,115.97,32,0,640,420);
     IsobarCamera syntheticCamera=synthetic.camera; syntheticCamera.pitch=0.8; synthetic.camera=syntheticCamera;
     synthetic.date=date; synthetic.latitude=-31.94; synthetic.longitude=115.97;
+    CheckSyntheticCell(synthetic);
     NSBitmapImageRep *syntheticBitmap=Capture(synthetic,window);
     NSButton *syntheticBadge=[synthetic valueForKey:@"disclosureButton"];
     Check(!syntheticBadge.hidden && InkPixels(syntheticBitmap)>20, @"synthetic layered wind renders without a product");

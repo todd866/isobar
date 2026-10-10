@@ -25,7 +25,7 @@ test('photo terrain is optional, renders on the shared map, and survives cached 
  await page.screenshot({path:info.outputPath('photo-dark.png')});
  await page.setViewportSize({width:390,height:844});await page.waitForTimeout(500);
  await page.screenshot({path:info.outputPath('photo-phone.png')});
- await page.getByRole('link',{name:'Present day',exact:true}).click();
+ await page.getByRole('link',{name:'Back to present day',exact:true}).click();
  await page.waitForURL(url=>url.pathname==='/');
  await expect(stage).toHaveAttribute('data-terrain-imagery','ready',{timeout:30_000});
  expect(errors).toEqual([]);

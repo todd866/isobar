@@ -1,3 +1,4 @@
+import {cycloneScalar,type CycloneState} from './historical-cyclone';
 import type { KiteBand } from './coastal';
 import { fieldBase, fieldColor, type FieldId, type Rgba } from './field-color';
 import { unproject, type Camera, type Lambert } from './lambert';
@@ -20,6 +21,7 @@ export interface CanvasFrame {
 }
 
 export interface CanvasView {
+  cyclone?: CycloneState|null;
   camera: Camera;
   lambert: Lambert;
   west: number;
@@ -220,8 +222,8 @@ export function createCanvasChart(canvas: HTMLCanvasElement): CanvasChart {
         if (view.field !== 'none' && frameA && frameB) {
           const a = sampleCanvasField(frameA, lon, lat, view, wraps);
           const b = sampleCanvasField(frameB, lon, lat, view, wraps);
-          const value = blendCanvasField(a, b, view.blend);
-          const colour = fieldColor(view.field, value, view.kiteBand);
+          const value = cycloneScalar(view.cyclone??null,lon,lat,blendCanvasField(a,b,view.blend),view.field);
+          const colour = fieldColor(view.field, value??NaN, view.kiteBand);
           tint = { r: colour.r, g: colour.g, b: colour.b, a: colour.a * cover };
         }
         const rgb = colour(base, tint);

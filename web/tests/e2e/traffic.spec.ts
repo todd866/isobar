@@ -467,8 +467,9 @@ test('holding live traffic freezes the displayed observation until Now or rewind
   await timeline.focus();
   await timeline.press('ArrowLeft');
   await expect(layer).toHaveAttribute('data-traffic-mode', 'replay');
-  const rewind = (await glyphAt(page, 'QFA642'))!;
-  expect(rewind.lat).toBeLessThan(first.lat - 0.01);
+  // A paused live picture already reports replay; that status alone cannot
+  // acknowledge this seek. Wait for the rendered earlier observation.
+  await expect.poll(async () => (await glyphAt(page, 'QFA642'))?.lat ?? Infinity).toBeLessThan(first.lat - 0.01);
   await expect(page.locator('[data-traffic-card]')).toContainText('Replay');
   await page.getByRole('button', { name: 'Now', exact: true }).click();
   await expect(layer).toHaveAttribute('data-traffic-mode', 'live');

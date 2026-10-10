@@ -82,11 +82,15 @@ test('map feature markers, airports, keyboard and trackpad input', async ({ page
   const a = await camera();
   await page.keyboard.press('+');
   const b = await camera(); expect(b).not.toEqual(a);
-  await page.keyboard.press('Home'); expect(await camera()).toEqual(a);
+  await page.keyboard.press('Home'); expect({bearingRadians:0,...await camera()}).toEqual({bearingRadians:0,...a});
   await page.getByRole('button', { name: '3D map', exact: true }).click();
   await canvas.dispatchEvent('wheel', { deltaY: 30, deltaX: 20 });
   await expect.poll(() => page.locator('[data-map-ready]').getAttribute('data-tilt')).not.toBe('0');
-  expect(await camera()).toEqual(a);
+  const tilted = await camera() as {centerX:number;centerY:number;bearingRadians?:number;halfHeight:number};
+  expect(tilted.centerX).toBeCloseTo((a as {centerX:number}).centerX,6);
+  expect(tilted.centerY).toBeCloseTo((a as {centerY:number}).centerY,6);
+  expect(tilted.bearingRadians).toBeGreaterThan(0);
+  expect(tilted.halfHeight).toBeLessThan((a as {halfHeight:number}).halfHeight);
   await page.getByRole('button', { name: 'Recenter map' }).click();
   await canvas.dispatchEvent('wheel', { deltaY: -20, ctrlKey: true, clientX: 500, clientY: 450 }); expect(await camera()).not.toEqual(a);
   // Wind barbs show only when the export carries wind components.

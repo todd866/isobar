@@ -28,6 +28,7 @@ describe('historical shared chart adapter', () => {
     const result = await loadHistoricalChart({ date: '1944-06-06', hour: 5 });
     expect(result.initialMs).toBe(Date.parse('1944-06-06T05:00Z'));
     expect(result.collection.id).toBe('dday');
+    expect((await loadHistoricalChart({event:'dday'})).initialMs).toBe(Date.parse('1944-06-06T06:00Z'));
     expect(result.chart.manifest.attribution[0]?.source).toBe('fixture');
     fetcher.mockRestore();
   });

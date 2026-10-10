@@ -1,3 +1,4 @@
+import {createWindSampler} from './flow-wind';
 import { mapProject, mapProjectAboveGround, mapUnproject } from './lambert';
 import type { LoadedChart } from './chart-store';
 import { blendReady, chartFrame } from './chart-store';
@@ -113,6 +114,7 @@ export function drawWindBarbs(ctx: CanvasRenderingContext2D, chart: LoadedChart,
     }
     return p && { x: (1 + (p.x - camera.centerX) / camera.halfWidth) * width / 2, y: (1 - (p.y - camera.centerY) / camera.halfHeight) * height / 2 };
   };
+  const cycloneSample=chart.cyclone?createWindSampler(chart,minute):null;
   // Screen-spaced sampling keeps density and cost bounded while zooming.
   for (let y = 50; y < height - 20; y += 58) for (let x = 28; x < width - 20; x += 58) {
     const ll = mapUnproject(geo, camera, x / width * 2 - 1, 1 - y / height * 2);
@@ -120,9 +122,10 @@ export function drawWindBarbs(ctx: CanvasRenderingContext2D, chart: LoadedChart,
     const column = Math.round((ll.lon - m.west) / m.step);
     const i = m.wrapsLongitude ? ((column % m.nx) + m.nx) % m.nx : column;
     const j = Math.round((m.north - ll.lat) / (m.north - m.south) * (m.ny - 1));
-    const u = windComponent(chart, 'u10', j * m.nx + i, minute), v = windComponent(chart, 'v10', j * m.nx + i, minute);
+    const reconstructed=cycloneSample?.(ll.lon,ll.lat);
+    const u = reconstructed?.u??windComponent(chart, 'u10', j * m.nx + i, minute), v = reconstructed?.v??windComponent(chart, 'v10', j * m.nx + i, minute);
     if (u == null || v == null) continue;
-    const kt = Math.hypot(u, v) * 1.943844;
+    const kt = Math.hypot(u, v) * (reconstructed?1:1.943844);
     if (kt < 2.5) { ctx.beginPath(); ctx.arc(x, y, 2, 0, 2 * Math.PI); ctx.stroke(); continue; }
     if (camera.surface) {
       drawProjectedBarb(ctx, geo, camera, ll, u, v, kt, width, height);

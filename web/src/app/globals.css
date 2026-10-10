@@ -178,7 +178,9 @@ select {
 .teach-wind-comparison > div:last-child { color: var(--md-tertiary); }
 .teach-wind-comparison svg { width: 48px; height: 48px; }
 
-[data-map-shell="true"] { height: 100svh; min-width: 0; min-height: 0; overflow: hidden; }
+/* Keep an opaque surface behind the safe-area inset as well as the map deck.
+ * Do not blur/composite the first control row against browser chrome. */
+[data-map-shell="true"] { height: 100svh; min-width: 0; min-height: 0; overflow: hidden; background: var(--md-surface); }
 [data-map-page] { min-width: 0; min-height: 0; }
 .uv-figure { font-size: 15px; line-height: 20px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .uv-figure[data-uv="moderate"] { color: var(--uv-moderate); }
@@ -560,7 +562,9 @@ html:has(.map-shell), body:has(.map-shell) { overscroll-behavior: none; }
 [data-history-mode="true"] .map-header { height: auto; min-height: 44px; flex-wrap: wrap; row-gap: 2px; padding-block: 4px; }
 .history-picker { flex: 0 1 auto; }
 .history-picker select { max-width: 16rem; min-height: 36px; }
-.history-picker a { white-space: nowrap; }
+.history-exit { display: inline-flex; flex: none; align-items: center; gap: 6px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--md-primary); border-radius: 6px; background: var(--md-primary-container); color: var(--md-on-primary-container); font-size: .875rem; font-weight: 600; white-space: nowrap; }
+.history-exit svg { width: 18px; height: 18px; flex: none; }
+.history-exit:focus-visible { outline: 2px solid var(--md-primary); outline-offset: 2px; }
 [data-history-mode="true"] .map-deck { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
 [data-history-mode="true"] .transport-side { display: flex; padding-top: 0; order: 0; }
 [data-history-mode="true"] .transport-inline { display: none; }
@@ -572,6 +576,7 @@ html:has(.map-shell), body:has(.map-shell) { overscroll-behavior: none; }
 @media (max-width: 767px) {
   [data-history-mode="true"] .map-header .history-picker { flex-basis: 100%; }
   .history-picker select { flex: 1; max-width: none; }
+  .history-exit { min-height: 44px; }
   [data-history-mode="true"] .history-day { flex: 1 1 120px; width: 0; }
   [data-history-mode="true"] .time-block { flex-basis: 100%; }
 }
@@ -586,3 +591,12 @@ html:has(.map-shell), body:has(.map-shell) { overscroll-behavior: none; }
 /* Keep the sweep reachable above the phone's point sheet. */
 .map-shell:has([data-point-layout="sheet"]) .map-tools { left: 8px; }
 .map-shell:has([data-point-layout="sheet"]) .map-slice-control { position: absolute; left: 0; top: max(42px, calc(var(--map-exposed-height, 100%) - 52px)); }
+
+/* A named way home remains visible while inspecting a different point. */
+.map-tools button.map-return { display: flex; width: auto; max-width: min(180px, 40vw); height: auto; min-height: 36px; gap: 4px; padding: 4px 8px; font-size: .8125rem; }
+.map-return svg { flex-shrink: 0; }
+.map-return span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Empty space around a camera control is still draggable map. */
+.map-tools { pointer-events: none; }
+.map-tools .map-sources { pointer-events: auto; }

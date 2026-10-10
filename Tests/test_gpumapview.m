@@ -41,6 +41,54 @@ static NSView *FindID(NSView *root, NSString *ident);
 static NSEvent *NavigationKey(unsigned short code, NSString *text);
 static NSUInteger SnapshotDifference(CGImageRef a, CGImageRef b);
 
+static uint64_t JourneyNext(uint64_t *state) {
+    uint64_t x = *state;
+    if (!x) x = 0x9e3779b97f4a7c15ULL;
+    x ^= x >> 12; x ^= x << 25; x ^= x >> 27;
+    *state = x;
+    return x * 0x2545f4914f6cdd1dULL;
+}
+
+static double JourneyUnit(uint64_t *state) {
+    return (double)(JourneyNext(state) >> 11) / 9007199254740992.0;
+}
+
+static NSPoint JourneyPoint(uint64_t *state, NSRect bounds) {
+    return NSMakePoint(24 + JourneyUnit(state) * fmax(1, NSWidth(bounds) - 48),
+        24 + JourneyUnit(state) * fmax(1, NSHeight(bounds) - 48));
+}
+
+static BOOL JourneyCameraOK(IsobarCamera camera, BOOL threeD) {
+    if (!isfinite(camera.centreLat) || !isfinite(camera.centreLon) ||
+        !isfinite(camera.zoom) || !isfinite(camera.globe) || !isfinite(camera.pitch) ||
+        !isfinite(camera.bearing) || camera.zoom < 1 || camera.zoom > 18000 ||
+        camera.globe < -1e-9 || camera.globe > 1 + 1e-9 || camera.pitch < -1e-9 ||
+        camera.pitch > 1.30 + 1e-9 || camera.centreLat < -180 - 1e-9 ||
+        camera.centreLat > 180 + 1e-9 || camera.centreLon < -180 - 1e-9 ||
+        camera.centreLon > 180 + 1e-9) return NO;
+    if (!threeD && (fabs(camera.pitch) > 1e-8 || fabs(camera.globe) > 1e-8 ||
+        fabs(camera.bearing) > 1e-8)) return NO;
+    // In a pitched camera, fieldrender uses pitch for the atmospheric view and
+    // globe remains the separate overhead morph state. E/Q can therefore leave
+    // globe at its clamped morph value while pitch is below full tilt.
+    return YES;
+}
+
+static NSString *JourneyCameraDescription(IsobarCamera camera) {
+    return [NSString stringWithFormat:@"lat=%.4f lon=%.4f z=%.4f pitch=%.4f bearing=%.4f globe=%.4f",
+        camera.centreLat, camera.centreLon, camera.zoom, camera.pitch, camera.bearing, camera.globe];
+}
+
+static NSString *JourneyActionName(NSUInteger action) {
+    static NSArray<NSString *> *names;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ names = @[
+        @"drag", @"reverse-drag", @"magnify", @"precise-scroll", @"mode-switch",
+        @"arrow-key", @"wasd-eye-key", @"north-recenter", @"display-tick", @"recenter-tick"
+    ]; });
+    return names[action % names.count];
+}
+
 static float HalfFloat(uint16_t bits) {
     int sign = bits >> 15;
     int exp = (bits >> 10) & 31;
@@ -404,6 +452,27 @@ static void CheckPlaceAndGlobe(GPUMapView *view) {
     Check(!NSEqualRects(marker, view.placeMarkerFrame), @"the place marker follows the selected place");
     [view recenter];
     Check(fabs(view.camera.centreLon - 115.86) < 0.02, @"recenter uses the selected place");
+
+    [view handleGlobeKey:@"3" repeat:NO];
+    [view advanceDisplay:1];
+    IsobarCamera lost = view.camera;
+    lost.bearing = 2.1; lost.pitch = 75 * M_PI / 180; lost.centreLon = 128;
+    view.camera = lost;
+    double heldStep = view.fractionalStep;
+    [view recenter];
+    Check(fabs(view.camera.bearing) < 1e-9 && fabs(view.camera.pitch - M_PI_4) < 1e-9 &&
+        fabs(view.camera.centreLon - 115.86) < .02 && view.fractionalStep == heldStep,
+        @"recenter recovers a north-up oblique place view without changing time");
+    [view handleGlobeKey:@"2" repeat:NO];
+    [view advanceDisplay:1];
+
+    [view recenter];
+    [view handleGlobeKey:@"3" repeat:NO];
+    [view advanceDisplay:1];
+    Check(fabs(view.camera.bearing) < 1e-9 && fabs(view.camera.pitch - M_PI_4) < 1e-9,
+        @"recenter in flat mode also resets the next 3D orientation");
+    [view handleGlobeKey:@"2" repeat:NO];
+    [view advanceDisplay:1];
 
     GPUMapView *globeView = [GPUMapView mapView];
     Check(globeView != nil, @"a fresh view is available for the globe morph fixture");
@@ -1219,6 +1288,139 @@ static void CheckKeyboardNavigation(GPUMapView *view) {
     [view handleGlobeKey:@"2" repeat:NO];[view advanceDisplay:1];
 }
 
+static void CheckNativeJourneySequences(void) {
+    GPUMapView *view = [GPUMapView mapView];
+    Check(view != nil, @"seeded native journey view is available");
+    if (!view) return;
+    view.frame = NSMakeRect(0, 0, 480, 360);
+    view.reducedMotionOverride = @YES;
+    NSArray<NSValue *> *places = @[
+        [NSValue valueWithPoint:NSMakePoint(-31.95, 115.86)],
+        [NSValue valueWithPoint:NSMakePoint(-33.87, 151.21)],
+        [NSValue valueWithPoint:NSMakePoint(-37.81, 144.96)],
+        [NSValue valueWithPoint:NSMakePoint(27.99, 86.93)],
+        [NSValue valueWithPoint:NSMakePoint(64.15, -21.94)]
+    ];
+    NSString *seedText = NSProcessInfo.processInfo.environment[@"ISOBAR_NATIVE_JOURNEY_SEED"];
+    uint64_t requestedSeed = seedText.length ? strtoull(seedText.UTF8String, NULL, 10) : 0;
+    NSInteger seedCount = seedText.length ? 1 : 12;
+    const NSInteger actionCount = 40;
+    NSUInteger totalActions = 0, modeSwitches = 0;
+    NSMutableSet<NSString *> *actionPairs = [NSMutableSet set];
+    for (NSInteger seedIndex = 0; seedIndex < seedCount; seedIndex++) {
+        uint64_t seed = seedText.length ? requestedSeed : (uint64_t)(0x49534f424152ULL + seedIndex * 7919 + 1);
+        uint64_t state = seed;
+        NSPoint place = places[JourneyNext(&state) % places.count].pointValue;
+        double pitch = JourneyUnit(&state) * 1.30;
+        double bearing = (JourneyUnit(&state) * 2.0 - 1.0) * M_PI;
+        double zoom = 4.0 + JourneyUnit(&state) * 80.0;
+        BOOL threeD = pitch > 0.02;
+        IsobarCamera start = MapCameraMake(place.x, place.y, zoom, threeD ? pitch / 1.30 : 0, 480, 360);
+        start.pitch = threeD ? pitch : 0;
+        start.bearing = threeD ? bearing : 0;
+        view.camera = start;
+        view.fractionalStep = 6.5 + (double)(seedIndex % 5) * .25;
+        [view setPlaceLatitude:place.x longitude:place.y];
+        if (threeD) [view handleGlobeKey:@"3" repeat:NO];
+        else [view handleGlobeKey:@"2" repeat:NO];
+        view.camera = start;
+        double heldStep = view.fractionalStep;
+        BOOL northWasRequested = NO;
+        double northCentreLat = 0, northCentreLon = 0;
+        BOOL previousMode = threeD;
+        NSInteger previousAction = -1;
+        for (NSInteger step = 0; step < actionCount; step++) {
+            NSUInteger action = JourneyNext(&state) % 10;
+            NSString *actionName = JourneyActionName(action);
+            IsobarCamera beforeAction = view.camera;
+            BOOL actionBehaviorOK = YES;
+            totalActions++;
+            if (action == 0 || action == 1) {
+                NSPoint p = JourneyPoint(&state, view.bounds);
+                double dx = (JourneyUnit(&state) * 2.0 - 1.0) * 130.0;
+                double dy = (JourneyUnit(&state) * 2.0 - 1.0) * 110.0;
+                [view pointerDown:p];
+                [view pointerDrag:NSMakePoint(p.x + dx * .45, p.y + dy * .45)];
+                [view pointerDrag:NSMakePoint(p.x + dx, p.y + dy)];
+                [view pointerUp:NSMakePoint(p.x + dx, p.y + dy)];
+                if (action == 1) {
+                    [view pointerDown:p];
+                    [view pointerDrag:NSMakePoint(p.x - dx * .35, p.y - dy * .35)];
+                    [view pointerUp:NSMakePoint(p.x - dx * .35, p.y - dy * .35)];
+                }
+            } else if (action == 2) {
+                NSPoint p = JourneyPoint(&state, view.bounds);
+                double factor = .78 + JourneyUnit(&state) * .48;
+                SyntheticMagnifyEvent *magnify = [SyntheticMagnifyEvent new];
+                magnify.testLocation = [view convertPoint:p toView:nil];
+                magnify.testMagnification = factor - 1.0;
+                magnify.testPhase = NSEventPhaseChanged;
+                [view magnifyWithEvent:magnify];
+            } else if (action == 3) {
+                double dx = (JourneyUnit(&state) * 2.0 - 1.0) * 100.0;
+                double dy = (JourneyUnit(&state) * 2.0 - 1.0) * 100.0;
+                [view scrollByX:dx y:dy atPoint:JourneyPoint(&state, view.bounds) precise:YES command:NO];
+            } else if (action == 4) {
+                threeD = !threeD;
+                [view handleGlobeKey:threeD ? @"3" : @"2" repeat:NO];
+            } else if (action == 5) {
+                unsigned short keyCode = JourneyNext(&state) % 2 ? 124 : 123;
+                BOOL handled = [view handle3DKeyEvent:NavigationKey(keyCode, @"")];
+                actionBehaviorOK = !threeD || (handled && fabs(view.camera.bearing - beforeAction.bearing) > 1e-12);
+            } else if (action == 6) {
+                NSString *key = @[@"w", @"a", @"s", @"d", @"e", @"q"][JourneyNext(&state) % 6];
+                BOOL handled = [view handle3DKeyEvent:NavigationKey(13, key)];
+                actionBehaviorOK = !threeD || handled;
+                if (actionBehaviorOK && threeD && [@[@"w", @"a", @"s", @"d"] containsObject:key]) {
+                    actionBehaviorOK = fabs(view.camera.centreLat - beforeAction.centreLat) > 1e-12 ||
+                        fabs(view.camera.centreLon - beforeAction.centreLon) > 1e-12;
+                }
+            } else if (action == 7) {
+                if (threeD) {
+                    NSButton *north = (NSButton *)FindID(view, @"gpumap.northup");
+                    if (north) {
+                        northCentreLat = view.camera.centreLat;
+                        northCentreLon = view.camera.centreLon;
+                        [north performClick:nil];
+                        northWasRequested = YES;
+                    } else actionBehaviorOK = NO;
+                } else {
+                    [view recenter];
+                }
+            } else if (action == 8) {
+                [view advanceDisplay:.05 + JourneyUnit(&state) * .7];
+            } else {
+                [view recenter];
+                [view advanceDisplay:.5];
+            }
+            [view advanceDisplay:.02 + JourneyUnit(&state) * .08];
+            BOOL modeChanged = previousMode != threeD;
+            if (modeChanged) modeSwitches++;
+            previousMode = threeD;
+            BOOL ok = actionBehaviorOK && JourneyCameraOK(view.camera, threeD) && view.fractionalStep == heldStep;
+            if (northWasRequested) {
+                ok = ok && fabs(view.camera.bearing) < 1e-8 &&
+                    fabs(view.camera.centreLat - northCentreLat) < 1e-8 &&
+                    fabs(view.camera.centreLon - northCentreLon) < 1e-8;
+                northWasRequested = NO;
+            }
+            Check(ok, [NSString stringWithFormat:@"native journey seed %llu action %ld/%ld %@ camera/time invariant; before {%@}; after {%@}",
+                (unsigned long long)seed, (long)step + 1, (long)actionCount, actionName,
+                JourneyCameraDescription(beforeAction), JourneyCameraDescription(view.camera)]);
+            if (!ok) break;
+            if (previousAction >= 0) {
+                [actionPairs addObject:[NSString stringWithFormat:@"%@→%@",
+                    JourneyActionName((NSUInteger)previousAction), actionName]];
+            }
+            previousAction = (NSInteger)action;
+        }
+    }
+    fprintf(stderr, "    native journey actions %lu mode switches %lu completed distinct action pairs %lu (%s)\n",
+        (unsigned long)totalActions, (unsigned long)modeSwitches, (unsigned long)actionPairs.count,
+        seedText.length ? "single seed" : "12 seeds");
+    [view stopRendering];
+}
+
 int main(void) {
     @autoreleasepool {
         [NSApplication sharedApplication];
@@ -1236,6 +1438,7 @@ int main(void) {
         CheckDragAndPinch(view);
         CheckPlaceAndGlobe(view);
         CheckKeyboardNavigation(view);
+        CheckNativeJourneySequences();
         CheckStates(view);
         CheckHazards();
         CheckVectorSnapshots();

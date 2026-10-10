@@ -39,6 +39,8 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', testIgnore: frameTime, use: chromium },
+    { name: 'webkit-phone', testMatch: /mobile-shell\.spec\.ts$/, dependencies: ['chromium'], workers: 1,
+      use: { ...devices['iPhone 13'], browserName: 'webkit' } },
     { name: 'frame-time', testMatch: frameTime, dependencies: ['chromium'], workers: 1, retries: 1, use: chromium },
     {
       name: 'canvas-lakes',

@@ -1,4 +1,8 @@
 'use client';
+import {cyclonePoint} from '@/lib/cyclone-point';
+import {cycloneAt} from '@/lib/historical-cyclone';
+import {cycloneContours} from '@/lib/cyclone-contours';
+import {sampleFrame} from '@/lib/point/ground';
 
 import { CameraRecovery } from '@/lib/camera-recovery';
 
@@ -12,9 +16,12 @@ import type { HistoricalCatalog } from '@/lib/history';
 import { ATTRIBUTION } from '@/components/Attribution';
 import { australiaAspects, clampToData, frameData, insetBox, panBy, zoomWithinData, type DataFrame } from '@/lib/camera';
 import { EVEREST_DETAILS, EVEREST_EVENTS, EVEREST_ROUTE, EVEREST_SOURCE, everestAtmosphere } from '@/lib/everest';
+import { drawHistoricalScene } from '@/lib/historical-scene-renderer';
+import type { HistoryLayer } from '@/lib/historical-scenes';
+import { HistoricalSceneControls } from './HistoricalSceneControls';
 import { drawEverestRoute } from '@/lib/everest-route';
 import { AtmosphereMap } from './AtmosphereMap';
-import { withTilt, zoomMountain, frameTerrainPin, anchorTilt, panTilt, MAX_TILT, TiltFraming, liftCamera } from '@/lib/tilt-navigation';
+import { withTilt, terrainEye, zoomMountain, frameTerrainPin, anchorTilt, panTilt, MAX_TILT, TiltFraming, liftCamera } from '@/lib/tilt-navigation';
 import { mapUnproject, mapProject } from '@/lib/lambert';
 import { bindTrackpadPinch } from '@/lib/trackpad';
 import {
@@ -28,11 +35,11 @@ import {
   type LoadedChart,
 } from '@/lib/chart-store';
 import { FIELD_LABEL, FIELD_VARIABLE, legendScale, legendState } from '@/lib/legend';
-import { contourPressure, type Polyline, type PressureCentre } from '@/lib/contour';
+import { smoothGrid, contourPressure, type Polyline, type PressureCentre } from '@/lib/contour';
 import { createGlChart, type GlChart } from '@/lib/gl-chart';
 import { createCanvasChart, type CanvasChart } from '@/lib/canvas-chart';
 import { createFlowLayer, type FlowLayer } from '@/lib/flow-layer';
-import { flowWindLegend, type WindDisplaySource } from '@/lib/flow-wind';
+import { createWindSampler, flowWindLegend, type WindDisplaySource } from '@/lib/flow-wind';
 import { createSatelliteLayer, type SatelliteLayer } from '@/lib/satellite-layer';
 import { australiaLambert, globalEquirectangular, type Camera } from '@/lib/lambert';
 import { DAY_INK, drawOverlay, EDGE_FADE_DEG, NIGHT_INK, type DrawnLabel } from '@/lib/overlay';
@@ -192,10 +199,12 @@ function rasterLand(chart: LoadedChart): LandRaster {
   const raster = { pixels, width, height, west, south, east, north };
   if (!ctx) return raster;
   ctx.fillStyle = '#fff';
-  // Keep the compound coastline outside the context until the single fill.
-  // This avoids repeatedly extending a large context-owned path.
+  // Close each ring before appending it to the compound mask. Closing a growing
+  // Path2D repeatedly makes Chromium revisit the accumulated coastline (~740 ms
+  // in the global startup profile). addPath preserves the same even-odd geometry.
   const landPath = new Path2D();
   for (const ring of chart.coast.rings) {
+    const ringPath = new Path2D();
     let previousLon: number | null = null;
     for (let i = 0; i < ring.lon.length; i += 1) {
       const lon = ring.lon[i];
@@ -203,25 +212,28 @@ function rasterLand(chart: LoadedChart): LandRaster {
       const y = ((north - ring.lat[i]) / (north - south)) * height;
       // Natural Earth rings can cross the antimeridian. Starting a new
       // subpath avoids a full-width chord through the world mask.
-      if (i === 0 || (previousLon !== null && Math.abs(lon - previousLon) > 180)) landPath.moveTo(x, y);
-      else landPath.lineTo(x, y);
+      if (i === 0 || (previousLon !== null && Math.abs(lon - previousLon) > 180)) ringPath.moveTo(x, y);
+      else ringPath.lineTo(x, y);
       previousLon = lon;
     }
-    landPath.closePath();
+    ringPath.closePath();
+    landPath.addPath(ringPath);
   }
   for (const ring of chart.water?.rings ?? []) {
     if (ring.minZoom > 2.5) continue;
     if (Math.min((ring.east - ring.west) * scale, (ring.north - ring.south) * scale) < 2) continue;
+    const ringPath = new Path2D();
     let previousLon: number | null = null;
     for (let i = 0; i < ring.lon.length; i += 1) {
       const lon = ring.lon[i];
       const x = ((lon - west) / (east - west)) * width;
       const y = ((north - ring.lat[i]) / (north - south)) * height;
-      if (i === 0 || (previousLon !== null && Math.abs(lon - previousLon) > 180)) landPath.moveTo(x, y);
-      else landPath.lineTo(x, y);
+      if (i === 0 || (previousLon !== null && Math.abs(lon - previousLon) > 180)) ringPath.moveTo(x, y);
+      else ringPath.lineTo(x, y);
       previousLon = lon;
     }
-    landPath.closePath();
+    ringPath.closePath();
+    landPath.addPath(ringPath);
   }
   ctx.fill(landPath, 'evenodd');
   const image = ctx.getImageData(0, 0, width, height);
@@ -247,7 +259,8 @@ function chromeAvoid(stage: Element): { x: number; y: number; w: number; h: numb
 
 export function MapExperience({ initialGeo = null, historical=false }: { initialGeo?: CoarseGeo | null; historical?:boolean }) {
   const historicalStartRef=useRef<number|null>(null);
-  const [historyRequest,setHistoryRequest]=useState<{event?:string;date?:string;hour?:number}|null>(null);
+  const [historyRequest,setHistoryRequest]=useState<{event?:string;date?:string;hour?:number;version:number}|null>(null);
+  const historySelectionVersion=useRef(0);
   const [historyCatalog,setHistoryCatalog]=useState<HistoricalCatalog|null>(null);
   const [historyEvent,setHistoryEvent]=useState('');
   const [historyError,setHistoryError]=useState('');
@@ -292,6 +305,8 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const [cloudLegend, setCloudLegend] = useState<string | null>(null);
   const [teaching, setTeaching] = useState(false);
   const [stageSize, setStageSize] = useState({ width: 1, height: 1 });
+  const [historyLayers, setHistoryLayers] = useState<Record<HistoryLayer,boolean>>({political:true,military:true,ships:true});
+  const historyLayersRef=useRef(historyLayers);historyLayersRef.current=historyLayers;
   const [showSources, setShowSources] = useState(false);
   const [photoTerrain,setPhotoTerrain]=useState(false);
   const [photoStatus,setPhotoStatus]=useState('off');
@@ -474,6 +489,21 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     setTilt(tiltRef.current);
     redrawRef.current?.();
   }
+  function recenterMap() {
+    const home = homeRef.current;
+    if (!home) return;
+    recoveryRef.current.cancel();
+    mapKeysRef.current.clear(); panStartRef.current = null; cameraMoveRef.current = null;
+    clearSlice(); forgetPoint(); closeChat(false);
+    chipRef.current = null; setChip(null);
+    savedBearingRef.current = 0; savedTiltRef.current = Math.PI / 4;
+    const pitch = threeDRef.current ? Math.PI / 4 : 0;
+    tiltRef.current = pitch; setTilt(pitch);
+    tiltFramingRef.current = new TiltFraming();
+    cameraRef.current = tiltFramingRef.current.apply({ ...home.home, bearingRadians: 0 }, 0, pitch);
+    redrawCamera();
+    recenterNote.show(place?.name ? `Back to ${place.name}` : 'Recentered');
+  }
   function northUp() {
     recoveryRef.current.cancel();
     if (!cameraRef.current || !threeDRef.current) return;
@@ -570,6 +600,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const [flyKnown, setFlyKnown] = useState(false);
   const [locateDenied, setLocateDenied] = useState(false);
   const [ready, setReady] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [isobars, setIsobars] = useState(false);
   const [renderer, setRenderer] = useState<'webgl2' | 'canvas'>('canvas');
   const [dataVersion, setDataVersion] = useState(0);
@@ -748,7 +779,9 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
 
   useEffect(() => {
     let cancel = false;
-    let unsubscribe = () => {};
+    // An in-range seek can supersede a pending fetch without changing this effect.
+    const selectionVersion=historyRequest?.version??historySelectionVersion.current;
+    const obsolete=()=>cancel||(historical&&selectionVersion!==historySelectionVersion.current);
     // Pressure streams up front; a colour field loads when its lens is chosen.
     const preserveHistoryView = historical && !!historyRequest?.date && historyRequest.event === historyEvent && !!chartRef.current;
     if(historical){if(!preserveHistoryView)setChart(undefined);setHistoryError('');}
@@ -756,7 +789,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     const load = historical ? (async()=>{
       const query=new URLSearchParams(window.location.search);
       const result=await loadHistoricalChart(historyRequest??{event:query.get('event')??transitRef.current?.event,date:query.get('date')??transitRef.current?.date,hour:query.has('hour')?Number(query.get('hour')):transitRef.current?.hour});
-      if(cancel)return null;
+      if(obsolete())return null;
       const variables = result.chart.manifest.variables;
       if ((fieldRef.current === 'rain' && !variables.rain24) || (fieldRef.current === 'temp' && !variables.t2m) || (fieldRef.current === 'wind' && (!variables.u10 || !variables.v10))) {
         fieldRef.current = 'none'; setField('none');
@@ -767,7 +800,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       return result.chart;
     })() : loadChart({ field:'none',fields:'opened' });
     load.then((loaded) => {
-      if (cancel) return;
+      if (obsolete()) return;
       // The first painted frame is the wall clock. Minute 0 is the model run
       // (8:00 am AWST on a 00Z run) and must not flash as "now".
       if (loaded) {
@@ -796,6 +829,18 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       setPlaceId(storedPlace);
       setSpeed(storedSpeed);
       }
+    }).catch((reason:unknown) => {
+      if (!obsolete()) {const message=reason instanceof Error?reason.message:'Archive unavailable';if(preserveHistoryView)notifyMap(message);else setChart(null);setHistoryError(message);}
+    });
+    return () => { cancel = true; };
+  }, [historical,historyRequest]);
+
+  // Subscriptions belong to the displayed chart, not to a pending selection.
+  // Cancelling a day fetch must leave the retained chart usable.
+  useEffect(() => {
+      if (!chart) return;
+      const loaded = chart;
+      let cancel = false;
       // Frames keep streaming after the first paint; re-read them a few times a second.
       let timer = 0;
       const listener = () => {
@@ -812,18 +857,12 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
           setDataVersion((value) => value + 1);
         }
       });
-      unsubscribe = () => {
+      return () => {
+        cancel = true;
         loaded.listeners.delete(listener);
         window.clearTimeout(timer);
       };
-    }).catch((reason:unknown) => {
-      if (!cancel) {const message=reason instanceof Error?reason.message:'Archive unavailable';if(preserveHistoryView)notifyMap(message);else setChart(null);setHistoryError(message);}
-    });
-    return () => {
-      cancel = true;
-      unsubscribe();
-    };
-  }, [historical,historyRequest]);
+  }, [chart]);
 
   useEffect(() => {
     setSavedIds(readSavedIds());
@@ -908,9 +947,10 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     if (!threeD && centre?.metres != null) return centre.metres;
     return elevationAtRef.current?.(point.lon, point.lat) ?? null;
   }, [point, sectionSamples, terrainEpoch,threeD]);
+  const cycloneReading=useMemo(()=>point&&chart?.cyclone?cyclonePoint(chart,Date.parse(chart.manifest.run)+(chart.manifest.forecastHours[0]*60+minute)*60000,point.lat,point.lon):null,[point,chart,minute]);
   const reconstructedPoint = useMemo(() => historical&&historyEvent==='everest-1953'&&chart&&point?everestAtmosphere(chart,Date.parse(chart.manifest.run)+minute*60000,elevationAtRef.current).profile(point.lat,point.lon):null,[historical,historyEvent,chart,point,minute,terrainEpoch]);
   const orographyM = useMemo(() => (point && chart ? orographyMetresAt(chart, point.lon, point.lat) : null), [point, chart, terrainEpoch]);
-  const mslpHpa = useMemo(() => (point && chart ? chartScalarAt(chart, 'mslp', point.lon, point.lat) : null), [point, chart, terrainEpoch]);
+  const mslpHpa = useMemo(() => cycloneReading?.pressure ?? (point && chart ? chartScalarAt(chart, 'mslp', point.lon, point.lat) : null), [cycloneReading,point,chart,terrainEpoch]);
   useEffect(() => {
     if (!chart) return;
     const name = orographyVariable(Object.keys(chart.manifest.variables));
@@ -1071,6 +1111,8 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const box = manifest.wrapsLongitude ? manifest : insetBox(manifest, EDGE_FADE_DEG + 0.25);
       const focus = manifest.wrapsLongitude ? focusRef.current ?? undefined : undefined;
       const frame = frameData(GEO, frameW, frameH, box, focus);
+      if(manifest.places[0]?.id==='h.normandy'&&focus&&Math.abs(focus.lat-49.35)<.01&&Math.abs(focus.lon+.85)<.01){frame.home.halfHeight=.32;frame.home.halfWidth=.32*frameW/frameH;}
+      if(loaded.cyclone&&focus&&Math.abs(focus.lat+12.46)<.01&&Math.abs(focus.lon-130.84)<.01){frame.home.halfHeight=1.3;frame.home.halfWidth=1.3*frameW/frameH;}
       if(manifest.places[0]?.id==='h.everest'&&focus&&Math.abs(focus.lat-27.9881)<.001&&Math.abs(focus.lon-86.925)<.001){frame.home.halfHeight=.04;frame.home.halfWidth=.04*frameW/frameH;}
       if (!transitAppliedRef.current && transitRef.current && manifest.wrapsLongitude) {
         const t=transitRef.current;const p=project(GEO,t.lat,t.lon)!;
@@ -1159,7 +1201,9 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const lonSpan = GEO.projection === 'equirectangular' ? (camera.halfWidth * 2) / GEO.F : (camera.halfWidth * 2 * 180) / Math.PI;
       const latSpan = GEO.projection === 'equirectangular' ? Math.abs(camera.halfHeight * 2) : Math.abs(camera.halfHeight * 2 * 180 / Math.PI);
       const borderSet = historical ? null : Math.min(lonSpan, latSpan) <= 12 && bordersCloseRef.current ? bordersCloseRef.current : bordersRegionalRef.current;
-      const key = `${width.toFixed(1)}:${height.toFixed(1)}:${camera.centerX.toFixed(4)}:${camera.centerY.toFixed(4)}:${camera.halfWidth.toFixed(4)}:${camera.halfHeight.toFixed(4)}:${tiltRef.current}:${camera.bearingRadians??0}:${contoursRef.current.lines.length}:${contourId}:${terrainRevision}:${darkRef.current}:${fieldRef.current}:${placeRows ? placeRows.length : -1}:${uiAvoid.map((box) => `${Math.round(box.x)},${Math.round(box.y)},${Math.round(box.w)},${Math.round(box.h)}`).join(';')}:${unitKey(unitsRef.current)}:${graticuleRef.current ? 1 : 0}:${borderEpochRef.current}:${atmosphereInspectionRef.current}:${sliced}:${sliceRef.current?JSON.stringify(sliceRef.current):""}:${borderSet === bordersCloseRef.current ? 1 : 0}:${manifest.places[0]?.id==='h.everest'?Math.floor(clockRef.current.minute):''}`;
+      const sceneTime=Date.parse(manifest.run)+(manifest.forecastHours[0]*60+clockRef.current.minute)*60000;
+      const sceneKey=manifest.places[0]?.id==='h.normandy'?`${Math.floor(sceneTime/1000)}:${Object.values(historyLayersRef.current).join(',')}`:'';
+      const key = `${sceneKey}:${width.toFixed(1)}:${height.toFixed(1)}:${camera.centerX.toFixed(4)}:${camera.centerY.toFixed(4)}:${camera.halfWidth.toFixed(4)}:${camera.halfHeight.toFixed(4)}:${tiltRef.current}:${camera.bearingRadians??0}:${contoursRef.current.lines.length}:${contourId}:${terrainRevision}:${darkRef.current}:${fieldRef.current}:${placeRows ? placeRows.length : -1}:${uiAvoid.map((box) => `${Math.round(box.x)},${Math.round(box.y)},${Math.round(box.w)},${Math.round(box.h)}`).join(';')}:${unitKey(unitsRef.current)}:${graticuleRef.current ? 1 : 0}:${borderEpochRef.current}:${atmosphereInspectionRef.current}:${sliced}:${sliceRef.current?JSON.stringify(sliceRef.current):""}:${borderSet === bordersCloseRef.current ? 1 : 0}:${manifest.places[0]?.id==='h.everest'?Math.floor(clockRef.current.minute):''}`;
       if (key === overlayKey) return;
       overlayKey = key;
       const degPerPixel = (camera.halfWidth * 2) / Math.max(1, width);
@@ -1169,15 +1213,19 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
         : (degPerPixel > 0.0018 ? 2 : degPerPixel > 0.0008 ? 1 : 0);
       // Reserve the highest-ranked visible town before contour labels. Otherwise
       // an animated pressure number can repeatedly displace the city's name.
-      const anchor = paintPlaces(ctx, width, height, camera, uiAvoid, true).slice(0, 1);
-      const avoid = drawOverlay(ctx, width, height, dpr, GEO, camera, loaded.coastLod[lod] ?? loaded.coast, contoursRef.current.lines, contoursRef.current.centres, !gl && !canvasChart?.usable(), manifest, darkRef.current ? NIGHT_INK : DAY_INK, [...uiAvoid, ...anchor], unitsRef.current, elevationAt, graticuleRef.current, borderSet, loaded.water);
+      const storm=cycloneAt(loaded.cyclone,Date.parse(manifest.run)+(manifest.forecastHours[0]*60+clockRef.current.minute)*60000);
+      const centre=storm?mapProject(GEO,camera,storm.lat,storm.lon):null;
+      const stormBox=centre?[{x:(centre.x+1)*width/2-28,y:(1-centre.y)*height/2-30,w:56,h:64}]:[];
+      const anchor = paintPlaces(ctx, width, height, camera, [...uiAvoid,...stormBox], true).slice(0, 1);
+      const avoid = drawOverlay(ctx, width, height, dpr, GEO, camera, loaded.coastLod[lod] ?? loaded.coast, contoursRef.current.lines, contoursRef.current.centres, !gl && !canvasChart?.usable(), manifest, darkRef.current ? NIGHT_INK : DAY_INK, [...uiAvoid, ...anchor], unitsRef.current, elevationAt, graticuleRef.current, borderSet, loaded.water,loaded.cyclone?10:0);
       // Town names keep clear of the map's own controls too, not just the
       // chart labels: drawOverlay returns only what it drew, so the UI boxes
       // must be carried into the place pass explicitly.
       const peaks = paintPeaks(ctx, width, height, camera, [...uiAvoid, ...avoid, ...anchor]);
       const camps = manifest.places[0]?.id==='h.everest' ? drawEverestRoute(ctx, GEO, camera, elevationAt ?? null, width, height, [...uiAvoid, ...avoid, ...peaks, ...anchor, toolsBox ?? {x:width-56,y:0,w:56,h:168}, {x:0,y:height-36,w:width,h:36}], darkRef.current ? NIGHT_PLACES : DAY_PLACES, {timeMs:Date.parse(manifest.run)+(manifest.forecastHours[0]*60+clockRef.current.minute)*60000,chart:loaded}) : [];
-      const places = paintPlaces(ctx, width, height, camera, [...uiAvoid, ...avoid, ...peaks, ...camps]);
-      labelRecords = [...avoid, ...peaks, ...camps, ...places];
+      const scene=manifest.places[0]?.id==='h.normandy'?drawHistoricalScene(ctx,GEO,camera,elevationAt??null,width,height,sceneTime,historyLayersRef.current,[...uiAvoid,...avoid,...peaks,...camps],darkRef.current?NIGHT_PLACES:DAY_PLACES):{labels:[],markers:[]};
+      const places = paintPlaces(ctx, width, height, camera, [...uiAvoid, ...avoid, ...peaks, ...camps,...scene.labels,...scene.markers]);
+      labelRecords = [...avoid, ...peaks, ...camps,...scene.labels, ...places];
       drawAdminNames(ctx, historical ? [] : adminNamesRef.current, GEO, camera, width, height, labelRecords, darkRef.current ? NIGHT_PLACES : DAY_PLACES);
       if(atmosphereInspectionRef.current>0&&tiltRef.current>0){
         ctx.save();ctx.globalCompositeOperation='destination-out';
@@ -1192,7 +1240,9 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       if (field === 'none') return null;
       const minute = clockRef.current.minute;
       const name = FIELD_VARIABLE[field];
+      const cycloneSample=loaded.cyclone?createWindSampler(loaded,minute):null;
       return (lat, lon) => {
+        if(field==='wind'&&cycloneSample){const w=cycloneSample(lon,lat);return w?readingText(field,Math.hypot(w.u,w.v),compassFrom(w.u,w.v),unitsRef.current):null;}
         const column = Math.round((lon - manifest.west) / manifest.step);
         const i = manifest.wrapsLongitude ? ((column % manifest.nx) + manifest.nx) % manifest.nx : column;
         const j = Math.round((manifest.north - lat) / manifest.step);
@@ -1299,6 +1349,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const drawField = fieldCoverRef.current > 0.02 ? shownFieldRef.current : 'none';
       const drawSpec = drawField === 'none' ? spec : manifest.variables[FIELD_VARIABLE[drawField]];
       const view = {
+        cyclone:cycloneAt(loaded.cyclone,Date.parse(manifest.run)+absolute*60000),
         camera,
         ...camera,
         tiltCamera: renderCamera(camera).tiltCamera,
@@ -1361,7 +1412,9 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
         spec,
       );
       if (!worker) {
-        const result = contourPressure(blended, manifest.nx, manifest.ny, manifest.west, manifest.north, dlon, dlat, 4);
+        let result = contourPressure(blended, manifest.nx, manifest.ny, manifest.west, manifest.north, dlon, dlat, 4);
+        const storm=cycloneAt(loaded.cyclone,Date.parse(manifest.run)+absolute*60000);
+        if(storm){const environment=smoothGrid(smoothGrid(blended,manifest.nx,manifest.ny,manifest.wrapsLongitude),manifest.nx,manifest.ny,manifest.wrapsLongitude);result=cycloneContours(result,storm,(lon,lat)=>sampleFrame(environment,manifest,lon,lat));}
         contoursRef.current = result;
         busy = false;
         overlayKey = '';
@@ -1371,6 +1424,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
         return;
       }
       worker.postMessage({
+        cyclone:cycloneAt(loaded.cyclone,Date.parse(manifest.run)+absolute*60000),
         id,
         mslp: blended,
         nx: manifest.nx,
@@ -1681,6 +1735,12 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       sliceReady: () => sliceReadyRef.current,
       displayedSlice: () => displayedSliceRef.current ?? null,
       tiltGeometry: () => cameraRef.current ? renderCamera(cameraRef.current).tiltCamera?.geometry ?? null : null,
+      eyeClearance: () => {
+        const tilted = cameraRef.current ? renderCamera(cameraRef.current).tiltCamera : null;
+        if (!tilted) return null;
+        const eye = terrainEye(tilted), ground = elevationAtRef.current?.(eye.lon, eye.lat) ?? null;
+        return {eye, ground, clearance: ground == null ? null : eye.heightM-ground};
+      },
       cache: () => loaded.cacheStats?.() ?? null,
       /** Centre on a point. `heightDeg` is the geographic height of the view. */
       setView(lat: number, lon: number, heightDeg: number) {
@@ -1930,7 +1990,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       // must not pull the map back to it (owner, 9 Oct: "when I change the
       // map-type it moves the map location").
       // A layout switch (sheet ↔ side, viewport change) re-frames; a lens change doesn't.
-      const key = `${point.lat.toFixed(4)},${point.lon.toFixed(4)}|${sheet.dataset.pointLayout ?? ''}|${Math.round(map.width)}x${Math.round(map.height)}`;
+      const key = `${point.lat.toFixed(4)},${point.lon.toFixed(4)}|${sheet.dataset.pointLayout ?? ''}|${Math.round(map.width)}x${Math.round(map.height)}|${sheet.dataset.pointState === 'ready' ? 'ready' : 'compact'}`;
       if (pointFramedRef.current === key) return;
       pointFramedRef.current = key;
       moveCamera(pointCameraForView(camera, frame, point, map, visible));
@@ -1939,7 +1999,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     const observer = new ResizeObserver(schedule);
     observer.observe(stage); observer.observe(sheet);
     const styleObserver = new MutationObserver(schedule);
-    styleObserver.observe(sheet, { attributes: true, attributeFilter: ['style', 'data-point-layout'] });
+    styleObserver.observe(sheet, { attributes: true, attributeFilter: ['style', 'data-point-layout', 'data-point-state'] });
     window.addEventListener('resize', schedule);
     schedule();
     return () => { cancelAnimationFrame(raf); observer.disconnect(); styleObserver.disconnect(); window.removeEventListener('resize', schedule); };
@@ -2788,7 +2848,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     />
   ) : null;
 
-  const historyPicker = historical && historyCatalog ? <div className="history-picker flex min-w-0 items-center gap-2"><select aria-label="Historical event" value={historyEvent} onChange={e=>{clearSlice();setHistoryRequest({event:e.target.value});setPoint(null);}} className="min-w-0 rounded-md bg-[var(--md-surface-container-high)] px-2 py-1 text-sm">{historyCatalog.collections.map(c=><option key={c.id} value={c.id}>{c.title}{c.title.includes(c.days[0]?.date.slice(0,4)??"—")?"":` · ${c.days[0]?.date.slice(0,4)??""}`}</option>)}</select><a href="/" className="text-sm text-[var(--md-primary)]">Present day</a></div> : null;
+  const historyPicker = historical ? <div className="history-picker flex min-w-0 items-center gap-2">{historyCatalog ? <select aria-label="Historical event" value={historyEvent} onChange={e=>{clearSlice();setHistoryRequest({event:e.target.value,version:++historySelectionVersion.current});setPoint(null);}} className="min-w-0 rounded-md bg-[var(--md-surface-container-high)] px-2 py-1 text-sm">{historyCatalog.collections.map(c=><option key={c.id} value={c.id}>{c.title}{c.title.includes(c.days[0]?.date.slice(0,4)??"—")?"":` · ${c.days[0]?.date.slice(0,4)??""}`}</option>)}</select> : null}<a href="/" data-history-exit aria-label="Back to present day" className="history-exit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5 3 12l7 7M3 12h18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg><span>Present day</span></a></div> : null;
   const timeState = chart ? historical?{live:false,label:'HISTORY'}:mapTimeState(validMs, nowMs) : null;
   const heldTraffic = !playing && heldTrafficRef.current && Math.abs(validMs - heldTrafficRef.current.selectedMs) < 1 ? heldTrafficRef.current : null;
   const trafficLive = liveTrafficAtTime(clockRef.current.followNow, playing, validMs, nowMs);
@@ -2857,11 +2917,12 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                 phoneWind={chart?.manifest.variables.u10 && chart.manifest.variables.v10 ? <button type="button" aria-label="Wind barbs" aria-pressed={windBarbs}
                   onClick={() => toggleWindBarbs(!windBarbs)}>Wind barbs<span aria-hidden="true" className="ml-auto">{windBarbs ? '✓' : ''}</span></button> : null}
                 onMenuOpen={() => { closeChat(true, false); }}
+                onMenuChange={setMenuOpen}
               />
               {chart ? (
                 <div className="map-deck grid shrink-0 grid-cols-1 gap-x-4 px-3 md:grid-cols-[minmax(176px,auto)_1fr] md:px-4">
                   <div className="transport-side flex items-center max-md:hidden md:row-span-2 md:pt-6">{transportNode(false)}</div>
-                  {historical ? <select className="history-day rounded-md bg-[var(--md-surface-container-high)] px-2" aria-label="Historical day" value={selectedKey ?? days[0]?.key} onChange={event=>{const day=days.find(d=>d.key===event.target.value);if(day&&!teachingRef.current){if(day.dayStart<forecastStartMs||day.dayStart>forecastEndMs)setHistoryRequest({event:historyEvent,date:day.key});else seek((day.dayStart-runMs)/60000-chart.manifest.forecastHours[0]*60,false);if(day.event)notifyMap(day.event.detail);}}}>{days.map(day=><option key={day.key} value={day.key}>{day.weekday}{day.event?` · ${day.event.title}`:''}</option>)}</select> : <DayTiles
+                  {historical ? <select className="history-day rounded-md bg-[var(--md-surface-container-high)] px-2" aria-label="Historical day" value={selectedKey ?? days[0]?.key} onChange={event=>{const day=days.find(d=>d.key===event.target.value);if(day&&!teachingRef.current){const version=++historySelectionVersion.current;setHistoryError('');if(day.dayStart<forecastStartMs||day.dayStart>forecastEndMs)setHistoryRequest({event:historyEvent,date:day.key,version});else seek((day.dayStart-runMs)/60000-chart.manifest.forecastHours[0]*60,false);if(day.event)notifyMap(day.event.detail);}}}>{days.map(day=><option key={day.key} value={day.key}>{day.weekday}{day.event?` · ${day.event.title}`:''}</option>)}</select> : <DayTiles
                     days={days}
                     todayKey={todayKey}
                     selectedKey={selectedKey}
@@ -2888,7 +2949,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       {chart === undefined ? (
         <p className="px-4 py-6 text-sm text-[var(--md-on-surface-variant)]">Loading chart</p>
       ) : chart === null ? (
-        <p className="px-4 py-6 text-sm" role="alert">{historical?historyError||'Historical chart unavailable':'Chart unavailable'}</p>
+        <div className="px-4 py-6 text-sm"><p role="alert">{historical?historyError||'Historical chart unavailable':'Chart unavailable'}</p>{historical ? <button type="button" className="mt-2 rounded-md border px-3 py-2" aria-label="Retry historical chart" onClick={() => { const query = new URLSearchParams(window.location.search); setHistoryRequest(request => ({...(request ?? {event: query.get('event') ?? transitRef.current?.event, date: query.get('date') ?? transitRef.current?.date, hour: query.has('hour') ? Number(query.get('hour')) : transitRef.current?.hour}), version: ++historySelectionVersion.current})); }}>Retry ↻</button> : null}</div>
       ) : (
         <>
 
@@ -3086,7 +3147,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
               />
               <canvas data-wind-barbs ref={windCanvasRef} className="pointer-events-none absolute" aria-hidden="true" />
               <canvas ref={trafficCanvasRef} data-traffic-layer className="pointer-events-none absolute" aria-hidden="true" />
-              {cameraRef.current && GEO.projection === 'equirectangular' && Number.isFinite(validMs) ? <AtmosphereMap camera={renderCamera(cameraRef.current)} geo={GEO}
+              {cameraRef.current && GEO.projection === 'equirectangular' && Number.isFinite(validMs) ? <AtmosphereMap camera={renderCamera(cameraRef.current)} geo={GEO} elevation={elevationAtRef.current} terrainEpoch={terrainEpoch}
                 lat={cameraRef.current.centerY} lon={((cameraRef.current.centerX / GEO.F + GEO.lon0 + 540) % 360) - 180}
                 validMs={validMs} width={stageSize.width} height={stageSize.height} active={tilt > .02} onInspection={inspectAtmosphere} reconstruction={historical&&historyEvent==='everest-1953'?{chart,elevation:elevationAtRef.current}:undefined} /> : null}
               {trafficOn && trafficReplay ? <span className="traffic-replay-status" data-traffic-replay={trafficReplay} title="Recorded during this viewing session. Earlier history and gaps are unavailable.">{trafficReplay === 'replay' ? 'Replay · session' : 'No recorded traffic'}</span> : null}
@@ -3129,13 +3190,13 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                   {threeD ? <button type="button" aria-label="North up" title="North up · N" onClick={northUp}><span aria-hidden="true" style={{display:'inline-flex',alignItems:'center',whiteSpace:'nowrap'}}><span style={{transform:`rotate(${-(cameraRef.current?.bearingRadians??0)}rad)`}}>↑</span>N</span></button> : null}
                 </div> : null}
                 {threeD ? <div className="map-slice-control"><button type="button" className="map-slice" aria-label="Terrain and atmosphere slice" disabled={!sliced&&(cameraRef.current?.halfHeight??10)>1} aria-pressed={sliced} aria-busy={sliced&&!sliceReady} title={!sliced&&(cameraRef.current?.halfHeight??10)>1?"Zoom in for a terrain and atmosphere slice":sliced&&!sliceReady?"Preparing terrain slice · click to cancel":"Narrow terrain and atmosphere slice"} onClick={toggleSlice}>Slice</button>{sliced ? <input className="map-slice-position" type="range" min={-100} max={100} step={1} value={sliceOffset} aria-label="Slice position" aria-valuetext={`${Math.round(sliceOffset/100*(sliceOriginRef.current?.halfWidthM??0)*.6)} metres from centre`} title="Move the slice back and forth" onChange={event=>moveSlice(Number(event.target.value))} /> : null}</div> : null}
-                <span className="relative grid"><button type="button" aria-label="Recenter map" onClick={() => { clearSlice(); cameraMoveRef.current = null; cameraRef.current = homeRef.current ? { ...homeRef.current.home } : null; redrawCamera(); recenterNote.show('Recentered'); }}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.7" /><path fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" d="M12 3v3M12 18v3M3 12h3M18 12h3" /></svg></button><PressNote text={recenterNote.note} /></span>
+                <span className="relative grid"><button type="button" aria-label="Recenter map" title={place?.name ? `Return to ${place.name}` : 'Recenter map'} className="map-return" onClick={recenterMap}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.7" /><path fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" d="M12 3v3M12 18v3M3 12h3M18 12h3" /></svg><span>{place?.name ?? 'Home'}</span></button><PressNote text={recenterNote.note} /></span>
                 {/* One control per viewport: phones carry the lens-scoped overlay toggles here; wider surfaces keep them in the lens row. */}
                 {phone && !historical && ['pressure', 'rain', 'temp'].includes(lens) ? <span className="relative grid"><button type="button" aria-label="Satellite" aria-pressed={satellite} onClick={() => { satelliteNote.show(satellite ? 'Satellite off' : 'Satellite on'); toggleSatellite(!satellite); }}><SatelliteIcon /></button><PressNote text={satelliteNote.note} /></span> : null}
                 {phone && lens === 'fly' ? <span className="relative grid"><button type="button" aria-label="Traffic" aria-pressed={trafficOn} onClick={() => { trafficNote.show(trafficOn ? 'Traffic off' : 'Traffic on'); toggleTraffic(!trafficOn); }}><TrafficIcon /></button><PressNote text={trafficNote.note} /></span> : null}
                 <button type="button" aria-label="Data sources" title="Data sources" aria-expanded={showSources} onClick={() => setShowSources((v) => !v)}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.7" /><path fill="currentColor" d="M11.2 10.2h1.6V16h-1.6zM11.2 7.4h1.6V9h-1.6z" /></svg></button>
                 </div>
-                {showSources ? <div className="map-sources" style={{maxWidth:'calc(100vw - 7rem)'}}><label className="flex items-center gap-2 px-2 py-1"><input type="checkbox" checked={photoTerrain} onChange={togglePhotoTerrain} />Photo terrain</label>{photoTerrain?<p>Everest · {EVEREST_IMAGERY.acquisition_datetime.slice(0,10)} · {EVEREST_IMAGERY.attribution} Modern surface imagery; historical weather retains its selected date.{photoStatus==='unavailable'?' Imagery unavailable; switch off and on to retry.':''}</p>:null}{historyEvent==='everest-1953'?<p>{EVEREST_DETAILS} <a href={EVEREST_SOURCE} target="_blank" rel="noreferrer">Expedition observations</a> · <a href="https://teara.govt.nz/en/interactive/28428/final-ascent-of-everest" target="_blank" rel="noreferrer">Ascent route</a></p>:null}<div ref={setExplainHost} /><p role="note">{flowWindLegend(flowSource)}. {threeD ? 'Atmospheric layers use synthetic data with scale-adapted height and emphasised vertical motion. ' : ''}{historical?chart.manifest.attribution.map(a=>`${a.source} · ${a.licence}`).join('; '):ATTRIBUTION}</p></div> : null}
+                {showSources ? <div className="map-sources" style={{maxWidth:'calc(100vw - 7rem)'}}><label className="flex items-center gap-2 px-2 py-1"><input type="checkbox" checked={photoTerrain} onChange={togglePhotoTerrain} />Photo terrain</label>{photoTerrain?<p>Everest · {EVEREST_IMAGERY.acquisition_datetime.slice(0,10)} · {EVEREST_IMAGERY.attribution} Modern surface imagery; historical weather retains its selected date.{photoStatus==='unavailable'?' Imagery unavailable; switch off and on to retry.':''}</p>:null}{historyEvent==='everest-1953'?<p>{EVEREST_DETAILS} <a href={EVEREST_SOURCE} target="_blank" rel="noreferrer">Expedition observations</a> · <a href="https://teara.govt.nz/en/interactive/28428/final-ascent-of-everest" target="_blank" rel="noreferrer">Ascent route</a></p>:null}{chart.cyclone?<p>Best-track cyclone reconstruction over ERA5. The 11 km maximum-wind radius, radial profile and 15° inflow are synthetic; track and intensity follow BOM records. <a href={chart.cyclone.source} target="_blank" rel="noreferrer">Best track</a></p>:null}{historyEvent==='dday'?<HistoricalSceneControls layers={historyLayers} onToggle={layer=>setHistoryLayers(v=>({...v,[layer]:!v[layer]}))}/>:null}<div ref={setExplainHost} /><p role="note">{flowWindLegend(flowSource)}. {threeD ? 'Atmospheric layers use synthetic data with scale-adapted height and emphasised vertical motion. ' : ''}{historical?chart.manifest.attribution.map(a=>`${a.source} · ${a.licence}`).join('; '):ATTRIBUTION}</p></div> : null}
               </div> : null}
               {teachHere || teaching ? <MapTeaching geo={GEO} chart={chart} complete={complete} minute={minute} camera={cameraRef.current} width={stageSize.width} height={stageSize.height}
                 onActive={(active, at) => {
@@ -3170,11 +3231,11 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
               {/* Sources are credited in the page footer; only a synthetic test chart is marked on the map. */}
               {chart.manifest.attribution.some((a) => a.source.startsWith('Synthetic')) ? <span className="chart-fixture-note pointer-events-none text-[10px] font-medium text-[var(--md-on-surface-variant)]">Synthetic chart · test data</span> : null}
             </div>
-            {fly && flyDetail && !chatOpen && airport ? <FlyPanel airport={airport} place={place ?? null} zone={displayZone} validMs={validMs} nowMs={nowMs} onClose={() => toggleSection(false)} anchorRef={panelRef} /> : null}
-            {pointVisible && point && !chatOpen && !coastalLens ? <PointPanel reconstructedModel={reconstructedPoint} archiveOnly={historical} point={point} name={pointTitle} detail={pointDetail} isPlace={place?.id === placeForPoint(point.lat, point.lon, manifestList, pointPlaces, airportRows, { atSea: pointAtSea(chart, point.lat, point.lon) }).id} onMakePlace={() => makeThisPlace(point.lat, point.lon)} validMs={validMs} lens={lens} terrainM={terrainM} section={sectionSamples} sectionGeometry={sectionGeometry} sectionExpedition={historical&&historyEvent==='everest-1953'} orographyM={orographyM} mslpHpa={mslpHpa}
+            {!menuOpen && fly && flyDetail && !chatOpen && airport ? <FlyPanel airport={airport} place={place ?? null} zone={displayZone} validMs={validMs} nowMs={nowMs} onClose={() => toggleSection(false)} anchorRef={panelRef} /> : null}
+            {!menuOpen && pointVisible && point && !chatOpen && !coastalLens ? <PointPanel reconstructedModel={cycloneReading?.model??reconstructedPoint} archiveOnly={historical} point={point} name={pointTitle} detail={pointDetail} isPlace={place?.id === placeForPoint(point.lat, point.lon, manifestList, pointPlaces, airportRows, { atSea: pointAtSea(chart, point.lat, point.lon) }).id} onMakePlace={() => makeThisPlace(point.lat, point.lon)} validMs={validMs} lens={lens} terrainM={terrainM} section={sectionSamples} sectionGeometry={sectionGeometry} sectionExpedition={historical&&historyEvent==='everest-1953'} orographyM={orographyM} mslpHpa={mslpHpa}
               collectorIcao={chart.aviation?.airports.find((item) => distanceBearing(point.lat, point.lon, item.lat, item.lon).km < 1)?.icao}
               onClose={() => closePoint()} anchorRef={panelRef} panelRef={pointPanelRef} /> : null}
-            {coastalLens && !teaching && !chatOpen && (point || place) ? <CoastalPanel
+            {!menuOpen && coastalLens && !teaching && !chatOpen && (point || place) ? <CoastalPanel
               lens={coastalLens} point={point ?? place!} name={point ? pointTitle : place?.name ?? ''} detail={point ? pointDetail : place?.datum ?? ''} isPlace={place?.id === placeForPoint((point ?? place!).lat, (point ?? place!).lon, manifestList, pointPlaces, airportRows, { atSea: pointAtSea(chart, (point ?? place!).lat, (point ?? place!).lon) }).id} onMakePlace={() => { const at = point ?? place; return at ? makeThisPlace(at.lat, at.lon) : 'same'; }}
               coast={shoreCoast ?? chart.coast} nowMs={nowMs} zone={zone} clockZone={clockMode === 'place' ? null : displayZone} band={kiteBand}
               onBand={(band) => { setKiteBand(band); setPref('kiteBand', band); }}

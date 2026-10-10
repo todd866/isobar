@@ -237,9 +237,10 @@ export function contourPressure(
   dlat: number,
   interval = 4,
   _land: ArrayLike<number> | null = null,
+  smooth = true,
 ): { lines: Polyline[]; centres: PressureCentre[] } {
   const wraps = Math.abs(nx * dlon - 360) < 1e-6;
-  const field = smoothGrid(smoothGrid(mslp, nx, ny, wraps), nx, ny, wraps);
+  const field = smooth ? smoothGrid(smoothGrid(mslp, nx, ny, wraps), nx, ny, wraps) : mslp;
   // A ghost column traces the last half-degree cell through the dateline.
   const columns = wraps ? nx + 1 : nx;
   const traced = wraps ? new Float32Array(columns * ny) : field;

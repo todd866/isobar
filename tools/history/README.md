@@ -173,3 +173,40 @@ web/node_modules/.bin/tsx --tsconfig web/tsconfig.json tools/history/prepare_eve
 Writes a versioned gzip dataset, source/method snapshots and SHA256 manifest.
 Refuses to overwrite a prior export. Every minute carries synthetic provenance,
 source anchors and clock convention; original weather metadata is retained.
+
+### Compact historical cyclones (Tracy candidate)
+
+`extract_tracy_track.py` parses named columns in a saved IBTrACS HTML record;
+never read the flattened table, which loses blank agency cells. The reviewed
+BOM slice in `tracy-track.json` retains its source receipt hash, agency fields,
+and interpolation flags. The NCICS presentation is unofficial; its NOAA dataset
+identity and BOM source are recorded separately.
+
+`prepare_tracy.py --day DAY24.json --day DAY25.json --output NEW.json` prepares
+48 hourly global ERA5 frames with optional `cyclone` metadata. It refuses an
+existing output and leaves archived arrays untouched. The viewer evaluates the
+compact local model continuously from the dated track. Its 11 km maximum-wind
+radius, radial exponent 2 and 15° inflow are assumptions. The 95 kt peak profile
+has approximately 34 kt at 50 km, matching BOM's approximate gale extent. It is
+not a dynamical simulation: pressure and wind shapes are constrained separately.
+The wind replaces the background inside 70 km, fades to it at 120 km, and never
+adds a second vortex on top. Pressure uses the same smoothed ERA5 environment as the global isobars and is sampled at finer local spacing for
+contours; colors, particles, barbs and point values use the corresponding field.
+
+The development candidate is `build/history/tracy-v6/weather-final.json`; the Dec24
+source and download receipts are beside it. Dec25 uses the existing published
+archive. No public catalog was edited. Release v6 must content-address the new
+weather and manifest, include both complete days, retain source/method receipts,
+and validate its complete closure before deployment. This candidate opens at
+Dec24 17Z only when no explicit date/hour was supplied. Explicit date/hour links
+retain their requested time. GPU acceptance belongs to the release owner.
+
+Tracy validation checkpoint (10 October): 29 focused renderer/history tests,
+TypeScript and the immutable-builder test passed. Numeric checks against the
+actual 48-hour candidate give 950 hPa / 95 kt at Dec24 17Z, 982 / 57 at Dec25
+00Z, 996 / 30 at 12Z and 998 / 25 at 23Z (pressure at eye, wind at model RMW).
+Headless SwiftShader captures show the compact closed contours and moving wind
+on the unchanged world map. They are software evidence only. The closure
+fragment under `build/history/tracy-v6/closure` contains hashed weather,
+manifest, catalog-entry and receipt files; the release owner must merge this
+entry into the full candidate catalog and validate the combined closure.

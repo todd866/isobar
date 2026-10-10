@@ -4,7 +4,10 @@
 .heading { display: flex; align-items: center; gap: 8px; min-height: 40px; height: auto; padding: 2px 0 2px 12px; flex-shrink: 0; overflow: visible; }
 .identity { display: flex; flex-direction: column; justify-content: center; min-width: 0; flex: 1; }
 .heading strong { min-width: 0; font-size: .875rem; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.coords { color: var(--md-on-surface-variant); font-size: 11px; line-height: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.datum { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; }
+.compact.side { top: auto; bottom: 0; border: 1px solid var(--md-outline-soft); border-radius: 10px 0 0 0; max-height: 45%; overflow-y: auto; }
+.compact.sheet { overflow-y: auto; }
+.coords { color: var(--md-on-surface-variant); font-size: .6875rem; line-height: 1.35; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mark { position: relative; display: grid; flex: 0 0 36px; }
 .heading .mark button { width: 36px; height: 40px; font-size: 1rem; }
 .source { min-width: 0; color: var(--md-on-surface-variant); font-size: .6875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -27,7 +30,8 @@
 .seaMark { width: 18px; }
 .seaArrow { width: 18px; height: 18px; }
 .readout { flex: 0 0 24px; margin: 0; padding: 0 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; line-height: 24px; font-weight: 600; }
-.status { padding: 12px; color: var(--md-on-surface-variant); }
+.status { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 12px 10px; color: var(--md-on-surface-variant); font-size: .875rem; }
+.status button { min-width: 44px; min-height: 36px; color: var(--md-primary); border: 1px solid var(--md-outline-soft); border-radius: 6px; padding: 4px 8px; }
 @media (prefers-reduced-motion: reduce) { .panel { scroll-behavior: auto; } }
 
 .marker { position: absolute; pointer-events: none; width: 22px; height: 22px; transform: translate(-50%, -50%); border: 2px solid #fff; border-radius: 50%; background: #174776; box-shadow: 0 0 0 2px #142c45, 0 2px 5px #0008; display: grid; place-items: center; }

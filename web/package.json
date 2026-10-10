@@ -11,7 +11,8 @@
     "test:e2e": "playwright test",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate deploy",
-    "billing:setup": "tsx scripts/setup-stripe.ts"
+    "billing:setup": "tsx scripts/setup-stripe.ts",
+    "test:release": "npm test && npm run build && playwright test --workers=1"
   },
   "dependencies": {
     "@auth/prisma-adapter": "2.11.3",

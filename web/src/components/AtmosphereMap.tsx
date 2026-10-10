@@ -14,8 +14,10 @@ import type { LoadedChart } from '@/lib/chart-store';
 import type { ElevationAt } from '@/lib/map-generalise';
 import styles from './AtmosphereMap.module.css';
 
-export function AtmosphereMap({ camera, geo, lat, lon, validMs, width, height, active, reconstruction, onInspection }: {
+export function AtmosphereMap({ camera, geo, lat, lon, validMs, width, height, active, reconstruction, elevation, terrainEpoch, onInspection }: {
   onInspection?: (strength:number)=>void;
+  elevation?: ElevationAt | null;
+  terrainEpoch?: number;
   reconstruction?: {chart: LoadedChart; elevation: ElevationAt | null};
   camera: TiltedCamera; geo: Lambert; lat: number; lon: number; validMs: number; width: number; height: number; active: boolean;
 }) {
@@ -38,11 +40,11 @@ export function AtmosphereMap({ camera, geo, lat, lon, validMs, width, height, a
   const [aircraftFt, setAircraftFt] = useState(5000);
   const selectedLat = Math.round(lat * 10) / 10, selectedLon = Math.round(lon * 10) / 10;
   const vectorTime = Math.floor(validMs / (reconstruction?60000:300000)) * (reconstruction?60000:300000);
-  const reconstructed = useMemo(() => reconstruction ? everestAtmosphere(reconstruction.chart, vectorTime, reconstruction.elevation) : null, [reconstruction?.chart, reconstruction?.elevation, vectorTime]);
-  const vectors = useMemo(() => reconstructed ? reconstructed.vectors(lat, lon, camera.halfHeight, width / Math.max(1, height)) : syntheticAtmosphereVectors(lat, lon, camera.halfHeight, width / Math.max(1, height), vectorTime, camera.slice), [reconstructed, lat, lon, camera.halfHeight, camera.slice, width, height, vectorTime]);
+  const reconstructed = useMemo(() => reconstruction ? everestAtmosphere(reconstruction.chart, vectorTime, reconstruction.elevation) : null, [reconstruction?.chart, reconstruction?.elevation, vectorTime, terrainEpoch]);
+  const vectors = useMemo(() => reconstructed ? reconstructed.vectors(lat, lon, camera.halfHeight, width / Math.max(1, height)) : syntheticAtmosphereVectors(lat, lon, camera.halfHeight, width / Math.max(1, height), vectorTime, camera.slice, elevation ?? undefined), [reconstructed, lat, lon, camera.halfHeight, camera.slice, width, height, vectorTime, elevation, terrainEpoch]);
   const cloudVectors = useMemo(() => (clouds || reconstructed) ? vectors.map(v => ({...v, cloudPct: reconstructed ? (v as EverestVector).cloudPct : (v.pressure === 850 || v.pressure === 700 ? 65 : 0)})) : [], [clouds, vectors, reconstructed]);
-  const cloudInput=useRef({vectors:cloudVectors,lat,lon,halfHeight:camera.halfHeight,aspect:width/Math.max(1,height),elevation:reconstruction?.elevation,vectorTime,run:reconstruction?.chart.manifest.run});
-  cloudInput.current={vectors:cloudVectors,lat,lon,halfHeight:camera.halfHeight,aspect:width/Math.max(1,height),elevation:reconstruction?.elevation,vectorTime,run:reconstruction?.chart.manifest.run};
+  const cloudInput=useRef({vectors:cloudVectors,lat,lon,halfHeight:camera.halfHeight,aspect:width/Math.max(1,height),elevation:elevation ?? reconstruction?.elevation,vectorTime,run:reconstruction?.chart.manifest.run});
+  cloudInput.current={vectors:cloudVectors,lat,lon,halfHeight:camera.halfHeight,aspect:width/Math.max(1,height),elevation:elevation ?? reconstruction?.elevation,vectorTime,run:reconstruction?.chart.manifest.run};
   useEffect(()=>{
     if((!clouds&&!reconstruction)||!active)return;
     let stopped=false,busy=false,last='',lastBase='';
@@ -90,7 +92,7 @@ export function AtmosphereMap({ camera, geo, lat, lon, validMs, width, height, a
     return()=>{node.removeEventListener('webglcontextlost',lost);cloudLayer.current?.destroy();cloudLayer.current=null;};
   },[active,clouds]);
   useEffect(()=>{if(cloudData)cloudLayer.current?.setData(cloudData);},[cloudData,clouds,active]);
-  const model = useMemo(() => reconstructed ? reconstructed.profile(lat, lon) : syntheticAtmosphereProfile(selectedLat, selectedLon, validMs), [reconstructed, lat, lon, selectedLat, selectedLon, validMs]);
+  const model = useMemo(() => reconstructed ? reconstructed.profile(lat, lon) : syntheticAtmosphereProfile(lat, lon, vectorTime, elevation ?? undefined), [reconstructed, lat, lon, selectedLat, selectedLon, vectorTime, elevation, terrainEpoch]);
   const profile = useMemo(() => model ? buildAtmosphereProfile(model, validMs) : null, [model, validMs]);
   const ground = profile?.terrainM ?? null;
   const aircraftM = Math.max(aircraftFt * .3048, ground == null ? 0 : ground + 100);
@@ -120,14 +122,14 @@ export function AtmosphereMap({ camera, geo, lat, lon, validMs, width, height, a
         else volume?.clear();
         node.dataset.cloudTime=String(cloudFrameTime.current??'');
         node.dataset.clouds=clouds?(cloudFailed||cloudRenderFailed?'unavailable':camera.halfHeight>.2?'distant':cloudReady?'on':'preparing'):'off';
-        const drawn = active ? (reconstructed ? windRenderer(ctx,streamlines,geo,camera,width,height,now/1000,document.documentElement.classList.contains('dark')) : drawAtmosphereFlow(ctx, vectors, geo, camera, width, height, now / 1000, document.documentElement.classList.contains('dark'))) : {layers: 0, flows: 0};
+        const drawn = active ? (reconstructed ? windRenderer(ctx,streamlines,geo,camera,width,height,now/1000,document.documentElement.classList.contains('dark')) : drawAtmosphereFlow(ctx, vectors, geo, camera, width, height, now / 1000, document.documentElement.classList.contains('dark'), elevation ?? undefined, vectorTime)) : {layers: 0, flows: 0};
         node.dataset.layers = String(drawn.layers); node.dataset.flows = String(drawn.flows);
       }
       if (active && vectors.length) request = requestAnimationFrame(draw);
     };
     draw(performance.now());
     return () => cancelAnimationFrame(request);
-  }, [streamlines,windRenderer,reconstructed,active, clouds, cloudReady, cloudFailed, cloudRenderFailed, cloudVectors, inspection, validMs, vectors, camera, geo, width, height]);
+  }, [streamlines,windRenderer,reconstructed,active, clouds, cloudReady, cloudFailed, cloudRenderFailed, cloudVectors, inspection, validMs, vectors, camera, geo, width, height, elevation]);
   if (!active) return null;
   const y = (m: number) => 180 - m / ceiling * 168;
   const knownCloud = !!profile?.levels.some(l => l.cloudFractionPct != null);
@@ -135,11 +137,11 @@ export function AtmosphereMap({ camera, geo, lat, lon, validMs, width, height, a
   const status = camera.halfHeight >= 6 ? 'distant' : 'ready';
   return <>
     <canvas ref={cloudCanvas} data-cloud-volume className={styles.canvas} aria-hidden="true" style={{display:clouds?undefined:'none'}} />
-    <canvas ref={canvas} data-atmosphere-layer data-source="synthetic" data-profile-state={status} className={styles.canvas} aria-hidden="true" />
+    <canvas ref={canvas} data-atmosphere-layer data-source="synthetic" data-field-time={vectorTime} data-profile-time={profile?.timeMs} data-profile-state={status} className={styles.canvas} aria-hidden="true" />
     <div className={styles.instrument} data-atmosphere-instrument>
       <div className={styles.row}>
         <button ref={sectionButton} aria-expanded={section} aria-label="Atmospheric section" onClick={() => setSection(v => !v)}>▱ <span>Atmosphere</span></button>
-        <span className={styles.state} title="Synthetic airflow: amber rises, blue sinks; cloud forms where rising air saturates" aria-label="Synthetic airflow: amber rises, blue sinks; cloud forms where rising air saturates">≈</span>
+        <span className={styles.state} title="Synthetic airflow: amber rises, blue sinks; illustrative pressure-level flow" aria-label="Synthetic airflow: amber rises, blue sinks; illustrative pressure-level flow">≈</span>
       </div>
       {section ? <div className={styles.section} data-atmosphere-section>
         <div className={styles.row}><span>{lenticular&&clouds?"Base wind profile":"Illustrative profile"}</span><button aria-label="Close atmospheric section" onClick={() => { setSection(false); sectionButton.current?.focus(); }}>×</button></div>

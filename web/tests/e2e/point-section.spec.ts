@@ -216,8 +216,7 @@ async function fit(page: Page) {
 
 test('recorded winds and one point across lens changes', async ({ page }, info) => {
   const requests = await open(page, 1280, 720); await fixedTime(page); await tapMap(page);
-  await expect(panel(page).locator('[data-point-source]')).toHaveText('IFS 0.25° · latest 08 03Z');
-  await expect(panel(page).locator('[data-point-source]')).toHaveAttribute('title', 'Open-Meteo · latest at fetch');
+  await expect(panel(page).locator('[data-point-source]')).toHaveAttribute('title', 'IFS 0.25° · latest 08 03Z · Open-Meteo · latest at fetch');
   const location = await panel(page).getAttribute('data-point-location');
   for (const [level, speed] of Object.entries({ surface: 13, 1000: 16, 925: 22, 850: 28, 700: 34, 600: 40, 500: 46, 400: 54, 300: 62, 250: 66, 200: 70 }))
     await expect(panel(page).locator(`[data-wind-row][data-level="${level}"] [data-wind-text]`)).toContainText(String(speed));
@@ -485,3 +484,26 @@ for (const [width, height] of [[390, 844], [375, 667]] as const) for (const them
     await expect(page.getByRole('button', { name: 'Close point' })).toBeInViewport(); await page.getByRole('button', { name: 'Close point' }).click(); await expect(panel(page)).toHaveCount(0);
   });
 }
+
+
+test('delayed profile expands from a compact phone inspector with the pin still visible', async ({ page }, info) => {
+  await open(page, 390, 844); await fixedTime(page);
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route('https://api.open-meteo.com/v1/forecast?**', async route => {
+    if (new URL(route.request().url()).searchParams.has('daily')) return route.fallback();
+    await pending;
+    try { await route.fulfill({ json: fixture }); } catch { /* closed point cancels */ }
+  });
+  await settledMap(page);
+  const box = (await canvas(page).boundingBox())!;
+  await page.mouse.click(box.x + box.width * .45, box.y + box.height * .7);
+  await expect(panel(page)).toHaveAttribute('data-point-state', 'loading');
+  expect((await panel(page).boundingBox())!.height).toBeLessThan(150);
+  const time = await page.locator('[data-map-ready]').getAttribute('data-valid-ms');
+  release();
+  await expect(panel(page)).toHaveAttribute('data-point-state', 'ready');
+  await expectPointVisible(page); await expectMarkerCentered(page);
+  expect(await page.locator('[data-map-ready]').getAttribute('data-valid-ms')).toBe(time);
+  await page.screenshot({path: info.outputPath('delayed-profile-expanded.png')});
+});

@@ -1,3 +1,4 @@
+import {validateCyclone} from './historical-cyclone';
 import { chartFrame, type LoadedChart } from './chart-store';
 import { parseCoast, simplifyCoast, type Coast } from './coast';
 import { parseWater } from './water';
@@ -89,7 +90,7 @@ export function historicalToChart(weather: HistoricalWeather, coast: Coast, even
   };
   const state: Record<string, Uint8Array> = {};
   for (const name of Object.keys(packed)) state[name] = new Uint8Array(hours.length).fill(1);
-  return { manifest, packed, state, coast, coastLod: [coast, simplifyCoast(coast, 0.25)], water: parseWater(null, null), aviation: null, points: null, listeners: new Set(), complete: Promise.resolve(), want: async () => undefined };
+  return { cyclone:validateCyclone(weather.cyclone), manifest, packed, state, coast, coastLod: [coast, simplifyCoast(coast, 0.04), simplifyCoast(coast, 0.12)], water: parseWater(null, null), aviation: null, points: null, listeners: new Set(), complete: Promise.resolve(), want: async () => undefined };
 }
 
 async function getBytes(url: string): Promise<Uint8Array> {
@@ -103,7 +104,7 @@ export async function loadHistoricalChart(selection: { event?: string; date?: st
   const catalog = await fetchCatalog();
   const requested = selection.event ? catalog.collections.find((item) => item.id === selection.event) : catalog.collections.find((item) => item.id === 'dday') ?? catalog.collections[0];
   if (!requested) throw new Error('Historical collection unavailable');
-  const selectedDate = selection.date ?? (requested.id === 'everest-1953' ? '1953-05-29' : undefined);
+  const selectedDate = selection.date ?? (requested.id === 'everest-1953' ? '1953-05-29' : requested.id === 'dday' ? '1944-06-06' : undefined);
   const manifest = await fetchManifest(requested.manifest);
   const manifestDays = manifest.days ?? [];
   const availableDay = (selectedDate ? [...requested.days, ...manifestDays].find((item) => item.date === selectedDate) : [...requested.days, ...manifestDays].find((item) => item.complete)) ?? null;
@@ -115,7 +116,7 @@ export async function loadHistoricalChart(selection: { event?: string; date?: st
   const days = availableDaysForWeather({ ...requested, days: [...requested.days, ...manifestDays] }, weather);
   const day = days.find((item) => item.date === selectedDate) ?? (selectedDate ? undefined : days[0]);
   if (!day) throw new Error('Requested historical date is unavailable');
-  const frame = weather.frames.find((item) => item.time.slice(0, 10) === day.date && Number(item.time.slice(11, 13)) === (selection.hour ?? 0));
+  const frame = weather.frames.find((item) => item.time.slice(0, 10) === day.date && Number(item.time.slice(11, 13)) === (selection.hour ?? (weather.cyclone && !selection.date ? 17 : requested.id === 'dday' && !selection.date ? 6 : 0)));
   if (!frame) throw new Error('Requested historical hour is unavailable');
   const coast = parseCoast(await getBytes('/history/world-coast.bin'));
   return { chart: historicalToChart(weather, coast, requested.id), collection: requested, day, initialMs: Date.parse(frame.time), catalog };

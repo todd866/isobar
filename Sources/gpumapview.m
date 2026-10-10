@@ -1298,6 +1298,16 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 }
 
 - (void)recenter {
+    if (!_popoverChrome && (!isfinite(_placeLatitude) || !isfinite(_placeLongitude))) return;
+    [self cancelAutoNorth];
+    _morphing = NO;
+    _camera.bearing = 0;
+    _last3DBearing = 0;
+    _camera.pitch = _threeDMode ? M_PI_4 : 0;
+    _camera.globe = _camera.pitch / kFullTiltPitch;
+    _last3DGlobe = M_PI_4 / kFullTiltPitch;
+    _tiltBaseZoom = 0;
+    _haveDragLastCamera = NO;
     if (_popoverChrome) {
         _userMoved = NO;
         self.didPlaceCamera = YES;

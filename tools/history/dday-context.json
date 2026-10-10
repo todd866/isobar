@@ -1,0 +1,3074 @@
+{
+  "schema_version": 1,
+  "kind": "historical-context-layer",
+  "event": {
+    "id": "dday",
+    "label": "D-Day \u00b7 European context",
+    "focus_date": "1944-06-06",
+    "calendar": "Gregorian"
+  },
+  "coordinate_reference": "WGS84 longitude/latitude degrees",
+  "status": "estimated-scene-v1",
+  "time_basis": "Political control is a date-level historical classification for 6 June 1944. Military positions are approximate snapshots at the stated UTC or local-time basis; no modern border is presented as a 1944 surveyed boundary.",
+  "provenance": {
+    "interpretation": "This bounded layer combines source-backed occupation/control labels with deliberately simplified geometry for a world map. Geometry marked estimated is for context and must not be read as an exact 1944 boundary or front line.",
+    "geometry_policy": "Political labels remain points. Boundary linework is sourced geometry: shared edges extracted from Natural Earth 50m admin-0 polygons for explicitly named western European pairs. The source is modern; only borders judged stable for the 1944 context are included, with that limitation visible in each feature.",
+    "sources": [
+      {
+        "id": "ushmm-occupied-western-europe-1944",
+        "title": "Occupied western Europe, 1944",
+        "url": "https://encyclopedia.ushmm.org/content/en/map/occupied-western-europe-1944",
+        "role": "dated occupation/control context for France, Belgium and the Netherlands",
+        "date": "1944"
+      },
+      {
+        "id": "cmh-dday",
+        "title": "D-Day: The 6th of June",
+        "url": "https://history.army.mil/portals/143/Images/Publications/catalog/69-6-1.pdf",
+        "role": "official U.S. Army map and chronology for beach sectors, airborne zones and German dispositions",
+        "date": "1944 depiction; CMH publication"
+      },
+      {
+        "id": "cmh-beachhead",
+        "title": "Omaha Beachhead, 6 June\u201313 June 1944",
+        "url": "https://history.army.mil/portals/143/Images/Publications/catalog/100-11-1.pdf",
+        "role": "official U.S. Army beachhead map including Allied position at 1400, 6 June",
+        "date": "1944 operation; later CMH publication"
+      },
+      {
+        "id": "truman-western-front",
+        "title": "Map of the Western Front",
+        "url": "https://www.trumanlibrary.gov/maps/m1771-map-western-front",
+        "role": "wartime western-front map reference for broad theater orientation",
+        "date": "wartime map"
+      },
+      {
+        "id": "natural-earth-50m-admin0-countries",
+        "title": "Natural Earth \u00b7 1:50m national boundaries (modern reference geometry)",
+        "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson",
+        "license": "Public domain",
+        "source_sha256": "3e458fc036ad0a66411f2c1e6cac49c5d7bfb81cb1123bc513b22511a2b7fdeb",
+        "role": "shared polygon boundary edges by country NAME; no hand-authored coordinate vertices"
+      }
+    ],
+    "limitations": [
+      "Military formations are approximate sector anchors on 6 June; no continuous front or minute-by-minute unit movements are inferred.",
+      "Neutral status means diplomatic/military status in this layer, not absence of economic or intelligence involvement.",
+      "Boundary lines are generalized context segments and should not be mistaken for surveyed 1944 geometry.",
+      "No continuous Normandy front line is included; the cited CMH maps should be georeferenced separately if an operational line is required.",
+      "Natural Earth is modern geometry, not a dated 1944 boundary dataset. Only explicitly named borders with stable national identity in the wartime context are shown."
+    ],
+    "natural_earth_source": {
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson",
+      "repository": "https://github.com/nvkelso/natural-earth-vector",
+      "dataset": "Natural Earth 5.0.1 admin-0 countries, 1:50m",
+      "license": "Public domain",
+      "retrieved": "2026-10-10",
+      "source_sha256": "3e458fc036ad0a66411f2c1e6cac49c5d7bfb81cb1123bc513b22511a2b7fdeb",
+      "source_bytes": 3083490,
+      "extraction": "shared polygon boundary edges by country NAME; no hand-authored coordinate vertices"
+    }
+  },
+  "features": [
+    {
+      "id": "political-uk",
+      "kind": "political-area",
+      "title": "United Kingdom \u00b7 Allied",
+      "control": "Allied",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.62,
+          52.78
+        ]
+      },
+      "source_refs": [
+        "truman-western-front",
+        "cmh-dday"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-05",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Named political-control label; no area polygon asserted without a dated boundary dataset",
+      "status": "estimated",
+      "precision_m": 10000,
+      "note": "Label only; do not fill the surrounding territory from this point.",
+      "detail_zoom": 2
+    },
+    {
+      "id": "political-france-occupied",
+      "kind": "political-area",
+      "title": "Occupied France",
+      "control": "German occupation; Allied assault in Normandy",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.129,
+          46.686
+        ]
+      },
+      "source_refs": [
+        "ushmm-occupied-western-europe-1944",
+        "cmh-dday"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-05",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Named political-control label; no area polygon asserted without a dated boundary dataset",
+      "status": "estimated",
+      "precision_m": 10000,
+      "note": "Label only; do not fill the surrounding territory from this point.",
+      "detail_zoom": 2
+    },
+    {
+      "id": "political-belgium-occupied",
+      "kind": "political-area",
+      "title": "Belgium \u00b7 German occupied",
+      "control": "German occupation",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          4.06,
+          50.3
+        ]
+      },
+      "source_refs": [
+        "ushmm-occupied-western-europe-1944"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-05",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Named political-control label; no area polygon asserted without a dated boundary dataset",
+      "status": "estimated",
+      "precision_m": 10000,
+      "note": "Label only; do not fill the surrounding territory from this point.",
+      "detail_zoom": 2
+    },
+    {
+      "id": "political-netherlands-occupied",
+      "kind": "political-area",
+      "title": "Netherlands \u00b7 German occupied",
+      "control": "German occupation",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          4.9,
+          51.86
+        ]
+      },
+      "source_refs": [
+        "ushmm-occupied-western-europe-1944"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-05",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Named political-control label; no area polygon asserted without a dated boundary dataset",
+      "status": "estimated",
+      "precision_m": 10000,
+      "note": "Label only; do not fill the surrounding territory from this point.",
+      "detail_zoom": 2
+    },
+    {
+      "id": "political-germany",
+      "kind": "political-area",
+      "title": "Germany \u00b7 Axis",
+      "control": "German Reich",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          9.6,
+          50.28
+        ]
+      },
+      "source_refs": [
+        "truman-western-front",
+        "cmh-dday"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-05",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Named political-control label; no area polygon asserted without a dated boundary dataset",
+      "status": "estimated",
+      "precision_m": 10000,
+      "note": "Label only; do not fill the surrounding territory from this point.",
+      "detail_zoom": 2
+    },
+    {
+      "id": "political-spain-neutral",
+      "kind": "political-area",
+      "title": "Spain \u00b7 neutral",
+      "control": "Neutral",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.22,
+          39.12
+        ]
+      },
+      "source_refs": [
+        "truman-western-front"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-05",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Named political-control label; no area polygon asserted without a dated boundary dataset",
+      "status": "estimated",
+      "precision_m": 10000,
+      "note": "Label only; do not fill the surrounding territory from this point.",
+      "detail_zoom": 2
+    },
+    {
+      "id": "political-switzerland-neutral",
+      "kind": "political-area",
+      "title": "Switzerland \u00b7 neutral",
+      "control": "Neutral",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          7.78,
+          46.64
+        ]
+      },
+      "source_refs": [
+        "truman-western-front"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-05",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Named political-control label; no area polygon asserted without a dated boundary dataset",
+      "status": "estimated",
+      "precision_m": 10000,
+      "note": "Label only; do not fill the surrounding territory from this point.",
+      "detail_zoom": 2
+    },
+    {
+      "id": "political-sweden-neutral",
+      "kind": "political-area",
+      "title": "Sweden \u00b7 neutral",
+      "control": "Neutral",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          16.2,
+          60.6
+        ]
+      },
+      "source_refs": [
+        "truman-western-front"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-05",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Named political-control label; no area polygon asserted without a dated boundary dataset",
+      "status": "estimated",
+      "precision_m": 10000,
+      "note": "Label only; do not fill the surrounding territory from this point.",
+      "detail_zoom": 2
+    },
+    {
+      "id": "unit-352-infantry",
+      "kind": "military-unit",
+      "title": "German 352nd Infantry Division \u00b7 Omaha sector",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.88,
+          49.32
+        ]
+      },
+      "source_refs": [
+        "cmh-dday"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-06",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Approximate unit-sector anchor from CMH D-Day disposition map",
+      "status": "estimated",
+      "precision_m": 15000,
+      "detail_zoom": 7
+    },
+    {
+      "id": "unit-709-infantry",
+      "kind": "military-unit",
+      "title": "German 709th Infantry Division \u00b7 Cotentin/Utah context",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.38,
+          49.45
+        ]
+      },
+      "source_refs": [
+        "cmh-dday"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-06",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Approximate unit-sector anchor from CMH D-Day disposition map",
+      "status": "estimated",
+      "precision_m": 25000,
+      "detail_zoom": 7
+    },
+    {
+      "id": "unit-716-infantry",
+      "kind": "military-unit",
+      "title": "German 716th Infantry Division \u00b7 eastern beaches",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.2,
+          49.25
+        ]
+      },
+      "source_refs": [
+        "cmh-dday"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-06",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Approximate unit-sector anchor from CMH D-Day disposition map",
+      "status": "estimated",
+      "precision_m": 25000,
+      "note": "Inland sector anchor; not a beach or front-line coordinate.",
+      "detail_zoom": 7
+    },
+    {
+      "id": "unit-21-panzer",
+      "kind": "military-unit",
+      "title": "German 21st Panzer Division \u00b7 Caen area",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.37,
+          49.18
+        ]
+      },
+      "source_refs": [
+        "cmh-dday"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-06",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Approximate headquarters/formation context anchor from CMH D-Day map",
+      "status": "estimated",
+      "precision_m": 25000,
+      "detail_zoom": 7
+    },
+    {
+      "id": "border-france-spain",
+      "kind": "political-boundary",
+      "title": "France\u2013Spain border (Pyrenees)",
+      "geometry": {
+        "type": "MultiLineString",
+        "coordinates": [
+          [
+            [
+              -1.792725,
+              43.372559
+            ],
+            [
+              -1.794043,
+              43.407324
+            ]
+          ],
+          [
+            [
+              -1.753271,
+              43.324707
+            ],
+            [
+              -1.792725,
+              43.372559
+            ]
+          ],
+          [
+            [
+              -1.712842,
+              43.307031
+            ],
+            [
+              -1.753271,
+              43.324707
+            ]
+          ],
+          [
+            [
+              -1.627148,
+              43.282471
+            ],
+            [
+              -1.712842,
+              43.307031
+            ]
+          ],
+          [
+            [
+              -1.561475,
+              43.279199
+            ],
+            [
+              -1.627148,
+              43.282471
+            ]
+          ],
+          [
+            [
+              -1.471729,
+              43.267676
+            ],
+            [
+              -1.561475,
+              43.279199
+            ]
+          ],
+          [
+            [
+              -1.46084,
+              43.051758
+            ],
+            [
+              -1.480469,
+              43.071143
+            ]
+          ],
+          [
+            [
+              -1.480469,
+              43.071143
+            ],
+            [
+              -1.459424,
+              43.10498
+            ]
+          ],
+          [
+            [
+              -1.410693,
+              43.240088
+            ],
+            [
+              -1.471729,
+              43.267676
+            ]
+          ],
+          [
+            [
+              -1.42876,
+              43.036768
+            ],
+            [
+              -1.46084,
+              43.051758
+            ]
+          ],
+          [
+            [
+              -1.459424,
+              43.10498
+            ],
+            [
+              -1.422607,
+              43.149121
+            ]
+          ],
+          [
+            [
+              -1.394043,
+              43.032617
+            ],
+            [
+              -1.42876,
+              43.036768
+            ]
+          ],
+          [
+            [
+              -1.422607,
+              43.149121
+            ],
+            [
+              -1.407324,
+              43.197119
+            ]
+          ],
+          [
+            [
+              -1.407324,
+              43.197119
+            ],
+            [
+              -1.410693,
+              43.240088
+            ]
+          ],
+          [
+            [
+              -1.370508,
+              43.037598
+            ],
+            [
+              -1.394043,
+              43.032617
+            ]
+          ],
+          [
+            [
+              -1.352734,
+              43.064258
+            ],
+            [
+              -1.370508,
+              43.037598
+            ]
+          ],
+          [
+            [
+              -1.318848,
+              43.096973
+            ],
+            [
+              -1.352734,
+              43.064258
+            ]
+          ],
+          [
+            [
+              -1.300049,
+              43.100977
+            ],
+            [
+              -1.318848,
+              43.096973
+            ]
+          ],
+          [
+            [
+              -1.301562,
+              43.082471
+            ],
+            [
+              -1.300049,
+              43.100977
+            ]
+          ],
+          [
+            [
+              -1.285449,
+              43.059619
+            ],
+            [
+              -1.301562,
+              43.082471
+            ]
+          ],
+          [
+            [
+              -1.175439,
+              43.021143
+            ],
+            [
+              -1.285449,
+              43.059619
+            ]
+          ],
+          [
+            [
+              -0.933838,
+              42.949512
+            ],
+            [
+              -1.175439,
+              43.021143
+            ]
+          ],
+          [
+            [
+              -0.839209,
+              42.948193
+            ],
+            [
+              -0.933838,
+              42.949512
+            ]
+          ],
+          [
+            [
+              -0.762646,
+              42.939795
+            ],
+            [
+              -0.839209,
+              42.948193
+            ]
+          ],
+          [
+            [
+              -0.740186,
+              42.909521
+            ],
+            [
+              -0.762646,
+              42.939795
+            ]
+          ],
+          [
+            [
+              -0.586426,
+              42.798975
+            ],
+            [
+              -0.740186,
+              42.909521
+            ]
+          ],
+          [
+            [
+              -0.549805,
+              42.802002
+            ],
+            [
+              -0.586426,
+              42.798975
+            ]
+          ],
+          [
+            [
+              -0.481152,
+              42.799316
+            ],
+            [
+              -0.549805,
+              42.802002
+            ]
+          ],
+          [
+            [
+              -0.398438,
+              42.808105
+            ],
+            [
+              -0.481152,
+              42.799316
+            ]
+          ],
+          [
+            [
+              -0.338574,
+              42.828809
+            ],
+            [
+              -0.398438,
+              42.808105
+            ]
+          ],
+          [
+            [
+              -0.299316,
+              42.825342
+            ],
+            [
+              -0.338574,
+              42.828809
+            ]
+          ],
+          [
+            [
+              -0.256055,
+              42.803955
+            ],
+            [
+              -0.299316,
+              42.825342
+            ]
+          ],
+          [
+            [
+              -0.205322,
+              42.785303
+            ],
+            [
+              -0.256055,
+              42.803955
+            ]
+          ],
+          [
+            [
+              -0.140039,
+              42.748926
+            ],
+            [
+              -0.205322,
+              42.785303
+            ]
+          ],
+          [
+            [
+              -0.081494,
+              42.703857
+            ],
+            [
+              -0.140039,
+              42.748926
+            ]
+          ],
+          [
+            [
+              -0.041162,
+              42.689111
+            ],
+            [
+              -0.081494,
+              42.703857
+            ]
+          ],
+          [
+            [
+              0.201367,
+              42.719336
+            ],
+            [
+              -0.041162,
+              42.689111
+            ]
+          ],
+          [
+            [
+              0.255469,
+              42.69292
+            ],
+            [
+              0.201367,
+              42.719336
+            ]
+          ],
+          [
+            [
+              0.312891,
+              42.693262
+            ],
+            [
+              0.255469,
+              42.69292
+            ]
+          ],
+          [
+            [
+              0.377246,
+              42.700146
+            ],
+            [
+              0.312891,
+              42.693262
+            ]
+          ],
+          [
+            [
+              0.517676,
+              42.686279
+            ],
+            [
+              0.377246,
+              42.700146
+            ]
+          ],
+          [
+            [
+              0.631641,
+              42.6896
+            ],
+            [
+              0.517676,
+              42.686279
+            ]
+          ],
+          [
+            [
+              0.641992,
+              42.700635
+            ],
+            [
+              0.631641,
+              42.6896
+            ]
+          ],
+          [
+            [
+              0.651758,
+              42.800439
+            ],
+            [
+              0.641992,
+              42.700635
+            ]
+          ],
+          [
+            [
+              0.669824,
+              42.835742
+            ],
+            [
+              0.651758,
+              42.800439
+            ]
+          ],
+          [
+            [
+              0.696875,
+              42.845117
+            ],
+            [
+              0.669824,
+              42.835742
+            ]
+          ],
+          [
+            [
+              0.764453,
+              42.838037
+            ],
+            [
+              0.696875,
+              42.845117
+            ]
+          ],
+          [
+            [
+              1.010059,
+              42.778955
+            ],
+            [
+              0.764453,
+              42.838037
+            ]
+          ],
+          [
+            [
+              1.111133,
+              42.742041
+            ],
+            [
+              1.010059,
+              42.778955
+            ]
+          ],
+          [
+            [
+              1.208301,
+              42.713135
+            ],
+            [
+              1.111133,
+              42.742041
+            ]
+          ],
+          [
+            [
+              1.293262,
+              42.709961
+            ],
+            [
+              1.208301,
+              42.713135
+            ]
+          ],
+          [
+            [
+              1.349414,
+              42.690674
+            ],
+            [
+              1.293262,
+              42.709961
+            ]
+          ],
+          [
+            [
+              1.42832,
+              42.595898
+            ],
+            [
+              1.349414,
+              42.690674
+            ]
+          ],
+          [
+            [
+              1.859766,
+              42.45708
+            ],
+            [
+              1.706055,
+              42.50332
+            ]
+          ],
+          [
+            [
+              1.92793,
+              42.426318
+            ],
+            [
+              1.859766,
+              42.45708
+            ]
+          ],
+          [
+            [
+              1.951465,
+              42.392773
+            ],
+            [
+              1.92793,
+              42.426318
+            ]
+          ],
+          [
+            [
+              1.986523,
+              42.358496
+            ],
+            [
+              1.951465,
+              42.392773
+            ]
+          ],
+          [
+            [
+              2.032715,
+              42.353516
+            ],
+            [
+              1.986523,
+              42.358496
+            ]
+          ],
+          [
+            [
+              2.09834,
+              42.386084
+            ],
+            [
+              2.032715,
+              42.353516
+            ]
+          ],
+          [
+            [
+              2.200391,
+              42.420947
+            ],
+            [
+              2.09834,
+              42.386084
+            ]
+          ],
+          [
+            [
+              2.374414,
+              42.390283
+            ],
+            [
+              2.200391,
+              42.420947
+            ]
+          ],
+          [
+            [
+              2.567969,
+              42.345801
+            ],
+            [
+              2.374414,
+              42.390283
+            ]
+          ],
+          [
+            [
+              2.65166,
+              42.340479
+            ],
+            [
+              2.567969,
+              42.345801
+            ]
+          ],
+          [
+            [
+              2.654785,
+              42.362109
+            ],
+            [
+              2.65166,
+              42.340479
+            ]
+          ],
+          [
+            [
+              2.67002,
+              42.393018
+            ],
+            [
+              2.654785,
+              42.362109
+            ]
+          ],
+          [
+            [
+              2.701855,
+              42.408496
+            ],
+            [
+              2.67002,
+              42.393018
+            ]
+          ],
+          [
+            [
+              2.749414,
+              42.413037
+            ],
+            [
+              2.701855,
+              42.408496
+            ]
+          ],
+          [
+            [
+              2.815625,
+              42.429248
+            ],
+            [
+              2.749414,
+              42.413037
+            ]
+          ],
+          [
+            [
+              2.891406,
+              42.456055
+            ],
+            [
+              2.815625,
+              42.429248
+            ]
+          ],
+          [
+            [
+              2.97002,
+              42.467236
+            ],
+            [
+              2.891406,
+              42.456055
+            ]
+          ],
+          [
+            [
+              3.052637,
+              42.447217
+            ],
+            [
+              2.97002,
+              42.467236
+            ]
+          ],
+          [
+            [
+              3.152148,
+              42.431006
+            ],
+            [
+              3.052637,
+              42.447217
+            ]
+          ],
+          [
+            [
+              3.211426,
+              42.431152
+            ],
+            [
+              3.152148,
+              42.431006
+            ]
+          ]
+        ]
+      },
+      "source_refs": [
+        "natural-earth-50m-admin0-countries"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-05",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Shared boundary edges extracted from Natural Earth 50m admin-0 country polygons by country name; modern source geometry used only for segments documented as stable in 1944",
+      "status": "estimated",
+      "precision_m": 1000,
+      "detail_zoom": 4,
+      "note": "Modern Natural Earth geometry; historical stability is a contextual assumption for this named pair, not a claim that the source is a 1944 dataset."
+    },
+    {
+      "id": "border-france-belgium",
+      "kind": "political-boundary",
+      "title": "France\u2013Belgium border",
+      "geometry": {
+        "type": "MultiLineString",
+        "coordinates": [
+          [
+            [
+              2.524902,
+              51.097119
+            ],
+            [
+              2.536035,
+              51.049512
+            ]
+          ],
+          [
+            [
+              2.536035,
+              51.049512
+            ],
+            [
+              2.574805,
+              50.988574
+            ]
+          ],
+          [
+            [
+              2.574805,
+              50.988574
+            ],
+            [
+              2.601465,
+              50.955273
+            ]
+          ],
+          [
+            [
+              2.579297,
+              50.911768
+            ],
+            [
+              2.596777,
+              50.875928
+            ]
+          ],
+          [
+            [
+              2.601465,
+              50.955273
+            ],
+            [
+              2.579297,
+              50.911768
+            ]
+          ],
+          [
+            [
+              2.596777,
+              50.875928
+            ],
+            [
+              2.669141,
+              50.811426
+            ]
+          ],
+          [
+            [
+              2.669141,
+              50.811426
+            ],
+            [
+              2.759375,
+              50.750635
+            ]
+          ],
+          [
+            [
+              2.759375,
+              50.750635
+            ],
+            [
+              2.839746,
+              50.711768
+            ]
+          ],
+          [
+            [
+              2.839746,
+              50.711768
+            ],
+            [
+              2.862402,
+              50.716016
+            ]
+          ],
+          [
+            [
+              2.862402,
+              50.716016
+            ],
+            [
+              2.921973,
+              50.727051
+            ]
+          ],
+          [
+            [
+              2.921973,
+              50.727051
+            ],
+            [
+              3.022852,
+              50.766895
+            ]
+          ],
+          [
+            [
+              3.022852,
+              50.766895
+            ],
+            [
+              3.106836,
+              50.779443
+            ]
+          ],
+          [
+            [
+              3.106836,
+              50.779443
+            ],
+            [
+              3.154883,
+              50.748926
+            ]
+          ],
+          [
+            [
+              3.154883,
+              50.748926
+            ],
+            [
+              3.182031,
+              50.731689
+            ]
+          ],
+          [
+            [
+              3.182031,
+              50.731689
+            ],
+            [
+              3.234961,
+              50.662939
+            ]
+          ],
+          [
+            [
+              3.234961,
+              50.662939
+            ],
+            [
+              3.249805,
+              50.591162
+            ]
+          ],
+          [
+            [
+              3.249805,
+              50.591162
+            ],
+            [
+              3.27334,
+              50.531543
+            ]
+          ],
+          [
+            [
+              3.27334,
+              50.531543
+            ],
+            [
+              3.316211,
+              50.507373
+            ]
+          ],
+          [
+            [
+              3.316211,
+              50.507373
+            ],
+            [
+              3.476953,
+              50.499463
+            ]
+          ],
+          [
+            [
+              3.476953,
+              50.499463
+            ],
+            [
+              3.59541,
+              50.477344
+            ]
+          ],
+          [
+            [
+              3.59541,
+              50.477344
+            ],
+            [
+              3.626758,
+              50.457324
+            ]
+          ],
+          [
+            [
+              3.626758,
+              50.457324
+            ],
+            [
+              3.667285,
+              50.324805
+            ]
+          ],
+          [
+            [
+              3.667285,
+              50.324805
+            ],
+            [
+              3.689355,
+              50.306055
+            ]
+          ],
+          [
+            [
+              3.689355,
+              50.306055
+            ],
+            [
+              3.718848,
+              50.32168
+            ]
+          ],
+          [
+            [
+              3.718848,
+              50.32168
+            ],
+            [
+              3.748047,
+              50.343506
+            ]
+          ],
+          [
+            [
+              3.748047,
+              50.343506
+            ],
+            [
+              3.788574,
+              50.346973
+            ]
+          ],
+          [
+            [
+              3.788574,
+              50.346973
+            ],
+            [
+              3.858105,
+              50.338574
+            ]
+          ],
+          [
+            [
+              3.858105,
+              50.338574
+            ],
+            [
+              3.949707,
+              50.335938
+            ]
+          ],
+          [
+            [
+              3.949707,
+              50.335938
+            ],
+            [
+              4.044141,
+              50.321338
+            ]
+          ],
+          [
+            [
+              4.044141,
+              50.321338
+            ],
+            [
+              4.174609,
+              50.246484
+            ]
+          ],
+          [
+            [
+              4.144141,
+              50.178418
+            ],
+            [
+              4.135254,
+              50.143799
+            ]
+          ],
+          [
+            [
+              4.135254,
+              50.143799
+            ],
+            [
+              4.157715,
+              50.129883
+            ]
+          ],
+          [
+            [
+              4.136816,
+              50
+            ],
+            [
+              4.137012,
+              49.984473
+            ]
+          ],
+          [
+            [
+              4.150293,
+              50.023877
+            ],
+            [
+              4.136816,
+              50
+            ]
+          ],
+          [
+            [
+              4.137012,
+              49.984473
+            ],
+            [
+              4.149316,
+              49.971582
+            ]
+          ],
+          [
+            [
+              4.169629,
+              50.221777
+            ],
+            [
+              4.144141,
+              50.178418
+            ]
+          ],
+          [
+            [
+              4.149316,
+              49.971582
+            ],
+            [
+              4.176074,
+              49.960254
+            ]
+          ],
+          [
+            [
+              4.183887,
+              50.052832
+            ],
+            [
+              4.150293,
+              50.023877
+            ]
+          ],
+          [
+            [
+              4.157715,
+              50.129883
+            ],
+            [
+              4.192188,
+              50.094141
+            ]
+          ],
+          [
+            [
+              4.174609,
+              50.246484
+            ],
+            [
+              4.169629,
+              50.221777
+            ]
+          ],
+          [
+            [
+              4.176074,
+              49.960254
+            ],
+            [
+              4.36875,
+              49.944971
+            ]
+          ],
+          [
+            [
+              4.192188,
+              50.094141
+            ],
+            [
+              4.183887,
+              50.052832
+            ]
+          ],
+          [
+            [
+              4.36875,
+              49.944971
+            ],
+            [
+              4.54502,
+              49.960254
+            ]
+          ],
+          [
+            [
+              4.54502,
+              49.960254
+            ],
+            [
+              4.656152,
+              50.002441
+            ]
+          ],
+          [
+            [
+              4.656152,
+              50.002441
+            ],
+            [
+              4.675098,
+              50.046875
+            ]
+          ],
+          [
+            [
+              4.675098,
+              50.046875
+            ],
+            [
+              4.706641,
+              50.09707
+            ]
+          ],
+          [
+            [
+              4.706641,
+              50.09707
+            ],
+            [
+              4.772852,
+              50.139062
+            ]
+          ],
+          [
+            [
+              4.772852,
+              50.139062
+            ],
+            [
+              4.818652,
+              50.153174
+            ]
+          ],
+          [
+            [
+              4.790039,
+              49.95957
+            ],
+            [
+              4.841504,
+              49.914502
+            ]
+          ],
+          [
+            [
+              4.860547,
+              50.135889
+            ],
+            [
+              4.790039,
+              49.95957
+            ]
+          ],
+          [
+            [
+              4.818652,
+              50.153174
+            ],
+            [
+              4.860547,
+              50.135889
+            ]
+          ],
+          [
+            [
+              4.841504,
+              49.914502
+            ],
+            [
+              4.849121,
+              49.847119
+            ]
+          ],
+          [
+            [
+              4.849121,
+              49.847119
+            ],
+            [
+              4.867578,
+              49.788135
+            ]
+          ],
+          [
+            [
+              4.867578,
+              49.788135
+            ],
+            [
+              4.930566,
+              49.789258
+            ]
+          ],
+          [
+            [
+              4.930566,
+              49.789258
+            ],
+            [
+              5.006934,
+              49.778369
+            ]
+          ],
+          [
+            [
+              5.006934,
+              49.778369
+            ],
+            [
+              5.061035,
+              49.756543
+            ]
+          ],
+          [
+            [
+              5.061035,
+              49.756543
+            ],
+            [
+              5.124121,
+              49.721484
+            ]
+          ],
+          [
+            [
+              5.124121,
+              49.721484
+            ],
+            [
+              5.215039,
+              49.689258
+            ]
+          ],
+          [
+            [
+              5.215039,
+              49.689258
+            ],
+            [
+              5.278809,
+              49.67793
+            ]
+          ],
+          [
+            [
+              5.278809,
+              49.67793
+            ],
+            [
+              5.301953,
+              49.650977
+            ]
+          ],
+          [
+            [
+              5.301953,
+              49.650977
+            ],
+            [
+              5.353516,
+              49.619824
+            ]
+          ],
+          [
+            [
+              5.353516,
+              49.619824
+            ],
+            [
+              5.434668,
+              49.554492
+            ]
+          ],
+          [
+            [
+              5.434668,
+              49.554492
+            ],
+            [
+              5.507324,
+              49.510889
+            ]
+          ],
+          [
+            [
+              5.507324,
+              49.510889
+            ],
+            [
+              5.542383,
+              49.511035
+            ]
+          ],
+          [
+            [
+              5.542383,
+              49.511035
+            ],
+            [
+              5.610059,
+              49.528223
+            ]
+          ],
+          [
+            [
+              5.610059,
+              49.528223
+            ],
+            [
+              5.710449,
+              49.539209
+            ]
+          ],
+          [
+            [
+              5.710449,
+              49.539209
+            ],
+            [
+              5.789746,
+              49.538281
+            ]
+          ]
+        ]
+      },
+      "source_refs": [
+        "natural-earth-50m-admin0-countries"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-05",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Shared boundary edges extracted from Natural Earth 50m admin-0 country polygons by country name; modern source geometry used only for segments documented as stable in 1944",
+      "status": "estimated",
+      "precision_m": 1000,
+      "detail_zoom": 4,
+      "note": "Modern Natural Earth geometry; historical stability is a contextual assumption for this named pair, not a claim that the source is a 1944 dataset."
+    },
+    {
+      "id": "border-belgium-netherlands",
+      "kind": "political-boundary",
+      "title": "Belgium\u2013Netherlands border",
+      "geometry": {
+        "type": "MultiLineString",
+        "coordinates": [
+          [
+            [
+              3.350098,
+              51.377686
+            ],
+            [
+              3.380078,
+              51.291113
+            ]
+          ],
+          [
+            [
+              3.380078,
+              51.291113
+            ],
+            [
+              3.402832,
+              51.263623
+            ]
+          ],
+          [
+            [
+              3.402832,
+              51.263623
+            ],
+            [
+              3.43252,
+              51.245752
+            ]
+          ],
+          [
+            [
+              3.43252,
+              51.245752
+            ],
+            [
+              3.471973,
+              51.242236
+            ]
+          ],
+          [
+            [
+              3.471973,
+              51.242236
+            ],
+            [
+              3.51709,
+              51.263623
+            ]
+          ],
+          [
+            [
+              3.51709,
+              51.263623
+            ],
+            [
+              3.580273,
+              51.286182
+            ]
+          ],
+          [
+            [
+              3.580273,
+              51.286182
+            ],
+            [
+              3.681836,
+              51.275684
+            ]
+          ],
+          [
+            [
+              3.681836,
+              51.275684
+            ],
+            [
+              3.755664,
+              51.254834
+            ]
+          ],
+          [
+            [
+              3.755664,
+              51.254834
+            ],
+            [
+              3.781934,
+              51.233203
+            ]
+          ],
+          [
+            [
+              3.781934,
+              51.233203
+            ],
+            [
+              3.830762,
+              51.212598
+            ]
+          ],
+          [
+            [
+              3.830762,
+              51.212598
+            ],
+            [
+              3.902051,
+              51.207666
+            ]
+          ],
+          [
+            [
+              3.902051,
+              51.207666
+            ],
+            [
+              4.040039,
+              51.24707
+            ]
+          ],
+          [
+            [
+              4.040039,
+              51.24707
+            ],
+            [
+              4.172559,
+              51.30708
+            ]
+          ],
+          [
+            [
+              4.172559,
+              51.30708
+            ],
+            [
+              4.211426,
+              51.34873
+            ]
+          ],
+          [
+            [
+              4.211426,
+              51.34873
+            ],
+            [
+              4.226172,
+              51.386475
+            ]
+          ],
+          [
+            [
+              4.226172,
+              51.386475
+            ],
+            [
+              4.304492,
+              51.361523
+            ]
+          ],
+          [
+            [
+              4.304492,
+              51.361523
+            ],
+            [
+              4.37373,
+              51.356006
+            ]
+          ],
+          [
+            [
+              4.37373,
+              51.356006
+            ],
+            [
+              4.404004,
+              51.36709
+            ]
+          ],
+          [
+            [
+              4.404004,
+              51.36709
+            ],
+            [
+              4.384766,
+              51.427588
+            ]
+          ],
+          [
+            [
+              4.384766,
+              51.427588
+            ],
+            [
+              4.440918,
+              51.459814
+            ]
+          ],
+          [
+            [
+              4.440918,
+              51.459814
+            ],
+            [
+              4.503418,
+              51.474707
+            ]
+          ],
+          [
+            [
+              4.503418,
+              51.474707
+            ],
+            [
+              4.531641,
+              51.448584
+            ]
+          ],
+          [
+            [
+              4.531641,
+              51.448584
+            ],
+            [
+              4.58877,
+              51.421924
+            ]
+          ],
+          [
+            [
+              4.58877,
+              51.421924
+            ],
+            [
+              4.633984,
+              51.421729
+            ]
+          ],
+          [
+            [
+              4.633984,
+              51.421729
+            ],
+            [
+              4.755664,
+              51.491113
+            ]
+          ],
+          [
+            [
+              4.755664,
+              51.491113
+            ],
+            [
+              4.78418,
+              51.477393
+            ]
+          ],
+          [
+            [
+              4.78418,
+              51.477393
+            ],
+            [
+              4.810547,
+              51.452734
+            ]
+          ],
+          [
+            [
+              4.810547,
+              51.452734
+            ],
+            [
+              4.816016,
+              51.432812
+            ]
+          ],
+          [
+            [
+              4.816016,
+              51.432812
+            ],
+            [
+              4.820703,
+              51.412061
+            ]
+          ],
+          [
+            [
+              4.820703,
+              51.412061
+            ],
+            [
+              4.848047,
+              51.403271
+            ]
+          ],
+          [
+            [
+              4.848047,
+              51.403271
+            ],
+            [
+              4.943945,
+              51.407764
+            ]
+          ],
+          [
+            [
+              4.943945,
+              51.407764
+            ],
+            [
+              4.992578,
+              51.445361
+            ]
+          ],
+          [
+            [
+              4.992578,
+              51.445361
+            ],
+            [
+              5.030957,
+              51.469092
+            ]
+          ],
+          [
+            [
+              5.030957,
+              51.469092
+            ],
+            [
+              5.059473,
+              51.453125
+            ]
+          ],
+          [
+            [
+              5.059473,
+              51.453125
+            ],
+            [
+              5.073438,
+              51.406836
+            ]
+          ],
+          [
+            [
+              5.073438,
+              51.406836
+            ],
+            [
+              5.099902,
+              51.346484
+            ]
+          ],
+          [
+            [
+              5.099902,
+              51.346484
+            ],
+            [
+              5.21416,
+              51.278955
+            ]
+          ],
+          [
+            [
+              5.21416,
+              51.278955
+            ],
+            [
+              5.31084,
+              51.259717
+            ]
+          ],
+          [
+            [
+              5.31084,
+              51.259717
+            ],
+            [
+              5.429785,
+              51.272998
+            ]
+          ],
+          [
+            [
+              5.429785,
+              51.272998
+            ],
+            [
+              5.476855,
+              51.285059
+            ]
+          ],
+          [
+            [
+              5.476855,
+              51.285059
+            ],
+            [
+              5.508789,
+              51.275
+            ]
+          ],
+          [
+            [
+              5.508789,
+              51.275
+            ],
+            [
+              5.54043,
+              51.239307
+            ]
+          ],
+          [
+            [
+              5.54043,
+              51.239307
+            ],
+            [
+              5.608789,
+              51.198437
+            ]
+          ],
+          [
+            [
+              5.608789,
+              51.198437
+            ],
+            [
+              5.752344,
+              51.169482
+            ]
+          ],
+          [
+            [
+              5.647559,
+              50.86665
+            ],
+            [
+              5.639453,
+              50.843604
+            ]
+          ],
+          [
+            [
+              5.639453,
+              50.843604
+            ],
+            [
+              5.669141,
+              50.805957
+            ]
+          ],
+          [
+            [
+              5.736621,
+              50.932129
+            ],
+            [
+              5.647559,
+              50.86665
+            ]
+          ],
+          [
+            [
+              5.669141,
+              50.805957
+            ],
+            [
+              5.693555,
+              50.774756
+            ]
+          ],
+          [
+            [
+              5.693555,
+              50.774756
+            ],
+            [
+              5.693652,
+              50.774658
+            ]
+          ],
+          [
+            [
+              5.693652,
+              50.774658
+            ],
+            [
+              5.74707,
+              50.75957
+            ]
+          ],
+          [
+            [
+              5.75,
+              50.950244
+            ],
+            [
+              5.736621,
+              50.932129
+            ]
+          ],
+          [
+            [
+              5.749805,
+              50.98877
+            ],
+            [
+              5.74082,
+              50.959912
+            ]
+          ],
+          [
+            [
+              5.74082,
+              50.959912
+            ],
+            [
+              5.75,
+              50.950244
+            ]
+          ],
+          [
+            [
+              5.74707,
+              50.75957
+            ],
+            [
+              5.797363,
+              50.754541
+            ]
+          ],
+          [
+            [
+              5.818262,
+              51.086426
+            ],
+            [
+              5.749805,
+              50.98877
+            ]
+          ],
+          [
+            [
+              5.752344,
+              51.169482
+            ],
+            [
+              5.796484,
+              51.153076
+            ]
+          ],
+          [
+            [
+              5.796484,
+              51.153076
+            ],
+            [
+              5.827148,
+              51.125635
+            ]
+          ],
+          [
+            [
+              5.797363,
+              50.754541
+            ],
+            [
+              5.892461,
+              50.752557
+            ]
+          ],
+          [
+            [
+              5.827148,
+              51.125635
+            ],
+            [
+              5.818262,
+              51.086426
+            ]
+          ],
+          [
+            [
+              5.892461,
+              50.752557
+            ],
+            [
+              5.993945,
+              50.750439
+            ]
+          ]
+        ]
+      },
+      "source_refs": [
+        "natural-earth-50m-admin0-countries"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-05",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Shared boundary edges extracted from Natural Earth 50m admin-0 country polygons by country name; modern source geometry used only for segments documented as stable in 1944",
+      "status": "estimated",
+      "precision_m": 1000,
+      "detail_zoom": 4,
+      "note": "Modern Natural Earth geometry; historical stability is a contextual assumption for this named pair, not a claim that the source is a 1944 dataset."
+    },
+    {
+      "id": "border-france-switzerland",
+      "kind": "political-boundary",
+      "title": "France\u2013Switzerland border",
+      "geometry": {
+        "type": "MultiLineString",
+        "coordinates": [
+          [
+            [
+              5.97002,
+              46.214697
+            ],
+            [
+              5.971484,
+              46.151221
+            ]
+          ],
+          [
+            [
+              6.036133,
+              46.238086
+            ],
+            [
+              5.97002,
+              46.214697
+            ]
+          ],
+          [
+            [
+              5.971484,
+              46.151221
+            ],
+            [
+              6.006641,
+              46.142334
+            ]
+          ],
+          [
+            [
+              6.006641,
+              46.142334
+            ],
+            [
+              6.086621,
+              46.147021
+            ]
+          ],
+          [
+            [
+              6.095898,
+              46.279395
+            ],
+            [
+              6.036133,
+              46.238086
+            ]
+          ],
+          [
+            [
+              6.067969,
+              46.458545
+            ],
+            [
+              6.060254,
+              46.428174
+            ]
+          ],
+          [
+            [
+              6.060254,
+              46.428174
+            ],
+            [
+              6.123242,
+              46.378613
+            ]
+          ],
+          [
+            [
+              6.107031,
+              46.516064
+            ],
+            [
+              6.067969,
+              46.458545
+            ]
+          ],
+          [
+            [
+              6.086621,
+              46.147021
+            ],
+            [
+              6.199414,
+              46.193066
+            ]
+          ],
+          [
+            [
+              6.115918,
+              46.337646
+            ],
+            [
+              6.095898,
+              46.279395
+            ]
+          ],
+          [
+            [
+              6.129688,
+              46.566992
+            ],
+            [
+              6.107031,
+              46.516064
+            ]
+          ],
+          [
+            [
+              6.123242,
+              46.378613
+            ],
+            [
+              6.115918,
+              46.337646
+            ]
+          ],
+          [
+            [
+              6.160742,
+              46.611035
+            ],
+            [
+              6.129688,
+              46.566992
+            ]
+          ],
+          [
+            [
+              6.285156,
+              46.683057
+            ],
+            [
+              6.160742,
+              46.611035
+            ]
+          ],
+          [
+            [
+              6.199414,
+              46.193066
+            ],
+            [
+              6.272949,
+              46.252246
+            ]
+          ],
+          [
+            [
+              6.22959,
+              46.308447
+            ],
+            [
+              6.224219,
+              46.319434
+            ]
+          ],
+          [
+            [
+              6.224219,
+              46.319434
+            ],
+            [
+              6.234668,
+              46.332617
+            ]
+          ],
+          [
+            [
+              6.272949,
+              46.252246
+            ],
+            [
+              6.22959,
+              46.308447
+            ]
+          ],
+          [
+            [
+              6.234668,
+              46.332617
+            ],
+            [
+              6.321875,
+              46.393701
+            ]
+          ],
+          [
+            [
+              6.410156,
+              46.75542
+            ],
+            [
+              6.285156,
+              46.683057
+            ]
+          ],
+          [
+            [
+              6.321875,
+              46.393701
+            ],
+            [
+              6.428906,
+              46.430518
+            ]
+          ],
+          [
+            [
+              6.429004,
+              46.832275
+            ],
+            [
+              6.410156,
+              46.75542
+            ]
+          ],
+          [
+            [
+              6.428906,
+              46.430518
+            ],
+            [
+              6.578223,
+              46.437354
+            ]
+          ],
+          [
+            [
+              6.438574,
+              46.925879
+            ],
+            [
+              6.429004,
+              46.832275
+            ]
+          ],
+          [
+            [
+              6.45625,
+              46.94834
+            ],
+            [
+              6.438574,
+              46.925879
+            ]
+          ],
+          [
+            [
+              6.624805,
+              47.004346
+            ],
+            [
+              6.45625,
+              46.94834
+            ]
+          ],
+          [
+            [
+              6.578223,
+              46.437354
+            ],
+            [
+              6.758105,
+              46.415771
+            ]
+          ],
+          [
+            [
+              6.666895,
+              47.026514
+            ],
+            [
+              6.624805,
+              47.004346
+            ]
+          ],
+          [
+            [
+              6.688086,
+              47.058252
+            ],
+            [
+              6.666895,
+              47.026514
+            ]
+          ],
+          [
+            [
+              6.820703,
+              47.163184
+            ],
+            [
+              6.688086,
+              47.058252
+            ]
+          ],
+          [
+            [
+              6.758105,
+              46.415771
+            ],
+            [
+              6.776074,
+              46.406641
+            ]
+          ],
+          [
+            [
+              6.776074,
+              46.406641
+            ],
+            [
+              6.767383,
+              46.369189
+            ]
+          ],
+          [
+            [
+              6.767383,
+              46.369189
+            ],
+            [
+              6.78418,
+              46.313965
+            ]
+          ],
+          [
+            [
+              6.77207,
+              46.165137
+            ],
+            [
+              6.805664,
+              46.130664
+            ]
+          ],
+          [
+            [
+              6.816797,
+              46.275195
+            ],
+            [
+              6.77207,
+              46.165137
+            ]
+          ],
+          [
+            [
+              6.78418,
+              46.313965
+            ],
+            [
+              6.816797,
+              46.275195
+            ]
+          ],
+          [
+            [
+              6.805664,
+              46.130664
+            ],
+            [
+              6.858008,
+              46.089404
+            ]
+          ],
+          [
+            [
+              6.952051,
+              47.267187
+            ],
+            [
+              6.820703,
+              47.163184
+            ]
+          ],
+          [
+            [
+              6.858008,
+              46.089404
+            ],
+            [
+              6.897266,
+              46.051758
+            ]
+          ],
+          [
+            [
+              6.897266,
+              46.051758
+            ],
+            [
+              6.953711,
+              46.017139
+            ]
+          ],
+          [
+            [
+              6.900391,
+              47.394238
+            ],
+            [
+              6.921484,
+              47.36123
+            ]
+          ],
+          [
+            [
+              6.968359,
+              47.453223
+            ],
+            [
+              6.900391,
+              47.394238
+            ]
+          ],
+          [
+            [
+              6.921484,
+              47.36123
+            ],
+            [
+              6.984082,
+              47.352539
+            ]
+          ],
+          [
+            [
+              6.978516,
+              47.302051
+            ],
+            [
+              6.952051,
+              47.267187
+            ]
+          ],
+          [
+            [
+              6.953711,
+              46.017139
+            ],
+            [
+              7.003906,
+              45.958838
+            ]
+          ],
+          [
+            [
+              7.053418,
+              47.489355
+            ],
+            [
+              6.968359,
+              47.453223
+            ]
+          ],
+          [
+            [
+              7.000586,
+              47.32251
+            ],
+            [
+              6.978516,
+              47.302051
+            ]
+          ],
+          [
+            [
+              6.984082,
+              47.352539
+            ],
+            [
+              7.000586,
+              47.339453
+            ]
+          ],
+          [
+            [
+              7.000586,
+              47.339453
+            ],
+            [
+              7.000586,
+              47.32251
+            ]
+          ],
+          [
+            [
+              7.003906,
+              45.958838
+            ],
+            [
+              7.021094,
+              45.925781
+            ]
+          ],
+          [
+            [
+              7.136035,
+              47.489844
+            ],
+            [
+              7.053418,
+              47.489355
+            ]
+          ],
+          [
+            [
+              7.169238,
+              47.473242
+            ],
+            [
+              7.136035,
+              47.489844
+            ]
+          ],
+          [
+            [
+              7.16748,
+              47.453711
+            ],
+            [
+              7.169238,
+              47.473242
+            ]
+          ],
+          [
+            [
+              7.203125,
+              47.432715
+            ],
+            [
+              7.16748,
+              47.453711
+            ]
+          ],
+          [
+            [
+              7.265723,
+              47.425781
+            ],
+            [
+              7.203125,
+              47.432715
+            ]
+          ],
+          [
+            [
+              7.343164,
+              47.433105
+            ],
+            [
+              7.265723,
+              47.425781
+            ]
+          ],
+          [
+            [
+              7.42002,
+              47.455176
+            ],
+            [
+              7.343164,
+              47.433105
+            ]
+          ],
+          [
+            [
+              7.467383,
+              47.507666
+            ],
+            [
+              7.42002,
+              47.455176
+            ]
+          ],
+          [
+            [
+              7.494922,
+              47.547363
+            ],
+            [
+              7.467383,
+              47.507666
+            ]
+          ],
+          [
+            [
+              7.615625,
+              47.592725
+            ],
+            [
+              7.494922,
+              47.547363
+            ]
+          ]
+        ]
+      },
+      "source_refs": [
+        "natural-earth-50m-admin0-countries"
+      ],
+      "date_validity": {
+        "date_start": "1944-06-05",
+        "date_end": "1944-06-06",
+        "time_basis": "date-only"
+      },
+      "geometry_method": "Shared boundary edges extracted from Natural Earth 50m admin-0 country polygons by country name; modern source geometry used only for segments documented as stable in 1944",
+      "status": "estimated",
+      "precision_m": 1000,
+      "detail_zoom": 4,
+      "note": "Modern Natural Earth geometry; historical stability is a contextual assumption for this named pair, not a claim that the source is a 1944 dataset."
+    }
+  ]
+}
