@@ -79,6 +79,11 @@ static BOOL AnchorFlat(IsobarCamera *cam, double lat, double lon, double x, doub
     return YES;
 }
 
+static void ClampAnchorLatitude(IsobarCamera *cam) {
+    if (cam->pitch >= 20.0 * kDeg || (cam->pitch <= 1e-7 && cam->globe >= 1 - 1e-7)) return;
+    cam->centreLat = fmax(-89.5, fmin(89.5, cam->centreLat));
+}
+
 static BOOL AnchorSphere(IsobarCamera *cam, double lat, double lon, double x, double y) {
     double err = 0;
     if (!ScreenOf(*cam, lat, lon, x, y, &err, NULL, NULL)) {
@@ -109,8 +114,7 @@ static BOOL AnchorSphere(IsobarCamera *cam, double lat, double lon, double x, do
             IsobarCamera trial = *cam;
             trial.centreLat += dLat * s;
             trial.centreLon = MapWrap180(trial.centreLon + dLon * s);
-            if (trial.centreLat > 89.5) trial.centreLat = 89.5;
-            if (trial.centreLat < -89.5) trial.centreLat = -89.5;
+            ClampAnchorLatitude(&trial);
             double terr = 0;
             if (!ScreenOf(trial, lat, lon, x, y, &terr, NULL, NULL)) continue;
             if (terr < err) {
@@ -133,8 +137,7 @@ static BOOL AnchorSphere(IsobarCamera *cam, double lat, double lon, double x, do
                 IsobarCamera trial = *cam;
                 trial.centreLat += dlat[k];
                 trial.centreLon = MapWrap180(trial.centreLon + dlon[k]);
-                if (trial.centreLat > 89.5) trial.centreLat = 89.5;
-                if (trial.centreLat < -89.5) trial.centreLat = -89.5;
+                ClampAnchorLatitude(&trial);
                 double terr = 0;
                 if (!ScreenOf(trial, lat, lon, x, y, &terr, NULL, NULL)) continue;
                 if (terr < bestErr) {

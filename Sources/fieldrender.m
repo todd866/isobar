@@ -52,13 +52,19 @@ void IsobarFieldRenderTestingSetNow(double milliseconds) {
     gTestingNow = milliseconds;
 }
 
+// Once curvature is spherical, centreLat is an orbit angle: allowing it to
+// continue beyond a pole keeps the globe's orientation continuous.
+static BOOL CameraCanOrbit(IsobarCamera cam) {
+    return cam.pitch >= 20.0 * kDeg || (cam.pitch <= 1e-7 && cam.globe >= 1.0 - 1e-7);
+}
+
 static BOOL Metrics(IsobarCamera cam, double *vw, double *vh, double *pxPerDeg,
     double *radius, double *globe) {
     if (!(cam.viewportW >= 2) || !(cam.viewportH >= 2)) return NO;
     if (cam.viewportW > 8192 || cam.viewportH > 8192) return NO;
     if (!isfinite(cam.centreLat) || !isfinite(cam.centreLon) || !isfinite(cam.zoom)) return NO;
     if (!isfinite(cam.globe) || !isfinite(cam.pitch) || !(cam.zoom > 0)) return NO;
-    if (cam.centreLat < -90 || cam.centreLat > 90) return NO;
+    if (!CameraCanOrbit(cam) && (cam.centreLat < -90 || cam.centreLat > 90)) return NO;
     *vw = cam.viewportW;
     *vh = cam.viewportH;
     double fit = fmin(cam.viewportW / 360.0, cam.viewportH / 180.0);
@@ -464,6 +470,19 @@ IsobarCamera IsobarCameraClamp(IsobarCamera camera) {
     if (camera.zoom < floorZ) camera.zoom = floorZ;
     if (camera.zoom > kZoomMax) camera.zoom = kZoomMax;
     if (!isfinite(camera.centreLat)) camera.centreLat = 0;
+    if (CameraCanOrbit(camera)) {
+        camera.centreLat = Wrap180(camera.centreLat);
+        return camera;
+    }
+    // Returning to the north-up flat projection keeps the physical location.
+    camera.centreLat = Wrap180(camera.centreLat);
+    if (camera.centreLat > 90) {
+        camera.centreLat = 180 - camera.centreLat;
+        camera.centreLon = Wrap180(camera.centreLon + 180);
+    } else if (camera.centreLat < -90) {
+        camera.centreLat = -180 - camera.centreLat;
+        camera.centreLon = Wrap180(camera.centreLon + 180);
+    }
     double pxPerDeg = camera.zoom * fit;
     double halfLat = (camera.viewportH * 0.5) / pxPerDeg;
     double inset = halfLat * (1.0 - globe);
@@ -4615,8 +4634,24 @@ static ContourSet *BuildContourSet(const float *va, const float *vb, float mix,
         if (d < best) { best = d; pick = p; }
     }
     if (pick < 0 || best > 80) return NO;
-    if (lat) *lat = ln.lat[pick];
-    if (lon) *lon = ln.lon[pick];
+    // Keep the actual position along the contour, not its nearest grid
+    // vertex: vertex snapping makes pressure digits crawl sideways on drag.
+    double aLat=ln.lat[pick], aLon=ln.lon[pick];
+    for (int other=pick-1; other<=pick+1; other+=2) {
+        if (other<0 || other>=ln.count) continue;
+        ProjPt a=_proj[base+pick], b=_proj[base+other];
+        if (!a.front || !b.front) continue;
+        double dx=b.x-a.x, dy=b.y-a.y, length2=dx*dx+dy*dy;
+        if (!(length2>1e-12)) continue;
+        double f=fmax(0,fmin(1,((x-a.x)*dx+(y-a.y)*dy)/length2));
+        double distance=hypot(a.x+f*dx-x,a.y+f*dy-y);
+        if (distance>best) continue;
+        best=distance;
+        aLat=ln.lat[pick]+f*(ln.lat[other]-ln.lat[pick]);
+        aLon=Wrap180(ln.lon[pick]+f*Wrap180(ln.lon[other]-ln.lon[pick]));
+    }
+    if (lat) *lat = aLat;
+    if (lon) *lon = aLon;
     return YES;
 }
 
@@ -4917,7 +4952,9 @@ static ContourSet *BuildContourSet(const float *va, const float *vb, float mix,
                 continue;
             }
             if (!first) {
-                double step = hypot(bx - slot->x, by - slot->y);
+                double step = hypot(bx - qx, by - qy);
+                // Camera motion is already in qx/qy and must follow the map
+                // immediately. Only forecast motion is smoothed.
                 // One sample at 256× can move an isobar tens of pixels. Walk
                 // toward that point. Snapping there relocates the digits while
                 // the line itself is still moving smoothly. 8× samples stay
@@ -4925,8 +4962,8 @@ static ContourSet *BuildContourSet(const float *va, const float *vb, float mix,
                 double cap = 3.0 * [self pixelScale];
                 if (step > cap && step > 0) {
                     double t = cap / step;
-                    bx = slot->x + (bx - slot->x) * t;
-                    by = slot->y + (by - slot->y) * t;
+                    bx = qx + (bx - qx) * t;
+                    by = qy + (by - qy) * t;
                     step = cap;
                 }
                 if (step > motion->stepMax) motion->stepMax = step;

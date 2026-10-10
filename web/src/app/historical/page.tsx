@@ -1,11 +1,3 @@
-import './history.css';
-import { HistoricalView } from './HistoricalView';
-
-export const metadata = {
-  title: 'Historical · Isobar',
-  description: 'Historical weather reconstructions and map sources.',
-};
-
-export default function HistoricalPage() {
-  return <HistoricalView />;
-}
+import { MapExperience } from '@/components/MapExperience';
+export const metadata={title:'History · Isobar',description:'Explore historical weather on the Isobar map.'};
+export default function HistoryPage(){return <MapExperience historical />;}

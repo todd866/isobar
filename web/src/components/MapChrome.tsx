@@ -267,6 +267,7 @@ export function Transport({
   speed,
   onSpeed,
   onNow,
+  nowLabel = 'Now',
   compact = false,
 }: {
   held?: boolean;
@@ -275,6 +276,7 @@ export function Transport({
   speed: Speed;
   onSpeed: (speed: Speed) => void;
   onNow: () => void;
+  nowLabel?: string;
   /** Collapsed row: play and speed. Now stays on the expanded deck. */
   compact?: boolean;
 }) {
@@ -319,7 +321,7 @@ export function Transport({
       </label>
       {compact ? null : <button type="button" onClick={onNow} className="flex h-9 items-center gap-1 rounded-md px-2 text-[15px] font-semibold text-[var(--md-primary)] hover:bg-[var(--md-surface-container-high)]">
         <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true"><path fill="currentColor" d="M5 5h2.2v14H5zM12 12l7.5-6v12zM7.5 12 12 8.4v7.2z" /></svg>
-        Now
+        {nowLabel}
       </button>}
     </div>
   );

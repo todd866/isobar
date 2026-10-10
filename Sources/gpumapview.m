@@ -464,6 +464,7 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
     BOOL _pointerHeld;
     BOOL _morphing;
     double _morphFrom, _morphTo, _morphT;
+    double _tiltBaseZoom, _tiltAppliedZoom, _tiltAppliedPitch, _tiltGain;
     NSButton *_flatButton;
     NSSlider *_globeSlider;
     NSButton *_globeButton;
@@ -1466,12 +1467,31 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     });
 }
 
+// Dolly toward the atmospheric detail as the view lowers. Ratios preserve an
+// independent pinch zoom, and reversing tilt removes only the automatic dolly.
+- (void)applyPitch:(double)pitch globe:(double)globe {
+    if (!(_tiltBaseZoom > 0) || _camera.pitch <= 1e-7) {
+        _tiltBaseZoom = _camera.zoom;
+        double fit = fmin(_camera.viewportW / 360.0, _camera.viewportH / 180.0);
+        double halfLat = fit > 0 ? _camera.viewportH * .5 / (_tiltBaseZoom * fit) : 90;
+        _tiltGain = 1.0 + (fmin(8.0, fmax(1.0, halfLat / .12)) - 1.0) / (1.0 + pow(halfLat / 6.0, 2.0));
+    } else if (_camera.zoom != _tiltAppliedZoom || _camera.pitch != _tiltAppliedPitch) {
+        double oldScale = 1.0 + (_tiltGain - 1.0) * pow(sin(_camera.pitch), 2.0);
+        _tiltBaseZoom = _camera.zoom / oldScale;
+    }
+    double newScale = 1.0 + (_tiltGain - 1.0) * pow(sin(pitch), 2.0);
+    _camera.zoom = _tiltBaseZoom * newScale;
+    _camera.pitch = pitch;
+    _camera.globe = globe;
+    _tiltAppliedZoom = IsobarCameraClamp(_camera).zoom;
+    _tiltAppliedPitch = pitch;
+}
+
 - (void)animateGlobeTo:(double)target reducedMotion:(BOOL)reduced {
     if (target < 0) target = 0;
     if (target > 1) target = 1;
     if (reduced || fabs(target - _camera.globe) < 1e-6) {
-        _camera.globe = target;
-        _camera.pitch = target * kFullTiltPitch;
+        [self applyPitch:target * kFullTiltPitch globe:target];
         _morphing = NO;
         [self syncViewport];
         _camera = IsobarCameraClamp(_camera);
@@ -1502,8 +1522,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     if (!_threeDMode) {
         if (fabs(_camera.globe) > 1e-9 || fabs(_camera.pitch) > 1e-9) {
             _morphing = NO;
-            _camera.globe = 0;
-            _camera.pitch = 0;
+            [self applyPitch:0 globe:0];
             [self syncViewport];
             _camera = IsobarCameraClamp(_camera);
             [self syncSlider];
@@ -1536,8 +1555,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
         return;
     }
     _morphing = NO;
-    _camera.globe = slider.doubleValue;
-    _camera.pitch = _camera.globe * kFullTiltPitch;
+    [self applyPitch:slider.doubleValue * kFullTiltPitch globe:slider.doubleValue];
     _last3DGlobe = _camera.globe;
     [self syncViewport];
     _camera = IsobarCameraClamp(_camera);
@@ -1553,7 +1571,8 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     next.pitch = MIN(kMaxMapPitch, MAX(0.0, next.pitch + delta));
     next.globe = MIN(1.0, MAX(0.0, next.pitch / kFullTiltPitch));
     _morphing = NO;
-    _camera = IsobarCameraClamp(next);
+    [self applyPitch:next.pitch globe:next.globe];
+    _camera = IsobarCameraClamp(_camera);
     _last3DGlobe = _camera.globe;
     [self syncViewport];
     [self syncSlider];
@@ -1629,14 +1648,20 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     [self syncViewport];
     NSPoint p = [self pixels:point];
     double lat = 0, lon = 0;
-    if (!IsobarCameraUnproject(_camera, p.x, p.y, &lat, &lon)) return NO;
+    BOOL anchored = IsobarCameraUnproject(_camera, p.x, p.y, &lat, &lon);
     IsobarCamera next = _camera;
     next.zoom = _camera.zoom * factor;
     if (!isfinite(next.zoom) || !(next.zoom > 0)) return NO;
     // Clamp the requested zoom before solving the anchor.  Clamping after the
     // solve changes the projection around the pointer at both zoom limits.
     next = IsobarCameraClamp(next);
-    if (!MapCameraAnchor(&next, lat, lon, p.x, p.y)) return NO;
+    if (anchored) {
+        IsobarCamera candidate = next;
+        if (MapCameraAnchor(&candidate, lat, lon, p.x, p.y)) next = candidate;
+    }
+    // Sky and unreachable horizon anchors zoom around the current focus.
+    // Never discard an otherwise valid magnification gesture.
+    _morphing = NO;
     // The anchor solve can move the centre toward a pole. Keep the camera in
     // the viewport-dependent legal range after that solve as well.
     _camera = IsobarCameraClamp(next);
@@ -1651,8 +1676,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     if (!isfinite(dx) || !isfinite(dy) || !isfinite(point.x) || !isfinite(point.y)) return;
     if (!_threeDMode && _morphing) {
         _morphing = NO;
-        _camera.globe = 0;
-        _camera.pitch = 0;
+        [self applyPitch:0 globe:0];
         [self syncViewport];
         _camera = IsobarCameraClamp(_camera);
         [self syncSlider];
@@ -1681,7 +1705,8 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     next.globe = next.pitch / kFullTiltPitch;
     if (next.globe < 0) next.globe = 0;
     if (next.globe > 1) next.globe = 1;
-    _camera = IsobarCameraClamp(next);
+    [self applyPitch:next.pitch globe:next.globe];
+    _camera = IsobarCameraClamp(_camera);
     self.didPlaceCamera = YES;
     [self noteUserMoved];
     [self syncSlider];
@@ -1865,8 +1890,8 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     if (dt > 1) dt = 1;
     if (_morphing) {
         _morphT += dt;
-        _camera.globe = MapGlobeAt(_morphFrom, _morphTo, _morphT, kMapMorphSeconds, [self reducedNow]);
-        _camera.pitch = _camera.globe * kFullTiltPitch;
+        double globe = MapGlobeAt(_morphFrom, _morphTo, _morphT, kMapMorphSeconds, [self reducedNow]);
+        [self applyPitch:globe * kFullTiltPitch globe:globe];
         if (_morphT >= kMapMorphSeconds) {
             _camera.globe = _morphTo;
             _morphing = NO;
@@ -1941,7 +1966,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 }
 
 - (CGImageRef)copyImageWithVectorOverlays:(CGImageRef)image wind:(BOOL)wind atmosphere:(BOOL)atmosphere {
-    if (!image || (!(wind && _windBarbs) && !(atmosphere && _atmosphereProduct))) return nil;
+    if (!image || (!(wind && _windBarbs) && !(atmosphere && (self.atmosphereDate || self.timeline.playhead)))) return nil;
     [self syncVectorOverlays];
     size_t width = CGImageGetWidth(image), height = CGImageGetHeight(image);
     if (!(NSWidth(self.bounds) > 0) || !(NSHeight(self.bounds) > 0)) return nil;
@@ -1955,7 +1980,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     NSGraphicsContext *previous = NSGraphicsContext.currentContext;
     NSGraphicsContext.currentContext = [NSGraphicsContext graphicsContextWithCGContext:context flipped:YES];
     if (wind && _windBarbs) [_windView drawRect:_windView.bounds];
-    if (atmosphere && _atmosphereProduct) [_atmosphereView drawRect:_atmosphereView.bounds];
+    if (atmosphere && (self.atmosphereDate || self.timeline.playhead)) [_atmosphereView drawRect:_atmosphereView.bounds];
     NSGraphicsContext.currentContext = previous;
     CGImageRef output = CGBitmapContextCreateImage(context);
     CGContextRelease(context);

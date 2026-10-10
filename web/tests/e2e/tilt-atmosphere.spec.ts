@@ -47,7 +47,9 @@ test('Perth: tilt, pinch, pan, lenses and return overhead retain current place a
   const box=(await stage(page).boundingBox())!;
   await page.mouse.move(box.x+box.width*.7,box.y+box.height*.6);await page.mouse.wheel(0,160); await page.mouse.wheel(0,160);
   await expect.poll(async()=>Number(await stage(page).getAttribute('data-tilt'))).toBeGreaterThan(.2);
-  expect(await camera(page)).toEqual(before);
+  expect((await camera(page)).centerX).toBeCloseTo(before.centerX, 8);
+  expect((await camera(page)).centerY).toBeCloseTo(before.centerY, 8);
+  expect((await camera(page)).halfHeight).toBeLessThan(before.halfHeight);
   await page.waitForTimeout(300);
   expect(await pixelsChanged(flat,await stage(page).screenshot())).toBeGreaterThan(.03);
   // Chromium trackpad pinch delivers ctrl-wheel, not ordinary scroll.
@@ -58,7 +60,10 @@ test('Perth: tilt, pinch, pan, lenses and return overhead retain current place a
   for(const lens of ['rain','temp','pressure']) { await page.locator(`[data-lens=${lens}]`).first().click();expect(await camera(page)).toEqual(moved); }
   expect(await stage(page).getAttribute('data-valid-ms')).toBe(utc);
   await page.getByRole('button',{name:'2D map',exact:true}).click();
-  await expect(stage(page)).toHaveAttribute('data-tilt','0.0000');expect(await camera(page)).toEqual(moved);
+  await expect(stage(page)).toHaveAttribute('data-tilt','0.0000');
+  expect((await camera(page)).centerX).toBeCloseTo(moved.centerX, 8);
+  expect((await camera(page)).centerY).toBeCloseTo(moved.centerY, 8);
+  expect((await camera(page)).halfHeight).toBeGreaterThan(moved.halfHeight);
   expect(errors).toEqual([]);
 });
 
@@ -110,8 +115,8 @@ test('profile geometry, altitude marker and section use the shared forecast cloc
   await expect(page.locator('[data-atmosphere-layer]')).toHaveAttribute('data-profile-state','ready');
   await expect.poll(async()=>Number(await page.locator('[data-atmosphere-layer]').getAttribute('data-layers'))).toBeGreaterThan(0);
   await page.getByRole('button',{name:'Atmospheric section',exact:true}).click();
-  await expect(page.locator('[data-atmosphere-section]')).toContainText('Representative profile');
-  await expect(page.locator('[data-atmosphere-section]')).toContainText('w —');
+  await expect(page.locator('[data-atmosphere-section]')).toContainText('Illustrative profile');
+  await expect(page.locator('[data-atmosphere-section]')).toContainText('↕ m/s');
   const a=await stage(page).screenshot();
   await page.getByRole('slider',{name:'Reference aircraft altitude'}).fill('10000');
   expect(await pixelsChanged(a,await stage(page).screenshot())).toBeGreaterThan(.0001);
@@ -155,7 +160,7 @@ test('real touch intent separates pinch zoom from two-finger tilt',async({page})
   const beforeTilt=await camera(page);
   await touchGesture(page,[{x:cx-34,y:cy-30},{x:cx+34,y:cy-30}],Array.from({length:8},(_,i)=>[{x:cx-34,y:cy-30+i*8},{x:cx+34,y:cy-30+i*8}]));
   await expect.poll(async()=>Number(await stage(page).getAttribute('data-tilt'))).toBeGreaterThan(.05);
-  expect(Math.abs((await camera(page)).halfWidth-beforeTilt.halfWidth)).toBeLessThan(beforeTilt.halfWidth*.05);
+  expect((await camera(page)).halfWidth).toBeLessThan(beforeTilt.halfWidth);
 });
 
 test('timeline hold pauses and release resumes the shared forecast clock',async({page})=>{
@@ -166,32 +171,23 @@ test('timeline hold pauses and release resumes the shared forecast clock',async(
   await page.mouse.up(); await expect.poll(async()=>await stage(page).getAttribute('data-valid-ms')).not.toBe(held);
 });
 
-test('failed profile retries, then reuses its prepared series during playback and return navigation',async({page})=>{
-  await profileFixture(page);
+test('synthetic atmospheric layers animate offline without profile requests',async({page})=>{
   let calls=0;
   await page.route('https://api.open-meteo.com/**',async route=>{
-    const url=new URL(route.request().url());
-    if(!url.searchParams.get('hourly')?.includes('geopotential_height'))return route.fallback();
-    calls++;
-    if(calls===1)return route.fulfill({status:503,body:'unavailable'});
-    return route.fallback();
+    if(new URL(route.request().url()).searchParams.get('hourly')?.includes('geopotential_height')) calls++;
+    return route.abort();
   });
   await open(page);await page.getByRole('button',{name:'3D map',exact:true}).click();
-  await expect(page.getByRole('button',{name:'Retry atmosphere'})).toBeVisible();
-  await expect(page.locator('[data-atmosphere-layer]')).toHaveAttribute('data-layers','0');
-  await page.getByRole('button',{name:'Retry atmosphere'}).click();
-  await expect(page.locator('[data-atmosphere-layer]')).toHaveAttribute('data-profile-state','ready');
-  expect(calls).toBe(2);
-  await page.getByRole('button',{name:'Play',exact:true}).click();await page.waitForTimeout(600);
-  expect(calls).toBe(2);
-  await page.getByRole('button',{name:'Pause',exact:true}).click();
-  await stage(page).evaluate(el=>(el as HTMLElement & {chartApi:Api}).chartApi.setView(-31.9,116.1,10));
-  await page.waitForTimeout(500);
-  await stage(page).evaluate(el=>(el as HTMLElement & {chartApi:Api}).chartApi.setView(-31.9,116.1,.6));
-  await expect(page.locator('[data-atmosphere-layer]')).toHaveAttribute('data-profile-state','ready');
-  await page.waitForTimeout(600);expect(calls).toBe(2);
+  const layer=page.locator('[data-atmosphere-layer]');
+  await expect(layer).toHaveAttribute('data-source','synthetic');
+  await expect.poll(async()=>Number(await layer.getAttribute('data-layers'))).toBeGreaterThan(1);
+  await expect.poll(async()=>Number(await layer.getAttribute('data-flows'))).toBeGreaterThan(10);
+  const first=await layer.screenshot(); await page.waitForTimeout(350);
+  expect(await pixelsChanged(first,await layer.screenshot())).toBeGreaterThan(.0001);
+  await page.getByRole('button',{name:'Atmospheric section',exact:true}).click();
+  await expect(page.locator('[data-atmosphere-section]')).toContainText('Illustrative');
+  expect(calls).toBe(0);
 });
-
 
 test('keyboard navigation and enlarged section remain usable after resize',async({page})=>{
   await profileFixture(page);await open(page);
@@ -237,7 +233,7 @@ test('2D and 3D are explicit modes; overhead tilt does not leave 3D', async ({ p
   const cameraBefore = await camera(page), timeBefore = await map.getAttribute('data-valid-ms');
   await globe.click();
   await expect(globe).toHaveAttribute('aria-pressed', 'true');
-  expect(await camera(page)).toEqual(cameraBefore);
+  expect((await camera(page)).halfHeight).toBeLessThan(cameraBefore.halfHeight);
   await map.locator('canvas[tabindex="0"]').focus();
   for (let i = 0; i < 12; i++) await page.keyboard.press('PageUp');
   await expect(map).toHaveAttribute('data-tilt', '0.0000');
@@ -248,7 +244,7 @@ test('2D and 3D are explicit modes; overhead tilt does not leave 3D', async ({ p
   await flat.click();
   await expect(map).toHaveAttribute('data-map-mode', '2d');
   await expect(map).toHaveAttribute('data-tilt', '0.0000');
-  expect(await camera(page)).toEqual(cameraBefore);
+  for (const key of ['centerX','centerY','halfWidth','halfHeight'] as const) expect((await camera(page))[key]).toBeCloseTo(cameraBefore[key], 8);
   expect(await map.getAttribute('data-valid-ms')).toBe(timeBefore);
   await page.screenshot({ path: testInfo.outputPath('explicit-map-modes.png') });
 });

@@ -11,7 +11,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const desk = pathname === '/decide' || pathname === '/earth';
   const training = pathname === '/train' || pathname === '/e6b' || pathname === '/historical' || pathname === '/history';
-  const isMap = pathname === '/';
+  const isMap = pathname === '/' || pathname === '/history' || pathname === '/historical';
   return (
     <AccountProvider>
       <UnitsProvider>

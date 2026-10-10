@@ -135,6 +135,9 @@ static void CheckDragAndPinch(GPUMapView *view) {
     [sphere performClick:nil];
     Check(sphere.state == NSControlStateValueOn, @"selecting 3D marks the mode selected");
     Check(((NSSlider *)FindID(view, @"gpumap.globe")).enabled, @"the tilt slider is enabled in 3D");
+    // Exercise a partial tilt regardless of the runner's Reduce Motion setting.
+    IsobarCamera tiltStart = view.camera; tiltStart.pitch = 0; tiltStart.globe = 0;
+    view.camera = tiltStart;
     IsobarCamera beforeScroll = view.camera;
     [view scrollByX:0 y:-40 atPoint:at precise:YES command:NO];
     Check(view.camera.pitch > beforeScroll.pitch && view.camera.globe > beforeScroll.globe,
@@ -203,6 +206,42 @@ static void CheckDragAndPinch(GPUMapView *view) {
     changed.testPhase = NSEventPhaseChanged;
     [view magnifyWithEvent:changed];
     Check(view.camera.zoom > beforeMagnify.zoom, @"a changed magnify event reaches the map gesture handler");
+    // Native magnification over the sky still zooms the focused map.
+    IsobarCamera skyCamera = MapCameraMake(-33, 151, 3, 1, 480, 360);
+    skyCamera.pitch = 1.3;
+    view.camera = skyCamera;
+    changed.testLocation = [view convertPoint:NSMakePoint(240, 0) toView:nil];
+    Check(!IsobarCameraUnproject(view.camera, 240, 0, &lat, &lon), @"sky pinch regression starts off the Earth");
+    [view magnifyWithEvent:changed];
+    Check(fabs(view.camera.zoom - 3.6) < 1e-9 && fabs(view.camera.centreLat + 33) < 1e-9,
+        [NSString stringWithFormat:@"magnification over sky zooms without moving the focus (zoom %.4f lat %.4f)",view.camera.zoom,view.camera.centreLat]);
+
+    // Lowering the view makes vertical detail larger; reversing it preserves
+    // the independent zoom chosen by a pinch in the tilted view.
+    [sphere performClick:nil];
+    view.camera = MapCameraMake(-33, 151, 30, 0, 480, 360);
+    [view scrollByX:0 y:-150 atPoint:NSMakePoint(240,180) precise:YES command:NO];
+    Check(view.camera.zoom > 45 && view.camera.zoom < 240, @"tilt progressively moves closer to the atmosphere");
+    [view pinchFactor:1.2 atPoint:NSMakePoint(240,180)];
+    [view scrollByX:0 y:150 atPoint:NSMakePoint(240,180) precise:YES command:NO];
+    Check(fabs(view.camera.zoom - 36) < 1e-6, @"untilt removes the dolly and retains manual pinch zoom");
+
+    view.camera = MapCameraMake(-33,151,18000,0,480,360);
+    [view scrollByX:0 y:-150 atPoint:NSMakePoint(240,180) precise:YES command:NO];
+    [view scrollByX:0 y:150 atPoint:NSMakePoint(240,180) precise:YES command:NO];
+    Check(fabs(view.camera.zoom - 18000) < 1e-6, @"tilt at the zoom limit returns to the original scale");
+
+    for (int sign = -1; sign <= 1; sign += 2) {
+        IsobarCamera orbit = MapCameraMake(sign * 89, 17, 6, 1, 480, 360);
+        orbit.pitch = .6;
+        IsobarCamera beyond = orbit; beyond.centreLat = sign * 93;
+        Check(IsobarCameraProject(beyond, sign * 89, 17, &px, &py), @"a point projects across a pole");
+        Check(MapCameraAnchor(&orbit, sign * 89, 17, px, py), @"drag can anchor across a pole");
+        orbit = IsobarCameraClamp(orbit);
+        Check(sign * orbit.centreLat > 90, @"globe rotation crosses the pole without clamping");
+        Check(IsobarCameraUnproject(orbit, 240, 180, &lat, &lon) && fabs(lat - sign * 87) < .01,
+            @"post-pole picking returns the correct physical latitude");
+    }
     IsobarCamera beforeCancel = view.camera;
     SyntheticMagnifyEvent *cancelled = [SyntheticMagnifyEvent new];
     cancelled.testLocation = at;

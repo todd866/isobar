@@ -214,6 +214,8 @@ static void Journeys(JourneyController *c, NSView *(^root)(void), NSString *surf
     });
     EXPECT(mode3D && mode3D.enabled, "3D mode control is available");
     if (mode3D) [mode3D performClick:nil];
+    IsobarCamera tiltStart = map.camera; tiltStart.pitch=0; tiltStart.globe=0;
+    map.camera=tiltStart;
     NSDate *vectorTime = [c selectedForecastDate];
     IsobarCamera vectorCamera = map.camera;
     NSButton *barbs = (NSButton *)Find(root(), ^BOOL(NSView *v) {
@@ -223,7 +225,9 @@ static void Journeys(JourneyController *c, NSView *(^root)(void), NSString *surf
     if (barbs.state != NSControlStateValueOn) [barbs performClick:nil];
     map = Map(c);
     [map scrollByX:0 y:-150 atPoint:NSMakePoint(NSMidX(map.bounds),NSMidY(map.bounds)) precise:YES command:NO];
-    EXPECT(map.camera.pitch > .2 && SameView(map.camera,vectorCamera), "tilting wind changed the geographic view");
+    EXPECT(map.camera.pitch > .2 && map.camera.zoom > vectorCamera.zoom &&
+        fabs(map.camera.centreLat-vectorCamera.centreLat)<1e-6 && fabs(map.camera.centreLon-vectorCamera.centreLon)<1e-6,
+        "tilting wind must dolly closer without moving geographic focus");
     EXPECT(fabs([[c selectedForecastDate] timeIntervalSinceDate:vectorTime])<1, "tilting wind changed forecast time");
     [map waitForUploads];
     NSString *dir = @"build/qa/journeys";

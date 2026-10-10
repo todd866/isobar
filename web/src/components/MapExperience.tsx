@@ -2,10 +2,12 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { reportPoint } from '../lib/reports/deep-link';
+import { loadHistoricalChart } from '@/lib/history-chart';
+import type { HistoricalCatalog } from '@/lib/history';
 import { ATTRIBUTION } from '@/components/Attribution';
 import { australiaAspects, clampToData, frameData, insetBox, panBy, zoomWithinData, type DataFrame } from '@/lib/camera';
 import { AtmosphereMap } from './AtmosphereMap';
-import { withTilt, zoomTilt, anchorTilt, MAX_TILT } from '@/lib/tilt-navigation';
+import { withTilt, zoomTilt, anchorTilt, MAX_TILT, TiltFraming } from '@/lib/tilt-navigation';
 import { mapUnproject, mapProject } from '@/lib/lambert';
 import { bindTrackpadPinch } from '@/lib/trackpad';
 import {
@@ -237,7 +239,12 @@ function chromeAvoid(stage: Element): { x: number; y: number; w: number; h: numb
   });
 }
 
-export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | null }) {
+export function MapExperience({ initialGeo = null, historical=false }: { initialGeo?: CoarseGeo | null; historical?:boolean }) {
+  const historicalStartRef=useRef<number|null>(null);
+  const [historyRequest,setHistoryRequest]=useState<{event?:string;date?:string;hour?:number}|null>(null);
+  const [historyCatalog,setHistoryCatalog]=useState<HistoricalCatalog|null>(null);
+  const [historyEvent,setHistoryEvent]=useState('');
+  const [historyError,setHistoryError]=useState('');
   const stageRef = useRef<HTMLDivElement>(null);
   const glCanvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -288,6 +295,7 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
   const [threeD, setThreeD] = useState(false);
   const savedTiltRef = useRef(Math.PI / 4);
   const tiltRef = useRef(0);
+  const tiltFramingRef = useRef(new TiltFraming());
   const [tilt, setTilt] = useState(0);
   const touchGestureRef = useRef<{ mode: 'pending' | 'pinch' | 'tilt'; distance: number; y: number; lastDistance: number; lastY: number } | null>(null);
   const cameraMoveRef = useRef<(CameraMove & { restore?: { camera: Camera; frame: DataFrame } }) | null>(null);
@@ -377,7 +385,9 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
   function changeTilt(value: number) {
     if (!threeDRef.current || !glRef.current || GEO.projection !== 'equirectangular') return;
     const next = Math.max(0, Math.min(MAX_TILT, value));
-    tiltRef.current = next < .001 ? 0 : next;
+    const pitch = next < .001 ? 0 : next;
+    if (cameraRef.current) cameraRef.current = tiltFramingRef.current.apply(cameraRef.current, tiltRef.current, pitch);
+    tiltRef.current = pitch;
     setTilt(tiltRef.current);
     redrawRef.current?.();
   }
@@ -386,7 +396,9 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
     if (!enabled) savedTiltRef.current = tiltRef.current;
     threeDRef.current = enabled;
     setThreeD(enabled);
-    tiltRef.current = enabled ? savedTiltRef.current : 0;
+    const pitch = enabled ? savedTiltRef.current : 0;
+    if (cameraRef.current) cameraRef.current = tiltFramingRef.current.apply(cameraRef.current, tiltRef.current, pitch);
+    tiltRef.current = pitch;
     setTilt(tiltRef.current);
     touchGestureRef.current = null;
     redrawRef.current?.();
@@ -619,12 +631,21 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
     let cancel = false;
     let unsubscribe = () => {};
     // Pressure streams up front; a colour field loads when its lens is chosen.
-    loadChart({ field: 'none', fields: 'opened' }).then((loaded) => {
+    if(historical){setChart(undefined);setHistoryError('');}
+    const load = historical ? (async()=>{
+      const query=new URLSearchParams(window.location.search);
+      const result=await loadHistoricalChart(historyRequest??{event:query.get('event')??undefined,date:query.get('date')??undefined,hour:query.has('hour')?Number(query.get('hour')):undefined});
+      if(cancel)return null;
+      historicalStartRef.current=result.initialMs;
+      setHistoryCatalog(result.catalog);setHistoryEvent(result.collection.id);
+      return result.chart;
+    })() : loadChart({ field:'none',fields:'opened' });
+    load.then((loaded) => {
       if (cancel) return;
       // The first painted frame is the wall clock. Minute 0 is the model run
       // (8:00 am AWST on a 00Z run) and must not flash as "now".
       if (loaded) {
-        const minuteNow = nowMinuteOf(loaded.manifest, Date.now());
+        const minuteNow = nowMinuteOf(loaded.manifest, historicalStartRef.current??Date.now());
         clockRef.current = { ...clockRef.current, minute: minuteNow, playing: true };
         setMinute(minuteNow);
         setPlaying(true);
@@ -637,7 +658,7 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
         const value = localStorage.getItem('isobar.place');
         if (value && isPlaceId(value)) storedId = value;
       } catch { /* first visit */ }
-      const storedPlace = storedId ?? loaded.manifest.places[0]?.id ?? 'sydney';
+      const storedPlace = (historical?null:storedId) ?? loaded.manifest.places[0]?.id ?? 'sydney';
       placeSourceRef.current = storedId ? 'stored' : 'default';
       setPlaceHint(storedId ? readHint() : true);
       const storedSpeed = readStoredSpeed();
@@ -665,14 +686,14 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
         loaded.listeners.delete(listener);
         window.clearTimeout(timer);
       };
-    }).catch(() => {
-      if (!cancel) setChart(null);
+    }).catch((reason:unknown) => {
+      if (!cancel) {setChart(null);setHistoryError(reason instanceof Error?reason.message:'Archive unavailable');}
     });
     return () => {
       cancel = true;
       unsubscribe();
     };
-  }, []);
+  }, [historical,historyRequest]);
 
   useEffect(() => {
     setSavedIds(readSavedIds());
@@ -839,7 +860,7 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
       setRenderer('canvas');
     }
 
-    const nowMinute = () => nowMinuteOf(manifest, Date.now());
+    const nowMinute = () => nowMinuteOf(manifest, historicalStartRef.current??Date.now());
     clockRef.current = { minute: nowMinute(), playing: true, direction: 1 };
     setMinute(clockRef.current.minute);
     setPlaying(true);
@@ -1783,14 +1804,14 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
     : roughPlace;
   if (place) focusRef.current = { lat: place.lat, lon: place.lon };
   const placeForecast = place && forecast?.id === place.id ? forecast.data : null;
-  const shownForecast = place?.manifest ? null : placeForecast;
+  const shownForecast = historical || place?.manifest ? null : placeForecast;
   const span = chart ? (chart.manifest.forecastHours[chart.manifest.forecastHours.length - 1] - chart.manifest.forecastHours[0]) * 60 : 0;
   const runMs = chart ? Date.parse(chart.manifest.run) : 0;
   const validMs = chart ? runMs + (chart.manifest.forecastHours[0] * 60 + minute) * 60000 : 0;
-  const zone = (place?.manifest ? place.zone : shownForecast?.zone) || 'UTC';
+  const zone = historical?'UTC':(place?.manifest ? place.zone : shownForecast?.zone) || 'UTC';
   const displayZone = clockZone(clockMode, zone);
   const nowMs = Date.now();
-  const nearNow = chart ? Math.abs(validMs - nowMs) < 90_000 : false;
+  const nearNow = !historical && chart ? Math.abs(validMs - nowMs) < 90_000 : false;
   useEffect(() => {
     trafficDirtyRef.current = true;
     if (trafficOn && !nearNow) notifyMap('Traffic replay · recorded this session');
@@ -1802,6 +1823,10 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
 
   // Tiles start at today. Collector places keep their export; any other place uses its own forecast.
   const days = useMemo(() => {
+    if(historical && chart){
+      const dates=[...new Set(chart.manifest.forecastHours.map(hour=>new Date(Date.parse(chart.manifest.run)+hour*3600000).toISOString().slice(0,10)))];
+      return dates.map(date=>({key:date,weekday:new Date(date+'T00:00:00Z').toLocaleDateString('en-GB',{day:'2-digit',month:'short',timeZone:'UTC'}),dayStart:Date.parse(date+'T00:00:00Z'),dayEnd:Date.parse(date+'T00:00:00Z')+86400000,hi:null,lo:null,rain:null,icon:null}));
+    }
     if (shownForecast) {
       const today = localMidnight(Date.now(), shownForecast.zone || 'UTC');
       return forecastDaySummaries(shownForecast).filter((day) => day.dayEnd > today);
@@ -1810,7 +1835,7 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
     const today = localMidnight(Date.now(), place.zone || 'UTC');
     const base = daySummaries(chart.points, place.id, place.zone).filter((day) => day.dayEnd > today);
     return placeForecast ? overlayUv(base, placeForecast) : base;
-  }, [chart, place?.id, place?.manifest, place?.zone, shownForecast, placeForecast]);
+  }, [historical,chart, place?.id, place?.manifest, place?.zone, shownForecast, placeForecast]);
   const reading = place?.manifest && chart?.points ? readingAt(chart.points, place.id, validMs) : forecastAt?.reading ?? null;
   const nowReading = place?.manifest && chart?.points ? readingAt(chart.points, place.id, nowMs) : forecastNow?.reading ?? null;
   const headerMs = nearNow ? nowMs : validMs;
@@ -1866,7 +1891,7 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
   }, [chart, placeKey, placeLat, placeLon, GEO]);
 
   useEffect(() => {
-    if (!place) {
+    if (historical || !place) {
       setForecast(null);
       return;
     }
@@ -1882,7 +1907,7 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
   }, [placeKey, placeLat, placeLon]);
 
   useEffect(() => {
-    if (!place || !chart) {
+    if (historical || !place || !chart) {
       setFlyReport(null);
       setFlyKnown(false);
       return;
@@ -2137,8 +2162,8 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
     cancelTimelineHoverArm();
     hoverHoldRef.current = false;
     holdingRef.current = false;
-    remember({ speed: REAL_TIME });
-    clockRef.current = { minute: next, playing: true, direction: 1, followNow: true };
+    if (!historical) remember({ speed: REAL_TIME });
+    clockRef.current = { minute: next, playing: true, direction: 1, followNow: !historical };
     setMinute(next);
     setPlaying(true);
   }
@@ -2308,6 +2333,7 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
     }
   }
   function toggleChat() {
+    if(historical){notifyMap('Historical questions are not connected yet');return;}
     if (chatOpen) { closeChat(); return; }
     trackUsage('chat-open', {});
     setChatOpen(true);
@@ -2342,10 +2368,12 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
     setWindBarbs(value); windRef.current = value;
   }
   function toggleSatellite(value: boolean) {
+    if(historical&&value){notifyMap('Satellite unavailable for this date');return;}
     if (value) useOptional('satellite', 'Satellite on'); else { disableOptional('satellite'); notifyMap('Satellite off'); }
     satelliteRef.current = value; setSatellite(value);
   }
   function toggleTraffic(value: boolean) {
+    if(historical&&value){notifyMap('Traffic unavailable for this date');return;}
     trafficRef.current = value; setTrafficOn(value); trafficDirtyRef.current = true;
     if (value) {
       trafficSessionRef.current = crypto.randomUUID();
@@ -2364,6 +2392,7 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
     setFlyDetail(value);
   }
   function changeLens(next: Lens) {
+    if(historical && (['fly','surf','kite'].includes(next)||next==='rain'&&!chart?.manifest.variables.rain24||next==='temp'&&!chart?.manifest.variables.t2m)){notifyMap('This layer is unavailable for the selected date');return;}
     if (teachingRef.current || next === lens) return;
     noteHint('lens');
     // Optional overlays are lens-scoped and reset on a lens change; the selected
@@ -2513,6 +2542,7 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
       speed={speed}
       onSpeed={(value) => remember({ speed: value })}
       onNow={goNow}
+      nowLabel={historical?'Start':'Now'}
     />
   );
   const timelineNode = (bare: boolean) => chart ? (
@@ -2525,7 +2555,7 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
       forecastEndMs={forecastEndMs}
       validMs={validMs}
       zone={displayZone}
-      timeState={mapTimeState(validMs, nowMs)}
+      timeState={historical?{live:false,label:'HISTORY'}:mapTimeState(validMs, nowMs)}
       valueText={chartTitle(validMs, displayZone, nearNow)}
       span={span}
       minute={minute}
@@ -2533,14 +2563,15 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
     />
   ) : null;
 
-  const timeState = chart ? mapTimeState(validMs, nowMs) : null;
+  const timeState = chart ? historical?{live:false,label:'HISTORY'}:mapTimeState(validMs, nowMs) : null;
   const heldTraffic = !playing && heldTrafficRef.current && Math.abs(validMs - heldTrafficRef.current.selectedMs) < 1 ? heldTrafficRef.current : null;
   const trafficLive = liveTrafficAtTime(clockRef.current.followNow, playing, validMs, nowMs);
   return (
-    <div className="flex min-h-0 flex-1 flex-col" data-map-page>
+    <div className="flex min-h-0 flex-1 flex-col" data-map-page data-history-mode={historical?'true':undefined}>
       <div ref={chromeRef} data-map-chrome data-collapsed={chromeCollapsed ? 'true' : 'false'} className="map-chrome shrink-0">
         <PressNote text={chromeNote.note} />
         <div ref={chromeBodyRef} className="map-chrome-body">
+          {historical&&historyCatalog?<div className="flex items-center gap-2 px-3 pt-2 md:px-4"><select aria-label="Historical event" value={historyEvent} onChange={e=>{setHistoryRequest({event:e.target.value});setPoint(null);}} className="min-w-0 rounded-md bg-[var(--md-surface-container-high)] px-2 py-1 text-sm">{historyCatalog.collections.map(c=><option key={c.id} value={c.id}>{c.title} · {c.days[0]?.date.slice(0,4)}</option>)}</select><a href="/" className="text-sm text-[var(--md-primary)]">Present day</a></div>:null}
           {chromeCollapsed ? (
             <CompactForecast
               placeName={place?.name ?? ''}
@@ -2628,7 +2659,7 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
       {chart === undefined ? (
         <p className="px-4 py-6 text-sm text-[var(--md-on-surface-variant)]">Loading chart</p>
       ) : chart === null ? (
-        <p className="px-4 py-6 text-sm">Chart unavailable</p>
+        <p className="px-4 py-6 text-sm" role="alert">{historical?historyError||'Historical chart unavailable':'Chart unavailable'}</p>
       ) : (
         <>
 
@@ -2801,7 +2832,7 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
               />
               <canvas ref={windCanvasRef} className="pointer-events-none absolute" aria-hidden="true" />
               <canvas ref={trafficCanvasRef} data-traffic-layer className="pointer-events-none absolute" aria-hidden="true" />
-              {cameraRef.current && GEO.projection === 'equirectangular' && validMs > 0 ? <AtmosphereMap camera={renderCamera(cameraRef.current)} geo={GEO}
+              {cameraRef.current && GEO.projection === 'equirectangular' && Number.isFinite(validMs) ? <AtmosphereMap camera={renderCamera(cameraRef.current)} geo={GEO}
                 lat={cameraRef.current.centerY} lon={((cameraRef.current.centerX / GEO.F + GEO.lon0 + 540) % 360) - 180}
                 validMs={validMs} width={stageSize.width} height={stageSize.height} active={tilt > .02} /> : null}
               {trafficOn && trafficReplay ? <span className="traffic-replay-status" data-traffic-replay={trafficReplay} title="Recorded during this viewing session. Earlier history and gaps are unavailable.">{trafficReplay === 'replay' ? 'Replay · session' : 'No recorded traffic'}</span> : null}
@@ -2813,7 +2844,7 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
               {chip && chart ? (() => {
                 const named = describePoint(chip, { towns: pointPlaces, airports: airportRows, manifest: chart.manifest.places, atSea: pointAtSea(chart, chip.lat, chip.lon) });
                 return <MapPointChip title={named.title} detail={named.detail} left={chip.left} top={chip.top} note={chip.note} section
-                  onAsk={() => { setPoint({ lat: chip.lat, lon: chip.lon }); setFly(false); setChatOpen(true); flashChip('Ask about here'); }}
+                  onAsk={() => { if(historical){notifyMap('Historical questions are not connected yet');return;} setPoint({ lat: chip.lat, lon: chip.lon }); setFly(false); setChatOpen(true); flashChip('Ask about here'); }}
                   onPlace={() => {
                     const outcome = makeThisPlace(chip.lat, chip.lon);
                     const note = outcome === 'restored' ? 'Restored' : outcome === 'same' ? 'Your place' : 'Set as my place';
@@ -2848,7 +2879,7 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
                 {phone && lens === 'fly' ? <span className="relative grid"><button type="button" aria-label="Traffic" aria-pressed={trafficOn} onClick={() => { trafficNote.show(trafficOn ? 'Traffic off' : 'Traffic on'); toggleTraffic(!trafficOn); }}><TrafficIcon /></button><PressNote text={trafficNote.note} /></span> : null}
                 <button type="button" aria-label="Data sources" title="Data sources" aria-expanded={showSources} onClick={() => setShowSources((v) => !v)}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.7" /><path fill="currentColor" d="M11.2 10.2h1.6V16h-1.6zM11.2 7.4h1.6V9h-1.6z" /></svg></button>
                 </div>
-                {showSources ? <div className="map-sources"><div ref={setExplainHost} /><p role="note">{flowWindLegend(flowSource)}. {ATTRIBUTION}</p></div> : null}
+                {showSources ? <div className="map-sources"><div ref={setExplainHost} /><p role="note">{flowWindLegend(flowSource)}. {threeD ? 'Atmospheric layers use synthetic data with scale-adapted height and emphasised vertical motion. ' : ''}{historical?chart.manifest.attribution.map(a=>`${a.source} · ${a.licence}`).join('; '):ATTRIBUTION}</p></div> : null}
               </div> : null}
               {teachHere || teaching ? <MapTeaching geo={GEO} chart={chart} complete={complete} minute={minute} camera={cameraRef.current} width={stageSize.width} height={stageSize.height}
                 onActive={(active, at) => {
@@ -2863,7 +2894,7 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
                 }}
                 onFocus={focusFeature} onField={(f) => remember({ field: f })} explainHost={explainHost} autoTour={autoTour} onStarted={() => setShowSources(false)} /> : null}
               {phone && !teaching ? <div className="map-chat-float"><ChatButton open={chatOpen} onClick={toggleChat} /></div> : null}
-              <MapHints phone={phone} />
+              {!historical && !threeD ? <MapHints phone={phone} /> : null}
               <PhoneHoldNames active={phone} />
               {windBarbs ? <span className="pointer-events-none absolute bottom-16 right-2 rounded bg-[var(--md-surface)]/90 px-2 py-1 text-[10px] sm:bottom-6">10 m wind · barb = 10 kt · half = 5</span> : null}
               <div className="map-legend pointer-events-none absolute bottom-2 left-2 flex items-center gap-2 px-2 py-0.5 text-[11px] tabular-nums" data-pressure-legend={units.pressure} data-pressure-state={pressureLegend} aria-busy={!!pendingField}>
@@ -2885,7 +2916,7 @@ export function MapExperience({ initialGeo = null }: { initialGeo?: CoarseGeo | 
               {chart.manifest.attribution.some((a) => a.source.startsWith('Synthetic')) ? <span className="chart-fixture-note pointer-events-none text-[10px] font-medium text-[var(--md-on-surface-variant)]">Synthetic chart · test data</span> : null}
             </div>
             {fly && flyDetail && !chatOpen && airport ? <FlyPanel airport={airport} place={place ?? null} zone={displayZone} validMs={validMs} nowMs={nowMs} onClose={() => toggleSection(false)} anchorRef={panelRef} /> : null}
-            {pointVisible && point && !chatOpen && !coastalLens ? <PointPanel point={point} name={pointTitle} detail={pointDetail} isPlace={place?.id === placeForPoint(point.lat, point.lon, manifestList, pointPlaces, airportRows, { atSea: pointAtSea(chart, point.lat, point.lon) }).id} onMakePlace={() => makeThisPlace(point.lat, point.lon)} validMs={validMs} lens={lens} terrainM={terrainM} section={sectionSamples} orographyM={orographyM} mslpHpa={mslpHpa}
+            {pointVisible && point && !chatOpen && !coastalLens ? <PointPanel archiveOnly={historical} point={point} name={pointTitle} detail={pointDetail} isPlace={place?.id === placeForPoint(point.lat, point.lon, manifestList, pointPlaces, airportRows, { atSea: pointAtSea(chart, point.lat, point.lon) }).id} onMakePlace={() => makeThisPlace(point.lat, point.lon)} validMs={validMs} lens={lens} terrainM={terrainM} section={sectionSamples} orographyM={orographyM} mslpHpa={mslpHpa}
               collectorIcao={chart.aviation?.airports.find((item) => distanceBearing(point.lat, point.lon, item.lat, item.lon).km < 1)?.icao}
               onClose={() => closePoint()} anchorRef={panelRef} panelRef={pointPanelRef} /> : null}
             {coastalLens && !teaching && !chatOpen && (point || place) ? <CoastalPanel

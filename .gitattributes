@@ -1,2 +1,3 @@
 docs/design/ export-ignore
 HANDOFF.md export-ignore
+.git-archive-revision export-subst

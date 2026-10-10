@@ -5,6 +5,19 @@
 #include <math.h>
 #include <stdio.h>
 
+@interface AtmosphereMapView (TestSampling)
+- (NSDictionary *)sample;
+- (void)drawSyntheticFlows;
+@end
+@interface SeedProbe : AtmosphereMapView
+@property(nonatomic) NSUInteger projectedSeeds;
+@end
+@implementation SeedProbe
+- (BOOL)projectLat:(double)lat lon:(double)lon height:(double)height x:(double *)x y:(double *)y {
+    (void)lat; (void)lon; (void)height; (void)x; (void)y;
+    self.projectedSeeds++; return NO;
+}
+@end
 static int failures;
 static void Check(BOOL ok, NSString *message) {
     if (!ok) { fprintf(stderr, "FAIL %s\n", message.UTF8String); failures++; }
@@ -134,10 +147,32 @@ int main(void) { @autoreleasepool {
     WriteScreenshot(high);
 
     view.product = nil;
+    view.date = nil;
     [view setNeedsDisplay:YES];
     NSBitmapImageRep *blank = Capture(view, window);
-    Check(badge.hidden && [view hitTest:NSMakePoint(NSMidX(badge.frame), NSMidY(badge.frame))] == nil, @"missing product hides profile interaction");
-    Check(InkPixels(blank) < InkPixels(profile), @"missing product removes profile drawing");
+    Check(badge.hidden && [view hitTest:NSMakePoint(NSMidX(badge.frame), NSMidY(badge.frame))] == nil, @"missing date hides profile interaction");
+    Check(InkPixels(blank) < InkPixels(profile), @"missing date removes profile drawing");
+
+    AtmosphereMapView *synthetic=[AtmosphereMapView new];
+    synthetic.camera=MapCameraMake(-31.94,115.97,32,0,640,420);
+    IsobarCamera syntheticCamera=synthetic.camera; syntheticCamera.pitch=0.8; synthetic.camera=syntheticCamera;
+    synthetic.date=date; synthetic.latitude=-31.94; synthetic.longitude=115.97;
+    NSBitmapImageRep *syntheticBitmap=Capture(synthetic,window);
+    NSButton *syntheticBadge=[synthetic valueForKey:@"disclosureButton"];
+    Check(!syntheticBadge.hidden && InkPixels(syntheticBitmap)>20, @"synthetic layered wind renders without a product");
+    SeedProbe *probe=[[SeedProbe alloc] initWithFrame:NSMakeRect(0,0,640,420)]; probe.date=date;
+    for (NSNumber *latitude in @[@93,@106,@(-93),@(-106),@89.99,@(-89.99)]) {
+        IsobarCamera orbit=MapCameraMake(latitude.doubleValue,12,10000,0,640,420);
+        orbit.centreLat=latitude.doubleValue; orbit.pitch=.8; probe.camera=orbit;
+        probe.projectedSeeds=0; [probe drawSyntheticFlows];
+        Check(probe.projectedSeeds>0,@"pole orbit retains atmosphere seeds at close zoom");
+        NSDictionary *orbital=[probe sample];
+        if (fabs(latitude.doubleValue)>90) {
+            orbit.centreLat=latitude.doubleValue>0?180-latitude.doubleValue:-180-latitude.doubleValue;
+            orbit.centreLon=-168; probe.camera=orbit;
+            Check([orbital isEqual:[probe sample]],@"pole orbit samples equivalent physical location");
+        }
+    }
     [window close];
     return failures ? 1 : 0;
 } }

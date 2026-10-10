@@ -48,3 +48,26 @@ export function zoomTilt(geo: Lambert, camera: Camera, pitch: number, x: number,
   const next = zoomWithinData(geo, camera, 0, 0, factor, frame);
   return point ? anchorTilt(geo, next, pitch, point, x, y, frame, elevation) : next;
 }
+
+/** Frame a useful atmospheric depth while keeping global overviews recognisable. */
+export function atmosphereFramingGain(halfHeight: number): number {
+  return 1 + (Math.min(8, Math.max(1, halfHeight / .12)) - 1) / (1 + (halfHeight / 6) ** 2);
+}
+export class TiltFraming {
+  private base = 0;
+  private last = 0;
+  private gain = 1;
+  apply(camera: Camera, previousPitch: number, pitch: number): Camera {
+    if (!this.base || previousPitch === 0) {
+      this.base = camera.halfHeight;
+      this.gain = atmosphereFramingGain(this.base);
+    } else if (this.last && Math.abs(camera.halfHeight - this.last) > 1e-10) {
+      // Pinch remains independent: reversing tilt keeps the user's zoom change.
+      this.base *= camera.halfHeight / this.last;
+    }
+    const scale = 1 + (this.gain - 1) * Math.sin(pitch) ** 2;
+    const halfHeight = this.base / scale;
+    this.last = halfHeight;
+    return {...camera, halfHeight, halfWidth: camera.halfWidth * halfHeight / camera.halfHeight};
+  }
+}

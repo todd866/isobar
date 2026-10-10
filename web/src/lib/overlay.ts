@@ -327,14 +327,16 @@ export function projectedPaths(
 export const STROKE_CHUNK_VERTICES = 64;
 interface StrokeRingCache {
   lat: ArrayLike<number>;
+  closed: boolean;
   unwrapLon: Float64Array;
   west: number; east: number;
   chunks: { start: number; end: number; west: number; east: number; south: number; north: number }[];
 }
 const strokeRingCache = new WeakMap<object, StrokeRingCache>();
-function strokeRingCacheEntry(lon: ArrayLike<number>, lat: ArrayLike<number>): StrokeRingCache | null {
+const surfaceBoundsCache = new WeakMap<object, { width: number; height: number; padding: number; bounds: { west: number; east: number; south: number; north: number } | null }>();
+function strokeRingCacheEntry(lon: ArrayLike<number>, lat: ArrayLike<number>, closed: boolean): StrokeRingCache | null {
   const cached = strokeRingCache.get(lon as object);
-  if (cached?.lat === lat) return cached;
+  if (cached?.lat === lat && cached.closed === closed) return cached;
   const n = lon.length, unwrapLon = new Float64Array(n);
   let west = Infinity, east = -Infinity;
   for (let i = 0; i < n; i += 1) {
@@ -349,33 +351,82 @@ function strokeRingCacheEntry(lon: ArrayLike<number>, lat: ArrayLike<number>): S
     const end = Math.min(start + STROKE_CHUNK_VERTICES, n);
     const box = { start, end, west: Infinity, east: -Infinity, south: Infinity, north: -Infinity };
     // Include joining segments in the bounds, even if neither chunk has an
-    // interior vertex inside the viewport. Closed endpoints are conservative
-    // extra bounds for open paths too, allowing the same immutable cache.
+    // interior vertex inside the viewport. Closed rings also include their
+    // wraparound neighbour; open paths stop at their actual endpoints.
     for (let k = start - 1; k <= end; k += 1) {
+      if (!closed && (k < 0 || k >= n)) continue;
       const i = (k + n) % n;
       box.west = Math.min(box.west, unwrapLon[i]); box.east = Math.max(box.east, unwrapLon[i]);
       box.south = Math.min(box.south, lat[i]); box.north = Math.max(box.north, lat[i]);
     }
     chunks.push(box);
   }
-  const entry = { lat, unwrapLon, west, east, chunks };
+  const entry = { lat, closed, unwrapLon, west, east, chunks };
   strokeRingCache.set(lon as object, entry);
   return entry;
+}
+
+/** A surface camera can expose a curved, clipped footprint. Sample its whole
+ * viewport boundary; any horizon/pole/longitude ambiguity keeps the safe
+ * all-world projection. The returned box is deliberately only a broad reject
+ * test, so crossing chunks and source indices remain intact. */
+function computeSurfaceStrokeBounds(camera: Camera, width: number, height: number, padding: number): { west: number; east: number; south: number; north: number } | null {
+  if (!camera.surface || width <= 0 || height <= 0) return null;
+  const samples: { lat: number; lon: number }[] = [];
+  const steps = 32;
+  const boundary: [number, number][] = [];
+  for (let i = 0; i <= steps; i += 1) boundary.push([(i / steps) * 2 - 1, -1]);
+  for (let i = 1; i <= steps; i += 1) boundary.push([1, (i / steps) * 2 - 1]);
+  for (let i = steps - 1; i >= 0; i -= 1) boundary.push([(i / steps) * 2 - 1, 1]);
+  for (let i = steps - 1; i > 0; i -= 1) boundary.push([-1, (i / steps) * 2 - 1]);
+  for (const [x, y] of boundary) {
+    const point = camera.surface.unproject(x, y);
+    if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lon) || Math.abs(point.lat) >= 88.5) return null;
+    samples.push(point);
+  }
+  if (!samples.length) return null;
+  const unwrapped: number[] = [samples[0].lon];
+  for (let i = 1; i < samples.length; i += 1) {
+    let lon = samples[i].lon;
+    lon += Math.round((unwrapped[i - 1] - lon) / 360) * 360;
+    unwrapped.push(lon);
+  }
+  const west = Math.min(...unwrapped), east = Math.max(...unwrapped);
+  if (!(east >= west) || east - west >= 180) return null;
+  const south = Math.min(...samples.map((point) => point.lat));
+  const north = Math.max(...samples.map((point) => point.lat));
+  const padLon = Math.max(0.25, 2 * padding * camera.halfWidth / width);
+  const padLat = Math.max(0.25, 2 * padding * camera.halfHeight / height);
+  return { west: west - padLon, east: east + padLon, south: Math.max(-90, south - padLat), north: Math.min(90, north + padLat) };
+}
+
+function surfaceStrokeBounds(camera: Camera, width: number, height: number, padding: number): { west: number; east: number; south: number; north: number } | null {
+  const surface = camera.surface;
+  if (!surface) return null;
+  const cached = surfaceBoundsCache.get(surface as object);
+  if (cached && cached.width === width && cached.height === height && cached.padding === padding) return cached.bounds;
+  const bounds = computeSurfaceStrokeBounds(camera, width, height, padding);
+  surfaceBoundsCache.set(surface as object, { width, height, padding, bounds });
+  return bounds;
 }
 
 /** Project only intersecting coast/border chunks; preserve every source index.
  * Invalid coordinates and non-flat projections retain the general path. */
 export function projectedStrokePaths(geo: Lambert, camera: Camera, width: number, height: number,
   lon: ArrayLike<number>, lat: ArrayLike<number>, closed: boolean, padding = 4): { points: (Point | null)[]; closed: boolean }[] {
-  if (camera.surface || geo.projection !== 'equirectangular' || !geo.valid || !lon.length || width <= 0 || height <= 0)
+  if (geo.projection !== 'equirectangular' || !geo.valid || !lon.length || width <= 0 || height <= 0)
     return projectedPaths(geo, camera, width, height, lon, lat, closed);
-  const cache = strokeRingCacheEntry(lon, lat);
+  const cache = strokeRingCacheEntry(lon, lat, closed);
   if (!cache) return projectedPaths(geo, camera, width, height, lon, lat, closed);
+  const surfaceBounds = camera.surface ? surfaceStrokeBounds(camera, width, height, padding) : null;
+  if (camera.surface && !surfaceBounds) return projectedPaths(geo, camera, width, height, lon, lat, closed);
   const centre = geo.lon0 + camera.centerX / geo.F;
   const halfLon = camera.halfWidth / geo.F;
-  const padLon = 2 * padding * halfLon / width, padLat = 2 * padding * camera.halfHeight / height;
-  const west = centre - halfLon - padLon, east = centre + halfLon + padLon;
-  const south = camera.centerY - camera.halfHeight - padLat, north = camera.centerY + camera.halfHeight + padLat;
+  const flatPadLon = 2 * padding * halfLon / width, flatPadLat = 2 * padding * camera.halfHeight / height;
+  const west = surfaceBounds?.west ?? centre - halfLon - flatPadLon;
+  const east = surfaceBounds?.east ?? centre + halfLon + flatPadLon;
+  const south = surfaceBounds?.south ?? camera.centerY - camera.halfHeight - flatPadLat;
+  const north = surfaceBounds?.north ?? camera.centerY + camera.halfHeight + flatPadLat;
   const lo = Math.ceil((west - cache.east) / 360), hi = Math.floor((east - cache.west) / 360);
   const copies: { points: (Point | null)[]; closed: boolean }[] = [];
   for (let copy = lo; copy <= hi && copy < lo + 3; copy += 1) {
@@ -388,8 +439,11 @@ export function projectedStrokePaths(geo: Lambert, camera: Camera, width: number
       for (let k = chunk.start - 1; k <= chunk.end; k += 1) {
         if (!closed && (k < 0 || k >= lon.length)) continue;
         const i = (k + lon.length) % lon.length;
-        points[i] = { x: ((cache.unwrapLon[i] + shift - centre) / halfLon + 1) * width / 2,
-          y: (1 - (lat[i] - camera.centerY) / camera.halfHeight) * height / 2 };
+        const projected = camera.surface
+          ? toScreen(geo, camera, width, height, cache.unwrapLon[i] + shift, lat[i])
+          : { x: ((cache.unwrapLon[i] + shift - centre) / halfLon + 1) * width / 2,
+            y: (1 - (lat[i] - camera.centerY) / camera.halfHeight) * height / 2 };
+        if (projected) points[i] = projected;
       }
     }
     if (visible) copies.push({ points, closed: closed && Math.abs(cache.unwrapLon[lon.length - 1] - cache.unwrapLon[0]) < 180 });

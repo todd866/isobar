@@ -25,8 +25,8 @@ if [[ ! "$MINIMUM_MACOS" =~ '^[0-9]+\.[0-9]+(\.[0-9]+)?$' ]]; then
 fi
 SHORT=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
 BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist)
-if [[ "$SHORT" != "1.11.0" || "$BUILD" != "36" ]]; then
-    echo "build.sh: ERROR — Info.plist version is ${SHORT} (${BUILD}); expected 1.11.0 (36)." >&2
+if [[ "$SHORT" != "1.11.1" || "$BUILD" != "37" ]]; then
+    echo "build.sh: ERROR — Info.plist version is ${SHORT} (${BUILD}); expected 1.11.1 (37)." >&2
     exit 1
 fi
 
@@ -63,15 +63,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
     -framework Cocoa -framework WebKit -framework Security -framework ServiceManagement -framework CoreLocation -framework Vision -framework CoreVideo -framework CoreMedia -framework AVFoundation -framework QuartzCore -framework Metal -framework CoreText -framework Accelerate -lz -lsqlite3 \
     -o "$APP/Contents/MacOS/Isobar"
 install -m 0644 Info.plist "$APP/Contents/Info.plist"
-python3 - "$APP/Contents/Info.plist" <<'PYINFO'
-import plistlib, subprocess, sys
-from pathlib import Path
-path = Path(sys.argv[1])
-info = plistlib.loads(path.read_bytes())
-info['IsobarSourceRevision'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
-info['IsobarSourceDirty'] = bool(subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=no'], text=True).strip())
-path.write_bytes(plistlib.dumps(info))
-PYINFO
+python3 tools/stamp-native-source.py "$APP/Contents/Info.plist"
 for catalogue in stations-wa.json stations-nsw.json stations-vic.json; do
     install -m 0644 "Tests/fixtures/$catalogue" "$APP/Contents/Resources/$catalogue"
 done

@@ -2001,6 +2001,40 @@ static void TestSmallBump(IsobarFieldRenderer *r) {
     check(highs == 0, [NSString stringWithFormat:@"a 1 hPa bump is not a high (%d)", highs]);
 }
 
+static void TestCameraMotionLabels(IsobarFieldRenderer *r) {
+    IsobarGeoGrid g = {.west=100,.north=0,.step=1,.nLon=81,.nLat=71,.wrapsLongitude=NO};
+    [r setGrid:g];
+    float *field = malloc(sizeof(float)*81*71);
+    for (int j=0;j<71;j++) for (int i=0;i<81;i++) field[j*81+i]=980+j;
+    check(Upload(r,0,IsobarFieldPressure,field), @"camera-label fixture uploads");
+    free(field);
+    r.motion = [IsobarFieldMotion new];
+    IsobarCamera cam = Cam(-35,140,6,0,640,480);
+    CGImageRelease(Render(r,0,IsobarFieldPressure,YES,cam));
+    double xs[128],ys[128],levels[128]; int count=0;
+    for (NSInteger i=0;i<r.labelCount && count<128;i++) {
+        double x,y,level;
+        [r labelAtIndex:i x:&x y:&y angle:NULL level:&level halfW:NULL halfH:NULL];
+        if (x>80 && x<560 && y>80 && y<350) { xs[count]=x;ys[count]=y;levels[count++]=level; }
+    }
+    IsobarCamera moved = cam; moved.centreLat += 3;
+    for (int n=0;n<count;n++) {
+        double lat=0,lon=0,x=0,y=0;
+        check(IsobarCameraUnproject(cam,xs[n],ys[n],&lat,&lon) && IsobarCameraProject(moved,lat,lon,&x,&y), @"label geographic anchor projects after pan");
+        xs[n]=x;ys[n]=y;
+    }
+    cam = moved;
+    CGImageRelease(Render(r,0,IsobarFieldPressure,YES,cam));
+    int followed=0;
+    for (int n=0;n<count;n++) for (NSInteger i=0;i<r.labelCount;i++) {
+        double x,y,level;
+        [r labelAtIndex:i x:&x y:&y angle:NULL level:&level halfW:NULL halfH:NULL];
+        if (fabs(level-levels[n])<.1 && hypot(x-xs[n],y-ys[n])<2) { followed++; break; }
+    }
+    check(count>=2 && followed==count, [NSString stringWithFormat:@"pressure labels follow camera immediately (%d/%d)",followed,count]);
+    r.motion = nil;
+}
+
 static void TestManyLabels(IsobarFieldRenderer *r) {
     r.pressureSmoothDegrees = 0;
     r.motion = nil;
@@ -2210,6 +2244,7 @@ static void TestReview(IsobarFieldRenderer *r) {
     TestMotionBirth(r);
     TestSmallBump(r);
     TestManyLabels(r);
+    TestCameraMotionLabels(r);
     TestStrideMonotonic(r);
 }
 
@@ -3365,6 +3400,12 @@ static void TestCoarsePressureAppearance(IsobarFieldRenderer *r) {
 
 int main(int argc, char **argv) {
     @autoreleasepool {
+        if (argc>1 && strcmp(argv[1], "--camera-labels")==0) {
+            IsobarFieldRenderer *renderer=MakeRenderer(MTLCreateSystemDefaultDevice());
+            if (!renderer) return 1;
+            TestCameraMotionLabels(renderer);
+            return failures ? 1 : 0;
+        }
         BOOL asyncOnly = NO, sliceOnly = NO, coastOnly = NO, contrastOnly = NO, notesOnly = NO, tiltOnly = NO;
         for (int i = 1; i < argc; i++) {
             if (strcmp(argv[i], "--async") == 0) asyncOnly = YES;
