@@ -161,3 +161,15 @@ scenario product (not ERA5) and keep the short distinction plus supporting detai
 in Sources. No1492 weather grid is generated or selectable in the current release.
 ICOADS starts1662 and EKF400 monthly reconstructions start1600; neither supplies
 1492 daily observations. Candidate source metadata is in sources.json.
+
+### Everest minute track
+
+From the repository root:
+
+```
+web/node_modules/.bin/tsx --tsconfig web/tsconfig.json tools/history/prepare_everest_timeline.ts WEATHER.json.gz NEW_OUTPUT_DIRECTORY
+```
+
+Writes a versioned gzip dataset, source/method snapshots and SHA256 manifest.
+Refuses to overwrite a prior export. Every minute carries synthetic provenance,
+source anchors and clock convention; original weather metadata is retained.

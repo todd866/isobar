@@ -1,3 +1,4 @@
+import { atmosphereSliceWeight, type AtmosphereSlice } from './atmosphere-slice';
 /** Tangent Lambert conformal. Australia uses 130°E and the 30°S standard parallel. */
 
 export interface Lambert {
@@ -95,6 +96,8 @@ export interface SurfaceProjection {
 }
 
 export interface Camera {
+  /** Optional geographic cut through terrain and every atmospheric level. */
+  slice?: AtmosphereSlice;
   /** Transient render projection; never stored as navigation state. */
   surface?: SurfaceProjection;
   pitch?: number;
@@ -115,6 +118,7 @@ export function cameraProject(camera: Camera, x: number, y: number): { x: number
 
 /** Shared geographic projection for all map ink and picking. */
 export function mapProject(geo: Lambert, camera: Camera, lat: number, lon: number, heightM?: number): {x: number; y: number} | null {
+  if (atmosphereSliceWeight(camera.slice, lat, lon) <= 0) return null;
   if (camera.surface) {
     const p = camera.surface.project(lat, lon, heightM);
     return p.visible && Number.isFinite(p.x + p.y) ? p : null;
@@ -127,6 +131,7 @@ export function mapProject(geo: Lambert, camera: Camera, lat: number, lon: numbe
 
 /** Project a point a small physical distance above sampled terrain. */
 export function mapProjectAboveGround(geo: Lambert, camera: Camera, lat: number, lon: number, heightM: number): {x: number; y: number} | null {
+  if (atmosphereSliceWeight(camera.slice, lat, lon) <= 0) return null;
   if (!camera.surface) return mapProject(geo, camera, lat, lon);
   const p = camera.surface.projectAboveGround
     ? camera.surface.projectAboveGround(lat, lon, heightM)

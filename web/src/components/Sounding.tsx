@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { drawBarb } from '@/lib/sky/render';
 import type { SkyLayer } from '@/lib/sky/physics';
 import { paintCloudSprite, prepareCloudSprites } from '@/lib/sky/painted';
@@ -9,10 +9,12 @@ import {
   type AirRow, type SeaRow, type SoundingEmphasis,
 } from '@/lib/point/sounding';
 import type { SectionSample } from '@/lib/point/terrain-section';
+import type { AtmosphereSlice } from '@/lib/atmosphere-slice';
+import { projectEverestSectionRoute, type SectionRouteProjection } from '@/lib/point/section-route';
 import styles from './PointPanel.module.css';
 
 export function Sounding({
-  rows, sea, layers, icing, freezingFt, bottomFt, groundFt, section, modelGroundM, emphasis, activeId, onActive, temp = 'C',
+  rows, sea, layers, icing, freezingFt, bottomFt, groundFt, section, sectionGeometry, sectionExpedition = false, sectionTimeMs = Number.NaN, modelGroundM, emphasis, activeId, onActive, temp = 'C',
 }: {
   rows: AirRow[];
   sea: SeaRow[];
@@ -22,6 +24,9 @@ export function Sounding({
   bottomFt: number;
   groundFt: number | null;
   section?: SectionSample[] | null;
+  sectionGeometry?: AtmosphereSlice | null;
+  sectionExpedition?: boolean;
+  sectionTimeMs?: number;
   modelGroundM?: number | null;
   emphasis: SoundingEmphasis;
   activeId: string;
@@ -34,6 +39,7 @@ export function Sounding({
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [dark, setDark] = useState(false);
   const [spritesReady, setSpritesReady] = useState(false);
+  const routeProjection: SectionRouteProjection = useMemo(() => projectEverestSectionRoute(sectionGeometry, sectionTimeMs, sectionExpedition), [sectionGeometry, sectionTimeMs, sectionExpedition]);
 
   useEffect(() => {
     let mounted = true;
@@ -77,7 +83,7 @@ export function Sounding({
     const scale = 1.55;
     cloudCanvas.current ??= document.createElement('canvas');
     drawSounding(ctx, {
-      width: size.w, height: size.h, rows, layers, icing, freezingFt, bottomFt, groundFt, section, modelGroundM, emphasis, dark, temp,
+      width: size.w, height: size.h, rows, layers, icing, freezingFt, bottomFt, groundFt, section, sectionRoute: routeProjection, sectionHalfKm: sectionGeometry ? sectionGeometry.halfWidthM/1000 : undefined, modelGroundM, emphasis, dark, temp,
       ink, muted: style.getPropertyValue('--md-on-surface-variant').trim() || style.color,
       cloudPainter: { paintCloudSprite, canvas: cloudCanvas.current, dpr },
     }, (x, y, kt, from, length) => {
@@ -87,7 +93,7 @@ export function Sounding({
       drawBarb(ctx, 0, 0, kt, from, ink, length / scale);
       ctx.restore();
     });
-  }, [size, rows, layers, icing, freezingFt, bottomFt, groundFt, section, modelGroundM, emphasis, dark, temp, spritesReady]);
+  }, [size, rows, layers, icing, freezingFt, bottomFt, groundFt, section, routeProjection, modelGroundM, emphasis, dark, temp, spritesReady]);
 
   const pick = (clientY: number) => {
     const rect = plotRef.current?.getBoundingClientRect();
@@ -123,7 +129,7 @@ export function Sounding({
     }
   }
   return (
-    <div className={styles.graphic} data-sounding data-point-primary={emphasis} data-point-scroll data-ground-ft={groundFt == null ? undefined : String(Math.round(groundFt))} data-model-ground-m={modelGroundM == null || !Number.isFinite(modelGroundM) ? undefined : String(Math.round(modelGroundM))} data-section-mid={mid?.metres == null ? undefined : String(Math.round(mid.metres))} data-section-edge={edge == null ? undefined : String(Math.round(edge))}>
+    <div className={styles.graphic} data-sounding data-point-primary={emphasis} data-point-scroll data-ground-ft={groundFt == null ? undefined : String(Math.round(groundFt))} data-model-ground-m={modelGroundM == null || !Number.isFinite(modelGroundM) ? undefined : String(Math.round(modelGroundM))} data-section-mid={mid?.metres == null ? undefined : String(Math.round(mid.metres))} data-section-edge={edge == null ? undefined : String(Math.round(edge))} data-section-bearing-radians={sectionGeometry ? String(sectionGeometry.bearingRadians) : undefined} data-section-route-points={String(routeProjection.runs.reduce((count, run) => count + run.length, 0))} data-section-route-marker-position={routeProjection.marker ? String(Math.round(routeProjection.marker.acrossM)) : undefined} title={routeProjection.runs.length ? 'Approximate Everest ascent route projection' : undefined}>
       <div
         ref={plotRef}
         className={styles.plot}

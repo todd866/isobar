@@ -1,0 +1,184 @@
+{
+  "event": "everest-1953",
+  "title": "1953 British Everest expedition: approach to Base Camp",
+  "status": "source-backed milestones with explicit gaps",
+  "timeSemantics": "Dates are expedition narrative dates in 1953. No UTC times are inferred. Local wall-clock times remain source times; coordinates are modern approximate georeferences for map display, not surveyed 1953 fixes.",
+  "weatherCoverage": {
+    "requestedWindow": {
+      "start": "1953-02-28",
+      "end": "1953-05-30",
+      "datePrecision": "day"
+    },
+    "purpose": "Provide historical weather context for every day in the approach and summit window; weather values are retrospective/modelled context, not expedition observations.",
+    "joinRule": "Join weather by calendar date only unless a source supplies a clock and timezone. Do not fill missing expedition dates with invented observations."
+  },
+  "routeKnownVsInferred": {
+    "known": "The primary narrative identifies the sequence from Bhadgaon through the Dudh Kosi, Namche and Thyangboche to the Khumbu/Base Camp, and describes later acclimatization sorties and camp work.",
+    "inferred": "Point coordinates, connecting lines between named places, and unlisted daily stops are approximate map geometry only. Ship, aircraft, rail, and border-crossing legs before Nepal are omitted unless the source gives them explicitly.",
+    "campCoordinatePolicy": "Camp II, Camp III and Advanced Base coordinates are omitted here: the cited narratives give camp names/elevations but not survey coordinates, and map products disagree."
+  },
+  "milestones": [
+    {
+      "date": "1953-02-28",
+      "datePrecision": "day",
+      "participants": "main party with expedition baggage",
+      "place": "Bombay (Mumbai), India",
+      "event": "The main party reached Bombay before travelling overland toward Nepal; the source does not establish the exact Nepal arrival date.",
+      "source": "Charles Wylie, Himalayan Journal 18/1, assembly section",
+      "sourceUrl": "https://www.himalayanclub.org/hj/18/1/everest-1953-1/",
+      "evidenceLocator": "HTML lines 30-34",
+      "weatherJoin": "date-only"
+    },
+    {
+      "date": "1953-03-10",
+      "datePrecision": "day",
+      "participants": "first march-out party: 9 sahibs, Tenzing, 16 climbing Sherpas and about 180 coolies",
+      "place": "Bhadgaon (Bhaktapur), outside Kathmandu",
+      "coordinatesApprox": {
+        "lat": 27.6728,
+        "lon": 85.4298
+      },
+      "event": "The first party began the march toward Thyangboche.",
+      "source": "John Hunt and Michael Westmacott, Alpine Journal narrative, p. 107; reproduced in Himalayan Journal 18/1",
+      "sourceUrl": "https://www.himalayanclub.org/hj/18/1/everest-1953-1/",
+      "evidenceLocator": "HTML line 42; spelling \u2018nth\u2019 is an OCR/rendering artifact for 11th",
+      "weatherJoin": "date-only"
+    },
+    {
+      "date": "1953-03-11",
+      "datePrecision": "day",
+      "participants": "second march-out party and support porters",
+      "place": "Bhadgaon (Bhaktapur), outside Kathmandu",
+      "coordinatesApprox": {
+        "lat": 27.6728,
+        "lon": 85.4298
+      },
+      "event": "The second party followed the first; the source groups 10\u201311 March as the Bhadgaon departure window rather than assigning every porter to a separate dated track.",
+      "source": "Charles Wylie, Himalayan Journal 18/1, approach section",
+      "sourceUrl": "https://www.himalayanclub.org/hj/18/1/everest-1953-1/",
+      "evidenceLocator": "HTML line 42",
+      "weatherJoin": "date-only"
+    },
+    {
+      "date": "1953-03-25",
+      "datePrecision": "day; contemporary press account",
+      "participants": "main expedition party",
+      "place": "Namche Bazar",
+      "coordinatesApprox": {
+        "lat": 27.8069,
+        "lon": 86.7147
+      },
+      "event": "A contemporary report placed the party at Namche Bazar during the approach; the primary expedition narrative confirms Namche as an approach waypoint but does not date this stop.",
+      "source": "Time contemporary report, 6 July 1953",
+      "sourceUrl": "https://time.com/archive/6887509/nepal-conquest-of-everest/",
+      "evidenceLocator": "Time archive approach chronology",
+      "weatherJoin": "date-only"
+    },
+    {
+      "date": "1953-03-26/27",
+      "datePrecision": "two-day range; party-dependent",
+      "participants": "first and second approach parties",
+      "place": "Thyangboche (Tengboche monastery)",
+      "coordinatesApprox": {
+        "lat": 27.8379,
+        "lon": 86.7619
+      },
+      "event": "The first and second parties reached Thyangboche on successive days; this is not a single-date arrival for the entire expedition.",
+      "source": "John Hunt and Michael Westmacott, Alpine Journal narrative, p. 109; expedition chronology cross-check",
+      "sourceUrl": "https://www.alpinejournal.org.uk/Contents/Contents_1953_files/AJ59%201953%20107-122%20Hunt%20Westmacott%20%281%29%20Everest%20Narrative.pdf",
+      "evidenceLocator": "Alpine Journal p. 109; indexed expedition chronology",
+      "weatherJoin": "date-only-range"
+    },
+    {
+      "date": "1953-03-29/30",
+      "datePrecision": "range",
+      "participants": "expedition parties in groups",
+      "place": "Thyangboche to upper Khumbu/Imja acclimatization routes",
+      "event": "The parties left Thyangboche in three groups for the first acclimatization period; destinations diverged, so this record does not draw one shared route.",
+      "source": "Hunt and Westmacott, Alpine Journal narrative, p. 109",
+      "sourceUrl": "https://www.alpinejournal.org.uk/Contents/Contents_1953_files/AJ59%201953%20107-122%20Hunt%20Westmacott%20%281%29%20Everest%20Narrative.pdf",
+      "evidenceLocator": "Alpine Journal p. 109",
+      "weatherJoin": "date-only-range"
+    },
+    {
+      "date": "1953-04-06",
+      "datePrecision": "day",
+      "participants": "all three acclimatization parties",
+      "place": "Thyangboche",
+      "event": "The parties were back at Thyangboche for two days of rest and reorganization before setting out again.",
+      "source": "Himalayan Journal 18/1, approach section",
+      "sourceUrl": "https://www.himalayanclub.org/hj/18/1/everest-1953-1/",
+      "evidenceLocator": "HTML line 72",
+      "weatherJoin": "date-only"
+    },
+    {
+      "date": "1953-04-12",
+      "datePrecision": "day; structured chronology date",
+      "participants": "icefall party and supporting Sherpas",
+      "place": "Everest Base Camp, Khumbu Glacier",
+      "coordinatesApprox": {
+        "lat": 28.0025,
+        "lon": 86.8528
+      },
+      "elevationFt": 17900,
+      "event": "The Himalayan Database chronology lists 12 April for Base Camp; the narrative separately describes parties moving up the Imja and Khumbu glacier, so this date is retained as a cross-check rather than presented as a uniquely sourced establishment moment.",
+      "source": "Himalayan Database EVER53101 chronology; Hunt narrative",
+      "sourceUrl": "https://himalayan-database.climbing-history.org/expedition/EVER53101/1953",
+      "evidenceLocator": "Himalayan Database expedition chronology; narrative context in HJ HTML lines 72-74",
+      "weatherJoin": "date-only"
+    },
+    {
+      "date": "1953-04-22",
+      "datePrecision": "day",
+      "participants": "Hunt, Band and Hillary reconnaissance party; support teams",
+      "place": "Camp III / head of the Khumbu Icefall",
+      "elevationFt": 20200,
+      "event": "Camp III is described at 20,200 ft; the route into the Western Cwm was explored on 22 April.",
+      "source": "Himalayan Journal 18/1, approach section",
+      "sourceUrl": "https://www.himalayanclub.org/hj/18/1/everest-1953-1/",
+      "evidenceLocator": "HTML line 98",
+      "weatherJoin": "date-only"
+    },
+    {
+      "date": "1953-05-01",
+      "datePrecision": "day; camp chronology cross-check",
+      "participants": "route and supply teams",
+      "place": "Advanced Base / Western Cwm",
+      "elevationFt": 21000,
+      "event": "The source set describes Advanced Base and subsequent route development toward the Lhotse Face and South Col; no survey coordinate is asserted here.",
+      "source": "Hunt and Westmacott, Alpine Journal narrative; Himalayan Database chronology",
+      "sourceUrl": "https://www.alpinejournal.org.uk/Contents/Contents_1953_files/AJ59%201953%20107-122%20Hunt%20Westmacott%20%281%29%20Everest%20Narrative.pdf",
+      "evidenceLocator": "Alpine Journal narrative; date is a chronology cross-check, not a quoted establishment date",
+      "weatherJoin": "date-only"
+    }
+  ],
+  "openQuestions": [
+    "The cited sources do not provide a complete day-by-day list of every march stop between Bhadgaon, Namche, Thyangboche and Base Camp.",
+    "The primary narrative supports 26\u201327 March for the two Thyangboche arrivals; references to an Imja opening on 22 March should not be merged into that arrival milestone without a source-specific party and context.",
+    "The sources do not establish the expedition clock's UTC offset; preserve local wall-clock semantics for later timed climbing entries.",
+    "Modern coordinates for historical camps have moved or differ by map datum and glacier change; only named places with defensible georeferences are mapped, and disputed camp coordinates are omitted.",
+    "The approach of individual climbers diverged from the main portering parties; do not collapse all participants into one track without a source-specific account."
+  ],
+  "sources": [
+    {
+      "title": "Everest, 1953: Narrative of the Expedition, John Hunt and Michael Westmacott",
+      "url": "https://www.alpinejournal.org.uk/Contents/Contents_1953_files/AJ59%201953%20107-122%20Hunt%20Westmacott%20%281%29%20Everest%20Narrative.pdf",
+      "role": "primary expedition narrative"
+    },
+    {
+      "title": "Himalayan Journal 18/1: Everest 1953",
+      "url": "https://www.himalayanclub.org/hj/18/1/everest-1953-1/",
+      "role": "contemporary expedition journal material and accessible transcription"
+    },
+    {
+      "title": "Himalayan Database: EVER53101",
+      "url": "https://himalayan-database.climbing-history.org/expedition/EVER53101/1953",
+      "role": "structured camp-date cross-check; not treated as a verbatim expedition diary"
+    },
+    {
+      "title": "Time archive: Nepal\u2014Conquest of Everest",
+      "url": "https://time.com/archive/6887509/nepal-conquest-of-everest/",
+      "role": "contemporary press approach chronology"
+    }
+  ]
+}

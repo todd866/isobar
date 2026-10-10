@@ -16,3 +16,9 @@
 .meta { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px; font-size:.65rem; padding:3px 10px; color:var(--md-on-surface-variant); }
 @media (max-height:500px) { .instrument { top:auto; bottom:30px; } .instrument { max-height:calc(100% - 44px); } }
 @media (min-resolution:2dppx) { .grid { stroke-width:1; } }
+
+.cloudToggle { display:flex; align-items:center; gap:8px; min-height:36px; padding:4px 10px; font-size:.8rem; cursor:pointer; }
+.cloudToggle input { accent-color:var(--md-primary); }
+
+.cloudControls { display:flex; align-items:center; gap:6px; padding-right:8px; }
+.cloudControls select { min-width:0; max-width:160px; min-height:36px; font-size:.8rem; color:inherit; background:var(--md-surface-container-high); border:1px solid var(--md-outline-soft); border-radius:5px; }

@@ -11,6 +11,7 @@ import { modelGroundLabel, sectionX, type SectionSample } from './terrain-sectio
 import { AUS_UNITS, formatTempC, metricFlightLevel, type DisplayUnits } from '../units';
 import { flightLevel, isInversion, isaTemperature, levelExact, levelLabel, levelTitle } from './section';
 import { directionGroup, pilotWind } from './wind';
+import type { SectionRouteProjection } from './section-route';
 
 export const SOUNDING_TOP_FT = 42000;
 export const LABEL_W = 68;
@@ -246,6 +247,9 @@ export interface SoundingDraw {
   groundFt: number | null;
   /** East–west DEM samples. Null until the tiles arrive; the spot then stays a flat band. */
   section?: SectionSample[] | null;
+  /** Approximate projected route, drawn over the cut face. */
+  sectionRoute?: SectionRouteProjection;
+  sectionHalfKm?: number;
   /** Model orography, metres. Levels below it are already omitted from `rows`. */
   modelGroundM?: number | null;
   emphasis: SoundingEmphasis;
@@ -285,7 +289,7 @@ export function sectionLine(
     sample.metres != null && Number.isFinite(sample.metres) ? [{ distanceKm: sample.distanceKm, metres: sample.metres }] : []
   ));
   if (known.length < 2) return [];
-  const half = Math.max(...known.map((sample) => Math.abs(sample.distanceKm)), 1);
+  const half = Math.max(...samples.map((sample) => Math.abs(sample.distanceKm)), .001);
   return known.map((sample) => ({
     x: sectionX(sample.distanceKm, width, half),
     y: plotY(heightFraction(sample.metres * FT_PER_M, bottomFt), height),
@@ -336,7 +340,7 @@ export function drawSounding(ctx: CanvasRenderingContext2D, draw: SoundingDraw, 
   const yGround = yOf(floorFt);
   const ySummit = groundFt == null ? yTrace : yOf(groundFt);
   const runs = terrainRuns(draw.section ?? []);
-  const halfKm = runs.length ? Math.max(...runs.flat().map((sample) => Math.abs(sample.distanceKm)), 1) : 1;
+  const halfKm = draw.sectionHalfKm != null && draw.sectionHalfKm > 0 ? draw.sectionHalfKm : Math.max(...(draw.section??[]).map(sample=>Math.abs(sample.distanceKm)),.001);
   const fillRun = () => {
     for (const run of runs) {
       ctx.beginPath();
@@ -440,6 +444,34 @@ export function drawSounding(ctx: CanvasRenderingContext2D, draw: SoundingDraw, 
     }
     ctx.fillStyle = earth;
     ctx.fillRect(0, ySummit, width, Math.max(0, height - ySummit));
+  }
+
+  // Geographic projection only; keep it above the terrain fill for legibility.
+  if (draw.sectionRoute?.runs.length) {
+    ctx.save();
+    ctx.strokeStyle = dark ? '#f3a24d' : '#d66f18';
+    ctx.lineWidth = 1.8;
+    ctx.setLineDash([5, 4]);
+    ctx.lineJoin = 'round';
+    for (const routeRun of draw.sectionRoute.runs) {
+      if (!routeRun.length) continue;
+      ctx.beginPath();
+      routeRun.forEach((item, index) => {
+        const x = sectionX(item.acrossM / 1000, width, halfKm);
+        const y = yOf(item.heightM * FT_PER_M);
+        if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    const marker = draw.sectionRoute.marker;
+    if (marker) {
+      const x = sectionX(marker.acrossM / 1000, width, halfKm);
+      const y = yOf(marker.heightM * FT_PER_M);
+      ctx.fillStyle = dark ? '#ffd08a' : '#a84a0e';
+      ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
   }
 
   const inAir = (feet: number) => feet >= traceFloor - 1;

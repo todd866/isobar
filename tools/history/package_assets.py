@@ -22,6 +22,17 @@ def local_asset(root,url):
     return path
 
 
+def weather_asset(root,url,event_id,expected_days):
+    """Read and validate a weather asset advertised by a collection day."""
+    weather=json.loads(local_asset(root,url).read_text())
+    if weather.get('event',{}).get('id') != event_id:
+        raise ValueError('day weather asset has the wrong event')
+    days=complete_days(weather)
+    if days != [{'date':expected_days,'complete':True}]:
+        raise ValueError('day weather asset does not match its advertised day')
+    return weather
+
+
 def package(root,destination):
     if destination.exists():raise ValueError('destination already exists; bundles are immutable')
     catalog=json.loads((root/'catalog.json').read_text())
@@ -30,19 +41,44 @@ def package(root,destination):
     for item in catalog['collections']:
         manifest=json.loads(local_asset(root,item['manifest']).read_text())
         weather=json.loads(local_asset(root,manifest['weather']).read_text())
-        days=complete_days(weather)
-        if days!=item['days'] or days!=manifest['days'] or weather['event']['id']!=item['id']:
+        default_days=complete_days(weather)
+        default_dates={day['date'] for day in default_days}
+        advertised_days=[{k:v for k,v in day.items() if k!='weather'} for day in item['days']]
+        manifest_days=[{k:v for k,v in day.items() if k!='weather'} for day in manifest['days']]
+        if advertised_days!=manifest_days or weather['event']['id']!=item['id']:
             raise ValueError('catalog, manifest and weather disagree')
+        if len(item['days']) != len(manifest['days']):
+            raise ValueError('catalog, manifest and weather disagree')
+        if any(item_day.get('weather') != manifest_day.get('weather')
+               for item_day,manifest_day in zip(item['days'],manifest['days'])):
+            raise ValueError('catalog and manifest day assets disagree')
         # The local research scan is not cleared for public redistribution.
         manifest['maps']=[]
+
+        def add_weather_asset(asset):
+            raw=encoded(asset)
+            name=f"{item['id']}-{hashlib.sha256(raw).hexdigest()[:16]}.json"
+            payloads.setdefault(name,raw)
+            return '/history/'+name
+
         raw=encoded(weather)
         name=f"{item['id']}-{hashlib.sha256(raw).hexdigest()[:16]}.json"
-        payloads[name]=raw
+        payloads.setdefault(name,raw)
         manifest['weather']='/history/'+name
+
+        packaged_days=[]
+        for day in item['days']:
+            if day.get('weather'):
+                daily=weather_asset(root,day['weather'],item['id'],day['date'])
+                day=dict(day,weather=add_weather_asset(daily))
+            elif day['date'] not in default_dates:
+                raise ValueError('default weather does not cover advertised day')
+            packaged_days.append(day)
+        manifest['days']=packaged_days
         raw=encoded(manifest)
         name=f"{item['id']}-manifest-{hashlib.sha256(raw).hexdigest()[:16]}.json"
-        payloads[name]=raw
-        collections.append(dict(item,manifest='/history/'+name))
+        payloads.setdefault(name,raw)
+        collections.append(dict(item,manifest='/history/'+name,days=packaged_days))
     collections.sort(key=lambda item:(item['id']!='dday',item['days'][0]['date']))
     payloads['catalog.json']=encoded(dict(catalog,collections=collections))
     for name in ('world-coast.bin','themes/wwii-paper.png'):

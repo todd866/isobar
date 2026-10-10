@@ -1,3 +1,4 @@
+import { slicePoint } from '../atmosphere-slice';
 /**
  * The map's terrain: asks the terrain worker for a mosaic covering the view
  * (plus a panning margin) and hands each finished mosaic to the plate. Nothing
@@ -35,6 +36,22 @@ export function viewGeoBox(geo: Lambert, camera: Camera): GeoBox | null {
   let east = -Infinity;
   let south = Infinity;
   let north = -Infinity;
+  if (camera.slice) {
+    const slice = camera.slice;
+    for (const x of [-1, 1]) for (const y of [-1, 1]) {
+      const p = slicePoint(slice, x * slice.halfWidthM, y * slice.halfDepthM);
+      if (!p) continue;
+      const lon = slice.lon + ((p.lon - slice.lon + 540) % 360 - 180);
+      west = Math.min(west, lon); east = Math.max(east, lon);
+      south = Math.min(south, p.lat); north = Math.max(north, p.lat);
+    }
+    // The wind worker still needs the surrounding/upwind terrain. A visual
+    // cut must not cut away the input to the shared physical flow model.
+    const context=viewGeoBox(geo,{...camera,slice:undefined});
+    if(context){west=Math.min(west,context.west);east=Math.max(east,context.east);south=Math.min(south,context.south);north=Math.max(north,context.north);}
+    if (Number.isFinite(west) && east > west && north > south) return { west, east, south, north };
+    return null;
+  }
   const steps = camera.surface ? 8 : geo.projection === 'equirectangular' ? 1 : 8;
   for (let k = 0; k <= steps; k += 1) {
     const t = (k / steps) * 2 - 1;

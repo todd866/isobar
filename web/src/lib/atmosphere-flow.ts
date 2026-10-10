@@ -1,3 +1,4 @@
+import { atmosphereSliceWeight, sliceSegmentRange, slicePoint, type AtmosphereSlice } from './atmosphere-slice';
 /** Spatial pressure-level vectors. Motion is illustrative; direction and height are sampled. */
 import { mapProject, type Camera, type Lambert } from './lambert';
 import type { PointModel } from './point/openmeteo';
@@ -37,9 +38,17 @@ export function syntheticAtmosphereProfile(lat: number, lon: number, timeMs: num
           ws: [speed, speed], wd: [from, from], w: [wind.w, wind.w]};
       })}};
 }
-export function syntheticAtmosphereVectors(lat: number, lon: number, halfHeight: number, aspect: number, timeMs: number): AtmosphereVector[] {
+export function syntheticAtmosphereVectors(lat: number, lon: number, halfHeight: number, aspect: number, timeMs: number, slice?: AtmosphereSlice): AtmosphereVector[] {
   if (![lat, lon, halfHeight, aspect, timeMs].every(Number.isFinite) || halfHeight <= 0 || halfHeight >= 6 || aspect <= 0) return [];
   ({lat, lon} = geographicCentre(lat, lon));
+  if(slice){
+    const result:AtmosphereVector[]=[];
+    for(let x=-6;x<=6;x++)for(const y of [-.55,0,.55]){
+      const point=slicePoint(slice,x/7*slice.halfWidthM,y*slice.halfDepthM);if(!point)continue;
+      for(const [pressure,heightM] of LEVELS){const wind=syntheticAtmosphereWind(point.lat,point.lon,heightM,timeMs);result.push({...point,heightM,...wind,pressure,phase:((x+6)*.618+(y+.55)*.37)%1});}
+    }
+    return result;
+  }
   // Geographic lattice stays fixed during a drag, instead of travelling with the camera.
   const spacing = 2 ** Math.ceil(Math.log2(halfHeight / 1.5));
   const lonSpacing = spacing / Math.max(.2, Math.cos(lat * Math.PI / 180));
@@ -66,18 +75,26 @@ export function drawAtmosphereFlow(ctx: CanvasRenderingContext2D, vectors: reado
   for (let i = vectors.length - 1; i >= 0; i--) {
     const v = vectors[i], phase = (seconds / 5 + v.phase) % 1;
     const advance = (phase - .5) * 360;
+    const at=(time:number)=>({lat:v.lat+v.v*time/111132,lon:v.lon+v.u*time/(111320*Math.max(.1,Math.cos(v.lat*Math.PI/180)))});
+    const range=sliceSegmentRange(camera.slice,at(advance-90),at(advance));
+    if(!range)continue;
+    const startTime=advance-90+90*range[0],endTime=advance-90+90*range[1],middle=at((startTime+endTime)/2);
+    const weight=atmosphereSliceWeight(camera.slice,middle.lat,middle.lon);
+    if(weight<=0)continue;
     const screen = (time: number) => {
-      const p = mapProject(geo, camera, v.lat + v.v * time / 111132, v.lon + v.u * time / (111320 * Math.max(.1, Math.cos(v.lat * Math.PI / 180))), (v.heightM + (v.w ?? 0) * time * lift) * separation);
+      const position=at(time);
+      // The segment is already clipped; retain its exact boundary endpoints.
+      const p=mapProject(geo,camera.slice?{...camera,slice:undefined}:camera,position.lat,position.lon,(v.heightM+(v.w??0)*time*lift)*separation);
       return p && {x: (p.x + 1) * width / 2, y: (1 - p.y) * height / 2};
     };
-    const a = screen(advance - 90), b = screen(advance);
+    const a = screen(startTime), b = screen(endTime);
     if (!a || !b || b.x < -20 || b.x > width + 20 || b.y < -20 || b.y > height + 20) continue;
     const length = Math.hypot(b.x - a.x, b.y - a.y);
     if (length < 1) continue;
     // Keep strokes legible at close zoom without hiding valid high-speed wind.
     if (length > 32) { a.x = b.x + (a.x - b.x) * 32 / length; a.y = b.y + (a.y - b.y) * 32 / length; }
     ctx.lineWidth = .85 + .75 * Math.min(1, v.heightM / 9000);
-    ctx.globalAlpha = (.15 + .45 * Math.sin(Math.PI * phase)) * (v.pressure === 925 ? .7 : 1);
+    ctx.globalAlpha = weight * (.15 + .45 * Math.sin(Math.PI * phase)) * (v.pressure === 925 ? .7 : 1);
     ctx.strokeStyle = v.w != null && Math.abs(v.w) > .05 ? v.w > 0 ? (dark ? '#eeb172' : '#aa652f') : (dark ? '#84c6de' : '#246b89') : dark ? '#c4d8e1' : '#37596b';
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
     const angle = Math.atan2(b.y - a.y, b.x - a.x), head = Math.min(3, length / 3);

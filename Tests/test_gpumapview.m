@@ -138,6 +138,33 @@ static void CheckDragAndPinch(GPUMapView *view) {
     // Exercise a partial tilt regardless of the runner's Reduce Motion setting.
     IsobarCamera tiltStart = view.camera; tiltStart.pitch = 0; tiltStart.globe = 0;
     view.camera = tiltStart;
+    [view setPlaceLatitude:-34 longitude:141];
+    double selectedX = 0, selectedY = 0;
+    Check(IsobarCameraProject(view.camera, -34, 141, &selectedX, &selectedY),
+        @"the selected place projects before a two-axis gesture");
+    double beforeBearing = view.camera.bearing;
+    [view scrollByX:40 y:-40 atPoint:at precise:YES command:NO];
+    double afterSelectedX = 0, afterSelectedY = 0;
+    Check(view.camera.bearing > beforeBearing && view.camera.pitch > 0,
+        @"a diagonal two-finger gesture changes bearing and tilt together");
+    Check(IsobarCameraProject(view.camera, -34, 141, &afterSelectedX, &afterSelectedY) &&
+        hypot(afterSelectedX - selectedX, afterSelectedY - selectedY) <= 1.0,
+        @"a selected place remains pinned during a two-axis gesture");
+    [view setPlaceLatitude:NAN longitude:NAN];
+    view.camera = tiltStart;
+    double horizontalZoom = view.camera.zoom;
+    double horizontalBearing = view.camera.bearing;
+    [view scrollByX:40 y:0 atPoint:at precise:YES command:NO];
+    Check(view.camera.bearing > horizontalBearing &&
+        fabs(view.camera.zoom - horizontalZoom) < 1e-9,
+        @"a horizontal two-finger swipe orbits without changing zoom");
+    Check([view pinchFactor:1.2 atPoint:at], @"pinch remains available after orbit");
+    double pinchedZoom = view.camera.zoom;
+    horizontalBearing = view.camera.bearing;
+    [view scrollByX:-40 y:0 atPoint:at precise:YES command:NO];
+    Check(view.camera.bearing < horizontalBearing && fabs(view.camera.zoom - pinchedZoom) < 1e-9,
+        @"orbit leaves an independent pinch zoom unchanged");
+    view.camera = tiltStart;
     IsobarCamera beforeScroll = view.camera;
     [view scrollByX:0 y:-40 atPoint:at precise:YES command:NO];
     Check(view.camera.pitch > beforeScroll.pitch && view.camera.globe > beforeScroll.globe,

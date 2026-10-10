@@ -18,11 +18,11 @@ async function pixelsChanged(a:Buffer,b:Buffer) {
   let n=0; for(let i=0;i<x.length;i+=3) if(Math.abs(x[i]-y[i])+Math.abs(x[i+1]-y[i+1])+Math.abs(x[i+2]-y[i+2])>35)n++;
   return n/(x.length/3);
 }
-async function touchGesture(page:Page, points:{x:number;y:number}[], moves:{x:number;y:number}[][]) {
+async function touchGesture(page:Page, points:{x:number;y:number}[], moves:{x:number;y:number}[][], intervalMs=0) {
   const cdp=await page.context().newCDPSession(page);
   const point=(p:{x:number;y:number},id:number)=>({x:p.x,y:p.y,id, radiusX:1,radiusY:1,force:1});
   await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:points.map((p,i)=>point(p,i+1))});
-  for(const frame of moves) await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:frame.map((p,i)=>point(p,i+1))});
+  for(const frame of moves) {await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:frame.map((p,i)=>point(p,i+1))});if(intervalMs)await page.waitForTimeout(intervalMs);}
   await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]}); await cdp.detach();
 }
 async function profileFixture(page:Page) {
@@ -81,7 +81,7 @@ test('real Wind barbs stay visible as 3D vectors while tilting the map', async (
   await page.keyboard.press('Escape');
 
   const map = stage(page);
-  const barbCanvas = map.locator('canvas:not([data-chart-layer]):not([data-satellite-layer]):not([data-flow-layer]):not([data-traffic-layer]):not([data-atmosphere-layer]):not([aria-label])');
+  const barbCanvas = map.locator('canvas[data-wind-barbs]');
   await expect(barbCanvas).toHaveCount(1);
   const ink = async () => barbCanvas.evaluate((node) => {
     const canvas = node as HTMLCanvasElement;
@@ -287,4 +287,60 @@ test('3D keyboard flies across the ground, looks around, rises and leaves typing
   await page.getByRole('button',{name:'3D map',exact:true}).click();
   expect(Number(await stage(page).getAttribute('data-bearing'))).toBeGreaterThan(.1);
   await page.screenshot({path:'/tmp/isobar-keyboard-3d.png'});
+});
+
+
+test('two-axis trackpad orbits the pin while tilting and keeps pinch independent',async({page},info)=>{
+  await open(page);await page.getByRole('button',{name:'3D map',exact:true}).click();
+  const canvas=stage(page).locator('canvas[tabindex="0"]'),box=(await canvas.boundingBox())!;
+  await page.mouse.click(box.x+box.width*.55,box.y+box.height*.65);
+  const marker=page.locator('[data-point-marker]');await expect(marker).toBeVisible();await page.waitForTimeout(900);
+  const anchor=(await marker.boundingBox())!,time=await stage(page).getAttribute('data-valid-ms');
+  const before=await camera(page),pitch=Number(await stage(page).getAttribute('data-tilt'));
+  await page.mouse.move(box.x+box.width*.6,box.y+box.height*.4);await page.mouse.wheel(45,0);await page.waitForTimeout(250);
+  expect(Number(await stage(page).getAttribute('data-bearing'))).toBeGreaterThan(.1);
+  expect(Number(await stage(page).getAttribute('data-tilt'))).toBeCloseTo(pitch,4);
+  expect((await camera(page)).halfHeight).toBeCloseTo(before.halfHeight,7);
+  await page.mouse.wheel(30,30);await page.waitForTimeout(250);
+  expect(Number(await stage(page).getAttribute('data-tilt'))).toBeGreaterThan(pitch+.08);
+  const after=(await marker.boundingBox())!;
+  expect(Math.hypot(after.x-anchor.x,after.y-anchor.y)).toBeLessThan(5);
+  const bearing=Number(await stage(page).getAttribute('data-bearing')),zoom=await camera(page);
+  await page.keyboard.down('Control');await page.mouse.wheel(20,-35);await page.keyboard.up('Control');await page.waitForTimeout(250);
+  expect((await camera(page)).halfHeight).toBeLessThan(zoom.halfHeight);
+  expect(Number(await stage(page).getAttribute('data-bearing'))).toBeCloseTo(bearing,4);
+  expect(await stage(page).getAttribute('data-valid-ms')).toBe(time);
+  await page.screenshot({path:info.outputPath('two-axis-pin.png')});
+  await page.getByRole('button',{name:'2D map',exact:true}).click();await page.mouse.move(box.x+box.width*.6,box.y+box.height*.4);await page.mouse.wheel(40,0);await page.waitForTimeout(150);
+  expect(Number(await stage(page).getAttribute('data-bearing'))).toBe(0);
+});
+
+test('two-finger horizontal and diagonal touch orbits; spreading remains zoom',async({page})=>{
+  await open(page);await page.getByRole('button',{name:'3D map',exact:true}).click();
+  const box=(await stage(page).boundingBox())!,cx=box.x+box.width*.5,cy=box.y+box.height*.55;
+  const start=await camera(page),pitch=Number(await stage(page).getAttribute('data-tilt'));
+  const points=[{x:cx-34,y:cy},{x:cx+34,y:cy}];
+  await touchGesture(page,points,Array.from({length:10},(_,i)=>points.map(p=>({x:p.x+i*18,y:p.y}))));await page.waitForTimeout(200);
+  expect(Number(await stage(page).getAttribute('data-bearing'))).toBeGreaterThan(.1);
+  expect(Number(await stage(page).getAttribute('data-tilt'))).toBeCloseTo(pitch,4);
+  expect((await camera(page)).halfHeight).toBeCloseTo(start.halfHeight,7);
+  const bearing=Number(await stage(page).getAttribute('data-bearing'));
+  await touchGesture(page,points,Array.from({length:10},(_,i)=>points.map(p=>({x:p.x+i*4,y:p.y+i*5}))));await page.waitForTimeout(200);
+  expect(Number(await stage(page).getAttribute('data-bearing'))).toBeGreaterThan(bearing+.1);
+  expect(Number(await stage(page).getAttribute('data-tilt'))).toBeGreaterThan(pitch+.1);
+  const zoom=await camera(page),yaw=Number(await stage(page).getAttribute('data-bearing'));
+  await touchGesture(page,points,Array.from({length:10},(_,i)=>[{x:cx-34-i*5,y:cy},{x:cx+34+i*5,y:cy}]));await page.waitForTimeout(200);
+  expect((await camera(page)).halfHeight).toBeLessThan(zoom.halfHeight);
+  expect(Number(await stage(page).getAttribute('data-bearing'))).toBeCloseTo(yaw,4);
+});
+
+
+test('pinch can keep one finger stationary without becoming orbit',async({page})=>{
+  await open(page);await page.getByRole('button',{name:'3D map',exact:true}).click();
+  const box=(await stage(page).boundingBox())!,cx=box.x+box.width*.5,cy=box.y+box.height*.55;
+  const before=await camera(page),yaw=Number(await stage(page).getAttribute('data-bearing'));
+  await touchGesture(page,[{x:cx-34,y:cy},{x:cx+34,y:cy}],Array.from({length:12},(_,i)=>[{x:cx-34,y:cy},{x:cx+34+i*7,y:cy}]),16);
+  await page.waitForTimeout(150);
+  expect((await camera(page)).halfHeight).toBeLessThan(before.halfHeight);
+  expect(Number(await stage(page).getAttribute('data-bearing'))).toBeCloseTo(yaw,4);
 });

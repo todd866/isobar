@@ -40,3 +40,41 @@ class PackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             base=Path(t);root=self.setup_assets(base);p=root/'catalog.json';c=json.loads(p.read_text());c['collections'][0]['manifest']='/history/../weather.json';p.write_text(json.dumps(c))
             with self.assertRaises(ValueError):package(root,base/'bundle')
+
+    def test_daily_assets_are_packaged_deduplicated_and_keep_default(self):
+        with tempfile.TemporaryDirectory() as t:
+            base=Path(t);root=self.setup_assets(base);catalog=json.loads((root/'catalog.json').read_text())
+            entry=catalog['collections'][0]
+            manifest_path=root/Path(entry['manifest']).name
+            manifest=json.loads(manifest_path.read_text())
+            default=json.loads((root/manifest['weather'].replace('/history/','')).read_text())
+            second=json.loads(json.dumps(default))
+            second['times']=[stamp.replace('1944-06-06','1944-06-07') for stamp in second['times']]
+            second['frames']=[dict(frame,time=stamp) for frame,stamp in zip(second['frames'],second['times'])]
+            default['times'].extend(second['times']);default['frames'].extend(second['frames'])
+            (root/manifest['weather'].replace('/history/','')).write_text(json.dumps(default))
+            daily=json.loads(json.dumps(second));daily['times']=[stamp.replace('1944-06-07','1953-03-10') for stamp in daily['times']]
+            daily['frames']=[dict(frame,time=stamp) for frame,stamp in zip(daily['frames'],daily['times'])]
+            daily_name='daily.json';(root/daily_name).write_text(json.dumps(daily))
+            entries=[{'date':'1944-06-06','complete':True},{'date':'1944-06-07','complete':True},
+                     {'date':'1953-03-10','complete':True,'weather':'/history/'+daily_name}]
+            entry['days']=entries;manifest['days']=entries;manifest_path.write_text(json.dumps(manifest));(root/'catalog.json').write_text(json.dumps(catalog))
+            inventory=package(root,base/'bundle')
+            bundled=json.loads((base/'bundle/history/catalog.json').read_text())['collections'][0]
+            bundled_manifest=json.loads((base/'bundle'/bundled['manifest'].lstrip('/')).read_text())
+            self.assertTrue(bundled_manifest['weather'])
+            self.assertTrue((base/'bundle'/bundled_manifest['weather'].lstrip('/')).exists())
+            self.assertNotEqual(bundled['days'][2]['weather'],bundled_manifest['weather'])
+            self.assertTrue((base/'bundle'/bundled['days'][2]['weather'].lstrip('/')).exists())
+            self.assertEqual(sum(f['path'].endswith('.json') and 'dday-' in f['path'] for f in inventory['files']),3)
+
+    def test_daily_asset_missing_or_mismatched_fails(self):
+        for mutate in ('missing','mismatch'):
+            with self.subTest(mutate=mutate), tempfile.TemporaryDirectory() as t:
+                base=Path(t);root=self.setup_assets(base);catalog=json.loads((root/'catalog.json').read_text());entry=catalog['collections'][0]
+                manifest_path=root/Path(entry['manifest']).name;manifest=json.loads(manifest_path.read_text())
+                day=dict(entry['days'][0],weather='/history/daily.json');entry['days']=[day];manifest['days']=[day]
+                if mutate=='mismatch':
+                    wrong=weather();wrong['event']['id']='other';(root/'daily.json').write_text(json.dumps(wrong))
+                manifest_path.write_text(json.dumps(manifest));(root/'catalog.json').write_text(json.dumps(catalog))
+                with self.assertRaises(ValueError):package(root,base/'bundle')

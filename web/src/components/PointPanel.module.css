@@ -34,3 +34,4 @@
 .marker::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #fff; }
 :global(.dark) .marker { background: #91c5ed; border-color: #142c45; box-shadow: 0 0 0 2px #f4f8ff, 0 2px 5px #0008; }
 :global(.dark) .marker::after { background: #142c45; }
+.heading button { display: grid; place-items: center; line-height: 1; }

@@ -8,6 +8,7 @@ import { collectorPointModel, pointSky, type MapPoint } from '@/lib/point/sectio
 import { formatGround } from '@/lib/point/ground';
 import { airRows, pointSheetHeight, seaRows, soundingFrame, soundingReadout, type SoundingEmphasis } from '@/lib/point/sounding';
 import { modelGroundFromPressure, resolveModelGroundM, type SectionSample } from '@/lib/point/terrain-section';
+import type { AtmosphereSlice } from '@/lib/atmosphere-slice';
 import { profileAt } from '@/lib/sky/physics';
 import { loadSky } from './FlyPanel';
 import { Sounding } from './Sounding';
@@ -17,14 +18,16 @@ import { PressNote, usePressNote, type Lens } from './MapChrome';
 import { StarIcon } from './PlaceField';
 import styles from './PointPanel.module.css';
 
-export function PointPanel({ reconstructedModel=null, archiveOnly=false, point, name, detail, isPlace, onMakePlace, validMs, lens, terrainM, section, orographyM, mslpHpa, onClose, anchorRef, panelRef, collectorIcao }: {
+export function PointPanel({ reconstructedModel=null, archiveOnly=false, point, name, detail, isPlace, onMakePlace, validMs, lens, terrainM, section, sectionGeometry, sectionExpedition = false, orographyM, mslpHpa, onClose, anchorRef, panelRef, collectorIcao }: {
   reconstructedModel?: PointModel | null;
   archiveOnly?: boolean;
   point: MapPoint; name: string; detail: string; isPlace: boolean; onMakePlace: () => 'set' | 'restored' | 'same'; validMs: number; lens: Lens;
   /** Offline ground: export orography, else the loaded DEM. Null until one exists. */
   terrainM: number | null;
-  /** East–west DEM track through the spot. Null while the tiles are still loading. */
+  /** DEM track through the selected section. Null while terrain is unavailable. */
   section?: SectionSample[] | null;
+  sectionGeometry?: AtmosphereSlice | null;
+  sectionExpedition?: boolean;
   /** Model orography from the chart export, when that field exists. */
   orographyM?: number | null;
   /** Chart mean sea-level pressure at the spot, for the model-ground fallback. */
@@ -88,7 +91,11 @@ export function PointPanel({ reconstructedModel=null, archiveOnly=false, point, 
   const emphasis: SoundingEmphasis = lens === 'temp' ? 'temp' : lens === 'rain' ? 'cloud' : 'wind';
   const active = rows.find((row) => row.id === activeId) ?? rows.find((row) => row.id === 'surface') ?? null;
   const viewport = typeof window === 'undefined' ? 800 : window.innerHeight;
-  const height = anchor ? pointSheetHeight(anchor.top, anchor.bottom, anchor.ceiling, viewport) : 0;
+  const baseHeight = anchor ? pointSheetHeight(anchor.top, anchor.bottom, anchor.ceiling, viewport) : 0;
+  // A 3D cut needs a usable map area above the phone sheet, including its sweep.
+  const height = sectionGeometry && !desktop && anchor
+    ? Math.min(baseHeight, Math.max(220, anchor.bottom - Math.max(anchor.top, anchor.ceiling) - 220))
+    : baseHeight;
   const loading = result.key !== key;
   const identity = model ? { source: model.provenance.source, model: model.provenance.model, run: model.provenance.run, cycle: model.provenance.cycle } : null;
   const frame = soundingFrame(rows, elevation);
@@ -115,7 +122,7 @@ export function PointPanel({ reconstructedModel=null, archiveOnly=false, point, 
       </div>
       {profile && state ? (
         <>
-          <Sounding rows={rows} sea={sea} layers={state.layers} icing={state.icing} freezingFt={state.freezingFt} bottomFt={frame.bottomFt} groundFt={frame.groundFt} section={section} modelGroundM={modelGroundM} emphasis={emphasis} activeId={active?.id ?? 'surface'} onActive={setActiveId} temp={units.temp} />
+          <Sounding rows={rows} sea={sea} layers={state.layers} icing={state.icing} freezingFt={state.freezingFt} bottomFt={frame.bottomFt} groundFt={frame.groundFt} section={section} sectionGeometry={sectionGeometry} sectionExpedition={sectionExpedition} sectionTimeMs={validMs} modelGroundM={modelGroundM} emphasis={emphasis} activeId={active?.id ?? 'surface'} onActive={setActiveId} temp={units.temp} />
           <p className={styles.readout} data-readout>{active ? soundingReadout(active, units) : ''}</p>
         </>
       ) : <div className={styles.status} role="status">{loading ? '…' : 'Profile unavailable'}</div>}

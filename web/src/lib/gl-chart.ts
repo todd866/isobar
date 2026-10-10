@@ -1,3 +1,5 @@
+import { mosaicElevation } from './terrain/elevation';
+import { buildTerrainSliceMesh, atmosphereSliceKey, type AtmosphereSlice } from './atmosphere-slice';
 import { IMAGERY_MATERIAL_GLSL, type ImageryMapping } from './terrain/imagery-material';
 import { TILT_CAMERA_GLSL, type TiltCamera } from './tilt-camera';
 /** WebGL2 chart plate: Lambert unproject, bicubic field sample, land/sea tint. */
@@ -8,6 +10,7 @@ import type { Lambert } from './lambert';
 
 export interface GlView {
   tiltCamera?: TiltCamera;
+  slice?: AtmosphereSlice;
   centerX: number;
   centerY: number;
   halfWidth: number;
@@ -53,11 +56,44 @@ export interface LandBox {
 }
 
 const VERT = `#version 300 es
-layout(location=0) in vec2 aClip;
+precision highp float;
+layout(location=0) in vec4 aClip;
+uniform int uSlicePass;
+uniform int uHasTerrain;
+uniform sampler2D uTerrain;
+uniform vec4 uTerrainBox;
+uniform vec4 uTiltCam;
+uniform vec2 uHalf;
+uniform float uCurvature;
+uniform vec3 uEye;
+uniform vec3 uForward;
+uniform vec3 uUp;
+uniform float uSliceBase;
+uniform float uSliceFar;
 out vec2 vClip;
+out vec2 vSliceGeo;
+out float vSliceWall;
+out float vSliceCoverage;
+${TILT_CAMERA_GLSL}
 void main() {
-  vClip = aClip;
-  gl_Position = vec4(aClip, 0.0, 1.0);
+  vSliceGeo=vec2(0);vSliceWall=0.0;vSliceCoverage=1.0;
+  if(uSlicePass==0){vClip=aClip.xy;gl_Position=vec4(aClip.xy,0,1);return;}
+  vec2 uv=vec2(mod(aClip.x-uTerrainBox.x+720.0,360.0)/(uTerrainBox.z-uTerrainBox.x),(aClip.y-uTerrainBox.y)/(uTerrainBox.w-uTerrainBox.y));
+  bool covered=uHasTerrain==1&&all(greaterThanEqual(uv,vec2(0)))&&all(lessThanEqual(uv,vec2(1)));
+  vec2 dem=covered?texture(uTerrain,uv).rg:vec2(0);
+  float height=dem.y>.99?dem.x/dem.y:0.0;
+  vSliceCoverage=covered&&dem.y>.99?1.0:0.0;
+  height=mix(height,min(height,uSliceBase),aClip.z);
+  vec3 point=variableSurface(radians(aClip.y),radians(aClip.x),uTiltCam.x,uTiltCam.y,uCurvature,height);
+  vec3 relative=point-uEye,right=normalize(cross(uForward,uUp));
+  float depth=dot(relative,uForward),w=depth*.46630766*uCurvature;
+  vec2 xy=vec2(dot(relative,right)/(uHalf.x/uHalf.y),dot(relative,uUp));
+  // Perspective depth must be affine in 1/distance; interpolating distance
+  // itself gives the wrong ordering between sloping top and vertical cut faces.
+  float nearM=max(1.0,uSliceFar*.0001);
+  float z=(uSliceFar+nearM)/(uSliceFar-nearM)*w-2.0*uSliceFar*nearM/(uSliceFar-nearM)*(.46630766*uCurvature/6371000.0);
+  gl_Position=vec4(xy,z,w);
+  vClip=xy/max(w,1e-8);vSliceGeo=aClip.xy;vSliceWall=aClip.w;
 }
 `;
 
@@ -88,6 +124,8 @@ uniform float uF;
 uniform float uRho0;
 uniform float uDark;
 uniform float uCutaway;
+uniform int uSliceEnabled;
+uniform int uSlicePass;
 uniform int uHasImagery;
 uniform int uProjection;
 uniform int uWrap;
@@ -107,6 +145,9 @@ uniform vec4 uWaterBox;
 uniform int uHasWater;
 
 in vec2 vClip;
+in vec2 vSliceGeo;
+in float vSliceWall;
+in float vSliceCoverage;
 out vec4 oColor;
 
 const vec3 SEA_DAY = vec3(0.914, 0.937, 0.957);
@@ -129,6 +170,7 @@ bool tiltedGeo(vec2 clip, float h, out float lat, out float lon) {
   return variableGeo(clip, uTiltCam, uHalf.x/uHalf.y, uCurvature, uEye, uForward, uUp, h, lat, lon);
 }
 bool geoOf(vec2 clip, out float lat, out float lon) {
+  if(uSlicePass==1){lat=vSliceGeo.y;lon=vSliceGeo.x;return true;}
   if (uTilt == 1) {
     if (!tiltedGeo(clip, 0.0, lat, lon)) return false;
     // A bounded height-field intersection. Elevation stays at physical scale.
@@ -258,6 +300,17 @@ ${fieldStopsToGlsl('wind', 3)}
   return vec4(0.0);
 }
 
+// A pale horizon grades into deeper blue with viewing elevation. Keep theme
+// separate from time: dark UI is not evidence of historical night weather.
+vec3 skyColour(vec2 clip) {
+  vec3 right=normalize(cross(uForward,uUp));
+  vec3 ray=normalize(uForward+right*(clip.x*.46630766*uCurvature*uHalf.x/uHalf.y)+uUp*(clip.y*.46630766*uCurvature));
+  float elevation=smoothstep(0.0,.65,max(0.0,ray.z));
+  vec3 day=mix(vec3(.83,.89,.93),vec3(.28,.53,.77),elevation);
+  vec3 nightTheme=mix(vec3(.035,.065,.10),vec3(.015,.03,.065),elevation);
+  return mix(day,nightTheme,uDark);
+}
+
 void main() {
   float lat;
   float lon;
@@ -266,8 +319,9 @@ void main() {
   float fieldNeutral = (uField == 1 || uField == 2) ? uFieldAlpha : 0.0;
   SEA = mix(SEA, mix(FIELD_SEA_DAY, FIELD_SEA_NIGHT, uDark), fieldNeutral);
   LANDC = mix(LANDC, mix(FIELD_LAND_DAY, FIELD_LAND_NIGHT, uDark), fieldNeutral);
-  if (!geoOf(vClip, lat, lon)) {
-    vec3 sky = mix(vec3(.83,.89,.93),vec3(.035,.065,.10),uDark);
+  if(uSlicePass==1&&vSliceCoverage<.999)discard;
+  if ((uSliceEnabled==1&&uSlicePass==0) || !geoOf(vClip, lat, lon)) {
+    vec3 sky = uTilt==1?skyColour(vClip):SEA;
     oColor = vec4(uTilt == 1 ? sky : SEA, 1.0);
     return;
   }
@@ -360,6 +414,8 @@ void main() {
   // A soft foreground window reveals overlaid air; DEM sampling stays intact.
   float window = (1.0-smoothstep(-0.85, 0.2, vClip.y)) * exp(-vClip.x*vClip.x*1.5) * uCutaway;
   base = mix(base, mix(vec3(.83,.89,.93),vec3(.035,.065,.10),uDark), window*.96);
+  // A plain cut face communicates solid ground, without invented geology.
+  if(uSlicePass==1&&vSliceWall>.5)base=mix(vec3(.42,.38,.31),vec3(.22,.25,.27),uDark);
   oColor = vec4(base, 1.0);
 }
 `;
@@ -388,6 +444,7 @@ export interface GlChart {
   setImagery(image: ImageBitmap | null, mapping?: ImageryMapping): void;
   /** How many mosaics have finished uploading. */
   terrainEpoch(): number;
+  sliceReady(slice: AtmosphereSlice): boolean;
   /** Ask the next draw to keep a top-left RGBA copy of the plate. */
   requestPlate(): void;
   takePlate(): { width: number; height: number; data: Uint8ClampedArray } | null;
@@ -399,7 +456,7 @@ export function createGlChart(canvas: HTMLCanvasElement): GlChart | null {
   const gl = canvas.getContext('webgl2', {
     alpha: false,
     antialias: false,
-    depth: false,
+    depth: true,
     stencil: false,
     premultipliedAlpha: false,
   });
@@ -428,11 +485,17 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
   gl.enableVertexAttribArray(0);
   gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
+  const sliceVao=gl.createVertexArray(),sliceBuffer=gl.createBuffer(),sliceIndices=gl.createBuffer();
+  gl.bindVertexArray(sliceVao);gl.bindBuffer(gl.ARRAY_BUFFER,sliceBuffer);
+  gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,4,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,sliceIndices);
+  let lastSliceKey="",sliceCount=0;
   const texA = gl.createTexture();
   const texB = gl.createTexture();
   const texLand = gl.createTexture();
   const texWater = gl.createTexture();
   let texImagery = gl.createTexture();
+  const anisotropy = gl.getExtension('EXT_texture_filter_anisotropic');
   let imagery: ImageryMapping | null = null;
   // Front texture is drawn; a new mosaic fills the back one a slice per frame, then they swap.
   let texTerrain = gl.createTexture();
@@ -481,6 +544,17 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   }
   let terrain: { box: LandBox; width: number; height: number } | null = null;
+  let uploadedElevation: ReturnType<typeof mosaicElevation> | null = null;
+  let checkedSliceKey="", checkedEpoch=-1, sliceCovered=false;
+  const sliceReady=(slice:AtmosphereSlice)=>{
+    const key=atmosphereSliceKey(slice);
+    if(checkedSliceKey===key&&checkedEpoch===terrainEpoch)return sliceCovered;
+    checkedSliceKey=key;checkedEpoch=terrainEpoch;sliceCovered=!!uploadedElevation;
+    if(!uploadedElevation)return false;
+    const mesh=buildTerrainSliceMesh(slice);
+    for(let i=0;i<mesh.vertices.length;i+=4)if(uploadedElevation(mesh.vertices[i],mesh.vertices[i+1])==null){sliceCovered=false;break;}
+    return sliceCovered;
+  };
   let pending: (TerrainTexture & { row: number }) | null = null;
   /** Texels uploaded per frame: a large mosaic never stalls one frame. */
   const UPLOAD_TEXELS = 600_000;
@@ -500,6 +574,7 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
     if (next.row < next.height) return;
     [texTerrain, texTerrainBack] = [texTerrainBack, texTerrain];
     terrain = { box: { ...next.box }, width: next.width, height: next.height };
+    uploadedElevation=mosaicElevation({...next,z:0,covered:1});
     pending = null;
     terrainEpoch += 1;
   }
@@ -557,6 +632,9 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       if (image && mapping) {
         gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,image);
         gl.generateMipmap(gl.TEXTURE_2D);
+        // Preserve photographic detail at grazing mountain views, with a cap
+        // rather than the driver's potentially expensive maximum.
+        if(anisotropy)gl.texParameterf(gl.TEXTURE_2D,anisotropy.TEXTURE_MAX_ANISOTROPY_EXT,Math.min(4,gl.getParameter(anisotropy.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
       } else gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array(4));
       gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,imagery?gl.LINEAR_MIPMAP_LINEAR:gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
@@ -566,7 +644,7 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
     },
     setTerrain(next: TerrainTexture | null) {
       if (!next) {
-        terrain = null;
+        terrain = null;uploadedElevation=null;checkedEpoch=-1;
         pending = null;
         return;
       }
@@ -585,6 +663,9 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.useProgram(program);
       gl.bindVertexArray(vao);
+      gl.disable(gl.DEPTH_TEST);gl.clear(gl.DEPTH_BUFFER_BIT);
+      const slice=view.tiltCamera&&view.slice?view.slice:undefined;
+      gl.uniform1i(loc('uSliceEnabled'),slice?1:0);gl.uniform1i(loc('uSlicePass'),0);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, texA);
       gl.activeTexture(gl.TEXTURE1);
@@ -649,6 +730,23 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       gl.uniform1i(loc('uProjection'), view.lambert.projection === 'equirectangular' ? 1 : 0);
       gl.uniform1i(loc('uWrap'), view.wrapsLongitude ? 1 : 0);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
+      if(slice&&view.tiltCamera){
+        gl.bindVertexArray(sliceVao);
+        const sliceKey=atmosphereSliceKey(slice);
+        if(lastSliceKey!==sliceKey){
+          const mesh=buildTerrainSliceMesh(slice);
+          gl.bindBuffer(gl.ARRAY_BUFFER,sliceBuffer);gl.bufferData(gl.ARRAY_BUFFER,mesh.vertices,gl.STATIC_DRAW);
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,sliceIndices);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,mesh.indices,gl.STATIC_DRAW);
+          sliceCount=mesh.indices.length;lastSliceKey=sliceKey;
+        }
+        const eye=view.tiltCamera.geometry.cameraPositionM;
+        gl.uniform1f(loc('uSliceBase'),slice.baseM);
+        gl.uniform1f(loc('uSliceFar'),Math.max(100000,Math.hypot(...eye)+slice.halfWidthM*8));
+        gl.uniform1i(loc('uSlicePass'),1);gl.uniform1f(loc('uCutaway'),0);
+        gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);
+        gl.drawElements(gl.TRIANGLES,sliceCount,gl.UNSIGNED_SHORT,0);
+        gl.disable(gl.DEPTH_TEST);gl.uniform1i(loc('uSlicePass'),0);
+      }
       if (wantPlate) {
         const width = canvas.width;
         const height = canvas.height;
@@ -662,6 +760,7 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       }
     },
     terrainEpoch() { return terrainEpoch; },
+    sliceReady,
     requestPlate() { wantPlate = true; },
     takePlate() {
       const shot = plate;
@@ -669,6 +768,7 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       return shot;
     },
     destroy() {
+      gl.deleteVertexArray(sliceVao);gl.deleteBuffer(sliceBuffer);gl.deleteBuffer(sliceIndices);
       gl.deleteVertexArray(vao);
       gl.deleteBuffer(buffer);
       gl.deleteProgram(program);

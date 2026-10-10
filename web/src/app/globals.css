@@ -575,3 +575,14 @@ html:has(.map-shell), body:has(.map-shell) { overscroll-behavior: none; }
   [data-history-mode="true"] .history-day { flex: 1 1 120px; width: 0; }
   [data-history-mode="true"] .time-block { flex-basis: 100%; }
 }
+
+/* A labelled slice toggle grows with enlarged text instead of clipping its word. */
+.map-tools button.map-slice { width: auto; min-width: max(36px, 3.1em); height: auto; min-height: max(36px, 1.6em); padding: 0 5px; }
+.map-tools button.map-slice:disabled { opacity: .5; cursor: default; }
+
+.map-slice-control { display: flex; align-items: center; gap: 8px; }
+.map-slice-position { width: 96px; min-width: 0; height: 36px; margin: 0; padding: 0 6px; accent-color: var(--md-primary); background: var(--md-surface); border-radius: 8px; pointer-events: auto; cursor: ew-resize; }
+.map-slice-position:focus-visible { outline: 2px solid var(--md-primary); outline-offset: 2px; }
+/* Keep the sweep reachable above the phone's point sheet. */
+.map-shell:has([data-point-layout="sheet"]) .map-tools { left: 8px; }
+.map-shell:has([data-point-layout="sheet"]) .map-slice-control { position: absolute; left: 0; top: max(42px, calc(var(--map-exposed-height, 100%) - 52px)); }

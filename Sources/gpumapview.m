@@ -1766,25 +1766,63 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     }
     _morphing = NO;
     [self syncViewport];
-    // A precise two-finger scroll is the continuous tilt gesture. The camera's
-    // geographic centre is invariant; the morph is derived from pitch so
-    // returning overhead never restores a stale globe-slider value.
-    double delta = -dy * 0.004;
-    if (!isfinite(delta) || fabs(delta) < 1e-10) return;
+    // A precise two-finger scroll orbits horizontally and tilts vertically.
+    // Natural-scroll deltas are used directly: swiping right increases the
+    // bearing, while swiping up increases the tilt. Both axes are applied in
+    // one camera update so a diagonal gesture cannot briefly lose its anchor.
+    double bearingDelta = dx * 0.004;
+    double pitchDelta = -dy * 0.004;
+    if (!isfinite(bearingDelta) || !isfinite(pitchDelta) ||
+        (fabs(bearingDelta) < 1e-10 && fabs(pitchDelta) < 1e-10)) return;
+
+    // Keep the selected place pinned to its current screen position when one
+    // is available. Without a place, pin the existing geographic centre at
+    // the viewport centre, which gives an unpinned orbit its stable focus.
+    double focusLat = _camera.centreLat;
+    double focusLon = _camera.centreLon;
+    double anchorX = _camera.viewportW * 0.5;
+    double anchorY = _camera.viewportH * 0.5;
+    BOOL haveSelectedFocus = isfinite(_placeLatitude) && isfinite(_placeLongitude);
+    if (haveSelectedFocus) {
+        double selectedX = 0, selectedY = 0;
+        if (IsobarCameraProject(_camera, _placeLatitude, _placeLongitude,
+                                &selectedX, &selectedY) &&
+            selectedX >= 0 && selectedX <= _camera.viewportW &&
+            selectedY >= 0 && selectedY <= _camera.viewportH) {
+            focusLat = _placeLatitude;
+            focusLon = _placeLongitude;
+            anchorX = selectedX;
+            anchorY = selectedY;
+        } else {
+            haveSelectedFocus = NO;
+        }
+    }
+
     IsobarCamera next = _camera;
-    next.pitch += delta;
+    next.bearing += bearingDelta;
+    next.pitch += pitchDelta;
     if (next.pitch < 0) next.pitch = 0;
     if (next.pitch > kMaxMapPitch) next.pitch = kMaxMapPitch;
     next.globe = next.pitch / kFullTiltPitch;
     if (next.globe < 0) next.globe = 0;
     if (next.globe > 1) next.globe = 1;
+
+    // Reuse the established tilt framing/dolly calculation before solving
+    // the geographic anchor. This preserves pinch zoom while changing pitch.
+    // Keep the pre-gesture pitch visible to applyPitch: so it can establish
+    // or update the automatic tilt dolly baseline correctly. Only bearing is
+    // installed before that helper runs.
+    _camera.bearing = next.bearing;
     [self applyPitch:next.pitch globe:next.globe];
-    _camera = IsobarCameraClamp(_camera);
-    self.didPlaceCamera = YES;
-    [self noteUserMoved];
-    [self syncSlider];
-    [self placeMarker];
-    if (self.onCameraChanged) self.onCameraChanged(_camera);
+    next = _camera;
+    IsobarCamera anchored = next;
+    if (MapCameraAnchor(&anchored, focusLat, focusLon, anchorX, anchorY)) {
+        next = anchored;
+    } else if (haveSelectedFocus) {
+        // A selected point can be beyond the visible globe horizon. Keep the
+        // valid orbit/tilt update and let marker visibility update below.
+    }
+    [self commitKeyboardCamera:next];
 }
 
 - (void)zoomBy:(double)factor {
