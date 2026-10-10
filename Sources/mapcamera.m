@@ -37,6 +37,7 @@ IsobarCamera MapCameraMake(double lat, double lon, double zoom, double globe, do
     cam.centreLon = MapWrap180(lon);
     cam.zoom = zoom;
     cam.globe = globe;
+    cam.pitch = 0;
     cam.viewportW = w;
     cam.viewportH = h;
     return cam;
@@ -160,7 +161,7 @@ BOOL MapCameraAnchor(IsobarCamera *camera, double lat, double lon, double x, dou
     if (globe < 0) globe = 0;
     if (globe > 1) globe = 1;
     cam.globe = globe;
-    if (globe >= 1 - 1e-7) {
+    if (globe >= 1 - 1e-7 || fabs(cam.pitch) > 1e-7) {
         if (!AnchorSphere(&cam, lat, lon, x, y)) return NO;
         *camera = cam;
         return YES;

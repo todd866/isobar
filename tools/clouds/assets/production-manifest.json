@@ -1,0 +1,41 @@
+{
+  "width": 772,
+  "height": 1291,
+  "bytes": 294652,
+  "decodedBytes": 3986608,
+  "sha256": "619bb95340fb9c1974de235386326d4a3e1c1cebadcf4c75f72989b1615de27d",
+  "sourceBytes": 518214,
+  "rects": {
+    "cumulus": [
+      2,
+      2,
+      650,
+      304
+    ],
+    "cumulonimbus": [
+      2,
+      310,
+      734,
+      438
+    ],
+    "cirrus": [
+      2,
+      752,
+      688,
+      311
+    ],
+    "stratus": [
+      2,
+      1067,
+      768,
+      68
+    ],
+    "nimbostratus": [
+      2,
+      1139,
+      768,
+      148
+    ]
+  },
+  "retainedPaletteBytes": 11959824
+}

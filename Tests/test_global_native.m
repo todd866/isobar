@@ -82,7 +82,7 @@ int main(void) {
             NSString *out = [[[NSProcessInfo processInfo] environment][@"ISOBAR_GLOBAL_RENDER_OUT"] copy];
             for (NSDictionary *place in places) {
                 double globe = ([place[@"name"] hasSuffix:@"pole"]) ? 1.0 : 0.0;
-                IsobarCamera camera = {[place[@"lat"] doubleValue], [place[@"lon"] doubleValue], 2.0, globe, 640, 360};
+                IsobarCamera camera = {.centreLat=[place[@"lat"] doubleValue], .centreLon=[place[@"lon"] doubleValue], .zoom=2.0, .globe=globe, .viewportW=640, .viewportH=360};
                 camera = IsobarCameraClamp(camera);
             NSError *renderError = nil;
                 CGImageRef image = [renderer renderTime:frame fill:IsobarFieldPressure isobars:YES camera:camera error:&renderError];

@@ -207,6 +207,50 @@ static void Journeys(JourneyController *c, NSView *(^root)(void), NSString *surf
             (unsigned long)with, (unsigned long)read.count);
     }
     ClickLens(root(), @"Pressure");
+    journey = [surface stringByAppendingString:@" J9 tilted wind vectors"];
+    map = Map(c);
+    NSButton *mode3D = (NSButton *)Find(root(), ^BOOL(NSView *v) {
+        return [v isKindOfClass:NSButton.class] && [v.accessibilityIdentifier hasSuffix:@".sphere"] && !v.hiddenOrHasHiddenAncestor;
+    });
+    EXPECT(mode3D && mode3D.enabled, "3D mode control is available");
+    if (mode3D) [mode3D performClick:nil];
+    NSDate *vectorTime = [c selectedForecastDate];
+    IsobarCamera vectorCamera = map.camera;
+    NSButton *barbs = (NSButton *)Find(root(), ^BOOL(NSView *v) {
+        return [v isKindOfClass:NSButton.class] && [v.accessibilityIdentifier hasSuffix:@".barbs"] && !v.hiddenOrHasHiddenAncestor;
+    });
+    EXPECT(barbs && barbs.enabled, "wind toggle is available on the GPU map");
+    if (barbs.state != NSControlStateValueOn) [barbs performClick:nil];
+    map = Map(c);
+    [map scrollByX:0 y:-150 atPoint:NSMakePoint(NSMidX(map.bounds),NSMidY(map.bounds)) precise:YES command:NO];
+    EXPECT(map.camera.pitch > .2 && SameView(map.camera,vectorCamera), "tilting wind changed the geographic view");
+    EXPECT(fabs([[c selectedForecastDate] timeIntervalSinceDate:vectorTime])<1, "tilting wind changed forecast time");
+    [map waitForUploads];
+    NSString *dir = @"build/qa/journeys";
+    [NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:NULL];
+    OwnRun *windRun = [map valueForKey:@"run"];
+    NSString *coverage = windRun.geo.wrapsLongitude ? @"global" : @"regional";
+    for (NSString *theme in @[@"light",@"dark"]) {
+        map.appearance = [NSAppearance appearanceNamed:[theme isEqual:@"dark"]?NSAppearanceNameDarkAqua:NSAppearanceNameAqua];
+        CGImageRef windShot = [map copySnapshot];
+        NSUInteger count = [[[map valueForKey:@"windView"] valueForKey:@"drawnCount"] unsignedIntegerValue];
+        EXPECT(windShot && map.windBarbs && count>5, "tilted wind map has no useful vectors (%lu)",(unsigned long)count);
+        if (windShot) {
+            NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithCGImage:windShot];
+            NSData *png = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+            [png writeToFile:[dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@-wind-%@-%@.png",surface,coverage,theme]] atomically:YES];
+            CGImageRelease(windShot);
+        }
+    }
+    map.appearance = nil;
+    NSButton *mode2D = (NSButton *)Find(root(), ^BOOL(NSView *v) {
+        return [v isKindOfClass:NSButton.class] && [v.accessibilityIdentifier hasSuffix:@".flat"] && !v.hiddenOrHasHiddenAncestor;
+    });
+    EXPECT(mode2D && mode2D.enabled, "2D mode control is available");
+    if (mode2D) [mode2D performClick:nil];
+    [map advanceDisplay:1.0];
+    [map scrollByX:0 y:150 atPoint:NSMakePoint(NSMidX(map.bounds),NSMidY(map.bounds)) precise:YES command:NO];
+    EXPECT(fabs(map.camera.pitch)<1e-9 && SameView(map.camera,vectorCamera), "returning flat lost the wind view");
 }
 
 int main(int argc, const char **argv) {

@@ -17,7 +17,10 @@ disk image, drag Isobar to Applications, then open it from there.
 
 One map, one timeline. The forecast drifts forward on its own; scrub or hover
 to choose a time, hold the map to freeze it, and press Now to return to the
-present. Click-drag pans; pinch or two-finger scroll zooms. Lenses add detail
+present at **Real time** speed. Accelerated playback is labelled in forecast
+minutes per second. Hover waits briefly before moving the timeline, so passing
+the pointer across it does not change the time. Click-drag pans; pinch zooms;
+the 2D/3D toggle selects the map mode, and two-finger scroll tilts in 3D. Lenses add detail
 for the activity you are planning:
 
 - **Rain:** when it arrives, how much to expect, and the hourly breakdown.
@@ -34,8 +37,13 @@ The **[web app](https://isobar.md)** runs in a browser with no account or
 installation. It has an interactive ECMWF pressure map with rain, wind and
 temperature fields, plus [ATPL practice](https://isobar.md/train), an
 [E6-B computer](https://isobar.md/e6b) and an [instrument lab](https://isobar.md/lab).
-The web and Mac apps have different feature sets; web Kite and Surf lenses
-are still unavailable.
+The web and Mac apps have different feature sets. Web Kite and Surf show
+local wind and sea forecasts, while Fly adds an atmospheric cross-section.
+**Historical** opens prepared global weather reconstructions for D-Day and
+Cyclone Tracy, with hourly playback and sources. These coarse reanalysis fields
+show large-scale weather, not an exact reconstruction of local conditions.
+Aircraft replay uses observations captured during the current viewing session;
+it cannot recover flights from before capture began.
 
 The **Mac app** adds Bureau charts, local observations and warnings, airport
 weather, aviation notices, and an illustrated atmosphere view. Its menu bar
@@ -90,7 +98,6 @@ Isobar can also generate weather movies for a wall display. See
 Bug reports and pull requests are welcome. For a visual or interaction bug,
 include the window size, selected layer and a screenshot if possible.
 
-See [maintenance priorities](docs/maintenance.md) for the structural work.
 
 ## In development
 

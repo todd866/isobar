@@ -287,6 +287,26 @@ export function classifyTeachingState(input: {
   return 'mastered';
 }
 
+/** How the next card for a concept is taught. Learning is the retest →
+ * prerequisite → transfer loop in adaptive.ts; this names the step. */
+export type TeachingServe = 'picture' | 'scaffold' | 'cross-format' | 'review';
+
+export function teachingServe(state: TeachingState): TeachingServe {
+  if (state === 'naive') return 'picture';
+  if (state === 'learning') return 'scaffold';
+  if (state === 'consolidating') return 'cross-format';
+  return 'review';
+}
+
+export type ScaffoldStep = 'retest' | 'prerequisite' | 'transfer';
+
+/** A miss while learning walks the same loop the numeric drills use. */
+export function scaffoldStep(misses: number): ScaffoldStep {
+  if (misses <= 1) return 'retest';
+  if (misses === 2) return 'prerequisite';
+  return 'transfer';
+}
+
 export interface ConceptEdge {
   source: string;
   target: string;

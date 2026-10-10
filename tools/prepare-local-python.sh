@@ -8,6 +8,6 @@ command -v ffprobe >/dev/null || { echo 'Install ffprobe (from ffmpeg) before ru
 python3.12 -m venv --clear build/ci-python
 PYTHON=build/ci-python/bin/python
 # NumPy/SciPy are required by the unchanged native offscreen jank scorer.
-"$PYTHON" -m pip --isolated install --disable-pip-version-check --no-cache-dir pytest pytest-timeout pillow numpy scipy
+"$PYTHON" -m pip --isolated install --disable-pip-version-check --no-cache-dir pytest pytest-timeout pillow numpy scipy -r tools/history/requirements.txt
 "$PYTHON" --version
 "$PYTHON" -m pip --isolated list --disable-pip-version-check

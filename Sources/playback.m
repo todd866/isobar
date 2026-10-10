@@ -36,11 +36,11 @@ double IsobarLiveHoursPerSecond(IsobarLiveSpeed speed) {
     if (!IsobarLiveSpeedIsValid(speed)) speed = IsobarLiveSpeed8x;
     // The public speed is forecast minutes per real second. Playback stores
     // the equivalent forecast hours per real second for the existing clock.
-    return (double)speed / 60.0;
+    return speed == IsobarLiveSpeedRealTime ? 1.0 / 3600.0 : (double)speed / 60.0;
 }
 
 BOOL IsobarLiveSpeedIsValid(IsobarLiveSpeed speed) {
-    return speed == IsobarLiveSpeed1x || speed == IsobarLiveSpeed2x ||
+    return speed == IsobarLiveSpeedRealTime || speed == IsobarLiveSpeed1x || speed == IsobarLiveSpeed2x ||
         speed == IsobarLiveSpeed4x || speed == IsobarLiveSpeed8x ||
         speed == IsobarLiveSpeed16x || speed == IsobarLiveSpeed32x ||
         speed == IsobarLiveSpeed64x || speed == IsobarLiveSpeed128x ||
@@ -667,7 +667,8 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
 - (void)tick:(NSTimeInterval)seconds {
     _ticks++;
     if (seconds < 0) seconds = 0;
-    if (seconds > 0.25) seconds = 0.25;
+    BOOL realTime = fabs(_hoursPerSecond - 1.0/3600.0) < 1e-12;
+    if (!realTime && seconds > 0.25) seconds = 0.25;
     if (_seaming) {
         if (_playing && !_holding) {
             _seam += seconds / kIsobarLiveSeamDuration;
@@ -696,7 +697,9 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
                 _hours = [self clampedAdvance:MIN(candidate, _spanHours)];
             }
         } else {
-            _hours = [self clampedAdvance:candidate];
+            // Real time is a clock, not a render budget. Keep elapsed time even
+            // when a frame is late; the last available image remains on screen.
+            _hours = realTime ? candidate : [self clampedAdvance:candidate];
         }
     }
     [self reanchorFromSeek:NO];

@@ -3,6 +3,7 @@
 #import "gpumapview.h"
 #import "ownchart.h"
 #import "mapcamera.h"
+#import "atmospheremapview.h"
 #import "hazard.h"
 #import <QuartzCore/QuartzCore.h>
 #import <math.h>
@@ -11,6 +12,9 @@
 NSString *const GPUMapEnabledKey = @"gpuMapEnabled";
 static const double kGPUZoom = 6.0;
 static const double kClickPoints = 4.0;
+static const double kMaxMapPitch = 1.30;
+static const double kFullTiltPitch = 1.30;
+static const double kKeyboardTiltStep = 15.0 * M_PI / 180.0;
 
 BOOL GPUMapEnabledInDefaults(NSUserDefaults *defaults) {
     if (!defaults || ![defaults objectForKey:GPUMapEnabledKey]) return YES;
@@ -27,7 +31,6 @@ GPUMapSurface GPUMapSurfaceFor(BOOL newMapEnabled, BOOL chartsReady) {
 }
 
 BOOL GPUMapTagIsClassicOnly(NSInteger tag) {
-    if (tag == 3) return YES;
     return tag >= 10 && tag <= 14;
 }
 
@@ -53,6 +56,247 @@ NSString *GPUMapMenuTitle(NSString *title, BOOL classicOnly, BOOL note) {
 }
 @end
 
+@class GPUMapView;
+@interface GPUMapView (PointerHoldPrivate)
+- (void)cancelPointerHold;
+@end
+static NSColor *GMTrafficColour(NSInteger index) {
+    static NSArray<NSColor *> *colours; static dispatch_once_t once;
+    dispatch_once(&once, ^{ colours=@[
+        [NSColor colorWithSRGBRed:.08 green:.48 blue:.72 alpha:1], [NSColor colorWithSRGBRed:.72 green:.28 blue:.15 alpha:1],
+        [NSColor colorWithSRGBRed:.18 green:.56 blue:.30 alpha:1], [NSColor colorWithSRGBRed:.55 green:.25 blue:.67 alpha:1],
+        [NSColor colorWithSRGBRed:.78 green:.47 blue:.08 alpha:1], [NSColor colorWithSRGBRed:.10 green:.55 blue:.55 alpha:1],
+        [NSColor colorWithSRGBRed:.60 green:.20 blue:.36 alpha:1], [NSColor colorWithSRGBRed:.35 green:.35 blue:.68 alpha:1]]; });
+    NSColor *base=colours[(NSUInteger)MAX(0,index)%colours.count];
+    return [NSColor colorWithName:nil dynamicProvider:^NSColor *(NSAppearance *appearance) {
+        BOOL dark=[[appearance bestMatchFromAppearancesWithNames:@[NSAppearanceNameAqua,NSAppearanceNameDarkAqua]] isEqual:NSAppearanceNameDarkAqua];
+        return dark?[base blendedColorWithFraction:.38 ofColor:NSColor.whiteColor]:base;
+    }];
+}
+static void GMText(NSString *text, NSRect rect, CGFloat size, NSColor *colour) {
+    NSMutableParagraphStyle *style=[NSMutableParagraphStyle new]; style.lineBreakMode=NSLineBreakByTruncatingTail;
+    [text drawInRect:rect withAttributes:@{NSFontAttributeName:[NSFont monospacedDigitSystemFontOfSize:size weight:NSFontWeightSemibold],NSForegroundColorAttributeName:colour,NSParagraphStyleAttributeName:style}];
+}
+static void GMGreatCircle(double aLat,double aLon,double bLat,double bLon,double fraction,double *lat,double *lon) {
+    double r=M_PI/180, ax=cos(aLat*r)*cos(aLon*r),ay=cos(aLat*r)*sin(aLon*r),az=sin(aLat*r);
+    double bx=cos(bLat*r)*cos(bLon*r),by=cos(bLat*r)*sin(bLon*r),bz=sin(bLat*r),dot=MIN(1,MAX(-1,ax*bx+ay*by+az*bz));
+    double angle=acos(dot),s=sin(angle); double x,y,z;
+    if (fabs(s)<1e-6) { x=ax*(1-fraction)+bx*fraction; y=ay*(1-fraction)+by*fraction; z=az*(1-fraction)+bz*fraction; }
+    else { double p=sin((1-fraction)*angle)/s,q=sin(fraction*angle)/s; x=p*ax+q*bx; y=p*ay+q*by; z=p*az+q*bz; }
+    *lat=atan2(z,hypot(x,y))/r; *lon=atan2(y,x)/r;
+}
+@interface GMTrafficContent : NSView
+@end
+@implementation GMTrafficContent
+- (BOOL)isFlipped { return YES; }
+@end
+// Keep native button input/accessibility, with deterministic compact rendering
+// in both the Metal subview and offscreen captures.
+@interface GMTrafficChip : NSButton
+@end
+@implementation GMTrafficChip
+- (void)drawRect:(NSRect)dirty {
+    (void)dirty;
+    NSBezierPath *shape=[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds,1,2) xRadius:5 yRadius:5];
+    [(self.highlighted?NSColor.selectedControlColor:NSColor.controlBackgroundColor) setFill]; [shape fill];
+    [NSColor.separatorColor setStroke]; shape.lineWidth=.5; [shape stroke];
+    NSDictionary *attrs=@{NSFontAttributeName:self.font,NSForegroundColorAttributeName:self.contentTintColor?:NSColor.labelColor};
+    NSSize size=[self.title sizeWithAttributes:attrs];
+    [self.title drawAtPoint:NSMakePoint((NSWidth(self.bounds)-size.width)/2,(NSHeight(self.bounds)-size.height)/2) withAttributes:attrs];
+    if (self.window.firstResponder==self) { [NSColor.keyboardFocusIndicatorColor setStroke]; shape.lineWidth=2; [shape stroke]; }
+}
+@end
+@interface GPUMapTrafficOverlay : NSView
+@property(nonatomic,weak) GPUMapView *owner;
+@property(nonatomic) NSPoint downPoint;
+@property(nonatomic,strong) NSScrollView *chips,*cards;
+@property(nonatomic,strong) NSTextField *noticeLabel;
+@property(nonatomic,strong) NSTimer *noticeTimer;
+- (void)rebuildControls;
+- (void)showTrafficNotice:(NSString *)notice;
+@property(nonatomic,copy) NSString *notice;
+@property(nonatomic,strong) NSDate *noticeUntil;
+@property(nonatomic) NSTimeInterval lastControlsRebuild;
+- (void)refreshControlsIfDue;
+@end
+
+@implementation GPUMapTrafficOverlay
+- (BOOL)isFlipped { return YES; }
+- (BOOL)isOpaque { return NO; }
+- (void)setFrameSize:(NSSize)size { [super setFrameSize:size]; [self rebuildControls]; }
+- (NSView *)hitTest:(NSPoint)point {
+    if (!self.owner.trafficEnabled) return nil;
+    return [super hitTest:point];
+}
+- (CGFloat)scale { CGFloat scale=self.window.backingScaleFactor; return scale>1?scale:1; }
+- (NSArray<NSDictionary *> *)displayAircraft {
+    GPUMapView *owner=self.owner;
+    if (owner.trafficIsNow) return TrafficVisibleAircraft(owner.trafficSnapshot,NSDate.date);
+    if (owner.trafficHolding && owner.trafficHoldSnapshot && owner.trafficHoldDate && owner.trafficDate &&
+        fabs([owner.trafficDate timeIntervalSinceDate:owner.trafficHoldDate])<.001)
+        return TrafficVisibleAircraft(owner.trafficHoldSnapshot,owner.trafficHoldDate);
+    return [owner.trafficSession aircraftAtDate:owner.trafficDate];
+}
+- (BOOL)projectAircraft:(NSDictionary *)aircraft point:(NSPoint *)point {
+    GPUMapView *owner=self.owner; if (!owner) return NO;
+    double x=0,y=0;
+    if (!IsobarCameraProject(owner.camera,[aircraft[@"latitude"] doubleValue],[aircraft[@"longitude"] doubleValue],&x,&y)) return NO;
+    if (point) *point=NSMakePoint(x/[self scale],y/[self scale]); return YES;
+}
+- (NSDictionary *)aircraftAtPoint:(NSPoint)point {
+    NSArray *aircraftRows=[self displayAircraft];
+    for (NSDictionary *aircraft in aircraftRows) {
+        NSPoint projected; if ([self projectAircraft:aircraft point:&projected] &&
+            NSPointInRect(point,NSInsetRect(NSMakeRect(projected.x-12,projected.y-12,24,24),-4,-4))) return aircraft;
+    }
+    return nil;
+}
+- (void)rebuildControls {
+    self.lastControlsRebuild=NSDate.date.timeIntervalSinceReferenceDate;
+    [self.chips removeFromSuperview]; [self.cards removeFromSuperview]; self.chips=nil; self.cards=nil;
+    GPUMapView *owner=self.owner; NSArray *selected=owner.trafficSession.selectedHexes;
+    if (!owner.trafficEnabled || !selected.count) return;
+    CGFloat width=MIN(310,MAX(120,NSWidth(self.bounds)-64));
+    self.chips=[[NSScrollView alloc] initWithFrame:NSMakeRect(10,8,width,30)];
+    self.chips.drawsBackground=NO; self.chips.hasHorizontalScroller=YES; self.chips.autohidesScrollers=YES;
+    GMTrafficContent *chips=[[GMTrafficContent alloc] initWithFrame:NSMakeRect(0,0,width,28)];
+    CGFloat x=0;
+    NSDateFormatter *clock=[NSDateFormatter new]; clock.timeZone=owner.trafficZone?:NSTimeZone.localTimeZone; clock.dateFormat=@"HH:mm";
+    CGFloat cardsHeight=MIN(selected.count*72,MAX(48,MIN(230,NSHeight(self.bounds)*.45)));
+    self.cards=[[NSScrollView alloc] initWithFrame:NSMakeRect(10,40,width,cardsHeight)];
+    self.cards.hasVerticalScroller=YES; self.cards.autohidesScrollers=YES; self.cards.drawsBackground=YES;
+    self.cards.backgroundColor=NSColor.controlBackgroundColor;
+    GMTrafficContent *cards=[[GMTrafficContent alloc] initWithFrame:NSMakeRect(0,0,width,selected.count*72)];
+    CGFloat y=0;
+    for (NSString *hex in selected) {
+        NSDictionary *a=[owner.trafficSession aircraftForHex:hex]?:@{};
+        if (!owner.trafficIsNow) {
+            a=@{};
+            for (NSDictionary *sample in [self displayAircraft])
+                if ([sample[@"hex"] isEqual:hex]) { a=sample; break; }
+        }
+        NSString *name=[a[@"callsign"] length]?a[@"callsign"]:hex;
+        NSColor *colour=GMTrafficColour([owner.trafficSession colourIndexForHex:hex]);
+        NSButton *chip=[GMTrafficChip buttonWithTitle:[name stringByAppendingString:@" ×"] target:self action:@selector(removeChip:)];
+        chip.identifier=hex; chip.accessibilityLabel=[@"Remove " stringByAppendingString:name]; chip.font=[NSFont systemFontOfSize:11 weight:NSFontWeightSemibold];
+        chip.bezelStyle=NSBezelStyleRounded; chip.contentTintColor=colour;
+        CGFloat chipWidth=MAX(72,MIN(132,name.length*8+30)); chip.frame=NSMakeRect(x,0,chipWidth,28); [chips addSubview:chip]; x+=chipWidth+4;
+        NSString *type=[a[@"type"] length]?a[@"type"]:@"—", *reg=[a[@"registration"] length]?a[@"registration"]:@"—";
+        NSString *alt=a[@"pressureAltitudeFt"]?[NSString stringWithFormat:@"FL%03ld",lround([a[@"pressureAltitudeFt"] doubleValue]/100)]:@"—";
+        NSString *trend=[a[@"verticalTrend"] isEqual:@"climb"]?@" ↑":[a[@"verticalTrend"] isEqual:@"descend"]?@" ↓":[a[@"verticalTrend"] isEqual:@"level"]?@" →":@"";
+        NSString *speed=a[@"groundSpeedKt"]?[NSString stringWithFormat:@"%.0f kt",[a[@"groundSpeedKt"] doubleValue]]:@"— kt";
+        NSString *squawk=[a[@"squawk"] length]?[@" · SQ " stringByAppendingString:a[@"squawk"]]:@"";
+        NSDictionary *route=owner.trafficIsNow ? (owner.trafficRoutes[hex]?:owner.trafficRoutes[name]) : nil;
+        NSString *origin=route[@"origin"][@"name"]?:route[@"origin"][@"icao"], *dest=route[@"destination"][@"name"]?:route[@"destination"][@"icao"];
+        NSArray *points=[owner.trafficSession trackForHex:hex];
+        NSString *span=owner.trafficIsNow && points.count?[NSString stringWithFormat:@"PAST %@–%@",[clock stringFromDate:points.firstObject[@"time"]],[clock stringFromDate:points.lastObject[@"time"]]]:(!owner.trafficIsNow && a.count)?[NSString stringWithFormat:@"REPLAY %@",[clock stringFromDate:owner.trafficDate]]:@"No recorded position";
+        NSArray *lines=@[[NSString stringWithFormat:@"%@ · %@ · %@",name,type,reg],origin&&dest?[NSString stringWithFormat:@"%@ → %@",origin,dest]:@"Route —",[NSString stringWithFormat:@"%@%@ · %@%@",alt,trend,speed,squawk],span];
+        for (NSUInteger i=0;i<lines.count;i++) {
+            NSTextField *label=[NSTextField labelWithString:lines[i]];
+            label.font=[NSFont monospacedDigitSystemFontOfSize:i==3?10:11 weight:i==0?NSFontWeightSemibold:NSFontWeightRegular];
+            label.textColor=i==0?colour:NSColor.labelColor; label.frame=NSMakeRect(7,y+3+i*16,width-22,16);
+            label.lineBreakMode=NSLineBreakByTruncatingTail; label.toolTip=lines[i]; [cards addSubview:label];
+        }
+        y+=72;
+    }
+    chips.frame=NSMakeRect(0,0,MAX(x,width),28); self.chips.documentView=chips; self.cards.documentView=cards;
+    [self addSubview:self.chips]; [self addSubview:self.cards];
+}
+- (void)refreshControlsIfDue {
+    NSTimeInterval now=NSDate.date.timeIntervalSinceReferenceDate;
+    if (now-self.lastControlsRebuild>=0.2) [self rebuildControls];
+}
+- (void)removeChip:(NSButton *)sender {
+    NSString *hex=sender.identifier; NSString *name=[self.owner.trafficSession aircraftForHex:hex][@"callsign"]?:hex;
+    [self.owner.trafficSession removeSelectionForHex:hex]; [self rebuildControls];
+    [self showTrafficNotice:[@"Removed " stringByAppendingString:name]];
+    if (self.owner.onTrafficSelection) self.owner.onTrafficSelection(hex,NO);
+    [self setNeedsDisplay:YES];
+}
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect; GPUMapView *owner=self.owner; if (!owner || !owner.trafficEnabled) return;
+    TrafficTrackSession *session=owner.trafficSession; CGFloat scale=[self scale];
+    for (NSString *hex in session.selectedHexes) {
+        NSArray *points=[session trackForHex:hex]; if (!points.count) continue;
+        NSColor *colour=GMTrafficColour([session colourIndexForHex:hex]);
+        NSDictionary *last=points.lastObject;
+        NSDictionary *previous=nil; NSPoint previousPoint=NSZeroPoint;
+        for (NSDictionary *point in points) {
+            if (!owner.trafficIsNow && owner.trafficDate && [point[@"time"] compare:owner.trafficDate]==NSOrderedDescending) break;
+            NSPoint projected; NSDictionary *geo=@{@"latitude":point[@"latitude"],@"longitude":point[@"longitude"]};
+            if (![self projectAircraft:geo point:&projected]) { previous=nil; continue; }
+            if (previous) {
+                double gap=fabs([point[@"time"] timeIntervalSinceDate:previous[@"time"]]); double dlon=fabs([point[@"longitude"] doubleValue]-[previous[@"longitude"] doubleValue]);
+                if (gap<=300 && dlon<180) { NSBezierPath *segment=[NSBezierPath bezierPath]; [segment moveToPoint:previousPoint]; [segment lineToPoint:projected]; [[colour colorWithAlphaComponent:.80] setStroke]; segment.lineWidth=1.5+MIN(45000,MAX(0,[point[@"pressureAltitudeFt"] doubleValue]))/15000; [segment stroke]; }
+            }
+            previous=point; previousPoint=projected;
+        }
+        NSDictionary *aircraft=[session aircraftForHex:hex]; NSDictionary *route=owner.trafficRoutes[hex]?:owner.trafficRoutes[aircraft[@"callsign"]]; NSDictionary *destination=owner.trafficIsNow && [route[@"destination"] isKindOfClass:NSDictionary.class]?route[@"destination"]:nil;
+        if (destination[@"latitude"] && destination[@"longitude"] && last[@"latitude"] && last[@"longitude"]) {
+            NSBezierPath *projection=[NSBezierPath bezierPath]; BOOL routeMoved=NO; NSPoint routePrevious=NSZeroPoint;
+            for (NSUInteger i=0;i<=64;i++) {
+                double lat=0,lon=0;
+                GMGreatCircle([last[@"latitude"] doubleValue],[last[@"longitude"] doubleValue],[destination[@"latitude"] doubleValue],[destination[@"longitude"] doubleValue],i/64.0,&lat,&lon);
+                NSPoint point; NSDictionary *geo=@{@"latitude":@(lat),@"longitude":@(lon)};
+                if (![self projectAircraft:geo point:&point]) { routeMoved=NO; continue; }
+                if (!routeMoved || fabs(point.x-routePrevious.x)>NSWidth(self.bounds)*.75) [projection moveToPoint:point];
+                else [projection lineToPoint:point];
+                routeMoved=YES; routePrevious=point;
+            }
+            CGFloat dash[]={5,4}; [projection setLineDash:dash count:2 phase:0]; [[colour colorWithAlphaComponent:.35] setStroke]; projection.lineWidth=1/scale; [projection stroke];
+            NSPoint endpoint; NSDictionary *geo=@{@"latitude":destination[@"latitude"],@"longitude":destination[@"longitude"]}; if ([self projectAircraft:geo point:&endpoint]) { [[colour colorWithAlphaComponent:.7] setFill]; [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(endpoint.x-3,endpoint.y-3,6,6)] fill]; GMText(destination[@"icao"]?:@"",NSMakeRect(endpoint.x+6,endpoint.y-12,48,14),10,colour); }
+        }
+    }
+    NSArray *marks=[self displayAircraft];
+    for (NSDictionary *aircraft in marks) {
+            NSPoint point; if (![self projectAircraft:aircraft point:&point]) continue;
+            BOOL selected=[session.selectedHexes containsObject:aircraft[@"hex"]];
+            NSColor *colour=selected?GMTrafficColour([session colourIndexForHex:aircraft[@"hex"]]):[NSColor colorWithSRGBRed:.35 green:.40 blue:.45 alpha:.8];
+            if (!aircraft[@"trackDegrees"]) { [colour setFill]; [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(point.x-4,point.y-4,8,8)] fill]; continue; }
+            NSBezierPath *glyph=[NSBezierPath bezierPath]; [glyph moveToPoint:NSMakePoint(point.x+9,point.y)];
+            [glyph lineToPoint:NSMakePoint(point.x-7,point.y-6)]; [glyph lineToPoint:NSMakePoint(point.x-4,point.y)];
+            [glyph lineToPoint:NSMakePoint(point.x-7,point.y+6)]; [glyph closePath];
+            NSAffineTransform *rotation=[NSAffineTransform transform]; [rotation translateXBy:point.x yBy:point.y]; [rotation rotateByDegrees:[aircraft[@"trackDegrees"] doubleValue]-90]; [rotation translateXBy:-point.x yBy:-point.y]; [rotation concat]; [colour setFill]; [glyph fill]; [rotation invert]; [rotation concat];
+    }
+    if (owner.trafficEnabled && !owner.trafficIsNow)
+        GMText(marks.count?@"Replay · captured traffic":@"Replay · No recorded traffic",NSMakeRect(10,NSHeight(self.bounds)-30,260,18),11,NSColor.secondaryLabelColor);
+}
+- (void)showTrafficNotice:(NSString *)notice {
+    [self.noticeTimer invalidate];
+    if (!self.noticeLabel) { self.noticeLabel=[NSTextField labelWithString:@""]; self.noticeLabel.font=[NSFont systemFontOfSize:11 weight:NSFontWeightMedium]; self.noticeLabel.backgroundColor=NSColor.controlBackgroundColor; self.noticeLabel.drawsBackground=YES; [self addSubview:self.noticeLabel]; }
+    self.noticeLabel.stringValue=notice; self.noticeLabel.hidden=NO;
+    self.noticeLabel.frame=NSMakeRect(10,MAX(8,NSHeight(self.bounds)-30),MIN(320,NSWidth(self.bounds)-20),22);
+    __weak GPUMapTrafficOverlay *weak=self;
+    self.noticeTimer=[NSTimer scheduledTimerWithTimeInterval:2.5 repeats:NO block:^(NSTimer *timer) { (void)timer; weak.noticeLabel.hidden=YES; }];
+}
+- (void)mouseDown:(NSEvent *)event { [self.owner.window makeFirstResponder:self.owner]; self.downPoint=[self convertPoint:event.locationInWindow fromView:nil]; [self.owner pointerDown:self.downPoint]; }
+- (void)mouseDragged:(NSEvent *)event { [self.owner pointerDrag:[self convertPoint:event.locationInWindow fromView:nil]]; }
+- (void)mouseUp:(NSEvent *)event {
+    NSPoint point=[self convertPoint:event.locationInWindow fromView:nil];
+    if (hypot(point.x-self.downPoint.x,point.y-self.downPoint.y)<=4) {
+        NSDictionary *aircraft=[self aircraftAtPoint:point];
+        if (aircraft) {
+            NSString *hex=aircraft[@"hex"];
+            if (![self.owner.trafficSession.selectedHexes containsObject:hex] && self.owner.trafficSession.selectedHexes.count>=8) {
+                [self showTrafficNotice:@"8 aircraft selected"];
+                [self.owner cancelPointerHold];
+                return;
+            }
+            BOOL selected=[self.owner.trafficSession toggleSelectionForHex:hex];
+            [self rebuildControls];
+            [self showTrafficNotice:[NSString stringWithFormat:@"%@ %@",selected?@"Tracking":@"Removed",aircraft[@"callsign"]?:hex]];
+            if (self.owner.onTrafficSelection) self.owner.onTrafficSelection(hex,selected);
+            [self.owner cancelPointerHold];
+            [self setNeedsDisplay:YES]; return;
+        }
+    }
+    [self.owner pointerUp:point];
+}
+- (void)keyDown:(NSEvent *)event {
+    if (event.keyCode==53) { [self.owner.trafficSession clearSelections]; [self rebuildControls]; [self showTrafficNotice:@"Tracks cleared"]; return; }
+    [self.owner keyDown:event];
+}
+@end
 
 // Draws the hazard layer over the Metal map. Clicks and drags pass through.
 @interface GPUMapHazardView : NSView
@@ -217,6 +461,7 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
     IsobarFieldKind _fill;
     double _downX, _downY, _grabLat, _grabLon;
     BOOL _grabbed, _dragging;
+    BOOL _pointerHeld;
     BOOL _morphing;
     double _morphFrom, _morphTo, _morphT;
     NSButton *_flatButton;
@@ -237,6 +482,8 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
     double _lastQueueWaitMilliseconds;
     BOOL _popoverChrome;
     BOOL _userMoved;
+    BOOL _threeDMode;
+    double _last3DGlobe;
     double _fitW, _fitH;
     CAMetalLayer *_metal;
     NSUInteger _presentedCount;
@@ -245,6 +492,9 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
     BOOL _sawOcclusionVisible;
     BOOL _inPresent;
     BOOL _watchdogArmed;
+    GPUMapTrafficOverlay *_trafficOverlay;
+    AtmosphereMapView *_atmosphereView;
+    WindMapView *_windView;
     // Hazard layer.
     BOOL _hazards;
     NSString *_hazardStoreRoot;
@@ -313,7 +563,10 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _source = OwnRunFieldMSLP;
     _placeLatitude = NAN;
     _placeLongitude = NAN;
+    _trafficSession = [TrafficTrackSession new];
     _camera = MapCameraMake(-33.87, 151.21, kGPUZoom, 0, 640, 480);
+    _threeDMode = NO;
+    _last3DGlobe = 1.0;
     _metal = [CAMetalLayer layer];
     _metal.device = device;
     _metal.pixelFormat = MTLPixelFormatBGRA8Unorm;
@@ -337,6 +590,16 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     // renderTime snapshots still look fine.
     self.layerContentsRedrawPolicy = NSViewLayerContentsRedrawNever;
     self.accessibilityIdentifier = @"gpumap.surface";
+    _trafficOverlay=[GPUMapTrafficOverlay new]; _trafficOverlay.owner=self;
+    _trafficOverlay.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
+    _trafficOverlay.frame=self.bounds; [self addSubview:_trafficOverlay];
+    _atmosphereView=[AtmosphereMapView new];
+    _atmosphereView.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
+    _atmosphereView.frame=self.bounds; [self addSubview:_atmosphereView];
+    _windView = [[WindMapView alloc] initWithFrame:self.bounds];
+    _windView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    _windView.hidden = YES;
+    [self addSubview:_windView];
     [self buildChrome];
     return self;
 }
@@ -348,6 +611,35 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 - (BOOL)isFlipped { return YES; }
 - (BOOL)acceptsFirstResponder { return YES; }
 - (BOOL)ownsForecastTimer { return NO; }
+- (void)setTrafficSnapshot:(NSDictionary *)trafficSnapshot {
+    _trafficSnapshot=[trafficSnapshot copy];
+    [self.trafficSession mergeSnapshot:_trafficSnapshot];
+    [_trafficOverlay rebuildControls]; [_trafficOverlay setNeedsDisplay:YES];
+}
+- (void)setTrafficSession:(TrafficTrackSession *)trafficSession { _trafficSession=trafficSession?:[TrafficTrackSession new]; [_trafficSession mergeSnapshot:_trafficSnapshot]; [_trafficOverlay rebuildControls]; [_trafficOverlay setNeedsDisplay:YES]; }
+- (void)setTrafficEnabled:(BOOL)trafficEnabled { if (_trafficEnabled==trafficEnabled) return; _trafficEnabled=trafficEnabled; _trafficOverlay.hidden=!trafficEnabled; [_trafficOverlay rebuildControls]; [_trafficOverlay setNeedsDisplay:YES]; }
+- (void)setTrafficIsNow:(BOOL)trafficIsNow {
+    if (_trafficIsNow==trafficIsNow) return;
+    if (trafficIsNow) {
+        _trafficHoldSnapshot=nil; _trafficHoldDate=nil;
+        if (_trafficSnapshot) [self.trafficSession mergeSnapshot:_trafficSnapshot];
+    }
+    _trafficIsNow=trafficIsNow;
+    if (!trafficIsNow && _trafficEnabled) [_trafficOverlay showTrafficNotice:@"Traffic replay · recorded this session"];
+    [_trafficOverlay rebuildControls]; [_trafficOverlay setNeedsDisplay:YES];
+}
+- (void)setTrafficHolding:(BOOL)trafficHolding {
+    if (_trafficHolding==trafficHolding) return;
+    if (trafficHolding && _trafficIsNow && _trafficDate) {
+        _trafficHoldSnapshot=[_trafficSnapshot copy]; _trafficHoldDate=[_trafficDate copy];
+    } else { _trafficHoldSnapshot=nil; _trafficHoldDate=nil; }
+    _trafficHolding=trafficHolding;
+    [_trafficOverlay rebuildControls]; [_trafficOverlay setNeedsDisplay:YES];
+}
+- (void)setTrafficDate:(NSDate *)trafficDate { if ([_trafficDate isEqualToDate:trafficDate]) return; _trafficDate=[trafficDate copy]; if (_trafficEnabled && !_trafficIsNow) [_trafficOverlay refreshControlsIfDue]; [_trafficOverlay setNeedsDisplay:YES]; }
+- (void)setTrafficZone:(NSTimeZone *)trafficZone { if ([_trafficZone isEqual:trafficZone]) return; _trafficZone=trafficZone; [_trafficOverlay rebuildControls]; }
+- (void)setTrafficRoutes:(NSDictionary *)trafficRoutes { _trafficRoutes=[trafficRoutes copy]; [_trafficOverlay rebuildControls]; [_trafficOverlay setNeedsDisplay:YES]; }
+- (void)showTrafficNotice:(NSString *)notice { [_trafficOverlay showTrafficNotice:notice]; }
 
 - (CAMetalLayer *)metalLayer { return _metal; }
 
@@ -408,9 +700,11 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     [self syncDrawable];
     _camera.viewportW = self.metalLayer.drawableSize.width;
     _camera.viewportH = self.metalLayer.drawableSize.height;
+    [self syncVectorOverlays];
 }
 
 - (void)stopRendering {
+    [self cancelPointerHold];
     [_link invalidate];
     _link = nil;
     _lastStamp = 0;
@@ -476,6 +770,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 }
 
 - (void)dealloc {
+    [self cancelPointerHold];
     [_link invalidate];
 }
 
@@ -498,13 +793,13 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 - (void)viewDidMoveToWindow {
     [super viewDidMoveToWindow];
     [NSNotificationCenter.defaultCenter removeObserver:self name:NSWindowDidChangeOcclusionStateNotification object:nil];
-    if (!self.window && self.onHoldChanged) self.onHoldChanged(NO);
     if (self.window) {
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(updateLink)
             name:NSWindowDidChangeOcclusionStateNotification object:self.window];
     }
     [self updateLink];
     [self syncDrawable];
+    if (!self.window) [self cancelPointerHold];
 }
 
 - (void)viewDidChangeBackingProperties {
@@ -529,6 +824,60 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     [self presentNow];
 }
 
+- (void)setCamera:(IsobarCamera)camera {
+    _camera = camera;
+    if (self.onCameraChanged) self.onCameraChanged(_camera);
+    IsobarCamera overlayCamera = camera;
+    overlayCamera.viewportW = NSWidth(self.bounds);
+    overlayCamera.viewportH = NSHeight(self.bounds);
+    _atmosphereView.camera = overlayCamera;
+    [_atmosphereView setNeedsDisplay:YES];
+    [self syncVectorOverlays];
+}
+
+- (void)syncVectorOverlays {
+    IsobarCamera points = _camera;
+    points.viewportW = NSWidth(self.bounds);
+    points.viewportH = NSHeight(self.bounds);
+    _atmosphereView.camera = points;
+    _atmosphereView.date = self.atmosphereDate ?: self.timeline.playhead;
+    _windView.camera = _camera;
+    _windView.fractionalStep = _fractionalStep;
+    _windView.chartDark = [self mapIsDark];
+    [_windView setNeedsDisplay:YES];
+    [_atmosphereView setNeedsDisplay:YES];
+}
+
+- (void)setWindBarbs:(BOOL)value {
+    _windBarbs = value;
+    _windView.hidden = !value;
+    [self syncVectorOverlays];
+}
+
+- (void)setAtmosphereProduct:(NSDictionary *)product {
+    _atmosphereProduct = [product copy];
+    _atmosphereView.product = _atmosphereProduct;
+    [_atmosphereView setNeedsDisplay:YES];
+}
+
+- (void)setAtmosphereLatitude:(double)latitude {
+    _atmosphereLatitude = latitude;
+    _atmosphereView.latitude = latitude;
+    [_atmosphereView setNeedsDisplay:YES];
+}
+
+- (void)setAtmosphereLongitude:(double)longitude {
+    _atmosphereLongitude = longitude;
+    _atmosphereView.longitude = longitude;
+    [_atmosphereView setNeedsDisplay:YES];
+}
+
+- (void)setAtmosphereDate:(NSDate *)date {
+    _atmosphereDate = date;
+    _atmosphereView.date = date;
+    [_atmosphereView setNeedsDisplay:YES];
+}
+
 - (NSButton *)textButton:(NSString *)title action:(SEL)action identifier:(NSString *)identifier {
     NSButton *button = [NSButton buttonWithTitle:title target:self action:action];
     button.bordered = NO;
@@ -537,18 +886,29 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     return button;
 }
 
+- (void)syncModeControls {
+    if (!_flatButton || !_globeButton) return;
+    _flatButton.state = _threeDMode ? NSControlStateValueOff : NSControlStateValueOn;
+    _globeButton.state = _threeDMode ? NSControlStateValueOn : NSControlStateValueOff;
+    _flatButton.contentTintColor = _threeDMode ? NSColor.labelColor : NSColor.controlAccentColor;
+    _globeButton.contentTintColor = _threeDMode ? NSColor.controlAccentColor : NSColor.labelColor;
+    _globeSlider.enabled = _threeDMode;
+}
+
 - (void)buildChrome {
     _flatButton = [self textButton:@"2D" action:@selector(goFlat:) identifier:@"gpumap.flat"];
-    _flatButton.accessibilityLabel = @"Flat map";
-    _flatButton.toolTip = @"Flat map (2)";
+    [_flatButton setButtonType:NSButtonTypeToggle];
+    _flatButton.accessibilityLabel = @"2D map";
+    _flatButton.toolTip = @"2D map (2)";
     _globeSlider = [NSSlider sliderWithValue:0 minValue:0 maxValue:1 target:self action:@selector(globeSlid:)];
     _globeSlider.continuous = YES;
     _globeSlider.accessibilityIdentifier = @"gpumap.globe";
-    _globeSlider.accessibilityLabel = @"2D to 3D";
-    _globeSlider.toolTip = @"2 and 3";
+    _globeSlider.accessibilityLabel = @"Map tilt";
+    _globeSlider.toolTip = @"Map tilt between overhead and globe";
     _globeButton = [self textButton:@"3D" action:@selector(goGlobe:) identifier:@"gpumap.sphere"];
-    _globeButton.accessibilityLabel = @"Globe";
-    _globeButton.toolTip = @"Globe (3)";
+    [_globeButton setButtonType:NSButtonTypeToggle];
+    _globeButton.accessibilityLabel = @"3D map";
+    _globeButton.toolTip = @"3D map (3) — two-finger swipe tilts";
     // The map's own control: a location glyph on a material tile, top right,
     // as in Maps. The words live in the tooltip and accessibility label.
     _recenterButton = [self textButton:@"" action:@selector(recenter) identifier:@"gpumap.recenter"];
@@ -587,31 +947,40 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _marker.hidden = YES;
     for (NSView *view in @[_plate, _marker, _flatButton, _globeSlider, _globeButton, _recenterBack, _recenterButton])
         [self addSubview:view];
+    [self syncModeControls];
     [self layoutChrome];
 }
 
 - (void)bringChromeFront {
-    for (NSView *view in @[_marker, _flatButton, _globeSlider, _globeButton, _recenterBack, _recenterButton])
+    for (NSView *view in @[_windView, _hazardView, _placesView, _trafficOverlay, _atmosphereView, _marker, _flatButton, _globeSlider, _globeButton, _recenterBack, _recenterButton])
         [self addSubview:view];
 }
 
 - (void)layoutChrome {
     NSRect bounds = self.bounds;
+    if (!NSEqualSizes(_trafficOverlay.frame.size,bounds.size)) { _trafficOverlay.frame=bounds; [_trafficOverlay rebuildControls]; }
+    _atmosphereView.frame = bounds;
+    _windView.frame = bounds;
     _plate.frame = bounds;
     _hazardView.frame = bounds;
     _placesView.frame = bounds;
     CGFloat y = 8;
-    BOOL globe = !_popoverChrome;
+    BOOL globe = YES;
     _flatButton.hidden = !globe;
-    _globeSlider.hidden = !globe;
+    _globeSlider.hidden = !globe || _popoverChrome;
     _globeButton.hidden = !globe;
     _flatButton.frame = NSMakeRect(8, y, 32, 24);
     _globeSlider.frame = NSMakeRect(44, y, MIN(140, MAX(60, NSWidth(bounds) - 280)), 24);
     _globeButton.frame = NSMakeRect(NSMaxX(_globeSlider.frame) + 4, y, 32, 24);
+    if (_popoverChrome) {
+        _flatButton.frame = NSMakeRect(8, y, 32, 24);
+        _globeButton.frame = NSMakeRect(44, y, 32, 24);
+    }
     _recenterButton.hidden = _popoverChrome && !_userMoved;
     _recenterButton.frame = NSMakeRect(NSWidth(bounds) - 8 - 28, y, 28, 28);
     _recenterBack.frame = _recenterButton.frame;
     _recenterBack.hidden = _recenterButton.hidden;
+    [self syncModeControls];
     [self bringChromeFront];
 }
 
@@ -736,7 +1105,9 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     double centreLon = winW + winLon * 0.5;
     double fit = fmin(vw / 360.0, vh / 180.0);
     double zoom = fit > 0 ? (vh / winLat) / fit : 1;
+    double pitch = _camera.pitch;
     _camera = MapCameraMake(centreLat, centreLon, zoom, _camera.globe, vw, vh);
+    _camera.pitch = pitch;
     _camera = IsobarCameraClamp(_camera);
     double edgeLat = 0, edgeLon = 0, topLat = 0, topLon = 0;
     if (IsobarCameraUnproject(_camera, vw * 0.5, vh - 0.5, &edgeLat, &edgeLon) &&
@@ -791,6 +1162,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _fitH = _camera.viewportH;
     [self syncSlider];
     [self placeMarker];
+    if (self.onCameraChanged) self.onCameraChanged(_camera);
     [self layoutChrome];
 }
 
@@ -856,6 +1228,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 
 - (void)setFractionalStep:(double)fractionalStep {
     _fractionalStep = fractionalStep;
+    [self syncVectorOverlays];
     _dissolveMix = 0;
     // Scrubbing and paused seeks set the step here, not through the timeline.
     if (_source != OwnRunFieldMSLP && _placesView && !_placesView.hidden && fabs(fractionalStep - _namesStep) > 0.06)
@@ -891,6 +1264,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     CGFloat scale = [self pixelScale];
     _marker.hidden = NO;
     _marker.frame = NSMakeRect(x / scale - 7, y / scale - 7, 14, 14);
+    [_trafficOverlay setNeedsDisplay:YES];
     [self updatePlaceNames];
 }
 
@@ -920,6 +1294,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _userMoved = NO;
     [self syncSlider];
     [self placeMarker];
+    if (self.onCameraChanged) self.onCameraChanged(_camera);
     [self layoutChrome];
 }
 
@@ -929,6 +1304,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _camera = IsobarCameraClamp(_camera);
     [self noteUserMoved];
     [self placeMarker];
+    if (self.onCameraChanged) self.onCameraChanged(_camera);
 }
 
 - (void)applyBudget {
@@ -1056,6 +1432,8 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     }
     if (run && run == _run && source == _source && fill == _fill && _gridReady) return;
     _run = run;
+    _windView.run = run;
+    [self syncVectorOverlays];
     _source = source;
     _fill = fill;
     [self loadHazardsIfNeeded];
@@ -1093,11 +1471,14 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     if (target > 1) target = 1;
     if (reduced || fabs(target - _camera.globe) < 1e-6) {
         _camera.globe = target;
+        _camera.pitch = target * kFullTiltPitch;
         _morphing = NO;
         [self syncViewport];
         _camera = IsobarCameraClamp(_camera);
         [self syncSlider];
+        [self syncModeControls];
         [self placeMarker];
+        if (self.onCameraChanged) self.onCameraChanged(_camera);
         return;
     }
     _morphFrom = _camera.globe;
@@ -1111,27 +1492,74 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     unichar ch = [characters characterAtIndex:0];
     if (ch != '2' && ch != '3') return NO;
     if (repeat) return NO;
-    [self animateGlobeTo:ch == '3' ? 1 : 0 reducedMotion:[self reducedNow]];
+    if (ch == '3') [self goGlobe:nil];
+    else [self goFlat:nil];
     return YES;
 }
 
 - (void)goFlat:(id)sender {
     (void)sender;
+    if (!_threeDMode) {
+        if (fabs(_camera.globe) > 1e-9 || fabs(_camera.pitch) > 1e-9) {
+            _morphing = NO;
+            _camera.globe = 0;
+            _camera.pitch = 0;
+            [self syncViewport];
+            _camera = IsobarCameraClamp(_camera);
+            [self syncSlider];
+            [self placeMarker];
+            if (self.onCameraChanged) self.onCameraChanged(_camera);
+        }
+        [self syncModeControls];
+        return;
+    }
+    _last3DGlobe = MIN(1.0, MAX(0.0, _camera.globe));
+    _threeDMode = NO;
+    [self syncModeControls];
     [self animateGlobeTo:0 reducedMotion:[self reducedNow]];
 }
 
 - (void)goGlobe:(id)sender {
     (void)sender;
-    [self animateGlobeTo:1 reducedMotion:[self reducedNow]];
+    if (_threeDMode) {
+        [self syncModeControls];
+        return;
+    }
+    _threeDMode = YES;
+    [self syncModeControls];
+    [self animateGlobeTo:_last3DGlobe reducedMotion:[self reducedNow]];
 }
 
 - (void)globeSlid:(NSSlider *)slider {
+    if (!_threeDMode) {
+        [self syncSlider];
+        return;
+    }
     _morphing = NO;
     _camera.globe = slider.doubleValue;
+    _camera.pitch = _camera.globe * kFullTiltPitch;
+    _last3DGlobe = _camera.globe;
     [self syncViewport];
     _camera = IsobarCameraClamp(_camera);
     [self syncSlider];
+    [self syncModeControls];
     [self placeMarker];
+    if (self.onCameraChanged) self.onCameraChanged(_camera);
+}
+
+- (void)stepTiltBy:(double)delta {
+    if (!_threeDMode || !isfinite(delta) || fabs(delta) < 1e-12) return;
+    IsobarCamera next = _camera;
+    next.pitch = MIN(kMaxMapPitch, MAX(0.0, next.pitch + delta));
+    next.globe = MIN(1.0, MAX(0.0, next.pitch / kFullTiltPitch));
+    _morphing = NO;
+    _camera = IsobarCameraClamp(next);
+    _last3DGlobe = _camera.globe;
+    [self syncViewport];
+    [self syncSlider];
+    [self syncModeControls];
+    [self placeMarker];
+    if (self.onCameraChanged) self.onCameraChanged(_camera);
 }
 
 - (BOOL)anchorLat:(double)lat lon:(double)lon toX:(double)x y:(double)y {
@@ -1141,17 +1569,27 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     self.didPlaceCamera = YES;
     [self noteUserMoved];
     [self placeMarker];
+    if (self.onCameraChanged) self.onCameraChanged(_camera);
     return YES;
 }
 
+- (void)cancelPointerHold {
+    if (!_pointerHeld) return;
+    _pointerHeld = NO;
+    if (self.onHoldChanged) self.onHoldChanged(NO);
+}
+
 - (void)pointerDown:(NSPoint)point {
-    if (self.onHoldChanged) self.onHoldChanged(YES);
     [self syncViewport];
     NSPoint p = [self pixels:point];
     _downX = p.x;
     _downY = p.y;
     _dragging = NO;
     _grabbed = IsobarCameraUnproject(_camera, p.x, p.y, &_grabLat, &_grabLon);
+    if (!_pointerHeld) {
+        _pointerHeld = YES;
+        if (self.onHoldChanged) self.onHoldChanged(YES);
+    }
 }
 
 - (void)pointerDrag:(NSPoint)point {
@@ -1175,14 +1613,14 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     CGFloat slop = kClickPoints * [self pixelScale];
     BOOL click = !_dragging && MapPointerIsClick(p.x - _downX, p.y - _downY, slop);
     _dragging = NO;
-    if (self.onHoldChanged) self.onHoldChanged(NO);
+    [self cancelPointerHold];
     if (click && self.onPlainClick) self.onPlainClick();
 }
 
 - (void)cancelOperation:(id)sender {
     (void)sender;
     _dragging = NO;
-    if (self.onHoldChanged) self.onHoldChanged(NO);
+    [self cancelPointerHold];
 }
 
 - (BOOL)pinchFactor:(double)factor atPoint:(NSPoint)point {
@@ -1205,19 +1643,50 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     self.didPlaceCamera = YES;
     [self noteUserMoved];
     [self placeMarker];
+    if (self.onCameraChanged) self.onCameraChanged(_camera);
     return YES;
 }
 
 - (void)scrollByX:(double)dx y:(double)dy atPoint:(NSPoint)point precise:(BOOL)precise command:(BOOL)command {
     if (!isfinite(dx) || !isfinite(dy) || !isfinite(point.x) || !isfinite(point.y)) return;
-    // A two-finger trackpad gesture is the map's zoom control. Click-drag is
-    // the pan gesture; keeping scroll out of the pan path avoids a horizontal
-    // trackpad drag accidentally changing the camera centre.
-    (void)dx;
-    (void)command;
-    if (fabs(dy) < 1e-9) return;
-    double sensitivity = precise ? 0.006 : (0.12 / 40.0);
-    [self pinchFactor:exp(dy * sensitivity) atPoint:point];
+    if (!_threeDMode && _morphing) {
+        _morphing = NO;
+        _camera.globe = 0;
+        _camera.pitch = 0;
+        [self syncViewport];
+        _camera = IsobarCameraClamp(_camera);
+        [self syncSlider];
+    }
+    if (!precise || command) {
+        _morphing = NO;
+        double notches = dy / 40.0;
+        [self pinchFactor:exp(-notches * 0.12) atPoint:point];
+        return;
+    }
+    if (!_threeDMode) {
+        [self pinchFactor:exp(-dy / 40.0 * 0.12) atPoint:point];
+        return;
+    }
+    _morphing = NO;
+    [self syncViewport];
+    // A precise two-finger scroll is the continuous tilt gesture. The camera's
+    // geographic centre is invariant; the morph is derived from pitch so
+    // returning overhead never restores a stale globe-slider value.
+    double delta = -dy * 0.004;
+    if (!isfinite(delta) || fabs(delta) < 1e-10) return;
+    IsobarCamera next = _camera;
+    next.pitch += delta;
+    if (next.pitch < 0) next.pitch = 0;
+    if (next.pitch > kMaxMapPitch) next.pitch = kMaxMapPitch;
+    next.globe = next.pitch / kFullTiltPitch;
+    if (next.globe < 0) next.globe = 0;
+    if (next.globe > 1) next.globe = 1;
+    _camera = IsobarCameraClamp(next);
+    self.didPlaceCamera = YES;
+    [self noteUserMoved];
+    [self syncSlider];
+    [self placeMarker];
+    if (self.onCameraChanged) self.onCameraChanged(_camera);
 }
 
 - (void)zoomBy:(double)factor {
@@ -1397,6 +1866,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     if (_morphing) {
         _morphT += dt;
         _camera.globe = MapGlobeAt(_morphFrom, _morphTo, _morphT, kMapMorphSeconds, [self reducedNow]);
+        _camera.pitch = _camera.globe * kFullTiltPitch;
         if (_morphT >= kMapMorphSeconds) {
             _camera.globe = _morphTo;
             _morphing = NO;
@@ -1404,9 +1874,16 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
         [self syncViewport];
         _camera = IsobarCameraClamp(_camera);
         [self syncSlider];
+        [self syncModeControls];
         [self placeMarker];
     }
     if (self.unavailable) return;
+    IsobarCamera overlayCamera = _camera;
+    overlayCamera.viewportW = NSWidth(self.bounds); overlayCamera.viewportH = NSHeight(self.bounds);
+    _atmosphereView.camera = overlayCamera;
+    _atmosphereView.date = self.atmosphereDate ?: self.timeline.playhead;
+    [self syncVectorOverlays];
+    [_atmosphereView setNeedsDisplay:YES];
     _renderedStep = _fractionalStep;
     _renderCount++;
     [self encodeFrame];
@@ -1441,6 +1918,10 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _renderer.synchronousContours = sync;
     [_lock unlock];
     if (image) _renderedStep = _fractionalStep;
+    if (image && _windBarbs) {
+        CGImageRef vectors = [self copyImageWithVectorOverlays:image wind:YES atmosphere:NO];
+        if (vectors) { CGImageRelease(image); image = vectors; }
+    }
     if (image) {
         CGImageRef named = [self copyImageWithPlaces:image];
         if (named) { CGImageRelease(image); image = named; }
@@ -1452,7 +1933,33 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
             image = composed;
         }
     }
+    if (image) {
+        CGImageRef vectors = [self copyImageWithVectorOverlays:image wind:NO atmosphere:YES];
+        if (vectors) { CGImageRelease(image); image = vectors; }
+    }
     return image;
+}
+
+- (CGImageRef)copyImageWithVectorOverlays:(CGImageRef)image wind:(BOOL)wind atmosphere:(BOOL)atmosphere {
+    if (!image || (!(wind && _windBarbs) && !(atmosphere && _atmosphereProduct))) return nil;
+    [self syncVectorOverlays];
+    size_t width = CGImageGetWidth(image), height = CGImageGetHeight(image);
+    if (!(NSWidth(self.bounds) > 0) || !(NSHeight(self.bounds) > 0)) return nil;
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGContextRef context = CGBitmapContextCreate(NULL, width, height, 8, 0, space, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+    CGColorSpaceRelease(space);
+    if (!context) return nil;
+    CGContextDrawImage(context, CGRectMake(0, 0, width, height), image);
+    CGContextTranslateCTM(context, 0, height);
+    CGContextScaleCTM(context, width / NSWidth(self.bounds), -(double)height / NSHeight(self.bounds));
+    NSGraphicsContext *previous = NSGraphicsContext.currentContext;
+    NSGraphicsContext.currentContext = [NSGraphicsContext graphicsContextWithCGContext:context flipped:YES];
+    if (wind && _windBarbs) [_windView drawRect:_windView.bounds];
+    if (atmosphere && _atmosphereProduct) [_atmosphereView drawRect:_atmosphereView.bounds];
+    NSGraphicsContext.currentContext = previous;
+    CGImageRef output = CGBitmapContextCreateImage(context);
+    CGContextRelease(context);
+    return output;
 }
 
 
@@ -1828,10 +2335,27 @@ static const NSUInteger kHazardFrameCache = 24;
 }
 
 - (void)keyDown:(NSEvent *)event {
+    if (event.keyCode==53 && self.trafficSession.selectedHexes.count) {
+        [self.trafficSession clearSelections]; [_trafficOverlay rebuildControls]; [_trafficOverlay setNeedsDisplay:YES];
+        [_trafficOverlay showTrafficNotice:@"Tracks cleared"];
+        if (self.onTrafficSelection) self.onTrafficSelection(@"", NO);
+        return;
+    }
     if ((event.modifierFlags & NSEventModifierFlagCommand) && !event.isARepeat) {
         NSString *ch = event.charactersIgnoringModifiers;
         if ([ch isEqualToString:@"="] || [ch isEqualToString:@"+"]) { [self zoomBy:1.25]; return; }
         if ([ch isEqualToString:@"-"] || [ch isEqualToString:@"_"]) { [self zoomBy:1.0 / 1.25]; return; }
+    }
+    if (!event.isARepeat) {
+        NSString *characters = event.charactersIgnoringModifiers ?: @"";
+        if ([characters rangeOfString:[NSString stringWithFormat:@"%C", (unichar)NSPageUpFunctionKey]].location != NSNotFound) {
+            [self stepTiltBy:-kKeyboardTiltStep];
+            return;
+        }
+        if ([characters rangeOfString:[NSString stringWithFormat:@"%C", (unichar)NSPageDownFunctionKey]].location != NSNotFound) {
+            [self stepTiltBy:kKeyboardTiltStep];
+            return;
+        }
     }
     if ([self handleGlobeKey:event.charactersIgnoringModifiers repeat:event.isARepeat]) return;
     [super keyDown:event];

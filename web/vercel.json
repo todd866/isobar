@@ -1,0 +1,9 @@
+{
+  "framework": "nextjs",
+  "crons": [
+    {
+      "path": "/api/chat/digest",
+      "schedule": "0 22 * * *"
+    }
+  ]
+}

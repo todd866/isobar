@@ -7,6 +7,13 @@
 #import <stdio.h>
 #import <stdlib.h>
 
+@interface SnapshotScaleMapView : GPUMapView
+@property(nonatomic) CGFloat testScale;
+@end
+@implementation SnapshotScaleMapView
+- (CGFloat)pixelScale { return _testScale > 0 ? _testScale : 1; }
+@end
+
 static int failures = 0;
 
 @interface GPUMapView (GestureTestEvents)
@@ -29,6 +36,8 @@ static void Check(BOOL ok, NSString *message) {
     fprintf(stderr, "%s %s\n", ok ? "ok  " : "FAIL", message.UTF8String);
     if (!ok) failures++;
 }
+
+static NSView *FindID(NSView *root, NSString *ident);
 
 static float HalfFloat(uint16_t bits) {
     int sign = bits >> 15;
@@ -91,7 +100,9 @@ static void CheckDragAndPinch(GPUMapView *view) {
     view.frame = NSMakeRect(0, 0, 480, 360);
     view.camera = MapCameraMake(-35, 140, 6, 0, 480, 360);
     __block NSInteger clicks = 0;
+    __block NSInteger holds = 0, releases = 0;
     view.onPlainClick = ^{ clicks++; };
+    view.onHoldChanged = ^(BOOL held) { held ? holds++ : releases++; };
     IsobarCamera start = view.camera;
     [view pointerDown:NSMakePoint(200, 160)];
     [view pointerDrag:NSMakePoint(260, 120)];
@@ -102,7 +113,8 @@ static void CheckDragAndPinch(GPUMapView *view) {
     IsobarCamera dragged = view.camera;
     [view pointerDown:NSMakePoint(80, 80)];
     [view pointerUp:NSMakePoint(82, 81)];
-    Check(clicks == 1, @"a plain click emits the optional generic callback");
+    Check(clicks == 1, @"a plain click emits the optional selection callback");
+    Check(holds == 2 && releases == 2, @"pointer hold emits balanced ownership callbacks");
     Check(fabs(view.camera.centreLat - dragged.centreLat) < 1e-6 &&
         fabs(view.camera.centreLon - dragged.centreLon) < 1e-6, @"a click does not pan");
 
@@ -118,22 +130,62 @@ static void CheckDragAndPinch(GPUMapView *view) {
     Check(fabs(view.camera.zoom - clamped.zoom) < 1e-6 &&
         fabs(view.camera.centreLat - clamped.centreLat) < 1e-6, @"pinch stays inside the camera clamp");
 
+    NSButton *sphere = (NSButton *)FindID(view, @"gpumap.sphere");
+    Check(sphere != nil, @"the 3D mode control is present");
+    [sphere performClick:nil];
+    Check(sphere.state == NSControlStateValueOn, @"selecting 3D marks the mode selected");
+    Check(((NSSlider *)FindID(view, @"gpumap.globe")).enabled, @"the tilt slider is enabled in 3D");
     IsobarCamera beforeScroll = view.camera;
     [view scrollByX:0 y:-40 atPoint:at precise:YES command:NO];
-    Check(view.camera.zoom < beforeScroll.zoom, @"two-finger scroll zooms out");
-    Check(fabs(view.camera.centreLat - beforeScroll.centreLat) > 0.01 ||
-        fabs(view.camera.centreLon - beforeScroll.centreLon) > 0.01, @"two-finger scroll keeps its cursor anchor");
-
+    Check(view.camera.pitch > beforeScroll.pitch && view.camera.globe > beforeScroll.globe,
+        @"two-finger scroll tilts into the globe");
+    double saved3DGlobe = view.camera.globe;
+    Check(fabs(view.camera.centreLat - beforeScroll.centreLat) < 1e-9 &&
+        fabs(view.camera.centreLon - beforeScroll.centreLon) < 1e-9, @"tilt keeps the geographic focus");
+    Check(IsobarCameraUnproject(view.camera,at.x,at.y,&lat,&lon),@"tilted pinch starts on Earth");
+    double pitch=view.camera.pitch;
+    Check([view pinchFactor:1.2 atPoint:at],@"pinch works while tilted");
+    Check(IsobarCameraProject(view.camera,lat,lon,&px,&py) && hypot(px-at.x,py-at.y)<1,@"tilted pinch preserves geographic pointer anchor");
+    Check(fabs(view.camera.pitch-pitch)<1e-9,@"pinch leaves tilt unchanged");
+    [view pointerDown:at]; [view pointerDrag:NSMakePoint(at.x+20,at.y+10)]; [view pointerUp:NSMakePoint(at.x+20,at.y+10)];
+    IsobarCamera panned=view.camera;
+    [view scrollByX:0 y:1000 atPoint:at precise:YES command:NO];
+    Check(view.camera.pitch==0 && fabs(view.camera.centreLat-panned.centreLat)<1e-9 && fabs(view.camera.centreLon-panned.centreLon)<1e-9,@"return overhead retains the place reached by tilted pan");
+    Check(sphere.state == NSControlStateValueOn, @"returning overhead keeps 3D mode selected");
+    [view scrollByX:0 y:-40 atPoint:at precise:YES command:NO];
+    saved3DGlobe = view.camera.globe;
+    NSButton *flat = (NSButton *)FindID(view, @"gpumap.flat");
+    [flat performClick:nil];
+    [view advanceDisplay:1.0];
+    Check(view.camera.globe == 0 && view.camera.pitch == 0, @"switching to 2D reaches the flat camera");
+    IsobarCamera flatBeforeSwipe = view.camera;
+    double flatZoomBeforeSwipe = view.camera.zoom;
+    [view scrollByX:0 y:-1000 atPoint:at precise:YES command:NO];
+    Check(flat.state == NSControlStateValueOn && sphere.state == NSControlStateValueOff,
+        @"selecting 2D updates the mutually exclusive mode controls");
+    Check(fabs(view.camera.pitch - flatBeforeSwipe.pitch) < 1e-9 && fabs(view.camera.globe - flatBeforeSwipe.globe) < 1e-9 &&
+        view.camera.zoom > flatZoomBeforeSwipe, @"a two-finger swipe in 2D zooms without activating 3D");
+    Check(!((NSSlider *)FindID(view, @"gpumap.globe")).enabled, @"the tilt slider is disabled in 2D");
+    double flatZoom = view.camera.zoom;
+    [view scrollByX:0 y:-40 atPoint:at precise:NO command:NO];
+    Check(view.camera.zoom > flatZoom, @"a non-precise wheel event still zooms in 2D");
+    [sphere performClick:nil];
+    [view advanceDisplay:1.0];
+    Check(fabs(view.camera.globe - saved3DGlobe) < 1e-9, @"switching back to 3D restores the last tilt");
+    [flat performClick:nil];
+    [view scrollByX:0 y:-1000 atPoint:at precise:YES command:NO];
+    Check(flat.state == NSControlStateValueOn && fabs(view.camera.globe) < 1e-9 && fabs(view.camera.pitch) < 1e-9,
+        @"2D input during the mode transition settles the camera overhead");
     // A pinch at either zoom limit keeps its geographic anchor even when the
     // requested factor is clamped. Non-finite gesture input is ignored.
     IsobarCamera limitCamera = view.camera;
-    limitCamera.zoom = 64;
+    limitCamera.zoom = 18000;
     view.camera = limitCamera;
     double boundLat = 0, boundLon = 0, boundX = 0, boundY = 0;
     Check(IsobarCameraUnproject(view.camera, at.x, at.y, &boundLat, &boundLon),
         @"the zoom-limit pinch point is on the map");
     Check([view pinchFactor:2.0 atPoint:at], @"an outward pinch at max zoom is accepted");
-    Check(view.camera.zoom <= 64.0 + 1e-9 &&
+    Check(view.camera.zoom <= 18000.0 + 1e-9 &&
         IsobarCameraProject(view.camera, boundLat, boundLon, &boundX, &boundY) &&
         hypot(boundX - at.x, boundY - at.y) <= 1.0,
         @"a clamped max-zoom pinch keeps its anchor");
@@ -174,24 +226,33 @@ static void CheckPlaceAndGlobe(GPUMapView *view) {
     [view recenter];
     Check(fabs(view.camera.centreLon - 115.86) < 0.02, @"recenter uses the selected place");
 
-    view.reducedMotionOverride = @NO;
-    view.camera = MapCameraMake(view.camera.centreLat, view.camera.centreLon, view.camera.zoom, 0, 480, 360);
-    Check([view handleGlobeKey:@"3" repeat:NO], @"3 starts the globe morph");
-    [view advanceDisplay:0.3];
-    Check(fabs(view.camera.globe - 0.5) < 1e-9, @"the 2D/3D morph is halfway at 0.3 s");
-    Check(view.fractionalStep == 1.5, @"the morph does not touch the playhead");
-    view.reducedMotionOverride = @YES;
-    Check([view handleGlobeKey:@"2" repeat:NO], @"2 returns to the flat map");
-    Check(fabs(view.camera.globe) < 1e-9, @"reduced motion reaches the flat map immediately");
-    Check(![view handleGlobeKey:@"3" repeat:YES], @"a key repeat does not restart the morph");
+    GPUMapView *globeView = [GPUMapView mapView];
+    Check(globeView != nil, @"a fresh view is available for the globe morph fixture");
+    globeView.frame = NSMakeRect(0, 0, 480, 360);
+    globeView.fractionalStep = 1.5;
+    globeView.reducedMotionOverride = @NO;
+    globeView.camera = MapCameraMake(view.camera.centreLat, view.camera.centreLon, view.camera.zoom, 0, 480, 360);
+    Check([globeView handleGlobeKey:@"3" repeat:NO], @"3 starts the globe morph");
+    [globeView advanceDisplay:0.3];
+    Check(fabs(globeView.camera.globe - 0.5) < 1e-9, @"the 2D/3D morph is halfway at 0.3 s");
+    Check(fabs(globeView.camera.pitch - 0.5 * 1.30) < 1e-9, @"the globe morph carries continuous tilt");
+    Check(globeView.fractionalStep == 1.5, @"the morph does not touch the playhead");
+    globeView.reducedMotionOverride = @YES;
+    Check([globeView handleGlobeKey:@"2" repeat:NO], @"2 returns to the flat map");
+    Check(fabs(globeView.camera.globe) < 1e-9, @"reduced motion reaches the flat map immediately");
+    Check(fabs(globeView.camera.pitch) < 1e-9, @"returning overhead clears tilt");
+    Check(![globeView handleGlobeKey:@"3" repeat:YES], @"a key repeat does not restart the morph");
 
     NSSlider *slider = nil;
-    for (NSView *child in view.subviews)
+    for (NSView *child in globeView.subviews)
         if ([child.accessibilityIdentifier isEqual:@"gpumap.globe"]) slider = (NSSlider *)child;
     Check(slider != nil, @"the 2D/3D slider is on the map");
+    Check(!slider.enabled, @"the 2D/3D slider is disabled in 2D");
+    Check([globeView handleGlobeKey:@"3" repeat:NO], @"selecting 3D enables the tilt slider");
     slider.doubleValue = 0.5;
     [slider sendAction:slider.action to:slider.target];
-    Check(fabs(view.camera.globe - 0.5) < 1e-9, @"the slider sets an intermediate globe");
+    Check(fabs(globeView.camera.globe - 0.5) < 1e-9, @"the slider sets an intermediate globe");
+    Check(fabs(globeView.camera.pitch - 0.5 * 1.30) < 1e-9, @"the slider sets matching tilt");
 }
 
 static void CheckStates(GPUMapView *view) {
@@ -229,16 +290,16 @@ static void CheckToggleAndLayers(void) {
         @"no chart is Chart unavailable on either surface");
     [defaults removePersistentDomainForName:suite];
 
-    Check([GPUMapMenuTitle(@"Wind direction", YES, YES) isEqual:@"Wind direction — Classic map only"],
-        @"wind barbs say Classic map only");
+    Check([GPUMapMenuTitle(@"Wind direction", NO, YES) isEqual:@"Wind direction"],
+        @"wind barbs are available on the GPU map");
     Check([GPUMapMenuTitle(@"Place readings", YES, YES) isEqual:@"Place readings — Classic map only"],
         @"place readings say Classic map only");
     Check([GPUMapMenuTitle(@"Wind direction", YES, NO) isEqual:@"Wind direction"],
         @"the classic map keeps the plain layer name");
     Check([GPUMapMenuTitle(@"Rain · 24-hour total", NO, YES) isEqual:@"Rain · 24-hour total"],
         @"a GPU colour field is not marked classic-only");
-    Check(GPUMapTagIsClassicOnly(3) && GPUMapTagIsClassicOnly(10) && GPUMapTagIsClassicOnly(14),
-        @"barbs and place readings are classic-only");
+    Check(!GPUMapTagIsClassicOnly(3) && GPUMapTagIsClassicOnly(10) && GPUMapTagIsClassicOnly(14),
+        @"wind barbs are available and place readings remain classic-only");
     Check(!GPUMapTagIsClassicOnly(0) && !GPUMapTagIsClassicOnly(1) && !GPUMapTagIsClassicOnly(2) &&
         !GPUMapTagIsClassicOnly(5) && !GPUMapTagIsClassicOnly(6),
         @"pressure, rain, wind speed and both temperatures are on the new map");
@@ -448,7 +509,9 @@ static void CheckPopoverChrome(GPUMapView *view) {
     NSView *flat = FindID(view, @"gpumap.flat");
     NSView *sphere = FindID(view, @"gpumap.sphere");
     NSView *recenter = FindID(view, @"gpumap.recenter");
-    Check(flat.hidden && sphere.hidden, @"the popover hides the 2D/3D control");
+    Check(!flat.hidden && !sphere.hidden, @"the popover exposes compact tilt controls");
+    Check([flat.accessibilityLabel isEqual:@"2D map"] &&
+        [sphere.accessibilityLabel isEqual:@"3D map"], @"mode controls have map accessibility labels");
     Check(recenter.hidden && !view.userMovedMap, @"Recenter stays hidden until the map moves");
     IsobarCamera framed = view.camera;
     struct { double lat, lon; const char *name; } corners[] = {
@@ -610,11 +673,14 @@ static void WriteShots(GPUMapView *view, NSString *fixture) {
         @[@"new-flat.png", @0.0],
         @[@"new-halfway.png", @0.5],
         @[@"new-globe.png", @1.0],
+        @[@"tilted-regional.png", @1.0, @0.6],
+        @[@"tilted-globe.png", @1.0, @1.3],
     ];
     for (NSArray *shot in shots) {
         double globe = [shot[1] doubleValue];
-        view.camera = MapCameraMake(-33.5, 138, 4.5, globe, 960, 600);
-        view.camera = IsobarCameraClamp(view.camera);
+        IsobarCamera camera = MapCameraMake(-33.5, 138, 4.5, globe, 960, 600);
+        camera.pitch = shot.count > 2 ? [shot[2] doubleValue] : 0;
+        view.camera = IsobarCameraClamp(camera);
         CGImageRef image = [view copySnapshot];
         NSString *path = [dir stringByAppendingPathComponent:shot[0]];
         BOOL wrote = image && WriteWindow(path, @"New map on", image);
@@ -709,6 +775,18 @@ static void CheckPresentSurvives(void) {
     [window close];
 }
 
+static void CheckTrafficOverlay(GPUMapView *view) {
+    view.frame=NSMakeRect(0,0,480,360); view.camera=MapCameraMake(-33,135,6,0,480,360);
+    view.trafficSession=[TrafficTrackSession new]; view.trafficEnabled=YES; view.trafficIsNow=YES;
+    NSDate *stamp=[NSDate date];
+    view.trafficSnapshot=@{@"aircraft":@[
+        @{@"hex":@"7c1234",@"callsign":@"TEST123",@"type":@"BE20",@"latitude":@-32.0,@"longitude":@116.0,@"pressureAltitudeFt":@12000,@"groundSpeedKt":@180,@"positionTime":stamp}]};
+    Check(view.trafficSession.selectedHexes.count==0, @"map traffic feed starts with no selected aircraft");
+    Check([view.trafficSession toggleSelectionForHex:@"7c1234"], @"map traffic session accepts a selection");
+    double x=0,y=0; Check(IsobarCameraProject(view.camera,-32,116,&x,&y) && x>0 && y>0, @"traffic aircraft projects into the map camera");
+    view.trafficIsNow=NO; Check(view.trafficSession.selectedHexes.count==1, @"selected history remains while forecast is shown");
+    [view.trafficSession clearSelections]; Check(view.trafficSession.selectedHexes.count==0, @"map traffic clear removes every selection");
+}
 
 // A CB area says "low" only while the renderer draws an L near it. The low
 // sits over open sea (40S 120E): inland, the chart's land mixing treats a
@@ -825,6 +903,59 @@ static void CheckHazards(void) {
     Check([view hazardTooltipAtPoint:NSMakePoint(x / scale, y / scale)] == nil, @"no hover text with the layer off");
 }
 
+// Snapshots use the same vector layers as the live surface, at either backing scale.
+static NSUInteger SnapshotDifference(CGImageRef a, CGImageRef b) {
+    if (!a || !b || CGImageGetWidth(a) != CGImageGetWidth(b) || CGImageGetHeight(a) != CGImageGetHeight(b)) return 0;
+    CFDataRef x = CGDataProviderCopyData(CGImageGetDataProvider(a));
+    CFDataRef y = CGDataProviderCopyData(CGImageGetDataProvider(b));
+    NSUInteger changed = 0;
+    const UInt8 *xp = CFDataGetBytePtr(x), *yp = CFDataGetBytePtr(y);
+    for (CFIndex i = 0; i < MIN(CFDataGetLength(x), CFDataGetLength(y)); i++)
+        if (abs(xp[i] - yp[i]) > 10) changed++;
+    CFRelease(x); CFRelease(y);
+    return changed;
+}
+
+static void CheckVectorSnapshots(void) {
+    NSString *fixture = NSProcessInfo.processInfo.environment[@"ISOBAR_FIXTURES"] ?: @"Tests/fixtures";
+    OwnRun *run = OwnRunLoad([fixture stringByAppendingPathComponent:@"store/ecmwf/20260925T18Z"],
+        NSProcessInfo.processInfo.environment[@"ISOBAR_COAST"], nil);
+    Check(run != nil, @"vector snapshot fixture loads");
+    if (!run) return;
+    for (int scale = 1; scale <= 2; scale++) {
+        SnapshotScaleMapView *view = [SnapshotScaleMapView mapView];
+        view.testScale = scale;
+        view.frame = NSMakeRect(0, 0, 480, 360);
+        [view adoptRun:run temperature:0 windFill:NO rain:NO]; [view waitForUploads];
+        IsobarCamera camera = MapCameraMake(-31.94, 115.97, 12, 1, 480 * scale, 360 * scale);
+        camera.pitch = .6; view.camera = camera;
+        CGImageRef plain = [view copySnapshot];
+        view.windBarbs = YES;
+        CGImageRef wind = [view copySnapshot];
+        WindMapView *vectors = [view valueForKey:@"windView"];
+        Check(plain && wind && CGImageGetWidth(wind) == (size_t)(480 * scale) &&
+            CGImageGetHeight(wind) == (size_t)(360 * scale), @"vector snapshot preserves backing dimensions");
+        Check(vectors.drawnCount > 0 && SnapshotDifference(plain, wind) > 30,
+            [NSString stringWithFormat:@"%dx snapshot contains the actual wind vectors", scale]);
+        view.windBarbs = NO;
+        NSISO8601DateFormatter *iso = [NSISO8601DateFormatter new];
+        view.atmosphereDate = [iso dateFromString:@"2026-09-27T12:00:00Z"];
+        view.atmosphereLatitude = -31.94; view.atmosphereLongitude = 115.97;
+        view.atmosphereProduct = @{@"model":@"fixture", @"elevation":@20,
+            @"time":@[@"2026-09-27T12:00:00Z"],
+            @"levels":@{@"850":@{@"height_m":@[@1500], @"wind_speed_kt":@[@22],
+                @"wind_direction_deg":@[@250], @"vertical_velocity_ms":@[@.2]}}};
+        CGImageRef atmosphere = [view copySnapshot];
+        Check(SnapshotDifference(plain, atmosphere) > 30,
+            [NSString stringWithFormat:@"%dx snapshot contains the atmospheric column", scale]);
+        Check(atmosphere && SnapshotDifference(plain, atmosphere) < CGImageGetWidth(atmosphere)*CGImageGetHeight(atmosphere)*.4,
+            @"atmospheric overlay preserves the underlying map plate");
+        if (plain) CGImageRelease(plain); if (wind) CGImageRelease(wind);
+        if (atmosphere) CGImageRelease(atmosphere);
+        [view stopRendering];
+    }
+}
+
 int main(void) {
     @autoreleasepool {
         [NSApplication sharedApplication];
@@ -834,6 +965,7 @@ int main(void) {
         GPUMapView *view = [GPUMapView mapView];
         Check(view != nil, @"Metal field view is available");
         if (!view) return 1;
+        CheckTrafficOverlay(view);
         CheckPlayhead(view);
         CheckPopoverChrome(view);
         CheckSmoothIsobars();
@@ -842,6 +974,7 @@ int main(void) {
         CheckPlaceAndGlobe(view);
         CheckStates(view);
         CheckHazards();
+        CheckVectorSnapshots();
         NSString *fixture = NSProcessInfo.processInfo.environment[@"ISOBAR_FIELD_FIXTURE"] ?: @"Tests/fixtures/fieldrender";
         WriteShots(view, fixture);
         fprintf(stderr, "%s\n", failures ? "FAIL gpumap" : "ok  gpumap");

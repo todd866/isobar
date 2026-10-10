@@ -11,4 +11,28 @@ private/
 site/data/
 node_modules/
 training/dist/
+web/node_modules
+web/.next/
+web/public/data/
+web/public/procedures/
+web/public/isobar-release.json
+web/test-results/
+web/playwright-report/
+web/blob-report/
+
+# Incremental TypeScript cache.
+web/tsconfig.tsbuildinfo
+
+# Local secrets: the auth database and mail keys live in ~/.local/state/isobar-auth.
+web/.env*
+!web/.env.example
+
+# Generated chart export (directory or a local symlink to one); never commit.
+web/public/data
 .playwright-mcp/
+
+# Deployment project linkage and generated environment files.
+web/.vercel/
+
+# Historical weather/map assets are generated ingestion artifacts, not source history.
+web/public/history/

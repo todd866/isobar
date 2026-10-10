@@ -309,6 +309,9 @@ static NSDictionary *AVBlendScene(NSDictionary *a, NSDictionary *b, double p) {
 @property(nonatomic) double lightAnchor, lightRate, lightOffset, lightVelocity;
 @property(nonatomic) NSTimeInterval lightStamp, lightLead;
 @property(nonatomic) BOOL draggingTimeline;
+@property(nonatomic,strong) NSTimer *hoverArmTimer;
+@property(nonatomic,strong) NSDate *hoverPendingDate;
+@property(nonatomic) BOOL hoverArmed;
 @property(nonatomic, strong) NSView *playheadCursor;
 @end
 
@@ -328,13 +331,27 @@ static NSDictionary *AVBlendScene(NSDictionary *a, NSDictionary *b, double p) {
     }
     return self;
 }
+- (void)removeFromSuperview {
+    [self.hoverArmTimer invalidate];
+    self.hoverArmTimer=nil;
+    self.hoverPendingDate=nil;
+    self.hoverArmed=NO;
+    [super removeFromSuperview];
+}
 - (void)dealloc {
     [_animationTimer invalidate];
+    [_hoverArmTimer invalidate];
     if (_windowObserver) [NSNotificationCenter.defaultCenter removeObserver:_windowObserver];
     if (_motionObserver) [NSWorkspace.sharedWorkspace.notificationCenter removeObserver:_motionObserver];
 }
 - (void)viewDidMoveToWindow {
     [super viewDidMoveToWindow];
+    if (!self.window) {
+        [self.hoverArmTimer invalidate];
+        self.hoverArmTimer=nil;
+        self.hoverPendingDate=nil;
+        self.hoverArmed=NO;
+    }
     if (_windowObserver) [NSNotificationCenter.defaultCenter removeObserver:_windowObserver];
     _windowObserver=nil;
     if (self.window) {
@@ -892,12 +909,47 @@ static NSDictionary *AVBlendScene(NSDictionary *a, NSDictionary *b, double p) {
     if (NSPointInRect(point,self.timelineRect)) {
         NSDate *date=[self dateAtX:point.x];
         if (self.draggingTimeline && self.onSelectDate) self.onSelectDate(date);
-        else if (self.onPreviewDate) self.onPreviewDate(date);
+        else if (self.onPreviewDate) {
+            self.hoverPendingDate=date;
+            if (self.hoverArmed) { self.onPreviewDate(date); return; }
+            if (!self.hoverArmTimer) {
+                __weak AviationForecastView *weakSelf=self;
+                self.hoverArmTimer=[NSTimer timerWithTimeInterval:.3 repeats:NO block:^(NSTimer *timer) {
+                    AviationForecastView *strongSelf=weakSelf;
+                    if (!strongSelf || strongSelf.hoverArmTimer != timer) return;
+                    strongSelf.hoverArmTimer=nil;
+                    if (strongSelf.draggingTimeline || !strongSelf.hoverPendingDate) return;
+                    strongSelf.hoverArmed=YES;
+                    strongSelf.onPreviewDate(strongSelf.hoverPendingDate);
+                }];
+                [[NSRunLoop mainRunLoop] addTimer:self.hoverArmTimer forMode:NSRunLoopCommonModes];
+            }
+        }
         else [self inspectDate:date];
+    } else if (self.hoverArmTimer || self.hoverArmed) {
+        [self.hoverArmTimer invalidate];
+        self.hoverArmTimer=nil;
+        self.hoverPendingDate=nil;
+        if (self.hoverArmed && self.onPreviewDate) self.onPreviewDate(nil);
+        self.hoverArmed=NO;
     }
 }
-- (void)mouseExited:(NSEvent *)event { (void)event; if (!self.draggingTimeline) { if (self.onPreviewDate) self.onPreviewDate(nil); else [self inspectDate:nil]; } }
+- (void)mouseExited:(NSEvent *)event {
+    (void)event;
+    [self.hoverArmTimer invalidate];
+    self.hoverArmTimer=nil;
+    self.hoverPendingDate=nil;
+    if (!self.draggingTimeline) {
+        if (self.hoverArmed && self.onPreviewDate) self.onPreviewDate(nil);
+        else if (!self.onPreviewDate) [self inspectDate:nil];
+        self.hoverArmed=NO;
+    }
+}
 - (void)mouseDown:(NSEvent *)event {
+    [self.hoverArmTimer invalidate];
+    self.hoverArmTimer=nil;
+    self.hoverPendingDate=nil;
+    self.hoverArmed=NO;
     [self.window makeFirstResponder:self];
     NSPoint point=[self convertPoint:event.locationInWindow fromView:nil];
     if (NSPointInRect(point,self.timelineRect)) { self.draggingTimeline=YES; [self mouseMoved:event]; return; }

@@ -355,8 +355,8 @@ int main(int argc, const char **argv) {
                 @"classic model surfaces enable wind barbs");
             [c setValue:@YES forKey:@"newMap"]; [c setValue:@NO forKey:@"gpuPresentFailed"];
             [c refreshMapFieldControls];
-            Check(!Barbs(c).enabled && !((NSButton *)Find(window.contentView, @"fullscreen.barbs")).enabled,
-                @"both GPU surfaces disable classic-only barbs");
+            Check(Barbs(c).enabled && ((NSButton *)Find(window.contentView, @"fullscreen.barbs")).enabled,
+                @"both GPU surfaces enable projected wind vectors");
             [c setValue:@YES forKey:@"gpuPresentFailed"]; [c refreshMapFieldControls];
             Check(Barbs(c).enabled && ((NSButton *)Find(window.contentView, @"fullscreen.barbs")).enabled,
                 @"both fallback surfaces restore wind barbs");

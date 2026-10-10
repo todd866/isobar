@@ -14,10 +14,10 @@ SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
     -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" \
     -ISources -DISOBAR_APP \
     Sources/pure.m Sources/rain.m Sources/rainview.m Sources/aviation.m Sources/forecastview.m Sources/aviationview.m Sources/skyview.m \
-    Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Sources/notices.m \
+    Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Sources/trafficroute.m Sources/notices.m \
     Sources/notacconnection.m Sources/surfview.m Sources/motion.m Sources/rawmovie.m Sources/scrub.m Sources/mapdetail.m \
     Sources/collector.m Sources/archive.m Sources/ownchart.m Sources/daystrip.m Sources/fullscreenwindow.m Sources/playback.m \
-    Sources/storereload.m Sources/mapcamera.m Sources/gpumapview.m Sources/hazard.m Sources/fieldrender.m \
+    Sources/storereload.m Sources/mapcamera.m Sources/gpumapview.m Sources/windmapview.m Sources/hazard.m Sources/atmospheremapview.m Sources/fieldrender.m \
     Sources/trainingdata.m Sources/trainingwindow.m tools/own-chart.m tools/render-sky.m \
     -framework Cocoa -framework WebKit -framework Security -framework ServiceManagement -framework CoreLocation \
     -framework Vision -framework CoreVideo -framework CoreMedia -framework AVFoundation -framework QuartzCore \

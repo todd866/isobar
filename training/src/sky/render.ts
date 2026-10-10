@@ -8,7 +8,11 @@
  * (a few milliseconds per animation frame), and the visible canvas only
  * crossfades cached bitmaps. No per-frame noise.
  */
-import { FT_PER_M, coverSegments, hashString, rng, type SkyLayer, type SkyState } from './physics.ts';
+import { FT_PER_M, hashString, rng, type SkyLayer, type SkyState } from './physics.ts';
+import { AUS_UNITS, feetToMetres, formatTempC, formatVisibilityMetres, unitKey, type DisplayUnits } from './units.ts';
+
+import { coverageFraction, coverageSegments } from './cloud-rules.ts';
+import { cloudSpritesReady, prepareCloudSprites, paintCloudSprite } from './painted.ts';
 
 export const FT_MAX = 45000;
 const H0 = 5000;
@@ -31,6 +35,12 @@ export interface SkyOptions {
   coastKm: number | null;
   /** A thumbnail: clouds, precipitation, ground and the 0 °C line; no text, barbs or ticks. */
   compact?: boolean;
+  /** A single vertical column: no W/E geography, aerodrome or duplicate wind key. */
+  mode?: 'section' | 'column';
+  /** Unknown terrain has no drawn ground; zero remains only the AMSL axis datum. */
+  groundKnown?: boolean;
+  /** Display units. Omitted keeps the Celsius / feet labels. */
+  units?: DisplayUnits;
 }
 
 /* ---------- geometry ---------- */
@@ -140,377 +150,9 @@ interface Painter {
   pxPerKm: number;
 }
 
-/** A shaded puff: brighter toward the light, darker away from it. */
-function puff(ctx: Ctx, x: number, y: number, r: number, light: Light, depthShade: number, alpha = 1) {
-  if (r <= 0.3) return;
-  const ox = x + light.lx * r * 0.45;
-  const oy = y - light.ly * r * 0.5;
-  const g = ctx.createRadialGradient(ox, oy, r * 0.05, x, y, r * 1.05);
-  const lit = mix(light.lit, light.shade, depthShade * 0.3);
-  const edge = mix(mix(lit, light.shade, 0.55), light.base, depthShade * 0.4);
-  // Soft rim: the edge fades so overlapping puffs read as one billowing surface.
-  g.addColorStop(0, css(lit, alpha));
-  g.addColorStop(0.65, css(mix(lit, edge, 0.25), alpha));
-  g.addColorStop(0.9, css(mix(lit, edge, 0.6), alpha * 0.9));
-  g.addColorStop(1, css(edge, 0));
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-/** Darken toward a flat base: the thicker the cloud, the darker its base. */
-function baseShade(ctx: Ctx, x0: number, x1: number, topY: number, baseY: number, light: Light, strength: number) {
-  ctx.save();
-  ctx.globalCompositeOperation = 'source-atop';
-  const g = ctx.createLinearGradient(0, topY, 0, baseY);
-  g.addColorStop(0, css(light.base, 0));
-  g.addColorStop(0.55, css(light.base, 0.12 * strength));
-  g.addColorStop(1, css(light.base, Math.min(0.85, 0.5 * strength + 0.15)));
-  ctx.fillStyle = g;
-  ctx.fillRect(x0, topY - 2, x1 - x0, baseY - topY + 4);
-  if (light.night > 0.6) {
-    // City light from below on a moonless night.
-    const u = ctx.createLinearGradient(0, baseY - 10, 0, baseY);
-    u.addColorStop(0, 'rgba(160,110,60,0)');
-    u.addColorStop(1, `rgba(160,110,60,${0.22 * light.night})`);
-    ctx.fillStyle = u;
-    ctx.fillRect(x0, baseY - 10, x1 - x0, 12);
-  }
-  ctx.restore();
-}
-
-/* ---------- cloud types ---------- */
-
 interface LayerPx {
-  layer: SkyLayer;
-  baseY: number;
-  topY: number;
-  topKnown: boolean;
-  seed: number;
-  segments: [number, number][];
-}
-
-const NOMINAL_DEPTH: Record<SkyLayer['type'], number> = {
-  cumulus: 2500, towering: 12000, cumulonimbus: 30000, stratocumulus: 1500, stratus: 800,
-  altostratus: 5000, altocumulus: 1500, cirrus: 3000, fog: 300,
-};
-
-/** Cumulus: flat base, heaped cauliflower dome. */
-function cumulus(p: Painter, cx: number, cw: number, baseY: number, topY: number, random: () => number, columnar = 0) {
-  const { ctx, light } = p;
-  const ch = Math.max(8, baseY - topY);
-  topY = baseY - ch;
-  const half = cw / 2;
-  const depthShade = Math.min(1, ch / 140);
-  const rBase = Math.max(2.2, Math.min(half * 0.55, ch * (columnar ? 0.28 : 0.45), 16));
-  const power = columnar ? 2.6 : 1.6;
-  const envelope = (u: number) => {
-    const a = Math.min(1, Math.abs(u));
-    return Math.pow(Math.max(0, 1 - Math.pow(a, power)), columnar ? 0.35 : 0.6);
-  };
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(cx - half - rBase * 5, topY - rBase * 4, cw + rBase * 10, baseY - topY + rBase * 4);
-  ctx.clip();
-  // A solid body under the puffs so no sky shows between them.
-  const body = ctx.createLinearGradient(0, topY, 0, baseY);
-  body.addColorStop(0, css(light.lit));
-  body.addColorStop(1, css(mix(light.lit, mix(light.shade, light.base, 0.4 * depthShade), 0.55)));
-  ctx.fillStyle = body;
-  ctx.beginPath();
-  ctx.moveTo(cx - half * 0.95, baseY);
-  for (let u = -1; u <= 1.0001; u += 0.05) ctx.lineTo(cx + u * half * 0.95, baseY - envelope(u) * ch * 0.93);
-  ctx.lineTo(cx + half * 0.95, baseY);
-  ctx.closePath();
-  ctx.fill();
-  // Billows on the outline: each row puts a puff at both ends of the dome,
-  // with an occasional soft interior billow for texture.
-  const rows = Math.max(1, Math.ceil(ch / (rBase * 0.8)));
-  for (let row = 0; row < rows; row++) {
-    const v = row / rows;
-    const yc = baseY - rBase * 0.35 - v * (ch - rBase * 0.7);
-    let span = 0;
-    for (let u = 0; u <= 1; u += 0.02) if (envelope(u) >= v) span = u;
-    const rRow = rBase * (1 - v * 0.4) * (0.8 + random() * 0.4);
-    for (const sideSign of [-1, 1]) {
-      const x = cx + sideSign * Math.max(0, span * half * 0.95 - rRow * 0.6) + (random() - 0.5) * rRow * 0.4;
-      puff(ctx, x, yc, rRow * (0.9 + random() * 0.3), light, depthShade * (1 - v));
-    }
-    if (random() < 0.45 && span * half > rRow * 1.5) {
-      puff(ctx, cx + (random() - 0.5) * span * half, yc, rRow * (0.8 + random() * 0.4), light, depthShade * (1 - v), 0.55);
-    }
-  }
-  // Cauliflower crown: small puffs along the top of the dome.
-  const crown = Math.max(3, Math.round(cw / (rBase * 0.9)));
-  for (let k = 0; k < crown; k++) {
-    const u = -0.85 + (1.7 * (k + random() * 0.6)) / crown;
-    const h = envelope(u) * ch;
-    const r = rBase * (0.45 + random() * 0.4) * (0.6 + 0.4 * envelope(u));
-    puff(ctx, cx + u * half, baseY - h + r * 0.55, r, light, 0);
-  }
-  ctx.restore();
-  // Flat base: cut everything below it.
-  ctx.clearRect(cx - half - rBase * 3, baseY, cw + rBase * 6, rBase * 3);
-}
-
-/** Towering cumulus: two or three turrets of different height. */
-function towering(p: Painter, cx: number, cw: number, baseY: number, topY: number, random: () => number) {
-  const ch = baseY - topY;
-  const turrets = cw > 50 ? 3 : 2;
-  const order = Array.from({ length: turrets }, (_, i) => i).sort(() => random() - 0.5);
-  for (const i of order) {
-    const share = cw / turrets;
-    const x = cx - cw / 2 + share * (i + 0.5) + (random() - 0.5) * share * 0.2;
-    const tall = i === Math.floor(turrets / 2) ? 1 : 0.45 + random() * 0.4;
-    cumulus(p, x, share * 1.35, baseY, baseY - ch * tall, random, 1);
-  }
-}
-
-/** Cumulonimbus: a dark-based tower to the equilibrium level with an anvil spreading downwind. */
-function cumulonimbus(p: Painter, cx: number, cw: number, baseY: number, topY: number, random: () => number, windSign: number, topKnown: boolean) {
-  const { ctx, light, w } = p;
-  const ch = baseY - topY;
-  const anvilThick = Math.max(6, ch * 0.13);
-  const towerTop = topY + anvilThick * 0.4;
-  // Anvil first so the tower's crown sits in front of it.
-  const reach = Math.min(w * 0.42, Math.max(cw * 1.6, w * 0.26));
-  const back = reach * 0.22;
-  const dir = windSign === 0 ? 1 : windSign;
-  const x0 = cx - dir * back;
-  const x1 = cx + dir * reach;
-  const g = ctx.createLinearGradient(0, topY, 0, topY + anvilThick * 1.6);
-  g.addColorStop(0, css(light.lit, topKnown ? 0.97 : 0.6));
-  g.addColorStop(0.6, css(mix(light.lit, light.shade, 0.55), topKnown ? 0.95 : 0.55));
-  g.addColorStop(1, css(light.shade, topKnown ? 0.9 : 0.5));
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.moveTo(x0, topY + anvilThick * 0.6);
-  ctx.quadraticCurveTo(cx - dir * back * 0.4, topY - 1, cx, topY);
-  ctx.lineTo(x1 - dir * reach * 0.1, topY + 1);
-  ctx.quadraticCurveTo(x1, topY + 1.5, x1 + dir * 4, topY + anvilThick * 0.25);
-  ctx.quadraticCurveTo(cx + dir * reach * 0.55, topY + anvilThick * 0.55, cx + dir * cw * 0.35, topY + anvilThick * 1.9);
-  ctx.lineTo(cx - dir * cw * 0.3, topY + anvilThick * 1.6);
-  ctx.closePath();
-  ctx.fill();
-  // Fibrous trailing edge of the anvil: ice streaming downwind.
-  ctx.save();
-  ctx.lineCap = 'round';
-  for (let k = 0; k < 26; k++) {
-    const t = 0.45 + random() * 0.6;
-    const xs = cx + dir * reach * t;
-    const ys = topY + 1 + random() * anvilThick * 0.7;
-    ctx.strokeStyle = css(light.lit, 0.12 + random() * 0.22);
-    ctx.lineWidth = 0.5 + random() * 0.9;
-    ctx.beginPath();
-    ctx.moveTo(xs, ys);
-    ctx.quadraticCurveTo(xs + dir * (8 + random() * 14), ys + 1 + random() * 3, xs + dir * (14 + random() * 22), ys + 3 + random() * 6);
-    ctx.stroke();
-  }
-  ctx.restore();
-  // Main tower and flanking turrets.
-  cumulus(p, cx, cw, baseY, towerTop, random, 1);
-  cumulus(p, cx - cw * 0.45, cw * 0.6, baseY, baseY - ch * 0.42, random, 1);
-  cumulus(p, cx + cw * 0.5, cw * 0.55, baseY, baseY - ch * 0.3, random, 1);
-  // Overshooting top.
-  for (let k = 0; k < 4; k++) puff(ctx, cx + (k - 1.5) * cw * 0.09, topY + 1 - random() * 2, Math.max(2, cw * 0.09), light, 0);
-  // A dark, heavy base.
-  ctx.save();
-  ctx.globalCompositeOperation = 'source-atop';
-  const b = ctx.createLinearGradient(0, baseY - ch * 0.35, 0, baseY);
-  b.addColorStop(0, css(light.base, 0));
-  b.addColorStop(1, css(mix(light.base, [20, 24, 32], 0.4), 0.85));
-  ctx.fillStyle = b;
-  ctx.fillRect(cx - cw * 1.2, baseY - ch * 0.35, cw * 2.4, ch * 0.35 + 2);
-  ctx.restore();
-}
-
-/** Stratocumulus: a lumpy sheet of rolls with darker undersides. */
-function stratocumulus(p: Painter, x0: number, x1: number, baseY: number, topY: number, random: () => number) {
-  const { ctx, light } = p;
-  const th = Math.max(4, baseY - topY);
-  const rollW = Math.max(10, Math.min(34, th * 2.4));
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(x0 - rollW, topY - th, x1 - x0 + rollW * 2, th * 2 + 2);
-  ctx.clip();
-  for (let x = x0 + rollW * 0.4; x < x1 - rollW * 0.3; x += rollW * (0.62 + random() * 0.2)) {
-    const ry = th * (0.5 + random() * 0.18);
-    const rx = rollW * (0.55 + random() * 0.15);
-    const yc = baseY - ry * 0.95 + (random() - 0.5) * th * 0.15;
-    const g = ctx.createLinearGradient(0, yc - ry, 0, yc + ry);
-    g.addColorStop(0, css(light.lit, 0.97));
-    g.addColorStop(0.55, css(mix(light.lit, light.shade, 0.55), 0.97));
-    g.addColorStop(1, css(light.shade, 0.97));
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.ellipse(x, yc, rx, ry, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // A small heap on some rolls.
-    if (random() < 0.5) puff(ctx, x + (random() - 0.5) * rx, yc - ry * 0.7, ry * 0.55, light, 0.2, 0.95);
-  }
-  ctx.restore();
-  ctx.clearRect(x0 - rollW, baseY, x1 - x0 + rollW * 2, th);
-  baseShade(ctx, x0 - rollW, x1 + rollW, topY, baseY, light, Math.min(1, th / 30));
-}
-
-/** Stratus: a flat grey sheet, textured, with a ragged underside. */
-function stratus(p: Painter, x0: number, x1: number, baseY: number, topY: number, random: () => number, ragged: boolean) {
-  const { ctx, light } = p;
-  const th = Math.max(3, baseY - topY);
-  const grey = mix(light.lit, light.shade, 0.6);
-  const g = ctx.createLinearGradient(0, topY, 0, baseY);
-  g.addColorStop(0, css(mix(light.lit, light.shade, 0.3), 0.95));
-  g.addColorStop(1, css(mix(light.shade, light.base, 0.5), 0.97));
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.moveTo(x0, baseY);
-  // Gently undulating top.
-  for (let x = x0; x <= x1; x += 6) ctx.lineTo(x, topY + Math.sin(x * 0.07 + random() * 0.3) * th * 0.08 + (random() - 0.5) * 1.2);
-  ctx.lineTo(x1, baseY);
-  ctx.closePath();
-  ctx.fill();
-  // Stretched texture.
-  for (let k = 0; k < Math.max(6, (x1 - x0) / 10); k++) {
-    const x = x0 + random() * (x1 - x0);
-    const y = topY + random() * th;
-    ctx.fillStyle = css(random() < 0.5 ? light.lit : light.base, 0.07 + random() * 0.06);
-    ctx.beginPath();
-    ctx.ellipse(x, y, 8 + random() * 22, 0.8 + random() * Math.min(3, th * 0.25), 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  if (ragged) {
-    // Fractus hanging below the base.
-    for (let x = x0 + 4; x < x1 - 4; x += 5 + random() * 9) {
-      ctx.fillStyle = css(grey, 0.35 + random() * 0.3);
-      ctx.beginPath();
-      ctx.ellipse(x, baseY + 1 + random() * 3, 3 + random() * 7, 1 + random() * 2, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-  // Soft ends.
-  feather(ctx, x0, x1, topY - 4, baseY + 6);
-}
-
-/** Fade a band's two ends into the sky so sheets do not end in a hard wall. */
-function feather(ctx: Ctx, x0: number, x1: number, top: number, bottom: number) {
-  const fade = Math.min(14, (x1 - x0) / 4);
-  if (fade < 2) return;
-  ctx.save();
-  ctx.globalCompositeOperation = 'destination-out';
-  for (const [a, b] of [[x0, x0 + fade], [x1, x1 - fade]] as const) {
-    const g = ctx.createLinearGradient(a, 0, b, 0);
-    g.addColorStop(0, 'rgba(0,0,0,1)');
-    g.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(Math.min(a, b), top, fade, bottom - top);
-  }
-  ctx.restore();
-}
-
-/** Altostratus: a grey translucent veil, smooth, faintly streaked. */
-function altostratus(p: Painter, x0: number, x1: number, baseY: number, topY: number, random: () => number) {
-  const { ctx, light } = p;
-  const th = Math.max(4, baseY - topY);
-  const g = ctx.createLinearGradient(0, topY, 0, baseY);
-  g.addColorStop(0, css(mix(light.lit, light.shade, 0.25), 0));
-  g.addColorStop(0.18, css(mix(light.lit, light.shade, 0.25), 0.5));
-  g.addColorStop(0.5, css(mix(light.lit, light.shade, 0.5), 0.72));
-  g.addColorStop(1, css(light.shade, 0.82));
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.moveTo(x0, baseY);
-  for (let x = x0; x <= x1; x += 8) ctx.lineTo(x, topY + Math.sin(x * 0.03 + 1.3) * th * 0.06 + random() * 1.5);
-  for (let x = x1; x >= x0; x -= 8) ctx.lineTo(x, baseY + Math.sin(x * 0.05) * 1.2 + random());
-  ctx.closePath();
-  ctx.fill();
-  ctx.lineCap = 'round';
-  for (let k = 0; k < (x1 - x0) / 7; k++) {
-    const x = x0 + random() * (x1 - x0);
-    const y = topY + random() * th;
-    ctx.strokeStyle = css(random() < 0.6 ? light.lit : light.shade, 0.1 + random() * 0.1);
-    ctx.lineWidth = 0.6 + random();
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + 10 + random() * 30, y + (random() - 0.5) * 2);
-    ctx.stroke();
-  }
-  feather(ctx, x0, x1, topY - 4, baseY + 4);
-}
-
-/** Altocumulus: rows of small shaded cloudlets in waves. */
-function altocumulus(p: Painter, x0: number, x1: number, baseY: number, topY: number, random: () => number) {
-  const { ctx, light } = p;
-  const th = Math.max(4, baseY - topY);
-  const r = Math.max(2, Math.min(5.5, th * 0.38));
-  const rows = Math.max(1, Math.min(2, Math.round(th / (r * 2))));
-  const phase = random() * 6;
-  if (th > r * 5) {
-    // A deep mid-level layer: a thin veil above the cloudlet rows.
-    const veilTop = topY;
-    const veilBase = baseY - r * 3;
-    const g = ctx.createLinearGradient(0, veilTop, 0, veilBase);
-    g.addColorStop(0, css(light.lit, 0));
-    g.addColorStop(1, css(mix(light.lit, light.shade, 0.4), 0.32));
-    ctx.fillStyle = g;
-    ctx.fillRect(x0, veilTop, x1 - x0, veilBase - veilTop);
-    feather(ctx, x0, x1, veilTop, veilBase);
-  }
-  for (let row = 0; row < rows; row++) {
-    const y = baseY - r - row * r * 1.6;
-    for (let x = x0 + r; x < x1 - r; x += r * (2.1 + random() * 0.9)) {
-      const yy = y + Math.sin(x * 0.09 + phase) * r * 0.5 + (random() - 0.5) * r * 0.4;
-      const rr = r * (0.75 + random() * 0.45);
-      puff(ctx, x, yy, rr, light, 0.1);
-      puff(ctx, x + rr * 0.8, yy + rr * 0.15, rr * 0.7, light, 0.15);
-      ctx.fillStyle = css(light.base, 0.25);
-      ctx.fillRect(x - rr, yy + rr * 0.55, rr * 2.2, rr * 0.45);
-    }
-  }
-  ctx.clearRect(x0 - r * 3, baseY + 0.5, x1 - x0 + r * 6, r * 3);
-}
-
-/** Cirrus: thin, fibrous, translucent streaks with hooked ends; a faint veil when the cover is high. */
-function cirrus(p: Painter, x0: number, x1: number, baseY: number, topY: number, oktas: number, random: () => number, windSign: number) {
-  const { ctx, light } = p;
-  const th = Math.max(4, baseY - topY);
-  const ink = mix(light.lit, [255, 255, 255], 0.3);
-  if (oktas >= 6) {
-    const g = ctx.createLinearGradient(0, topY, 0, baseY);
-    g.addColorStop(0, css(ink, 0));
-    g.addColorStop(0.5, css(ink, 0.16));
-    g.addColorStop(1, css(ink, 0.04));
-    ctx.fillStyle = g;
-    ctx.fillRect(x0, topY, x1 - x0, th);
-    feather(ctx, x0, x1, topY, baseY);
-  }
-  ctx.lineCap = 'round';
-  const dir = windSign === 0 ? 1 : windSign;
-  const streaks = Math.max(2, Math.round((x1 - x0) / 18));
-  for (let st = 0; st < streaks; st++) {
-    const x = x0 + random() * (x1 - x0);
-    const y = topY + th * (0.15 + random() * 0.75);
-    const len = 18 + random() * 40;
-    const fall = 2 + random() * Math.min(12, th * 0.5);
-    const fibres = 8 + Math.floor(random() * 8);
-    // A brighter tuft at the head (the generating cell)...
-    ctx.fillStyle = css(ink, 0.18 + random() * 0.12);
-    ctx.beginPath();
-    ctx.ellipse(x, y, 3 + random() * 4, 1 + random() * 1.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // ...and fine fibres of falling ice trailing downwind and down (uncinus hooks).
-    for (let f = 0; f < fibres; f++) {
-      const off = (random() - 0.5) * 6;
-      const l = len * (0.5 + random() * 0.6);
-      const drop = fall * (0.6 + random() * 0.8);
-      ctx.strokeStyle = css(ink, 0.1 + random() * 0.22);
-      ctx.lineWidth = 0.35 + random() * 0.55;
-      ctx.beginPath();
-      ctx.moveTo(x + (random() - 0.5) * 3, y + off * 0.3);
-      ctx.bezierCurveTo(x + dir * l * 0.45, y + off * 0.6, x + dir * l * 0.8, y + off + drop * 0.25, x + dir * l, y + off + drop);
-      ctx.stroke();
-    }
-  }
+  layer: SkyLayer; baseY: number; topY: number; topKnown: boolean;
+  seed: number; segments: [number, number][];
 }
 
 /** Fog, mist or haze: a band from the ground, densest at the surface. */
@@ -599,7 +241,7 @@ function precipitation(ctx: Ctx, shaft: Shaft, light: Light, random: () => numbe
       ctx.beginPath();
       ctx.arc(x, y, 0.7 + random() * 0.8, 0, Math.PI * 2);
       ctx.fill();
-    } else if (kind === 'drizzle') {
+    } else if (kind === 'drizzle' || freezeY == null) {
       ctx.fillStyle = css(mix(rainInk, light.shade, 0.3), 0.6 * fade * alpha);
       ctx.fillRect(x, y, 0.9, 1.8);
     } else {
@@ -718,10 +360,13 @@ function label(ctx: Ctx, text: string, x: number, y: number, ink: Ink, opts: { a
 
 const typeWord: Partial<Record<SkyLayer['type'], string>> = { cumulonimbus: 'CB', towering: 'TCU' };
 
-export function layerLabel(layer: SkyLayer): string {
+export function layerLabel(layer: SkyLayer, units?: DisplayUnits): string {
   const word = typeWord[layer.type];
-  const top = layer.topFtAmsl != null && layer.topFtAmsl - layer.baseFtAmsl >= 400 ? `–${fmtFt(layer.topFtAmsl)}` : '';
-  return `${layer.change ? `${layer.change} ` : ''}${layer.cover}${word ? ` ${word}` : ''} ${fmtFt(layer.baseFtAmsl)}${top}`;
+  const height = (ft: number) => units?.height === 'm'
+    ? Math.round(feetToMetres(ft)).toLocaleString('en-AU')
+    : fmtFt(ft);
+  const top = layer.topFtAmsl != null && layer.topFtAmsl - layer.baseFtAmsl >= 400 ? `–${height(layer.topFtAmsl)}` : '';
+  return `${layer.change ? `${layer.change} ` : ''}${layer.cover}${word ? ` ${word}` : ''} ${height(layer.baseFtAmsl)}${top}`;
 }
 
 /** The low-level wind's eastward sign (rain drifts downwind) and the anvil's direction (wind near the top). */
@@ -733,26 +378,20 @@ function eastward(state: SkyState, ft: number): number {
   return -best.kt * Math.sin((best.fromDeg * Math.PI) / 180);
 }
 
-function stateLayers(state: SkyState, options: SkyOptions, h: number, w: number): LayerPx[] {
-  const out: LayerPx[] = [];
-  state.layers.forEach((layer, index) => {
-    if (layer.type === 'fog') return;
-    const topFt = layer.topFtAmsl ?? Math.min(FT_MAX * 0.97, layer.baseFtAmsl + NOMINAL_DEPTH[layer.type]);
-    const baseY = yForFt(layer.baseFtAmsl, h);
-    const topY = Math.min(baseY - 4, yForFt(topFt, h));
-    // Seeded by aerodrome, run, layer type and a 2,000 ft base band: the same
-    // cloud keeps its shape and gaps while its top and base drift.
+export function stateLayers(state: SkyState, options: SkyOptions, h = options.height): LayerPx[] {
+  return state.layers.flatMap((layer, index) => {
+    if (layer.type === 'fog' || !Number.isFinite(layer.baseFtAmsl) || layer.baseFtAmsl < state.elevationFt) return [];
+    const fraction = coverageFraction(layer.cover);
+    if (fraction == null || !(layer.oktas > 0)) return [];
+    if (layer.topFtAmsl != null && (!Number.isFinite(layer.topFtAmsl) || layer.topFtAmsl <= layer.baseFtAmsl)) return [];
     const seed = hashString(`${options.seed}|${layer.type}|${Math.round(layer.baseFtAmsl / 2000)}|${layer.secondary ? index : ''}`);
-    const pieces = layer.type === 'cumulus' ? Math.max(2, Math.round(w / 95))
-      : layer.type === 'towering' ? Math.max(1, Math.round(w / 160))
-        : layer.type === 'cumulonimbus' ? Math.max(1, Math.round(w / 260))
-          : layer.type === 'altocumulus' ? Math.max(2, Math.round(w / 120))
-            : layer.type === 'cirrus' ? Math.max(2, Math.round(w / 110))
-              : Math.max(2, Math.round(w / 150));
-    // A temporary state shares the picture: draw it in the half downwind of the station.
-    out.push({ layer, baseY, topY, topKnown: layer.topFtAmsl != null, seed, segments: coverSegments(layer.oktas, seed, pieces) });
+    const coherent = ['nimbostratus', 'cumulonimbus', 'towering'].includes(layer.type);
+    const segments: [number, number][] = coherent ? [[(1 - fraction) / 2, (1 + fraction) / 2]]
+      : coverageSegments(layer.cover, seed).map(s => [s.start, s.end]);
+    const baseY = yForFt(layer.baseFtAmsl, h);
+    const topKnown = layer.topFtAmsl != null && layer.type !== 'unknown';
+    return [{ layer, baseY, topY: topKnown ? yForFt(layer.topFtAmsl!, h) : baseY, topKnown, seed, segments }];
   });
-  return out;
 }
 
 /**
@@ -806,7 +445,7 @@ export function* drawSky(ctx: Ctx, state: SkyState, options: SkyOptions, scratch
   cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const lctx = context(scratch.layer);
   const painterFor = (target: Ctx): Painter => ({ ctx: target, w, h, light, y: (ft) => yForFt(ft, h), pxPerKm });
-  const layersPx = stateLayers(state, options, h, w);
+  const layersPx = stateLayers(state, options, h);
   const shafts: { shaft: Shaft; alpha: number; thunder: boolean }[] = [];
   const freezeY = state.freezingFt != null ? yForFt(state.freezingFt, h) : null;
   const lowWind = eastward(state, state.elevationFt + 3000);
@@ -820,67 +459,20 @@ export function* drawSky(ctx: Ctx, state: SkyState, options: SkyOptions, scratch
     lctx.setTransform(1, 0, 0, 1, 0, 0);
     lctx.clearRect(0, 0, scratch.layer.width, scratch.layer.height);
     lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const painter = painterFor(lctx);
     const topWind = Math.sign(eastward(state, layer.topFtAmsl ?? layer.baseFtAmsl + 20000));
     const precipCells: [number, number][] = [];
-    if (layer.type === 'cumulus' || layer.type === 'towering') {
-      for (const [s0, s1] of segments) {
-        const x0 = s0 * w;
-        const x1 = s1 * w;
-        // Each cumulus is a heap about twice as wide as it is deep on screen.
-        const depthPx = baseY - topY;
-        const target = layer.type === 'towering' ? Math.max(34, Math.min(80, depthPx * 0.7)) : Math.max(20, Math.min(72, depthPx * 2.2));
-        const n = Math.max(1, Math.round((x1 - x0) / target));
-        for (let k = 0; k < n; k++) {
-          const cw = (x1 - x0) / n;
-          const cx = x0 + cw * (k + 0.5) + (layerRandom() - 0.5) * cw * 0.15;
-          // Individual cumulus differ in height; the profile's top is the tallest.
-          const tall = 0.55 + layerRandom() * 0.45;
-          const top = baseY - (baseY - topY) * (k === Math.floor(n / 2) ? 1 : tall);
-          if (layer.type === 'towering') towering(painter, cx, cw * 1.1, baseY, top, layerRandom);
-          else cumulus(painter, cx, cw * (0.8 + layerRandom() * 0.25), baseY, top, layerRandom);
-        }
-        precipCells.push([x0 + (x1 - x0) * 0.15, x1 - (x1 - x0) * 0.15]);
+    for (const [s0, s1] of segments) {
+      const x0 = s0 * w, x1 = s1 * w;
+      const painted = lp.topKnown && paintCloudSprite(lctx, layer.type, x0, topY, x1 - x0, baseY - topY,
+        options.dark, light.night, topWind < 0 && (layer.type === 'cumulonimbus' || layer.type === 'cirrus'));
+      if (!painted) {
+        // Missing top/genus or unavailable art: retain only the known base.
+        lctx.save(); lctx.strokeStyle = ink.muted; lctx.lineWidth = 1.2; lctx.setLineDash([4, 3]);
+        lctx.beginPath(); lctx.moveTo(x0, baseY); lctx.lineTo(x1, baseY); lctx.stroke(); lctx.restore();
       }
-    } else if (layer.type === 'cumulonimbus') {
-      // The widest piece is the storm; the rest grow as towering cumulus.
-      const widest = segments.reduce((best, seg) => (seg[1] - seg[0] > best[1] - best[0] ? seg : best), segments[0] ?? [0.4, 0.6]);
-      for (const seg of segments) {
-        if (seg === widest) continue;
-        const cx = ((seg[0] + seg[1]) / 2) * w;
-        towering(painter, cx, Math.max(30, (seg[1] - seg[0]) * w), baseY, baseY - (baseY - topY) * 0.45, layerRandom);
-      }
-      const cw = Math.max(46, Math.min(w * 0.24, (widest[1] - widest[0]) * w * 0.8));
-      // Keep the anvil on the picture: centre the storm upwind of the middle.
-      const cx = Math.max(cw, Math.min(w - cw, ((widest[0] + widest[1]) / 2) * w - topWind * w * 0.12));
-      cumulonimbus(painter, cx, cw, baseY, topY, layerRandom, topWind, lp.topKnown);
-      precipCells.push([cx - cw * 0.7, cx + cw * 0.6]);
-    } else {
-      for (const [s0, s1] of segments) {
-        const x0 = s0 * w;
-        const x1 = s1 * w;
-        if (layer.type === 'stratocumulus') stratocumulus(painter, x0, x1, baseY, topY, layerRandom);
-        else if (layer.type === 'stratus') stratus(painter, x0, x1, baseY, topY, layerRandom, layer.precip !== 'none');
-        else if (layer.type === 'altostratus') altostratus(painter, x0, x1, baseY, topY, layerRandom);
-        else if (layer.type === 'altocumulus') altocumulus(painter, x0, x1, baseY, topY, layerRandom);
-        else if (layer.type === 'cirrus') cirrus(painter, x0, x1, baseY, topY, layer.oktas, layerRandom, topWind);
-        precipCells.push([x0 + (x1 - x0) * 0.08, x1 - (x1 - x0) * 0.08]);
-      }
-    }
-    if (layer.type === 'cumulus' || layer.type === 'towering' || layer.type === 'cumulonimbus') {
-      // One shading pass per layer: darker toward the shared flat base.
-      baseShade(lctx, 0, w, topY, baseY, light, Math.min(1, (baseY - topY) / 90));
-    }
-    if (!lp.topKnown) {
-      // Unknown top: fade the cloud out above its nominal depth's lower half.
-      lctx.save();
-      lctx.globalCompositeOperation = 'destination-out';
-      const g = lctx.createLinearGradient(0, topY - 8, 0, topY + (baseY - topY) * 0.6);
-      g.addColorStop(0, 'rgba(0,0,0,1)');
-      g.addColorStop(1, 'rgba(0,0,0,0)');
-      lctx.fillStyle = g;
-      lctx.fillRect(0, 0, w, topY + (baseY - topY) * 0.6);
-      lctx.restore();
+      // Rain stays below its own base; the CB core, not its whole anvil, rains.
+      const inset = layer.type === 'cumulonimbus' ? 0.28 : 0.08;
+      precipCells.push([x0 + (x1 - x0) * inset, x1 - (x1 - x0) * inset]);
     }
     cctx.save();
     cctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -893,7 +485,7 @@ export function* drawSky(ctx: Ctx, state: SkyState, options: SkyOptions, scratch
       // Rain under part of each cell, not the whole cloud.
       for (const [c0, c1] of precipCells) {
         const width = c1 - c0;
-        const share = layer.heavy || layer.type === 'stratus' || layer.precip === 'drizzle' ? 0.75 : 0.35 + layerRandom() * 0.35;
+        const share = layer.heavy || layer.type === 'stratus' || layer.type === 'nimbostratus' || layer.precip === 'drizzle' ? 0.75 : 0.35 + layerRandom() * 0.35;
         const r0 = c0 + width * (1 - share) * (0.2 + layerRandom() * 0.6);
         const r1 = r0 + width * share;
         shafts.push({
@@ -945,25 +537,56 @@ export function* drawSky(ctx: Ctx, state: SkyState, options: SkyOptions, scratch
   }
 
   // Ground: land, sea along the section, the aerodrome at the centre.
-  ctx.fillStyle = css(light.land);
-  ctx.fillRect(0, groundY, w, h - groundY);
-  if (options.coastKm != null) {
-    const coastX = w / 2 + options.coastKm * pxPerKm;
-    ctx.fillStyle = css(light.sea);
-    if (options.coastKm < 0) ctx.fillRect(0, sea, Math.max(0, coastX), groundPx(h));
-    else ctx.fillRect(Math.min(w, coastX), sea, w, groundPx(h));
+  if (options.groundKnown !== false) {
+    ctx.fillStyle = css(light.land);
+    ctx.fillRect(0, groundY, w, h - groundY);
+    if (options.coastKm != null) {
+      const coastX = w / 2 + options.coastKm * pxPerKm;
+      ctx.fillStyle = css(light.sea);
+      if (options.coastKm < 0) ctx.fillRect(0, sea, Math.max(0, coastX), groundPx(h));
+      else ctx.fillRect(Math.min(w, coastX), sea, w, groundPx(h));
+    }
+    const ground = ctx.createLinearGradient(0, groundY, 0, h);
+    ground.addColorStop(0, 'rgba(255,255,255,0.12)');
+    ground.addColorStop(1, 'rgba(0,0,0,0.25)');
+    ctx.fillStyle = ground;
+    ctx.fillRect(0, groundY, w, h - groundY);
+    ctx.fillStyle = luminance(light.land) > 0.25 ? 'rgba(40,40,44,0.85)' : 'rgba(150,150,160,0.6)';
+    if (options.mode !== 'column') {
+      ctx.fillRect(w / 2 - 14, groundY, 28, 1.6);
+      ctx.fillRect(w / 2 - 1, groundY - 5, 2, 5);
+      ctx.fillRect(w / 2 - 2.5, groundY - 7, 5, 2.4);
+    }
   }
-  const ground = ctx.createLinearGradient(0, groundY, 0, h);
-  ground.addColorStop(0, 'rgba(255,255,255,0.12)');
-  ground.addColorStop(1, 'rgba(0,0,0,0.25)');
-  ctx.fillStyle = ground;
-  ctx.fillRect(0, groundY, w, h - groundY);
-  ctx.fillStyle = luminance(light.land) > 0.25 ? 'rgba(40,40,44,0.85)' : 'rgba(150,150,160,0.6)';
-  ctx.fillRect(w / 2 - 14, groundY, 28, 1.6);
-  ctx.fillRect(w / 2 - 1, groundY - 5, 2, 5);
-  ctx.fillRect(w / 2 - 2.5, groundY - 7, 5, 2.4);
   yield;
 
+  const units = options.units ?? AUS_UNITS;
+  const metricHeight = units.height === 'm';
+  const showM = (ft: number) => Math.round(feetToMetres(ft)).toLocaleString('en-AU');
+  const axisTick = (ft: number, withUnit: boolean) => {
+    if (!metricHeight) return withUnit && ft === 40000 ? '40k ft' : `${ft / 1000}k`;
+    return withUnit ? `${showM(ft)} m` : showM(ft);
+  };
+  const freezeText = (ft: number | null, withHeight: boolean) => {
+    const temp = units.temp === 'F' ? '32°F' : '0°C';
+    if (!withHeight || ft == null) return temp;
+    return metricHeight ? `${temp} ${showM(ft)} m` : `${temp} ${fmtFt(ft)}`;
+  };
+  if (options.mode === 'column') {
+    // Narrow column: real cloud/terrain heights and one altitude scale. All
+    // numeric winds and temperatures live in the adjacent aligned table.
+    for (const ft of [5000, 10000, 20000, 30000, 40000]) {
+      label(ctx, axisTick(ft, false), 4, yForFt(ft, h), ink, { size: 10, weight: 500, colour: ink.muted });
+    }
+    if (state.freezingFt != null) {
+      const y = yForFt(state.freezingFt, h);
+      ctx.fillStyle = ink.fz;
+      ctx.fillRect(0, Math.round(y), w, 1);
+      label(ctx, freezeText(state.freezingFt, false), w - 4, y - 7, ink, { align: 'right', colour: ink.fz, size: 10 });
+    }
+    label(ctx, metricHeight ? 'm AMSL' : 'ft AMSL', 4, h - 7, ink, { size: 9, weight: 500 });
+    return;
+  }
   if (options.compact) {
     if (state.freezingFt != null) {
       ctx.fillStyle = ink.fz;
@@ -986,7 +609,7 @@ export function* drawSky(ctx: Ctx, state: SkyState, options: SkyOptions, scratch
     ctx.lineTo(right, y);
     ctx.stroke();
     ctx.restore();
-    label(ctx, `0°C ${fmtFt(state.freezingFt)}`, right - 3, y - 7, ink, { align: 'right', colour: ink.fz, size: 10 });
+    label(ctx, freezeText(state.freezingFt, true), right - 3, y - 7, ink, { align: 'right', colour: ink.fz, size: 10 });
   }
   if (state.minus20Ft != null && state.minus20Ft < FT_MAX) {
     const y = yForFt(state.minus20Ft, h);
@@ -1000,7 +623,7 @@ export function* drawSky(ctx: Ctx, state: SkyState, options: SkyOptions, scratch
     ctx.lineTo(right, y);
     ctx.stroke();
     ctx.restore();
-    label(ctx, `−20°C`, right - 3, y - 7, ink, { align: 'right', colour: ink.fz, size: 9.5, weight: 500 });
+    label(ctx, units.temp === 'F' ? (formatTempC(-20, units, { unit: true }) ?? '−4°F') : '−20°C', right - 3, y - 7, ink, { align: 'right', colour: ink.fz, size: 9.5, weight: 500 });
   }
   for (const band of state.icing) {
     const y0 = yForFt(band.topFt, h);
@@ -1012,7 +635,7 @@ export function* drawSky(ctx: Ctx, state: SkyState, options: SkyOptions, scratch
   // Axis: true altitude, ft AMSL.
   for (const ft of [5000, 10000, 20000, 30000, 40000]) {
     const y = yForFt(ft, h);
-    label(ctx, ft === 40000 ? '40k ft' : `${ft / 1000}k`, 4, y, ink, { size: 9.5, weight: 500, colour: ink.muted });
+    label(ctx, axisTick(ft, ft === 40000), 4, y, ink, { size: 9.5, weight: 500, colour: ink.muted });
   }
 
   // Layer labels at their bases, left side, kept apart.
@@ -1025,7 +648,7 @@ export function* drawSky(ctx: Ctx, state: SkyState, options: SkyOptions, scratch
     let y = Math.min(item.y, groundY - 6);
     while (placed.some((p) => Math.abs(p - y) < 12)) y -= 12;
     placed.push(y);
-    label(ctx, layerLabel(item.layer), 38, y, ink, {
+    label(ctx, layerLabel(item.layer, units), 38, y, ink, {
       colour: item.layer.type === 'cumulonimbus' ? (ink.text === '#0f1c2a' ? '#b3261e' : '#ff8a80') : item.layer.source === 'model' || item.layer.secondary ? ink.muted : ink.text,
       italic: item.layer.source === 'model',
       weight: item.layer.secondary ? 500 : 600,
@@ -1033,10 +656,11 @@ export function* drawSky(ctx: Ctx, state: SkyState, options: SkyOptions, scratch
   }
   if (fog && state.obscuration) {
     const vis = state.obscuration.visM;
-    const text = `${state.obscuration.kind}${vis != null && vis < 10000 ? ` ${vis >= 5000 ? `${vis / 1000} km` : `${vis.toLocaleString('en-AU')} m`}` : ''}`;
+    const visLabel = vis != null && vis < 10000 ? formatVisibilityMetres(vis, units) : null;
+    const text = `${state.obscuration.kind}${visLabel ? ` ${visLabel}` : ''}`;
     label(ctx, text, w / 2 + 20, groundY - 9, ink, { size: 10 });
   }
-  label(ctx, `${state.icao} ${state.elevationFt} ft`, w / 2, h - groundPx(h) / 2, { ...ink, halo: 'rgba(0,0,0,0.35)' }, { align: 'center', size: 9.5, weight: 600, colour: 'rgba(255,255,255,0.92)' });
+  label(ctx, `${state.icao} ${metricHeight ? `${showM(state.elevationFt)} m` : `${state.elevationFt} ft`}`, w / 2, h - groundPx(h) / 2, { ...ink, halo: 'rgba(0,0,0,0.35)' }, { align: 'center', size: 9.5, weight: 600, colour: 'rgba(255,255,255,0.92)' });
   label(ctx, 'W', 5, h - groundPx(h) / 2, { ...ink, halo: 'rgba(0,0,0,0.35)' }, { size: 9, weight: 600, colour: 'rgba(255,255,255,0.85)' });
   label(ctx, 'E', w - 5, h - groundPx(h) / 2, { ...ink, halo: 'rgba(0,0,0,0.35)' }, { align: 'right', size: 9, weight: 600, colour: 'rgba(255,255,255,0.85)' });
 
@@ -1062,7 +686,7 @@ export function* drawSky(ctx: Ctx, state: SkyState, options: SkyOptions, scratch
     });
   }
   if (!state.hasProfile) {
-    label(ctx, 'No model profile: tops, winds and 0°C unknown', w / 2, 14, ink, { align: 'center', size: 10, weight: 500, colour: ink.muted });
+    label(ctx, units.temp === 'F' ? 'No model profile: tops, winds and 32°F unknown' : 'No model profile: tops, winds and 0°C unknown', w / 2, 14, ink, { align: 'center', size: 10, weight: 500, colour: ink.muted });
   }
 }
 
@@ -1074,14 +698,15 @@ export function drawSkySync(ctx: Ctx, state: SkyState, options: SkyOptions, scra
 /** A stable key for a state's picture: what changes it, rounded to what can be seen. */
 export function stateKey(state: SkyState, options: SkyOptions): string {
   const r = (value: number | null, step: number) => (value == null ? '-' : Math.round(value / step));
-  const layers = state.layers.map((l) => [l.type[0] + l.type[2], r(l.baseFtAmsl, 100), r(l.topFtAmsl, 100), l.oktas, l.precip[0], l.heavy ? 1 : 0, l.thunder ? 1 : 0, l.secondary ? 1 : 0, l.change ?? '', r(l.precipBottomFtAmsl, 250), l.source[0]].join(':'));
-  const winds = state.winds.map((w) => `${r(w.kt, 5)}/${r(w.fromDeg, 10)}`).join(',');
-  return [
-    options.seed, options.width, options.height, options.dpr, options.dark ? 1 : 0, options.coastKm, options.compact ? 'c' : '',
+  const layers = state.layers.map((l) => [l.type, l.cover, r(l.baseFtAmsl, 100), r(l.topFtAmsl, 100), l.oktas, l.precip[0], l.heavy ? 1 : 0, l.thunder ? 1 : 0, l.secondary ? 1 : 0, l.change ?? '', r(l.precipBottomFtAmsl, 250), l.source[0]].join(':'));
+  const winds = state.winds.map((w) => `${r(w.ftAmsl, 100)}/${r(w.kt, 5)}/${r(w.fromDeg, 10)}`).join(',');
+  const picture = [
+    cloudSpritesReady() ? 'painted' : 'bases', options.seed, options.width, options.height, options.dpr, options.dark ? 1 : 0, options.coastKm, options.compact ? 'c' : '', options.mode ?? 'section', options.groundKnown === false ? '?' : '',
     state.icao, state.elevationFt, r(state.sun.elevationDeg, 2), state.sun.azimuthDeg > 180 ? 'w' : 'e',
     r(state.freezingFt, 100), r(state.minus20Ft, 100), state.icing.map((b) => `${r(b.baseFt, 100)}-${r(b.topFt, 100)}`).join(','),
     state.obscuration ? `${state.obscuration.kind}${state.obscuration.visM}` : '', layers.join('|'), winds, state.hasProfile ? 1 : 0,
   ].join('#');
+  return options.units ? `${picture}#${unitKey(options.units)}` : picture;
 }
 
 /* ---------- the animator: cached states, crossfades, frame stats ---------- */
@@ -1092,7 +717,7 @@ export interface FrameStats { frames: number[]; builds: number[] }
 
 /**
  * Owns the visible canvas. `show()` sets the target state; the picture for a
- * new state is built incrementally (≤ ~6 ms of drawing per frame) into a cache,
+ * new state is built incrementally (a 2 ms submission budget between layers) into a cache,
  * then crossfaded in over 220 ms. States already in the cache are instant.
  */
 export class SkyAnimator {
@@ -1104,10 +729,14 @@ export class SkyAnimator {
   private building: { key: string; canvas: Canvas; steps: Generator<void, void, void>; started: number } | null = null;
   private pending: { state: SkyState; options: SkyOptions; key: string } | null = null;
   private raf = 0;
+  private disposed = false;
+  private preparing = false;
+  private artFailed = false;
+  private latest: { state: SkyState; options: SkyOptions } | null = null;
   private scratch: { clouds: Canvas; layer: Canvas } | null = null;
   readonly stats: FrameStats = { frames: [], builds: [] };
   fadeMs = 220;
-  budgetMs = 6;
+  budgetMs = 2;
   maxCache = 24;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -1115,6 +744,17 @@ export class SkyAnimator {
   }
 
   show(state: SkyState, options: SkyOptions) {
+    if (this.disposed) return;
+    this.latest = { state, options };
+    if (!cloudSpritesReady() && !this.artFailed) {
+      if (!this.preparing) {
+        this.preparing = true;
+        prepareCloudSprites().catch(() => { this.artFailed = true; }).then(() => {
+          this.preparing = false;
+          if (!this.disposed && this.latest) this.show(this.latest.state, this.latest.options);
+        });
+      }
+    }
     const key = stateKey(state, options);
     if (this.canvas.width !== Math.round(options.width * options.dpr) || this.canvas.height !== Math.round(options.height * options.dpr)) {
       this.canvas.width = Math.round(options.width * options.dpr);
@@ -1136,6 +776,8 @@ export class SkyAnimator {
   }
 
   dispose() {
+    this.disposed = true;
+    this.latest = null; this.pending = null; this.building = null; this.shown = null; this.previous = null; this.scratch = null;
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = 0;
     this.cache.clear();

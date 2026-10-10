@@ -990,6 +990,9 @@ static void CheckLivePlayback(TestController *c, NSString *root, NSFileManager *
         @"view teardown releases a held pointer once and preserves a prior pause");
     chart.onHoldChanged = holdCallback;
     [c resetPopoverToNow];
+    Check([[c valueForKey:@"liveSpeed"] integerValue] == IsobarLiveSpeedRealTime &&
+        fabs(((IsobarLivePlayer *)[c valueForKey:@"live"]).hoursPerSecond - 1.0/3600.0)<1e-10,
+        @"Now selects one second per second on the shared native clock");
     SettleController(c);
     double nowFraction = [c motionFractionForDate:[c valueForKey:@"chartNow"]];
     progress = ((TimelineStrip *)[c valueForKey:@"popoverTimeline"]).progress;
@@ -1460,6 +1463,15 @@ static NSString *ForecastSentence(NSDate *date, NSTimeZone *zone, NSArray *serie
     return [NSString stringWithFormat:@"%@ · %@ %@ kt", degrees, row[@"windDir"], row[@"windKt"]];
 }
 
+// Time-lens titles begin with a small NOW/FORECAST badge. Reading assertions
+// must inspect the attributed run after that badge.
+static NSUInteger ReadingAttributeIndex(NSAttributedString *title) {
+    if (!title.length) return NSNotFound;
+    NSRange separator = [title.string rangeOfString:@"  "];
+    NSUInteger index = separator.location == NSNotFound ? 0 : NSMaxRange(separator);
+    return MIN(index, title.length - 1);
+}
+
 static NSInteger LocalDayIndex(NSArray *days, NSDate *date, NSTimeZone *zone) {
     NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
     calendar.timeZone = zone;
@@ -1470,13 +1482,26 @@ static NSInteger LocalDayIndex(NSArray *days, NSDate *date, NSTimeZone *zone) {
     return -1;
 }
 
-static void SaveTimeLensFrame(NSView *view, NSString *name) {
+static void SaveTimeLensFrame(TestController *controller, NSView *view, NSString *name) {
     NSString *directory = [NSString stringWithUTF8String:getenv("ISOBAR_TIMELENS_DIR") ?: "build/render-review/timelens2"];
     [NSFileManager.defaultManager createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:nil];
     // The scrub frame is delivered on the main queue after the seek.
     for (NSInteger i = 0; i < 20; i++)
         [NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.03]];
     [view layoutSubtreeIfNeeded];
+    NSView *parent = view.superview;
+    NSRect oldFrame = view.frame;
+    NSSize oldContentSize = controller.popover.contentSize;
+    NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(-2000, -2000,
+        NSWidth(oldFrame), NSHeight(oldFrame)) styleMask:NSWindowStyleMaskBorderless
+        backing:NSBackingStoreBuffered defer:NO];
+    window.releasedWhenClosed = NO;
+    window.opaque = NO;
+    window.backgroundColor = NSColor.clearColor;
+    [view removeFromSuperview];
+    view.frame = window.contentView.bounds;
+    [window.contentView addSubview:view];
+    [window displayIfNeeded];
     NSRect bounds = view.bounds;
     NSInteger wide = (NSInteger)llround(NSWidth(bounds) * 2.0);
     NSInteger high = (NSInteger)llround(NSHeight(bounds) * 2.0);
@@ -1485,12 +1510,48 @@ static void SaveTimeLensFrame(NSView *view, NSString *name) {
         colorSpaceName:NSCalibratedRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
     // Without a point size the rep is 1 pt per pixel and the view lands in one quarter.
     rep.size = bounds.size;
+    // CAMetalLayer does not participate in AppKit bitmap drawing. Insert the
+    // renderer's current snapshot at the bottom of the GPU view's child stack
+    // for this capture only: native map controls and all root siblings remain
+    // above it, and AppKit applies their flipped/Retina transforms together.
+    GPUMapView *gpu = (GPUMapView *)FindView(view, @"popover.gpu");
+    NSImageView *mapPicture = nil;
+    NSRect mapRect = NSZeroRect;
+    if ([gpu isKindOfClass:GPUMapView.class] && !gpu.isHiddenOrHasHiddenAncestor) {
+        [gpu waitForUploads];
+        CGImageRef snapshot = [gpu copySnapshot];
+        Check(snapshot != NULL, [NSString stringWithFormat:@"%@ captures the Metal map", name]);
+        if (snapshot) {
+            NSImage *image = [[NSImage alloc] initWithCGImage:snapshot size:gpu.bounds.size];
+            mapPicture = [NSImageView imageViewWithImage:image];
+            mapPicture.frame = gpu.bounds;
+            mapPicture.imageScaling = NSImageScaleAxesIndependently;
+            [gpu addSubview:mapPicture positioned:NSWindowBelow relativeTo:nil];
+            mapRect = [gpu convertRect:gpu.bounds toView:view];
+            CGImageRelease(snapshot);
+        }
+    }
     NSGraphicsContext *context = rep ? [NSGraphicsContext graphicsContextWithBitmapImageRep:rep] : nil;
     if (context) {
         [NSGraphicsContext saveGraphicsState];
         [NSGraphicsContext setCurrentContext:context];
-        [view displayRectIgnoringOpacity:bounds inContext:context];
+        [window.contentView displayRectIgnoringOpacity:window.contentView.bounds inContext:context];
         [NSGraphicsContext restoreGraphicsState];
+    }
+    [mapPicture removeFromSuperview];
+    if (mapPicture) {
+        // A fully opaque plate is not evidence of map content. The map's
+        // interior must contain varied weather/coast/annotation pixels.
+        NSMutableSet<NSNumber *> *colours = [NSMutableSet set];
+        for (NSInteger y = (NSInteger)(NSMinY(mapRect) * 2 + 24); y < NSMaxY(mapRect) * 2 - 24; y += 5)
+            for (NSInteger x = (NSInteger)(NSMinX(mapRect) * 2 + 24); x < NSMaxX(mapRect) * 2 - 24; x += 5) {
+                if (x < 0 || y < 0 || x >= wide || y >= high) continue;
+                const uint8_t *pixel = rep.bitmapData + y * rep.bytesPerRow + x * 4;
+                unsigned colour = ((pixel[0] >> 3) << 10) | ((pixel[1] >> 3) << 5) | (pixel[2] >> 3);
+                [colours addObject:@(colour)];
+            }
+        Check(colours.count > 12, [NSString stringWithFormat:@"%@ map contains rendered detail (%lu colour bins)",
+            name, (unsigned long)colours.count]);
     }
     NSInteger inked[4] = {0}, cells[4] = {0};
     const uint8_t *bytes = rep.bitmapData;
@@ -1504,9 +1565,19 @@ static void SaveTimeLensFrame(NSView *view, NSString *name) {
     double least = 1;
     for (int q = 0; q < 4; q++) least = MIN(least, cells[q] ? (double)inked[q] / cells[q] : 0);
     NSData *png = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
-    Check(png.length > 1000 && least > 0.5 && [png writeToFile:[directory stringByAppendingPathComponent:name] atomically:YES],
-        [NSString stringWithFormat:@"Retina time lens %@ fills its %ldx%ld canvas (emptiest quarter %.0f%% drawn)",
+    BOOL wrote = [png writeToFile:[directory stringByAppendingPathComponent:name] atomically:YES];
+    Check(png.length > 1000 && least > 0.5 && wrote,
+        [NSString stringWithFormat:@"Retina time lens %@ renders its %ldx%ld canvas (emptiest quarter %.0f%% drawn)",
             name, (long)wide, (long)high, least * 100]);
+    [view removeFromSuperview];
+    if (parent) [parent addSubview:view];
+    [window close];
+    // NSWindow rounds its content bounds to whole points (899.820689... ->
+    // 900 here). The original root may have no superview, but still belongs
+    // to the popover controller: always restore its fractional frame, or the
+    // next capture leaves it mismatched with popover.contentSize.
+    view.frame = oldFrame;
+    controller.popover.contentSize = oldContentSize;
 }
 
 static void CheckLensCursor(TestController *controller, NSInteger tag, NSDate *date) {
@@ -1598,7 +1669,9 @@ static void CheckTimeLens(NSString *root) {
             }
             Check(mark.hidden && !mark.stringValue.length,
                 [NSString stringWithFormat:@"%@ %@ keeps the forecast word off the header", placeName, step[1]]);
-            NSColor *ink = [header.attributedTitle attribute:NSForegroundColorAttributeName atIndex:0 effectiveRange:NULL];
+            NSUInteger readingIndex = ReadingAttributeIndex(header.attributedTitle);
+            NSColor *ink = readingIndex != NSNotFound ?
+                [header.attributedTitle attribute:NSForegroundColorAttributeName atIndex:readingIndex effectiveRange:NULL] : nil;
             NSColor *treatment = atNow ? NSColor.labelColor : NSColor.secondaryLabelColor;
             Check([ink isEqual:treatment], [NSString stringWithFormat:@"%@ %@ header uses the %@ treatment",
                 placeName, step[1], atNow ? @"observation" : @"forecast"]);
@@ -1630,19 +1703,25 @@ static void CheckTimeLens(NSString *root) {
         NSDate *ahead = [now dateByAddingTimeInterval:30 * 3600.0];
         SeekTimeLens(controller, ahead);
         [controller applyTimeLensButton:narrow mark:mark date:ahead announce:NO];
-        NSFont *aheadFont = [narrow.attributedTitle attribute:NSFontAttributeName atIndex:0 effectiveRange:NULL];
+        NSUInteger readingIndex = ReadingAttributeIndex(narrow.attributedTitle);
+        NSFont *aheadFont = readingIndex != NSNotFound ?
+            [narrow.attributedTitle attribute:NSFontAttributeName atIndex:readingIndex effectiveRange:NULL] : nil;
         BOOL fits = narrow.attributedTitle.size.width <= NSWidth(narrow.frame) - 4;
         SeekTimeLens(controller, now);
         [controller applyTimeLensButton:narrow mark:mark date:now announce:NO];
-        NSFont *nowFont = [narrow.attributedTitle attribute:NSFontAttributeName atIndex:0 effectiveRange:NULL];
+        readingIndex = ReadingAttributeIndex(narrow.attributedTitle);
+        NSFont *nowFont = readingIndex != NSNotFound ?
+            [narrow.attributedTitle attribute:NSFontAttributeName atIndex:readingIndex effectiveRange:NULL] : nil;
         Check(NSHeight(kept) <= 36 && fits && aheadFont.pointSize >= 11 && aheadFont.pointSize <= 13 && nowFont.pointSize <= 13,
             [NSString stringWithFormat:@"the popover header is one row and the reading fits (%.0f pt, now %.0f pt)",
                 aheadFont.pointSize, nowFont.pointSize]);
         narrow.accessibilityIdentifier = @"fullscreen.temperature";
         [narrow setFrameSize:NSMakeSize(280, 40)];
         [controller applyTimeLensButton:narrow mark:mark date:now announce:NO];
-        nowFont = [narrow.attributedTitle attribute:NSFontAttributeName atIndex:0 effectiveRange:NULL];
-        Check(nowFont.pointSize == 28, @"the expanded one-row observation keeps the 28 pt value");
+        readingIndex = ReadingAttributeIndex(narrow.attributedTitle);
+        nowFont = readingIndex != NSNotFound ?
+            [narrow.attributedTitle attribute:NSFontAttributeName atIndex:readingIndex effectiveRange:NULL] : nil;
+        Check(nowFont.pointSize == 28, @"a 56 pt observation keeps the large face");
         narrow.accessibilityIdentifier = @"popover.obs";
         [narrow setFrameSize:kept.size];
     }
@@ -1702,7 +1781,7 @@ static void CheckTimeLens(NSString *root) {
                     top <= 16 && bottom >= NSHeight(view.bounds) - 16,
                     [NSString stringWithFormat:@"%@ popover content fills its %.0fx%.0f window (%.0f–%.0f)",
                         placeName, NSWidth(view.bounds), NSHeight(view.bounds), top, bottom]);
-                SaveTimeLensFrame(view, [NSString stringWithFormat:@"%@-%@-%@.png",
+                SaveTimeLensFrame(controller, view, [NSString stringWithFormat:@"%@-%@-%@.png",
                     [placeName lowercaseString], appearance[1], step[1]]);
             }
         }
@@ -2841,8 +2920,8 @@ static void CheckPopoverSpeedAndWarnings(NSString *root) {
     NSPopUpButton *speed = (NSPopUpButton *)FindView(view, @"popover.speed");
     Check([speed isKindOfClass:NSPopUpButton.class] && !speed.hidden, @"popover speed control is on screen");
     if ([speed isKindOfClass:NSPopUpButton.class]) {
-        for (NSNumber *multiple in @[@1, @2, @4, @8, @16, @32, @64, @128, @256]) {
-            NSString *expect = [NSString stringWithFormat:@"%@×", multiple];
+        for (NSNumber *multiple in @[@0, @1, @2, @4, @8, @16, @32, @64, @128, @256]) {
+            NSString *expect = (multiple.integerValue == 0 ? @"Real time" : [NSString stringWithFormat:@"%@ min/s", multiple]);
             [speed selectItemWithTag:multiple.integerValue];
             BOOL shown = [speed.titleOfSelectedItem isEqual:expect] && SpeedTitleFits(speed);
             Check(shown, [NSString stringWithFormat:@"%@ shows in full", expect]);
@@ -3030,7 +3109,7 @@ static void CheckWeekGrid(void) {
         rate.hoursPerSecond = IsobarLiveHoursPerSecond(IsobarLiveSpeed8x);
         [rate configureRun:run start:times.firstObject end:times.lastObject now:now
             modelIndex:^double(NSDate *date) { return [c liveModelIndexForDate:date]; }];
-        Check(fabs(rate.hoursPerSecond - 8.0 / 60.0) < 1e-9, @"playback stays one forecast minute per second at 1×");
+        Check(fabs(rate.hoursPerSecond - 8.0 / 60.0) < 1e-9, @"8 min/s playback keeps its existing physical rate");
         NSView *view = PopoverRoot(c);
         [view layoutSubtreeIfNeeded];
         TimelineStrip *timeline = (TimelineStrip *)FindView(view, @"popover.timeline");
@@ -3279,6 +3358,11 @@ int main(void) {
         NSFileManager *fm = NSFileManager.defaultManager;
         if (![fm copyItemAtPath:[fixtures stringByAppendingPathComponent:@"store"] toPath:root error:nil]) return 1;
         @try {
+            if (getenv("ISOBAR_TEST_TIMELENS_ONLY")) {
+                CheckTimeLens(root);
+                fprintf(stderr, "time lens failures: %d\n", failures);
+                return failures ? 1 : 0;
+            }
             if (getenv("ISOBAR_TEST_HEADER")) {
                 CheckTimelineEndsAtLastFrame();
                 CheckPopoverSpeedAndWarnings(root);
@@ -3583,14 +3667,14 @@ int main(void) {
             timelineWindow.releasedWhenClosed=NO;
             [timeline removeFromSuperview]; timeline.frame=timelineWindow.contentView.bounds;
             [timelineWindow.contentView addSubview:timeline];
-            [timeline mouseMoved:TimelineEvent(timeline,.78,NSEventTypeMouseMoved,501)]; Pump(.25);
+            [timeline mouseMoved:TimelineEvent(timeline,.78,NSEventTypeMouseMoved,501)]; Pump(.35);
             [timeline mouseExited:TimelineEvent(timeline,.78,NSEventTypeMouseExited,502)]; Pump(.25);
             Check(!SameDate(hoverRestore,[c selectedForecastDate]) &&
                 SameDate([c selectedForecastDate],[[c valueForKey:@"forecastGraph"] valueForKey:@"selectedDate"]) &&
                 fabs(timeline.progress-.78)<.001,
                 @"leaving the timeline keeps the inspected map, graph and thumb time");
             NSDate *heldDate=[c selectedForecastDate];
-            [timeline mouseMoved:TimelineEvent(timeline,.82,NSEventTypeMouseMoved,503)]; Pump(.25);
+            [timeline mouseMoved:TimelineEvent(timeline,.82,NSEventTypeMouseMoved,503)]; Pump(.35);
             [timeline mouseExited:TimelineEvent(timeline,.82,NSEventTypeMouseExited,504)]; Pump(.25);
             Check([c selectedForecastDate].timeIntervalSince1970 > heldDate.timeIntervalSince1970 &&
                 SameDate([c selectedForecastDate],[[c valueForKey:@"forecastGraph"] valueForKey:@"selectedDate"]) &&
@@ -3609,15 +3693,17 @@ int main(void) {
             NSMutableArray<NSNumber *> *dragFrames=[NSMutableArray array];
             scrub.onPreview=^(double fraction) { if (isfinite(fraction)) [hoverFrames addObject:@(fraction)]; };
             scrub.onSeek=^(double fraction) { [dragFrames addObject:@(fraction)]; };
+            scrub.progress=.1;
             for (NSInteger i=0;i<5;i++)
                 [scrub mouseMoved:TimelineEventAtY(scrub,.2+i*.1,116,NSEventTypeMouseMoved,600+i)];
-            Check(fabs(scrub.progress-.6)<.001,
-                @"tall scrub thumb follows the latest pointer event immediately");
+            Check(fabs(scrub.progress-.1)<.001 && hoverFrames.count==0,
+                @"a fast timeline hover pass does not seek or preview");
             Pump(.04);
-            Check(hoverFrames.count>=1 && hoverFrames.count<=5 &&
-                fabs(hoverFrames.firstObject.doubleValue-.2)<.001 &&
-                fabs(hoverFrames.lastObject.doubleValue-.6)<.001,
-                @"tall scrub target keeps the final frame during a pointer burst");
+            Check(fabs(scrub.progress-.1)<.001 && hoverFrames.count==0,
+                @"the hover dwell remains unarmed before 300 ms");
+            Pump(.3);
+            Check(hoverFrames.count==1 && fabs(hoverFrames.lastObject.doubleValue-.6)<.001,
+                @"a stationary hover arms at the latest pointer position");
             [scrub mouseMoved:TimelineEventAtY(scrub,.7,-24,NSEventTypeMouseMoved,608)];
             Pump(.04);
             Check(fabs(scrub.progress-.7)<.001 &&
@@ -3792,8 +3878,9 @@ int main(void) {
                 NSView *strip = FindView(fullscreen, @"fullscreen.days");
                 NSPopUpButton *place = (NSPopUpButton *)FindView(fullscreen, @"fullscreen.place");
                 NSButton *temperature = (NSButton *)FindView(fullscreen, @"fullscreen.temperature");
-                NSFont *tempFont = temperature.attributedTitle.length ?
-                    [temperature.attributedTitle attribute:NSFontAttributeName atIndex:0 effectiveRange:NULL] : nil;
+                NSUInteger readingIndex = ReadingAttributeIndex(temperature.attributedTitle);
+                NSFont *tempFont = readingIndex != NSNotFound ?
+                    [temperature.attributedTitle attribute:NSFontAttributeName atIndex:readingIndex effectiveRange:NULL] : nil;
                 Check(transport && NSHeight(transport.frame)==28 &&
                     NSContainsRect(fullscreen.bounds,transportRect) &&
                     NSWidth(map.frame)>=400 && NSMinY(map.frame)>=NSMaxY(transportRect) &&

@@ -1,6 +1,14 @@
 # ATPL trainer
 
-A theory trainer for the Australian ATPL (aeroplane). The lab is today's Isobar chart. Concept ids are shared with a later US track; the trainer does not serve FAA ATP or ACS references. The owner, 6 October 2026: the useful questions are weather interpretation, why a weather process happens, and the meteorology, flight planning and engineering around that. The best way to learn it is to look at today's data.
+A theory trainer for the Australian ATPL (aeroplane), and the Learn levels in front of it. The lab is today's Isobar chart. The static Australian bank does not serve FAA items. Learn does, on the US rules track only. The owner, 6 October 2026: the useful questions are weather interpretation, why a weather process happens, and the meteorology, flight planning and engineering around that. The best way to learn it is to look at today's data.
+
+## Levels
+
+Learn asks what someone is here for — Weather, Drones, Flying or Defence — plus an optional line of their own words. A cheap model, on the chat budget, turns that into a prior: goal, level, rules and strand emphasis. The icon's own default is used when there is no text, the budget is resting, or the reply is not one of the fixed values. Curious and Defence do not show a rules control.
+
+The levels are bands on one difficulty scale: Curious, Drone, Student pilot, Commercial, Airline. Defence sits on the same scale. Ability is estimated per strand (weather physics, charts and forecasts, Australian rules, US rules, operations, numbers), not as one percentage. The chip shows the summary and a trend. Overriding it resets the prior and keeps the history.
+
+Curious, Drone and Defence cards lead with a picture. Pilot cards follow the question standard below. A rule card names its document and section. US rules cite the FAA or 14 CFR. Defence cards cite public-domain US doctrine (JP 3-59, ATP 2-01.3) by document and effect, not a chapter number that was not opened. Australian transition altitude is not a scored card here; the section was not verified in this pass.
 
 This directory is the syllabus, the concept graph, the card generator contract and a worked sample. It does not change the app. It is not a flight briefing.
 

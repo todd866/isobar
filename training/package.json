@@ -4,10 +4,13 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "test": "tsc --noEmit && node --experimental-strip-types --test test/*.test.ts"
+    "test": "tsc --noEmit && node --experimental-strip-types --test test/*.test.ts",
+    "b727:generate": "node --experimental-strip-types src/b727/generate.ts",
+    "b727:handbook": "node --experimental-strip-types src/b727/handbook.ts"
   },
   "devDependencies": {
     "esbuild": "0.25.10",
+    "playwright-core": "1.63.0",
     "typescript": "5.9.3"
   }
 }

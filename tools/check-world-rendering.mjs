@@ -35,7 +35,7 @@ try {
   browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' }), args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] });
   for (const mode of ['webgl', 'canvas2d', 'webgl-init-failed']) {
     const fallback = mode !== 'webgl';
-    const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: 'light' });
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: 'light', extraHTTPHeaders: { 'isobar-test': '1' } });
     try {
       if (mode === 'webgl-init-failed') await context.addInitScript(() => {
         WebGL2RenderingContext.prototype.createProgram = () => null;
@@ -136,7 +136,7 @@ try {
     } catch (error) { report.errors.push({ mode: mode, detail: error.message }); }
     finally { await context.close(); }
   }
-  const downloadContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const downloadContext = await browser.newContext({ viewport: { width: 1280, height: 800 }, extraHTTPHeaders: { 'isobar-test': '1' } });
   try {
     const page = await downloadContext.newPage();
     await page.goto(`${origin}/download`, { waitUntil: 'domcontentloaded', timeout: 30000 });

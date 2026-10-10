@@ -1,0 +1,41 @@
+[
+  {
+    "file": "painted-atlas.webp",
+    "width": 1536,
+    "height": 1024,
+    "bytes": 296502,
+    "sha256": "f6b235ff405cfe1e9a49e83c9580fdd079710bc7ee48eeffc40c256a2ea4cf29",
+    "source": "build/clouds/cloud-art/cloud-atlas-source.png",
+    "sourceSha256": "f980b6bd4782b2d7e937372cb25903715dde4f2519f2e33abba221cb1321ed97",
+    "alphaRange": [
+      0,
+      254
+    ]
+  },
+  {
+    "file": "stratus.webp",
+    "width": 2048,
+    "height": 210,
+    "bytes": 66518,
+    "sha256": "55f58bc6370fd7bf48b0820751126661f0f4a5f2324a7e29a04977f652af47a4",
+    "source": "build/clouds/cloud-art/stratus-source.png",
+    "sourceSha256": "fa7235b612929fcd42f3e70a6e86fae38ba8faa350aa48cd6009c64b4f359cb7",
+    "alphaRange": [
+      0,
+      254
+    ]
+  },
+  {
+    "file": "nimbostratus.webp",
+    "width": 1981,
+    "height": 794,
+    "bytes": 155194,
+    "sha256": "e6f93b6a4a6731f9962b6e60487b5ffb5da9be0c2f54c00c55321d40505ca38a",
+    "source": "build/clouds/cloud-art/nimbostratus-flat-source.png",
+    "sourceSha256": "8c704d4d64e3a606dbb53cf814ec8b55a555a0e865932443b8e74e96010deacd",
+    "alphaRange": [
+      0,
+      254
+    ]
+  }
+]

@@ -1,0 +1,4685 @@
+{
+  "schema": "isobar.training.syllabus/v1",
+  "id": "tc-atpl",
+  "authority": "Transport Canada",
+  "title": "ATPL(A) SAMRA and SARON knowledge requirements",
+  "version": "TP 690E, twenty-first edition, March 2016 (TP file updated 03/2016)",
+  "version_date": "2016-03-01",
+  "retrieved": "2026-10-09",
+  "licence": "Crown copyright, reproduction permitted with acknowledgement",
+  "licence_note": "© Her Majesty the Queen in Right of Canada, as represented by the Minister of Transport, 1977. Transport Canada grants permission to reproduce this guide with full acknowledgement. It is a guide, not the legal text of the CARs.",
+  "source_url": "https://tc.canada.ca/en/aviation/publications/study-reference-guide-written-examinations-airline-transport-pilot-licence-aeroplane-tp-690",
+  "gap": "Item-level CAR wording was not copied from the regulations. SARON section 1 lists the guide's provision titles. CARs Parts IV, VI and VII are the legal text at https://laws-lois.justice.gc.ca/eng/regulations/SOR-96-433/index.html and were not re-parsed section by section.",
+  "subjects": [
+    {
+      "code": "SARON-1",
+      "title": "Air Law And Procedures",
+      "source_url": "https://tc.canada.ca/en/aviation/publications/study-reference-guide-written-examinations-airline-transport-pilot-licence-aeroplane-tp-690",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "ca:SARON-1:part-i-general-provisions-101",
+          "text": "– INTERPRETATION 101.01 Interpretation",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PART I – GENERAL PROVISIONS"
+        },
+        {
+          "id": "ca:SARON-1:part-i-general-provisions-103",
+          "text": "– ADMINISTRATION AND COMPLIANCE 103.02 Inspection of Aircraft, Requests for Production of Documents and Prohibitions 103.03 Return of Canadian Aviation Documents 103.04 Record Keeping 103.12 Definition of “Principal”",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PART I – GENERAL PROVISIONS"
+        },
+        {
+          "id": "ca:SARON-1:part-i-general-provisions-106",
+          "text": "– ACCOUNTABLE EXECUTIVE 106.01 Application 106.02 Appointment and Acceptance 106.03 Accountability 106.04 More Than One Certificate",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PART I – GENERAL PROVISIONS"
+        },
+        {
+          "id": "ca:SARON-1:part-i-general-provisions-107",
+          "text": "– SAFETY MANAGEMENT SYSTEM REQUIREMENTS 107.01 Application 107.02 Establishing a Safety Management System 107.03 Safety Management System 107.04 Size",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PART I – GENERAL PROVISIONS"
+        },
+        {
+          "id": "ca:SARON-1:of-a-leased-aircraft-by-a-non-registered-202",
+          "text": "– AIRCRAFT MARKING AND REGISTRATION 202.01 Requirements for Marks on Aircraft 202.26 Carrying Certificate of Registration on Board the Aircraft 202.35 Transfer of Legal Custody and Control - General",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "OF A LEASED AIRCRAFT BY A NON-REGISTERED OWNER"
+        },
+        {
+          "id": "ca:SARON-1:of-a-leased-aircraft-by-a-non-registered-203",
+          "text": "– OPERATION OF A LEASED AIRCRAFT BY A NON-REGISTERED OWNER",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "OF A LEASED AIRCRAFT BY A NON-REGISTERED OWNER"
+        },
+        {
+          "id": "ca:SARON-1:of-a-leased-aircraft-by-a-non-registered-203-02",
+          "text": "Application",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "OF A LEASED AIRCRAFT BY A NON-REGISTERED OWNER"
+        },
+        {
+          "id": "ca:SARON-1:of-a-leased-aircraft-by-a-non-registered-203-03",
+          "text": "Leasing Operations – General",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "OF A LEASED AIRCRAFT BY A NON-REGISTERED OWNER"
+        },
+        {
+          "id": "ca:SARON-1:of-a-leased-aircraft-by-a-non-registered-203-04",
+          "text": "Leasing Operations – International",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "OF A LEASED AIRCRAFT BY A NON-REGISTERED OWNER"
+        },
+        {
+          "id": "ca:SARON-1:of-a-leased-aircraft-by-a-non-registered-203-05",
+          "text": "Registration of Leased Aircraft (CARs) refer to their associated standards. Questions",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "OF A LEASED AIRCRAFT BY A NON-REGISTERED OWNER"
+        },
+        {
+          "id": "ca:SARON-1:part-iii-aerodromes-and-airports-300",
+          "text": "– INTERPRETATION 300.01 Interpretation",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PART III – AERODROMES AND AIRPORTS"
+        },
+        {
+          "id": "ca:SARON-1:part-iii-aerodromes-and-airports-301",
+          "text": "– AERODROMES 301.01 Application 301.04 Markers and Markings 301.06 Wind Direction Indicator 301.07 Lighting 301.08 Prohibitions 301.09 Fire Prevention",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PART III – AERODROMES AND AIRPORTS"
+        },
+        {
+          "id": "ca:SARON-1:part-iii-aerodromes-and-airports-302",
+          "text": "– AIRPORTS 302.10 Prohibitions 302.11 Fire Prevention",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PART III – AERODROMES AND AIRPORTS"
+        },
+        {
+          "id": "ca:SARON-1:part-iv-personnel-licensing-and-training-400",
+          "text": "– GENERAL 400.01 Interpretation",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PART IV – PERSONNEL LICENSING AND TRAINING"
+        },
+        {
+          "id": "ca:SARON-1:part-iv-personnel-licensing-and-training-401",
+          "text": "– FLIGHT CREW PERMITS, LICENSES AND RATINGS 401.03 Requirements to Hold a Flight Crew Permit, Licence or Rating 401.04 Flight Crew Members of Aircraft Registered in Contracting States Other than Canada 401.05 Recency Requirements 401.08 Personal Logs 401.11 Airline Transport Licence Training Program 401.34 ATPL Privileges – Aeroplane 401.47 Instrument Rating Privileges 401.52 Second Officer Rating 401.53 Second Officer Privileges",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PART IV – PERSONNEL LICENSING AND TRAINING"
+        },
+        {
+          "id": "ca:SARON-1:part-iv-personnel-licensing-and-training-404",
+          "text": "– MEDICAL REQUIREMENTS 404.03 Requirement to Hold a Medical Certificate 404.04 Issuance, Renewal and Validity Period of Medical Certificate 404.06 Prohibitions Regarding Exercise of Privileges 404.10 Medical Certificate Requirements for Personnel Licences 404.18 Permission to Continue to Exercise the Privileges of a Licence or Rating",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PART IV – PERSONNEL LICENSING AND TRAINING"
+        },
+        {
+          "id": "ca:SARON-1:sub-chapter-d-design-and-construction-525-857",
+          "text": "Cargo Compartment Classification",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "SUB-CHAPTER D – DESIGN AND CONSTRUCTION"
+        },
+        {
+          "id": "ca:SARON-1:part-vi-general-operating-and-flight-rul-600",
+          "text": "– INTERPRETATION 600.01 Interpretation",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PART VI – GENERAL OPERATING AND FLIGHT RULES"
+        },
+        {
+          "id": "ca:SARON-1:part-vi-general-operating-and-flight-rul-601",
+          "text": "– AIRSPACE STRUCTURE, CLASSIFICATION AND USE 601.01 Airspace Structure 601.02 Airspace Classification 601.03 Transponder Airspace 601.04 IFR or VFR Flight in Class F Special Use Restricted Airspace or Class F Special Use Advisory Airspace 601.05 IFR Flight in Class A, B, C, D or E Airspace or Class F Special Use Restricted or Advisory Controlled Airspace 601.06 VFR Flight in Class A Airspace 601.07 VFR Flight in Class B Airspace 601.08 VFR Flight in Class C Airspace",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PART VI – GENERAL OPERATING AND FLIGHT RULES"
+        },
+        {
+          "id": "ca:SARON-1:part-vi-general-operating-and-flight-rul-601-09",
+          "text": "VFR Flight in Class D Airspace 601.14 Interpretation 601.15 Forest Fire Aircraft Operating Restrictions 601.16 Issuance of NOTAM for Forest Fire Aircraft Operating Restrictions 601.17 Exceptions",
+          "kind": "objective",
+          "concept_ids": [
+            "law.vfr-minima"
+          ],
+          "topic": "PART VI – GENERAL OPERATING AND FLIGHT RULES"
+        },
+        {
+          "id": "ca:SARON-1:part-vi-general-operating-and-flight-rul-601-18",
+          "text": "Orders Prohibiting or Restricting Aircraft Operations 601.20 Projection of a Directed Bright Light Source at an Aircraft 601.21 Requirement for Notification 601.22 Requirement for Pilot-in-Command",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PART VI – GENERAL OPERATING AND FLIGHT RULES"
+        },
+        {
+          "id": "ca:SARON-1:part-vi-general-operating-and-flight-rul-602",
+          "text": "– OPERATING AND FLIGHT RULES 602.01 Reckless or Negligent Operation of Aircraft 602.02 Fitness of Flight Crew Members 602.03 Alcohol or Drugs – Crew Members 602.04 Alcohol or Drugs – Passengers 602.05 Compliance with Instructions 602.06 Smoking 602.07 Aircraft Operating Limitations 602.08 Portable Electronic Devices 602.09 Fueling with Engines Running 602.10 Starting and Ground Running of Aircraft Engines 602.11 Aircraft Icing 602.12 Overflight of Built-up Areas or Open-Air Assemblies of Persons during Take-offs, Approaches and Landings 602.13 Take-offs, Approaches and Landings within Built-up Areas of Cities and Towns 602.14 Minimum Altitudes and Distances 602.15 Permissible Low Altitude Flight 602.19 Right-of-Way – General 602.20 Right-of-Way – Aircraft Manoeuvering on Water 602.21 Avoidance of Collision 602.22 Towing 602.23 Dropping of Objects 602.24 Formation Flight 602.25 Entering or Leaving an Aircraft in Flight 602.26 Parachute Descents 602.27 Aerobatic Maneuvers – Prohibited Areas and Flight Conditions 602.28 Aerobatic Maneuvers with Passengers 602.30 Fuel Dumping 602.31 Compliance with Air Traffic Control Instructions and Clearances 602.32 Airspeed Limitations 602.33 Supersonic Flight 602.34 Cruising Altitudes and Cruising Flight Levels 602.35 Altimeter Setting and Operating Procedures in the Altimeter-Setting Region 602.36 Altimeter Setting and Operating Procedures in the Standard Pressure Region 602.37 Altimeter Setting and Operating Procedures in Transition between Regions 602.38 Flight over the High Seas 602.39 Transoceanic Flight 602.40 Landing at or Take-off from an Aerodrome at Night 602.46 Refusal to Transport 602.58 Prohibition 602.59 Equipment Standards 602.60 Requirements for Power-driven Aircraft 602.61 Survival Equipment – Flights Over Land 602.62 Life Preservers and Flotation Devices 602.63 Life Rafts and Survival Equipment – Flights over Water 602.70 Interpretation 602.71 Pre-flight Information 602.72 Weather Information 602.73 Requirement to File a Flight Plan or a Flight Itinerary 602.74 Contents of a Flight Plan or Flight Itinerary 602.75 Filing of a Flight Plan or Flight Itinerary 602.76 Changes in the Flight Plan 602.77 Requirement to File an Arrival Report 602.78 Contents of an Arrival Report 602.79 Overdue Aircraft Report 602.86 Carry-on Baggage, Equipment and Cargo 602.87 Crew Member Instructions 602.88 Fuel Requirements 602.89 Passenger Briefings 602.96 General 602.97 VFR and IFR Aircraft Operations at Uncontrolled Aerodromes within an MF Area 602.98 General MF Reporting Requirements 602.99 MF Reporting Procedures before Entering Maneuvering Area",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PART VI – GENERAL OPERATING AND FLIGHT RULES"
+        },
+        {
+          "id": "ca:SARON-1:operations-at-or-in-the-vicinity-of-an-a-602-100",
+          "text": "MF Reporting Procedures on Departure",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "OPERATIONS AT OR IN THE VICINITY OF AN AERODROME"
+        },
+        {
+          "id": "ca:SARON-1:operations-at-or-in-the-vicinity-of-an-a-602-101",
+          "text": "MF Reporting Procedures on Arrival",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "OPERATIONS AT OR IN THE VICINITY OF AN AERODROME"
+        },
+        {
+          "id": "ca:SARON-1:operations-at-or-in-the-vicinity-of-an-a-602-102",
+          "text": "MF Reporting Procedures When Flying Continuous Circuits",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "OPERATIONS AT OR IN THE VICINITY OF AN AERODROME"
+        },
+        {
+          "id": "ca:SARON-1:operations-at-or-in-the-vicinity-of-an-a-602-103",
+          "text": "Reporting Procedures When Flying Through an MF Area",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "OPERATIONS AT OR IN THE VICINITY OF AN AERODROME"
+        },
+        {
+          "id": "ca:SARON-1:operations-at-or-in-the-vicinity-of-an-a-602-104",
+          "text": "Reporting Procedures for IFR Aircraft When Approaching or Landing at an Uncontrolled Aerodrome",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "OPERATIONS AT OR IN THE VICINITY OF AN AERODROME"
+        },
+        {
+          "id": "ca:SARON-1:operations-at-or-in-the-vicinity-of-an-a-602-105",
+          "text": "Noise Operating Criteria",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "OPERATIONS AT OR IN THE VICINITY OF AN AERODROME"
+        },
+        {
+          "id": "ca:SARON-1:operations-at-or-in-the-vicinity-of-an-a-602-106",
+          "text": "Noise-Restricted Runways",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "OPERATIONS AT OR IN THE VICINITY OF AN AERODROME"
+        },
+        {
+          "id": "ca:SARON-1:visual-flight-rules-602-114",
+          "text": "Minimum Visual Meteorological Conditions for VFR Flight in Controlled Airspace",
+          "kind": "objective",
+          "concept_ids": [
+            "law.vfr-minima"
+          ],
+          "topic": "VISUAL FLIGHT RULES"
+        },
+        {
+          "id": "ca:SARON-1:visual-flight-rules-602-115",
+          "text": "Minimum Visual Meteorological Conditions for VFR Flight in Uncontrolled Airspace",
+          "kind": "objective",
+          "concept_ids": [
+            "law.vfr-minima"
+          ],
+          "topic": "VISUAL FLIGHT RULES"
+        },
+        {
+          "id": "ca:SARON-1:visual-flight-rules-602-116",
+          "text": "VFR Over-the-Top",
+          "kind": "objective",
+          "concept_ids": [
+            "law.vfr-minima"
+          ],
+          "topic": "VISUAL FLIGHT RULES"
+        },
+        {
+          "id": "ca:SARON-1:visual-flight-rules-602-117",
+          "text": "Special VFR Flight",
+          "kind": "objective",
+          "concept_ids": [
+            "law.vfr-minima"
+          ],
+          "topic": "VISUAL FLIGHT RULES"
+        },
+        {
+          "id": "ca:SARON-1:instrument-flight-rules-602-121",
+          "text": "General Requirements",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "INSTRUMENT FLIGHT RULES"
+        },
+        {
+          "id": "ca:SARON-1:instrument-flight-rules-602-122",
+          "text": "Alternate Aerodrome Requirements",
+          "kind": "objective",
+          "concept_ids": [
+            "law.alternate"
+          ],
+          "topic": "INSTRUMENT FLIGHT RULES"
+        },
+        {
+          "id": "ca:SARON-1:instrument-flight-rules-602-123",
+          "text": "Alternate Aerodrome Weather",
+          "kind": "objective",
+          "concept_ids": [
+            "law.alternate"
+          ],
+          "topic": "INSTRUMENT FLIGHT RULES"
+        },
+        {
+          "id": "ca:SARON-1:instrument-flight-rules-602-124",
+          "text": "Minimum Altitudes to Ensure Obstacle Clearance",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "INSTRUMENT FLIGHT RULES"
+        },
+        {
+          "id": "ca:SARON-1:instrument-flight-rules-602-125",
+          "text": "Enroute IFR Position Reports",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "INSTRUMENT FLIGHT RULES"
+        },
+        {
+          "id": "ca:SARON-1:instrument-flight-rules-602-126",
+          "text": "Take-off Minima",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "INSTRUMENT FLIGHT RULES"
+        },
+        {
+          "id": "ca:SARON-1:instrument-flight-rules-602-127",
+          "text": "Instrument Approaches",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ],
+          "topic": "INSTRUMENT FLIGHT RULES"
+        },
+        {
+          "id": "ca:SARON-1:instrument-flight-rules-602-128",
+          "text": "Landing Minima",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "INSTRUMENT FLIGHT RULES"
+        },
+        {
+          "id": "ca:SARON-1:instrument-flight-rules-602-129",
+          "text": "Approach Ban – General",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "INSTRUMENT FLIGHT RULES"
+        },
+        {
+          "id": "ca:SARON-1:instrument-flight-rules-602-130",
+          "text": "Approach Ban – Cat III",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "INSTRUMENT FLIGHT RULES"
+        },
+        {
+          "id": "ca:SARON-1:instrument-flight-rules-602-131",
+          "text": "Runway Visibility",
+          "kind": "objective",
+          "concept_ids": [
+            "met.ceiling"
+          ],
+          "topic": "INSTRUMENT FLIGHT RULES"
+        },
+        {
+          "id": "ca:SARON-1:radiocommunications-602-136",
+          "text": "Continuous Listening Watch",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "RADIOCOMMUNICATIONS"
+        },
+        {
+          "id": "ca:SARON-1:radiocommunications-602-137",
+          "text": "Two-way Radio communication Failure in IFR Flight",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "RADIOCOMMUNICATIONS"
+        },
+        {
+          "id": "ca:SARON-1:radiocommunications-602-138",
+          "text": "Two-way Radio communication Failure in VFR Flight",
+          "kind": "objective",
+          "concept_ids": [
+            "law.vfr-minima"
+          ],
+          "topic": "RADIOCOMMUNICATIONS"
+        },
+        {
+          "id": "ca:SARON-1:emergency-communication-and-security-602-143",
+          "text": "Emergency Radio Frequency Capability",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "EMERGENCY COMMUNICATION AND SECURITY"
+        },
+        {
+          "id": "ca:SARON-1:emergency-communication-and-security-602-144",
+          "text": "Interception Signals, Interception of Aircraft and Instructions to Land",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "EMERGENCY COMMUNICATION AND SECURITY"
+        },
+        {
+          "id": "ca:SARON-1:emergency-communication-and-security-602-145",
+          "text": "ADIZ",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "EMERGENCY COMMUNICATION AND SECURITY"
+        },
+        {
+          "id": "ca:SARON-1:emergency-communication-and-security-602-146",
+          "text": "ESCAT Plan",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "EMERGENCY COMMUNICATION AND SECURITY"
+        },
+        {
+          "id": "ca:SARON-1:emergency-communication-and-security-603",
+          "text": "– SPECIAL FLIGHT OPERATIONS 603.01 Certification Requirements for Special Aviation Events 603.37 Certification Requirements for Parachute Operations 603.65 Miscellaneous Special Flight Operations – Application 603.66 Miscellaneous Special Flight Operations – Certification Requirements",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "EMERGENCY COMMUNICATION AND SECURITY"
+        },
+        {
+          "id": "ca:SARON-1:emergency-communication-and-security-604",
+          "text": "– PRIVATE OPERATOR PASSENGER TRANSPORTATION 604.01 Interpretation 604.02 Application 604.03 Prohibition 604.25 Operational Control System 604.26 Designation of Pilot-in command and Second-in-command 604.28 Instrument Approaches - Landing 604.36 Checklist 604.37 Aircraft Operating Manual 604.38 Operational Flight Data Sheet 604.82 Cabin Safety 604.83 Fuelling with Passengers on Board 604.84 Fuelling with Passengers on Board and an Engine Running 604.85 Briefing of Passengers 604.86 Safety Features Card 604.98 Flight Time Limits 604.99 Flight Duty Time and Rest Periods",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "EMERGENCY COMMUNICATION AND SECURITY"
+        },
+        {
+          "id": "ca:SARON-1:flight-time-and-flight-duty-time-604-100",
+          "text": "Split Flight duty Time",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.fatigue-rules"
+          ],
+          "topic": "FLIGHT TIME AND FLIGHT DUTY TIME"
+        },
+        {
+          "id": "ca:SARON-1:flight-time-and-flight-duty-time-604-102",
+          "text": "Unforeseen Operational Circumstances",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "FLIGHT TIME AND FLIGHT DUTY TIME"
+        },
+        {
+          "id": "ca:SARON-1:flight-time-and-flight-duty-time-604-103",
+          "text": "Delayed Reporting Time",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "FLIGHT TIME AND FLIGHT DUTY TIME"
+        },
+        {
+          "id": "ca:SARON-1:flight-time-and-flight-duty-time-604-104",
+          "text": "Time with no Assigned Duties",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "FLIGHT TIME AND FLIGHT DUTY TIME"
+        },
+        {
+          "id": "ca:SARON-1:flight-time-and-flight-duty-time-604-105",
+          "text": "Rest Period – Flight Crew Member Positioning",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "FLIGHT TIME AND FLIGHT DUTY TIME"
+        },
+        {
+          "id": "ca:SARON-1:flight-time-and-flight-duty-time-604-106",
+          "text": "Controlled Rest on the Flight Deck",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "FLIGHT TIME AND FLIGHT DUTY TIME"
+        },
+        {
+          "id": "ca:SARON-1:maintenance-604-128",
+          "text": "Maintenance, Elementary Work and Servicing",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "MAINTENANCE"
+        },
+        {
+          "id": "ca:SARON-1:personnel-requirements-604-139",
+          "text": "Validity Periods",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PERSONNEL REQUIREMENTS"
+        },
+        {
+          "id": "ca:SARON-1:personnel-requirements-604-143",
+          "text": "Flight Crew Member Qualifications and Training",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PERSONNEL REQUIREMENTS"
+        },
+        {
+          "id": "ca:SARON-1:operations-manual-604-198",
+          "text": "Distribution",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "OPERATIONS MANUAL"
+        },
+        {
+          "id": "ca:SARON-1:safety-management-system-604-205",
+          "text": "Duties of Personnel",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "SAFETY MANAGEMENT SYSTEM"
+        },
+        {
+          "id": "ca:SARON-1:safety-management-system-605",
+          "text": "– AIRCRAFT REQUIREMENTS 605.03 Flight Authority 605.04 Availability of Aircraft Flight Manual 605.05 Markings and Placards 605.06 Aircraft Equipment Standards and Serviceability 605.07 Minimum Equipment Lists 605.08 Unserviceable and Removed Equipment – General 605.09 Unserviceable and Removed Equipment – Aircraft with a Minimum Equipment List 605.10 Unserviceable and Removed Equipment – Aircraft without a Minimum Equipment List 605.14 Power-driven Aircraft – Day VFR 605.15 Power-driven Aircraft – VFR OTT 605.16 Power-driven Aircraft – Night VFR 605.17 Use of Position and Anti-collision Lights 605.18 Power-driven Aircraft – IFR 605.22 Seat and Safety-Belt Requirements 605.23 Restraint System Requirements 605.24 Shoulder Harness Requirements 605.25 General Use of Safety Belts and Restraints System 605.26 Use of Passenger Safety Belts and Restraint Systems 605.27 Use of Crew Member Safety Belts 605.28 Child Restraint System 605.29 Flight Control Locks 605.30 De-icing or Anti-icing Equipment 605.31 Oxygen Equipment and Supply 605.32 Use of Oxygen 605.33 Flight Data Recorder and Cockpit Voice Recorder Requirements 605.34 Use of Flight Data Recorders and Cockpit Voice Recorders 605.35 Transponder and Automatic Pressure-Altitude Reporting Equipment 605.36 Altitude Alerting System or Device 605.37 605.38 605.39 Use of ELTs 605.40 ELT Activation 605.41 Third Attitude Indicator 605.42 605.84 Aircraft Maintenance – General 605.85 Maintenance Release and Elementary Work 605.86 Maintenance Schedule 605.87 Transfer of Aeronautical Products Between Maintenance Schedules 605.88 Inspection after Abnormal Occurrences 605.92 Requirement to Keep Technical Records 605.93 Technical Records – General 605.94 Journey Log Requirements 605.95 Journey Log – Carrying on Board 605.97 Transfer of Records",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "SAFETY MANAGEMENT SYSTEM"
+        },
+        {
+          "id": "ca:SARON-1:technical-record-606",
+          "text": "– MISCELLANEOUS 606.01 Munitions of War 606.02 Liability Insurance 606.03 Synthetic Flight Training Equipment",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "TECHNICAL RECORD"
+        },
+        {
+          "id": "ca:SARON-1:part-vii-commercial-air-services-700",
+          "text": "– COMMERCIAL AIR SERVICES 700.01 Interpretation 700.02 Requirements for Air Operator Certificate 700.03 Authorization to Operate Specialty Air Service under NAFTA 700.05 Aircraft Requirements 700.06 Extended Charter 700.07 Management Agreement 700.08 Operations between Points Abroad 700.09 Duties of Certificate Holder 700.10 Approach Bans – Non Precision, APV and CAT I Precision 700.14 Monitoring System 700.15 Flight Time Limitations 700.16 Flight Duty Time Limitations and Rest Periods",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PART VII – COMMERCIAL AIR SERVICES"
+        },
+        {
+          "id": "ca:SARON-1:flight-time-and-flight-duty-time-limitat-700-17",
+          "text": "Unforeseen Operational Circumstances 700.18 Delayed Reporting Time 700.19 Requirements for Time Free from Duty 700.20 Flight Crew Positioning 700.21 Flight Crew Members on Reserve 700.22 Long Range Flights 700.23 Controlled Rest on the Flight Deck",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "FLIGHT TIME AND FLIGHT DUTY TIME LIMITATIONS AND REST PERIODS"
+        },
+        {
+          "id": "ca:SARON-1:flight-time-and-flight-duty-time-limitat-704",
+          "text": "– COMMUTER OPERATIONS 704.01 Application 704.12 Operating Instructions 704.15 Operational Control System 704.16 Flight Authorization 704.17 Operational Flight Plan 704.19 Checklist 704.20 Fuel Requirements 704.21 Admission to Flight Deck 704.22 Simulations of Emergency Situations 704.23 VFR Flight Obstacle Clearance Requirements 704.24 VFR Flight Minimum Flight Visibility – Uncontrolled Airspace 704.25 VFR Flight Weather Conditions 704.26 Take-off Minima 704.29 Routes in Uncontrolled Airspace 704.32 Weight and Balance Control 704.33 Apron and Cabin Safety Procedures 704.34 Briefing of Passengers 704.35 Safety Features Card 704.37 Approach Bans – Non Precision, APV and CAT I Precision 704.46 Take-off Weight Limitations 704.47 Net Take-Off Flight Path 704.48 Enroute Limitations with One Engine Inoperative 704.49 Dispatch Limitations: Landing at Destination and Alternate Aerodromes 704.50 Dispatch Limitations: Wet Runway – Turbo-jet-powered Aeroplanes 704.62 General Requirements 704.63 Operation of Aircraft in Icing Conditions 704.64 Airborne Thunderstorm Detection and Weather Radar Equipment 704.65 Additional Equipment for Single-Pilot Operations 704.66 Protective Breathing Equipment 704.67 First Aid Oxygen 704.68 Shoulder Harness 704.83 Hand-Held Fire Extinguisher 704.84 Equipment Standards and Inspection",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "FLIGHT TIME AND FLIGHT DUTY TIME LIMITATIONS AND REST PERIODS"
+        },
+        {
+          "id": "ca:SARON-1:personnel-requirements-704-106",
+          "text": "Minimum Crew",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PERSONNEL REQUIREMENTS"
+        },
+        {
+          "id": "ca:SARON-1:personnel-requirements-704-107",
+          "text": "Designation of Pilot-in-command and Second-in-command",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PERSONNEL REQUIREMENTS"
+        },
+        {
+          "id": "ca:SARON-1:personnel-requirements-704-108",
+          "text": "Flight Crew Member Qualification",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PERSONNEL REQUIREMENTS"
+        },
+        {
+          "id": "ca:SARON-1:personnel-requirements-704-111",
+          "text": "Validity Period",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PERSONNEL REQUIREMENTS"
+        },
+        {
+          "id": "ca:SARON-1:training-704-115",
+          "text": "Training Program",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "TRAINING"
+        },
+        {
+          "id": "ca:SARON-1:manuals-704-122",
+          "text": "Distribution of Company Operations Manual",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "MANUALS"
+        },
+        {
+          "id": "ca:SARON-1:manuals-704-123",
+          "text": "Aircraft Operating Manual",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "MANUALS"
+        },
+        {
+          "id": "ca:SARON-1:manuals-704-124",
+          "text": "Standard Operating Procedures 705 − 705.01 Application 705.16 Exceptions 705.17 Operating Instructions 705.20 Operational Control System 705.21 Flight Authorization 705.22 Operational Flight Plan 705.24 Checklist 705.25 Fuel Requirements 705.26 Extended Range Twin-engined Operations 705.27 Admission to the Flight Deck 705.28 Seats for Cabin Safety Inspectors 705.29 Flight Crew Members at Controls 705.30 Simulation of Emergency Situations 705.31 Crew Member Briefing 705.32 VFR Flight Obstacle Clearance Requirements 705.33 VFR Flight Weather Conditions 705.34 Take-off Minima 705.37 Routes in Uncontrolled Airspace 705.39 Weight and Balance Control 705.40 Passenger and Cabin Safety Procedures 705.42 Carry-on Baggage 705.43 Briefing of Passengers 705.44 Safety Features Card and Supplemental Briefing Card 705.45 Closing and Locking of Flight Deck Door 705.46 Night VFR Flight – Aeroplane 704.48 Approach Bans – Non-Precision, APV and CAT I Precision 705.56 Take-off Weight limitations 705.57 Net Take-off Flight Path 705.58 Enroute Limitations with One Engine Operative 705.59 Enroute Limitations with Two Engines Inoperative 705.60 Dispatch Limitations: Landing at Destination and Alternate Aerodromes 705.61 Dispatch Limitations: Wet Runway – Turbo-jet-powered Aeroplanes 705.67 General Requirements 705.68 Landing Lights 705.69 Operation of Aircraft in Icing Conditions 705.70 Weather Radar Equipment 705.71 Protective Breathing Equipment 705.72 First Aid Oxygen 705.73 Interphone System 705.74 Public Address System 705.75 Crew Member Shoulder Harness 705.76 Lavatory Fire Protection 705.78 Floor Proximity Emergency Escape Path Markings 705.79 Flashlight Stowage 705.80 Doors and Locks 705.81 Cargo and Baggage Compartment Fire Protection 705.89 Megaphones 705.90 First Aid Kits 705.91 Emergency Medical Kit 705.92 Crash Axe 705.93 Hand-held Fire Extinguishers 705.94 Portable Oxygen 705.95 Survival Equipment 705.96 Inspection Requirements 705.97 Flashlights",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "MANUALS"
+        },
+        {
+          "id": "ca:SARON-1:personnel-requirements-705-103",
+          "text": "Designation of Pilot-in-Command and Second-in-Command",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PERSONNEL REQUIREMENTS"
+        },
+        {
+          "id": "ca:SARON-1:personnel-requirements-705-106",
+          "text": "Pilot Qualifications",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PERSONNEL REQUIREMENTS"
+        },
+        {
+          "id": "ca:SARON-1:personnel-requirements-705-107",
+          "text": "Flight Engineer and Second Officer Qualifications",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PERSONNEL REQUIREMENTS"
+        },
+        {
+          "id": "ca:SARON-1:personnel-requirements-705-108",
+          "text": "Crew Pairing",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PERSONNEL REQUIREMENTS"
+        },
+        {
+          "id": "ca:SARON-1:personnel-requirements-705-111",
+          "text": "Route and Aerodrome Qualifications",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PERSONNEL REQUIREMENTS"
+        },
+        {
+          "id": "ca:SARON-1:personnel-requirements-705-113",
+          "text": "Validity Period",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PERSONNEL REQUIREMENTS"
+        },
+        {
+          "id": "ca:SARON-1:training-705-124",
+          "text": "Training Program",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "TRAINING"
+        },
+        {
+          "id": "ca:SARON-1:training-705-201",
+          "text": "Minimum Number of Flight Attendants",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "TRAINING"
+        },
+        {
+          "id": "ca:SARON-1:training-705-225",
+          "text": "Emergency Evacuation — Before and During Surface Movements",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "TRAINING"
+        },
+        {
+          "id": "ca:SARON-1:manuals-705-136",
+          "text": "Distribution of Company Operations Manual",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "MANUALS"
+        },
+        {
+          "id": "ca:SARON-1:manuals-705-137",
+          "text": "Aircraft Operating Manual",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "MANUALS"
+        },
+        {
+          "id": "ca:SARON-1:manuals-705-138",
+          "text": "Standard Operating Procedures",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "MANUALS"
+        },
+        {
+          "id": "ca:SARON-1:safety-management-system-705-151",
+          "text": "Requirements",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "SAFETY MANAGEMENT SYSTEM"
+        },
+        {
+          "id": "ca:SARON-1:safety-management-system-705-152",
+          "text": "Components of the Safety Management System 705.174 Reporting Incidents of Interference with a Crew Member",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "SAFETY MANAGEMENT SYSTEM"
+        },
+        {
+          "id": "ca:SARON-1:other-canadian-legislation-1",
+          "text": "Canada Transportation Act Part II – Air Transportation Licences, Prohibitions (section 57); Air Transportation Regulations (sections 3 and 7)",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "OTHER CANADIAN LEGISLATION"
+        },
+        {
+          "id": "ca:SARON-1:other-canadian-legislation-2",
+          "text": "Canada Labour Code Part II – Occupational Safety & Health, Employee Rights & Duties (sections 126, 127 and 128)",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "OTHER CANADIAN LEGISLATION"
+        },
+        {
+          "id": "ca:SARON-1:other-canadian-legislation-3",
+          "text": "Transportation of Dangerous Goods by Air (TC AIM – RAC Annex 3.0)",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "OTHER CANADIAN LEGISLATION"
+        },
+        {
+          "id": "ca:SARON-1:international-air-law-1",
+          "text": "Warsaw Convention (1929) – tickets/waybills",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "INTERNATIONAL AIR LAW"
+        },
+        {
+          "id": "ca:SARON-1:international-air-law-2",
+          "text": "Tokyo Convention (1963) – PIC authority, responsibility of States in cases of unlawful interference",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "INTERNATIONAL AIR LAW"
+        },
+        {
+          "id": "ca:SARON-1:international-air-law-3",
+          "text": "Chicago Convention (1944) – ICAO rules apply to international travel, designated airports of entry must be used",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "INTERNATIONAL AIR LAW"
+        },
+        {
+          "id": "ca:SARON-1:international-flight-procedures-1",
+          "text": "Entry, Transit and Departure of Aircraft (AIP Canada (ICAO) GEN 1.2)",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "INTERNATIONAL FLIGHT PROCEDURES"
+        },
+        {
+          "id": "ca:SARON-1:procedures-1",
+          "text": "Air Traffic Services",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PROCEDURES"
+        },
+        {
+          "id": "ca:SARON-1:procedures-2",
+          "text": "Services Other Than Air Traffic Services",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PROCEDURES"
+        },
+        {
+          "id": "ca:SARON-1:procedures-3",
+          "text": "Radar Service",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PROCEDURES"
+        },
+        {
+          "id": "ca:SARON-1:procedures-4",
+          "text": "ATC Clearances, Instructions and Information",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PROCEDURES"
+        },
+        {
+          "id": "ca:SARON-1:procedures-5",
+          "text": "ATC Service Priority",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PROCEDURES"
+        },
+        {
+          "id": "ca:SARON-1:procedures-6",
+          "text": "Wake Turbulence Separation",
+          "kind": "objective",
+          "concept_ids": [
+            "met.turbulence"
+          ],
+          "topic": "PROCEDURES"
+        },
+        {
+          "id": "ca:SARON-1:procedures-7",
+          "text": "Noise Abatement Departure Procedures",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PROCEDURES"
+        },
+        {
+          "id": "ca:SARON-1:procedures-8",
+          "text": "Airport/Aerodrome Operations – Uncontrolled",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PROCEDURES"
+        },
+        {
+          "id": "ca:SARON-1:procedures-9",
+          "text": "Airport/Aerodrome Operations – Controlled",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PROCEDURES"
+        },
+        {
+          "id": "ca:SARON-1:procedures-10",
+          "text": "Airport/Aerodrome Markings and Lighting",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PROCEDURES"
+        },
+        {
+          "id": "ca:SARON-1:procedures-11",
+          "text": "Mandatory and Aerodrome Traffic Frequencies",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PROCEDURES"
+        },
+        {
+          "id": "ca:SARON-1:procedures-12",
+          "text": "VFR En Route Procedures",
+          "kind": "objective",
+          "concept_ids": [
+            "law.vfr-minima"
+          ],
+          "topic": "PROCEDURES"
+        },
+        {
+          "id": "ca:SARON-1:procedures-13",
+          "text": "Operations on Intersecting Runways and High Intensity Runway Operations",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PROCEDURES"
+        },
+        {
+          "id": "ca:SARON-1:procedures-14",
+          "text": "ESCAT Plan",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PROCEDURES"
+        },
+        {
+          "id": "ca:SARON-1:procedures-15",
+          "text": "Holding Speed Limitations",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PROCEDURES"
+        },
+        {
+          "id": "ca:SARON-1:domestic-airspace-1",
+          "text": "Altimeter Setting Procedures",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.pressure-altitude"
+          ],
+          "topic": "DOMESTIC AIRSPACE"
+        },
+        {
+          "id": "ca:SARON-1:domestic-airspace-2",
+          "text": "Cruising Altitudes",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "DOMESTIC AIRSPACE"
+        },
+        {
+          "id": "ca:SARON-1:domestic-airspace-3",
+          "text": "Mach Number/TAS Changes",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "DOMESTIC AIRSPACE"
+        },
+        {
+          "id": "ca:SARON-1:domestic-airspace-4",
+          "text": "Profile (Continuous) Descent",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "DOMESTIC AIRSPACE"
+        },
+        {
+          "id": "ca:SARON-1:domestic-airspace-5",
+          "text": "Leaving or Entering Uncontrolled Airspace",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "DOMESTIC AIRSPACE"
+        },
+        {
+          "id": "ca:SARON-1:domestic-airspace-6",
+          "text": "Uncontrolled Airspace Procedures",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "DOMESTIC AIRSPACE"
+        },
+        {
+          "id": "ca:SARON-1:cmnps-airspace-1",
+          "text": "General Principles",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "(CMNPS) AIRSPACE"
+        },
+        {
+          "id": "ca:SARON-1:cmnps-airspace-2",
+          "text": "Certification Requirement",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "(CMNPS) AIRSPACE"
+        },
+        {
+          "id": "ca:SARON-1:atc-special-procedures-1",
+          "text": "Parallel Offset Procedures",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "ATC SPECIAL PROCEDURES"
+        },
+        {
+          "id": "ca:SARON-1:atc-special-procedures-2",
+          "text": "Traffic Alert and Collision Avoidance Systems (TCAS/ACAS) Procedures",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "ATC SPECIAL PROCEDURES"
+        },
+        {
+          "id": "ca:SARON-1:minimum-rvsm-airspace-1",
+          "text": "Airspace",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "MINIMUM (RVSM) AIRSPACE"
+        },
+        {
+          "id": "ca:SARON-1:minimum-rvsm-airspace-2",
+          "text": "Approval Requirement",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "MINIMUM (RVSM) AIRSPACE"
+        },
+        {
+          "id": "ca:SARON-1:minimum-rvsm-airspace-3",
+          "text": "In-Flight Procedures",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "MINIMUM (RVSM) AIRSPACE"
+        },
+        {
+          "id": "ca:SARON-1:minimum-rvsm-airspace-4",
+          "text": "In-Flight Contingencies",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "MINIMUM (RVSM) AIRSPACE"
+        }
+      ]
+    },
+    {
+      "code": "SARON-2",
+      "title": "Airframes, Power Plants, Propellers And Aircraft Systems",
+      "source_url": "https://tc.canada.ca/en/aviation/publications/study-reference-guide-written-examinations-airline-transport-pilot-licence-aeroplane-tp-690",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "ca:SARON-2:airframes-1",
+          "text": "Construction, Materials",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "AIRFRAMES"
+        },
+        {
+          "id": "ca:SARON-2:airframes-2",
+          "text": "Life, Fatigue, Cycles, Stress, Corrosion",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "AIRFRAMES"
+        },
+        {
+          "id": "ca:SARON-2:airframes-3",
+          "text": "Weight & G-Load Limitations",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "AIRFRAMES"
+        },
+        {
+          "id": "ca:SARON-2:wing-systems-1",
+          "text": "Flaps",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "WING SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:wing-systems-2",
+          "text": "Slots/Slats/Leading Edge Devices",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "WING SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:wing-systems-3",
+          "text": "Winglets",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "WING SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:wing-systems-4",
+          "text": "Canards",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "WING SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:wing-systems-5",
+          "text": "Vortex Generators",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "WING SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:flight-controls-1",
+          "text": "Axes of the Aeroplane/Movement",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "FLIGHT CONTROLS"
+        },
+        {
+          "id": "ca:SARON-2:flight-controls-2",
+          "text": "Aerodynamic Forces, Dynamic Balancing",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "FLIGHT CONTROLS"
+        },
+        {
+          "id": "ca:SARON-2:flight-controls-3",
+          "text": "Trimming Devices",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "FLIGHT CONTROLS"
+        },
+        {
+          "id": "ca:SARON-2:flight-controls-4",
+          "text": "Flutter, Mass Balance",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "FLIGHT CONTROLS"
+        },
+        {
+          "id": "ca:SARON-2:flight-controls-5",
+          "text": "Aileron and Rudder Limiting",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.flight-controls"
+          ],
+          "topic": "FLIGHT CONTROLS"
+        },
+        {
+          "id": "ca:SARON-2:flight-controls-6",
+          "text": "Speed Brakes",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "FLIGHT CONTROLS"
+        },
+        {
+          "id": "ca:SARON-2:flight-controls-7",
+          "text": "Spoilers",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "FLIGHT CONTROLS"
+        },
+        {
+          "id": "ca:SARON-2:flight-controls-8",
+          "text": "Primary/Secondary Flight Controls",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.flight-controls"
+          ],
+          "topic": "FLIGHT CONTROLS"
+        },
+        {
+          "id": "ca:SARON-2:power-plants-1",
+          "text": "Principles of Turbo-prop Engines",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "POWER PLANTS"
+        },
+        {
+          "id": "ca:SARON-2:power-plants-2",
+          "text": "Handling Procedures for Turbo-prop Engines",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "POWER PLANTS"
+        },
+        {
+          "id": "ca:SARON-2:power-plants-3",
+          "text": "Principles of Turbo-jet Engines",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "POWER PLANTS"
+        },
+        {
+          "id": "ca:SARON-2:power-plants-4",
+          "text": "Handling and Procedures for Turbo-jet Engines",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "POWER PLANTS"
+        },
+        {
+          "id": "ca:SARON-2:power-plants-5",
+          "text": "Engine Controls",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "POWER PLANTS"
+        },
+        {
+          "id": "ca:SARON-2:power-plants-6",
+          "text": "Full Authority Digital Engine Control (FADEC)",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "POWER PLANTS"
+        },
+        {
+          "id": "ca:SARON-2:power-plants-7",
+          "text": "Oil Systems",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "POWER PLANTS"
+        },
+        {
+          "id": "ca:SARON-2:propellers-1",
+          "text": "Propeller Thrust and Torque",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ],
+          "topic": "PROPELLERS"
+        },
+        {
+          "id": "ca:SARON-2:propellers-2",
+          "text": "Geometric and Effective Pitch",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "PROPELLERS"
+        },
+        {
+          "id": "ca:SARON-2:propellers-3",
+          "text": "Slipstream, Gyroscopic Effect and Asymmetric Thrust",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "PROPELLERS"
+        },
+        {
+          "id": "ca:SARON-2:propellers-4",
+          "text": "Controls",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "PROPELLERS"
+        },
+        {
+          "id": "ca:SARON-2:propellers-5",
+          "text": "Ground and Flight Range",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "PROPELLERS"
+        },
+        {
+          "id": "ca:SARON-2:propellers-6",
+          "text": "Constant Speed",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "PROPELLERS"
+        },
+        {
+          "id": "ca:SARON-2:propellers-7",
+          "text": "Feathering",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "PROPELLERS"
+        },
+        {
+          "id": "ca:SARON-2:propellers-8",
+          "text": "Reversing",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "PROPELLERS"
+        },
+        {
+          "id": "ca:SARON-2:aircraft-systems-1",
+          "text": "Fuel",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "AIRCRAFT SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:aircraft-systems-2",
+          "text": "Electrical",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "AIRCRAFT SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:aircraft-systems-3",
+          "text": "Hydraulic",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.hydraulics"
+          ],
+          "topic": "AIRCRAFT SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:aircraft-systems-4",
+          "text": "Pneumatic",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "AIRCRAFT SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:aircraft-systems-5",
+          "text": "Fire Protection (extinguishing systems)",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "AIRCRAFT SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:aircraft-systems-6",
+          "text": "Ice and Rain Protection",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "AIRCRAFT SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:aircraft-systems-7",
+          "text": "Oxygen",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "AIRCRAFT SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:aircraft-systems-8",
+          "text": "Heating, Air Conditioning and Pressurization",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "AIRCRAFT SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:aircraft-systems-9",
+          "text": "Landing Gear and Brakes",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "AIRCRAFT SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:aircraft-systems-10",
+          "text": "Autoflight",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "AIRCRAFT SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:aircraft-systems-11",
+          "text": "Avionics",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "AIRCRAFT SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:aircraft-systems-12",
+          "text": "Flight Controls",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.flight-controls"
+          ],
+          "topic": "AIRCRAFT SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:aircraft-systems-13",
+          "text": "Voice/Flight Data Recording",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "AIRCRAFT SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:warning-and-protection-systems-1",
+          "text": "Master Warning Systems",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "WARNING AND PROTECTION SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:warning-and-protection-systems-2",
+          "text": "Stall Warning /Identification/Protection",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.stall-aoa"
+          ],
+          "topic": "WARNING AND PROTECTION SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:warning-and-protection-systems-3",
+          "text": "TAWS/GPWS/EGPWS",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "WARNING AND PROTECTION SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:warning-and-protection-systems-4",
+          "text": "ACAS/TCAS",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "WARNING AND PROTECTION SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:warning-and-protection-systems-5",
+          "text": "Altitude Alerting Systems",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "WARNING AND PROTECTION SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:warning-and-protection-systems-6",
+          "text": "Lightning and Weather Detection",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "WARNING AND PROTECTION SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:warning-and-protection-systems-7",
+          "text": "Take-off/Configuration Test/Warnings",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "WARNING AND PROTECTION SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-2:serviceability-1",
+          "text": "Unserviceabilities, Snags, Minimum Equipment List",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "SERVICEABILITY"
+        },
+        {
+          "id": "ca:SARON-2:serviceability-2",
+          "text": "Recording/Logs",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ],
+          "topic": "SERVICEABILITY"
+        }
+      ]
+    },
+    {
+      "code": "SARON-3",
+      "title": "Instruments",
+      "source_url": "https://tc.canada.ca/en/aviation/publications/study-reference-guide-written-examinations-airline-transport-pilot-licence-aeroplane-tp-690",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "ca:SARON-3:flight-instruments-principles-and-operat-1",
+          "text": "Pitot Static System",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "FLIGHT INSTRUMENTS – PRINCIPLES AND OPERATIONAL USE"
+        },
+        {
+          "id": "ca:SARON-3:flight-instruments-principles-and-operat-2",
+          "text": "Airspeed Indicator",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "FLIGHT INSTRUMENTS – PRINCIPLES AND OPERATIONAL USE"
+        },
+        {
+          "id": "ca:SARON-3:flight-instruments-principles-and-operat-3",
+          "text": "Machmeter",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "FLIGHT INSTRUMENTS – PRINCIPLES AND OPERATIONAL USE"
+        },
+        {
+          "id": "ca:SARON-3:flight-instruments-principles-and-operat-4",
+          "text": "Altimeter and Encoding Altimeter",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "FLIGHT INSTRUMENTS – PRINCIPLES AND OPERATIONAL USE"
+        },
+        {
+          "id": "ca:SARON-3:flight-instruments-principles-and-operat-5",
+          "text": "Vertical Speed Indicator (VSI)",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "FLIGHT INSTRUMENTS – PRINCIPLES AND OPERATIONAL USE"
+        },
+        {
+          "id": "ca:SARON-3:flight-instruments-principles-and-operat-6",
+          "text": "Radio/Radar Altimeter",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "FLIGHT INSTRUMENTS – PRINCIPLES AND OPERATIONAL USE"
+        },
+        {
+          "id": "ca:SARON-3:flight-instruments-principles-and-operat-7",
+          "text": "Outside Air Temperature",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "FLIGHT INSTRUMENTS – PRINCIPLES AND OPERATIONAL USE"
+        },
+        {
+          "id": "ca:SARON-3:flight-instruments-principles-and-operat-8",
+          "text": "Air Data Computer",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "FLIGHT INSTRUMENTS – PRINCIPLES AND OPERATIONAL USE"
+        },
+        {
+          "id": "ca:SARON-3:flight-instruments-principles-and-operat-9",
+          "text": "Turn-and-bank Indicator / Turn Co-ordinator",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "FLIGHT INSTRUMENTS – PRINCIPLES AND OPERATIONAL USE"
+        },
+        {
+          "id": "ca:SARON-3:flight-instruments-principles-and-operat-10",
+          "text": "Heading Indicator",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "FLIGHT INSTRUMENTS – PRINCIPLES AND OPERATIONAL USE"
+        },
+        {
+          "id": "ca:SARON-3:flight-instruments-principles-and-operat-11",
+          "text": "Attitude Indicator (AI)",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "FLIGHT INSTRUMENTS – PRINCIPLES AND OPERATIONAL USE"
+        },
+        {
+          "id": "ca:SARON-3:flight-instruments-principles-and-operat-12",
+          "text": "Flight Director",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "FLIGHT INSTRUMENTS – PRINCIPLES AND OPERATIONAL USE"
+        },
+        {
+          "id": "ca:SARON-3:flight-instruments-principles-and-operat-13",
+          "text": "Radio Magnetic Indicator (RMI)",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "FLIGHT INSTRUMENTS – PRINCIPLES AND OPERATIONAL USE"
+        },
+        {
+          "id": "ca:SARON-3:flight-instruments-principles-and-operat-14",
+          "text": "Horizontal Situation Indicator (HSI)",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "FLIGHT INSTRUMENTS – PRINCIPLES AND OPERATIONAL USE"
+        },
+        {
+          "id": "ca:SARON-3:flight-instruments-principles-and-operat-15",
+          "text": "Angle of Attack Indicator",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.stall-aoa"
+          ],
+          "topic": "FLIGHT INSTRUMENTS – PRINCIPLES AND OPERATIONAL USE"
+        },
+        {
+          "id": "ca:SARON-3:flight-instruments-principles-and-operat-16",
+          "text": "Electronic Flight Instrument System",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "FLIGHT INSTRUMENTS – PRINCIPLES AND OPERATIONAL USE"
+        },
+        {
+          "id": "ca:SARON-3:flight-management-instruments-1",
+          "text": "Flight Management System (FMS)",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "FLIGHT MANAGEMENT INSTRUMENTS"
+        },
+        {
+          "id": "ca:SARON-3:flight-management-instruments-2",
+          "text": "Electronic Centralized Aircraft Monitoring (ECAM/EICAS)",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "FLIGHT MANAGEMENT INSTRUMENTS"
+        },
+        {
+          "id": "ca:SARON-3:and-use-1",
+          "text": "Tachometer (including N1, N2, NH,",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "AND USE"
+        },
+        {
+          "id": "ca:SARON-3:nl-2",
+          "text": "Oil Pressure",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "NL)"
+        },
+        {
+          "id": "ca:SARON-3:nl-3",
+          "text": "Oil Temperature",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "NL)"
+        },
+        {
+          "id": "ca:SARON-3:nl-4",
+          "text": "Fuel Pressure",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "NL)"
+        },
+        {
+          "id": "ca:SARON-3:nl-5",
+          "text": "Fuel Flow",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "NL)"
+        },
+        {
+          "id": "ca:SARON-3:nl-6",
+          "text": "Torquemeter",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "NL)"
+        },
+        {
+          "id": "ca:SARON-3:nl-7",
+          "text": "Engine Pressure Ratio (EPR)",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "NL)"
+        },
+        {
+          "id": "ca:SARON-3:nl-8",
+          "text": "Turbine Temperature (ITT/TIT)",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "NL)"
+        },
+        {
+          "id": "ca:SARON-3:aircraft-compass-systems-1",
+          "text": "Construction",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "AIRCRAFT COMPASS SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-3:aircraft-compass-systems-2",
+          "text": "Use",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "AIRCRAFT COMPASS SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-3:aircraft-compass-systems-3",
+          "text": "Limitations and Faults",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "AIRCRAFT COMPASS SYSTEMS"
+        },
+        {
+          "id": "ca:SARON-3:aircraft-compass-systems-4",
+          "text": "Gyromagnetic Remote Indicating Compass",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ],
+          "topic": "AIRCRAFT COMPASS SYSTEMS"
+        }
+      ]
+    },
+    {
+      "code": "SARON-4",
+      "title": "Navigation – General",
+      "source_url": "https://tc.canada.ca/en/aviation/publications/study-reference-guide-written-examinations-airline-transport-pilot-licence-aeroplane-tp-690",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "ca:SARON-4:navigation-terms-1",
+          "text": "Air Position",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ],
+          "topic": "NAVIGATION TERMS"
+        },
+        {
+          "id": "ca:SARON-4:navigation-terms-2",
+          "text": "Great Circle",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.great-circle"
+          ],
+          "topic": "NAVIGATION TERMS"
+        },
+        {
+          "id": "ca:SARON-4:navigation-terms-3",
+          "text": "Rhumb Line",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.great-circle"
+          ],
+          "topic": "NAVIGATION TERMS"
+        },
+        {
+          "id": "ca:SARON-4:maps-and-charts-1",
+          "text": "Lambert Conformal",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ],
+          "topic": "MAPS AND CHARTS"
+        },
+        {
+          "id": "ca:SARON-4:maps-and-charts-2",
+          "text": "Transverse Mercator",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ],
+          "topic": "MAPS AND CHARTS"
+        },
+        {
+          "id": "ca:SARON-4:maps-and-charts-3",
+          "text": "Enroute Low and High Altitude Charts",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ],
+          "topic": "MAPS AND CHARTS"
+        },
+        {
+          "id": "ca:SARON-4:maps-and-charts-4",
+          "text": "Navigation Databases",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ],
+          "topic": "MAPS AND CHARTS"
+        },
+        {
+          "id": "ca:SARON-4:time-and-longitude-1",
+          "text": "Time Zones and Relation to Longitude",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.place-time"
+          ],
+          "topic": "TIME AND LONGITUDE"
+        },
+        {
+          "id": "ca:SARON-4:en-route-navigation-1",
+          "text": "Use of Aeronautical Charts",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ],
+          "topic": "EN ROUTE NAVIGATION"
+        },
+        {
+          "id": "ca:SARON-4:en-route-navigation-2",
+          "text": "Calculation of Heading, Groundspeed and ETE",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ],
+          "topic": "EN ROUTE NAVIGATION"
+        },
+        {
+          "id": "ca:SARON-4:en-route-navigation-3",
+          "text": "Determination of Wind Velocity",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ],
+          "topic": "EN ROUTE NAVIGATION"
+        },
+        {
+          "id": "ca:SARON-4:en-route-navigation-4",
+          "text": "Use of Radio Aids to Determine Position",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ],
+          "topic": "EN ROUTE NAVIGATION"
+        },
+        {
+          "id": "ca:SARON-4:en-route-navigation-5",
+          "text": "RNAV Waypoints and Position Plotting",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ],
+          "topic": "EN ROUTE NAVIGATION"
+        },
+        {
+          "id": "ca:SARON-4:en-route-navigation-6",
+          "text": "Gyro Steering Techniques in Areas of Compass Unreliability",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ],
+          "topic": "EN ROUTE NAVIGATION"
+        },
+        {
+          "id": "ca:SARON-4:en-route-navigation-7",
+          "text": "Maintaining Flight Log",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ],
+          "topic": "EN ROUTE NAVIGATION"
+        }
+      ]
+    },
+    {
+      "code": "SARON-5",
+      "title": "Flight Operations",
+      "source_url": "https://tc.canada.ca/en/aviation/publications/study-reference-guide-written-examinations-airline-transport-pilot-licence-aeroplane-tp-690",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "ca:SARON-5:atmospheric-effects-in-flight-1",
+          "text": "ICAO Standard Atmosphere",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "ATMOSPHERIC EFFECTS IN FLIGHT"
+        },
+        {
+          "id": "ca:SARON-5:atmospheric-effects-in-flight-2",
+          "text": "Temperature and Pressure / Air Density",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "ATMOSPHERIC EFFECTS IN FLIGHT"
+        },
+        {
+          "id": "ca:SARON-5:atmospheric-effects-in-flight-3",
+          "text": "Humidity/Rain",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "ATMOSPHERIC EFFECTS IN FLIGHT"
+        },
+        {
+          "id": "ca:SARON-5:atmospheric-effects-in-flight-4",
+          "text": "Cold Temperature Corrections",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "ATMOSPHERIC EFFECTS IN FLIGHT"
+        },
+        {
+          "id": "ca:SARON-5:performance-1",
+          "text": "Indicated and True Stalling Speeds",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PERFORMANCE"
+        },
+        {
+          "id": "ca:SARON-5:performance-2",
+          "text": "Slow Speed Flight Characteristics – Turbo-prop – Turbo-jet",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PERFORMANCE"
+        },
+        {
+          "id": "ca:SARON-5:performance-3",
+          "text": "High Speed Flight Characteristic – Turbo-prop – Turbo-jet",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PERFORMANCE"
+        },
+        {
+          "id": "ca:SARON-5:performance-4",
+          "text": "Relationship of Speed to Angle of Attack",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.stall-aoa"
+          ],
+          "topic": "PERFORMANCE"
+        },
+        {
+          "id": "ca:SARON-5:performance-5",
+          "text": "Cruising for Range/Endurance",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PERFORMANCE"
+        },
+        {
+          "id": "ca:SARON-5:performance-6",
+          "text": "Flight Performance “V” Speeds – Definition and Use",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PERFORMANCE"
+        },
+        {
+          "id": "ca:SARON-5:performance-7",
+          "text": "Effect of Changes in Weight and Load Distribution",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PERFORMANCE"
+        },
+        {
+          "id": "ca:SARON-5:performance-8",
+          "text": "Hydroplaning",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PERFORMANCE"
+        },
+        {
+          "id": "ca:SARON-5:performance-9",
+          "text": "Wind Shear – Effects, Avoidance and Recovery",
+          "kind": "objective",
+          "concept_ids": [
+            "met.turbulence"
+          ],
+          "topic": "PERFORMANCE"
+        },
+        {
+          "id": "ca:SARON-5:performance-10",
+          "text": "Landing Techniques",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PERFORMANCE"
+        },
+        {
+          "id": "ca:SARON-5:charts-and-graphs-1",
+          "text": "Weight and Balance – Load Adjustment (refer to Annex 1)",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "CHARTS AND GRAPHS"
+        },
+        {
+          "id": "ca:SARON-5:charts-and-graphs-2",
+          "text": "Take-off",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "CHARTS AND GRAPHS"
+        },
+        {
+          "id": "ca:SARON-5:charts-and-graphs-3",
+          "text": "Climb",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "CHARTS AND GRAPHS"
+        },
+        {
+          "id": "ca:SARON-5:charts-and-graphs-4",
+          "text": "Cruise",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "CHARTS AND GRAPHS"
+        },
+        {
+          "id": "ca:SARON-5:charts-and-graphs-5",
+          "text": "Buffet Boundary",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "CHARTS AND GRAPHS"
+        },
+        {
+          "id": "ca:SARON-5:charts-and-graphs-6",
+          "text": "Holding",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "CHARTS AND GRAPHS"
+        },
+        {
+          "id": "ca:SARON-5:charts-and-graphs-7",
+          "text": "Engine Out",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "CHARTS AND GRAPHS"
+        },
+        {
+          "id": "ca:SARON-5:charts-and-graphs-8",
+          "text": "Descent",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "CHARTS AND GRAPHS"
+        },
+        {
+          "id": "ca:SARON-5:charts-and-graphs-9",
+          "text": "Landing",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "CHARTS AND GRAPHS"
+        },
+        {
+          "id": "ca:SARON-5:charts-and-graphs-10",
+          "text": "Crosswind/CRFI",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.wind-component"
+          ],
+          "topic": "CHARTS AND GRAPHS"
+        },
+        {
+          "id": "ca:SARON-5:charts-and-graphs-11",
+          "text": "Weight, Altitude, Temperature (WAT), Takeoff/Landing Performance Charts",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "CHARTS AND GRAPHS"
+        },
+        {
+          "id": "ca:SARON-5:critical-surface-contamination-1",
+          "text": "Clean Aircraft Concept – Practices and Techniques",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "CRITICAL SURFACE CONTAMINATION"
+        },
+        {
+          "id": "ca:SARON-5:critical-surface-contamination-2",
+          "text": "Frozen Contaminants Including Cold-Soaking Phenomenon",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "CRITICAL SURFACE CONTAMINATION"
+        },
+        {
+          "id": "ca:SARON-5:critical-surface-contamination-3",
+          "text": "Icing in Clear Air (Hoar Frost)",
+          "kind": "objective",
+          "concept_ids": [
+            "met.icing"
+          ],
+          "topic": "CRITICAL SURFACE CONTAMINATION"
+        },
+        {
+          "id": "ca:SARON-5:critical-surface-contamination-4",
+          "text": "De-icing and Anti-icing Fluids",
+          "kind": "objective",
+          "concept_ids": [
+            "met.icing"
+          ],
+          "topic": "CRITICAL SURFACE CONTAMINATION"
+        },
+        {
+          "id": "ca:SARON-5:critical-surface-contamination-5",
+          "text": "De-icing and Anti-icing Procedures",
+          "kind": "objective",
+          "concept_ids": [
+            "met.icing"
+          ],
+          "topic": "CRITICAL SURFACE CONTAMINATION"
+        },
+        {
+          "id": "ca:SARON-5:critical-surface-contamination-6",
+          "text": "Variables that Can Influence Holdover Time",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "CRITICAL SURFACE CONTAMINATION"
+        },
+        {
+          "id": "ca:SARON-5:critical-surface-contamination-7",
+          "text": "Critical Surface Inspections",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "CRITICAL SURFACE CONTAMINATION"
+        },
+        {
+          "id": "ca:SARON-5:critical-surface-contamination-8",
+          "text": "Pre-take-off Inspection",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "CRITICAL SURFACE CONTAMINATION"
+        },
+        {
+          "id": "ca:SARON-5:critical-surface-contamination-9",
+          "text": "Health Effects",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "CRITICAL SURFACE CONTAMINATION"
+        },
+        {
+          "id": "ca:SARON-5:critical-surface-contamination-10",
+          "text": "Application Guideline Tables",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "CRITICAL SURFACE CONTAMINATION"
+        },
+        {
+          "id": "ca:SARON-5:wake-turbulence-1",
+          "text": "Causes and Effects",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "WAKE TURBULENCE"
+        },
+        {
+          "id": "ca:SARON-5:wake-turbulence-2",
+          "text": "Avoidance Procedures",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "WAKE TURBULENCE"
+        },
+        {
+          "id": "ca:SARON-5:wake-turbulence-3",
+          "text": "Separation Criteria and Waiver",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "WAKE TURBULENCE"
+        },
+        {
+          "id": "ca:SARON-5:flight-manual-1",
+          "text": "Approved Information",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "FLIGHT MANUAL"
+        },
+        {
+          "id": "ca:SARON-5:volcanic-ash-1",
+          "text": "Hazards",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "VOLCANIC ASH"
+        },
+        {
+          "id": "ca:SARON-5:airmanship-rules-of-thumb-1",
+          "text": "Average Wind in Climb",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "AIRMANSHIP/RULES OF THUMB"
+        },
+        {
+          "id": "ca:SARON-5:airmanship-rules-of-thumb-2",
+          "text": "Descent Point . 3 Rate of Descent",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "AIRMANSHIP/RULES OF THUMB"
+        },
+        {
+          "id": "ca:SARON-5:airmanship-rules-of-thumb-4",
+          "text": "Thunderstorm Penetration & Avoidance",
+          "kind": "objective",
+          "concept_ids": [
+            "met.thunderstorm"
+          ],
+          "topic": "AIRMANSHIP/RULES OF THUMB"
+        },
+        {
+          "id": "ca:SARON-5:procedures-recovery-1",
+          "text": "Icing, Tailplane Stall, Roll Upset",
+          "kind": "objective",
+          "concept_ids": [
+            "met.icing"
+          ],
+          "topic": "PROCEDURES/RECOVERY"
+        },
+        {
+          "id": "ca:SARON-5:procedures-recovery-2",
+          "text": "Contaminated Runway",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ],
+          "topic": "PROCEDURES/RECOVERY"
+        },
+        {
+          "id": "ca:SARON-5:procedures-recovery-3",
+          "text": "Turbulence Reporting Criteria",
+          "kind": "objective",
+          "concept_ids": [
+            "met.turbulence"
+          ],
+          "topic": "PROCEDURES/RECOVERY"
+        }
+      ]
+    },
+    {
+      "code": "SARON-6",
+      "title": "Theory Of Flight",
+      "source_url": "https://tc.canada.ca/en/aviation/publications/study-reference-guide-written-examinations-airline-transport-pilot-licence-aeroplane-tp-690",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "ca:SARON-6:forces-acting-on-an-aeroplane-1",
+          "text": "Load Factor",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.load-factor"
+          ],
+          "topic": "FORCES ACTING ON AN AEROPLANE"
+        },
+        {
+          "id": "ca:SARON-6:forces-acting-on-an-aeroplane-2",
+          "text": "Relationship of Weight and Load Factor to Stalling",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ],
+          "topic": "FORCES ACTING ON AN AEROPLANE"
+        },
+        {
+          "id": "ca:SARON-6:forces-acting-on-an-aeroplane-3",
+          "text": "Gust Loads",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ],
+          "topic": "FORCES ACTING ON AN AEROPLANE"
+        },
+        {
+          "id": "ca:SARON-6:forces-acting-on-an-aeroplane-4",
+          "text": "Stability",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ],
+          "topic": "FORCES ACTING ON AN AEROPLANE"
+        },
+        {
+          "id": "ca:SARON-6:forces-acting-on-an-aeroplane-5",
+          "text": "Lift/Weight/Thrust/Drag",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ],
+          "topic": "FORCES ACTING ON AN AEROPLANE"
+        },
+        {
+          "id": "ca:SARON-6:forces-acting-on-an-aeroplane-6",
+          "text": "Moments",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ],
+          "topic": "FORCES ACTING ON AN AEROPLANE"
+        },
+        {
+          "id": "ca:SARON-6:subsonic-aerodynamics-1",
+          "text": "Airflow, Boundary Layer",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ],
+          "topic": "SUBSONIC AERODYNAMICS"
+        },
+        {
+          "id": "ca:SARON-6:subsonic-aerodynamics-2",
+          "text": "2-Dimensional Airflow – streamline, stagnation, pressure distribution, downwash, angle of attack",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ],
+          "topic": "SUBSONIC AERODYNAMICS"
+        },
+        {
+          "id": "ca:SARON-6:subsonic-aerodynamics-3",
+          "text": "3-Dimensional Airflow – vortices, spanwise flow, wake turbulence, ground effect",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ],
+          "topic": "SUBSONIC AERODYNAMICS"
+        },
+        {
+          "id": "ca:SARON-6:subsonic-aerodynamics-4",
+          "text": "Degradation - effects of ice, airframe condition",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ],
+          "topic": "SUBSONIC AERODYNAMICS"
+        },
+        {
+          "id": "ca:SARON-6:high-speed-aerodynamics-1",
+          "text": "Speed of sound, Mach, Compressibility, Shock Waves",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ],
+          "topic": "HIGH SPEED AERODYNAMICS"
+        },
+        {
+          "id": "ca:SARON-6:high-speed-aerodynamics-2",
+          "text": "Critical Mach",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ],
+          "topic": "HIGH SPEED AERODYNAMICS"
+        },
+        {
+          "id": "ca:SARON-6:wing-design-1",
+          "text": "Sweepback",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ],
+          "topic": "WING DESIGN"
+        },
+        {
+          "id": "ca:SARON-6:wing-design-3",
+          "text": "Leading and Trailing Edge Flaps",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ],
+          "topic": "WING DESIGN"
+        },
+        {
+          "id": "ca:SARON-6:wing-design-4",
+          "text": "Winglets",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ],
+          "topic": "WING DESIGN"
+        },
+        {
+          "id": "ca:SARON-6:wing-design-5",
+          "text": "Canards",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ],
+          "topic": "WING DESIGN"
+        },
+        {
+          "id": "ca:SARON-6:wing-design-6",
+          "text": "Vortex Generators",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ],
+          "topic": "WING DESIGN"
+        },
+        {
+          "id": "ca:SARON-6:wing-design-7",
+          "text": "Wing Fences",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ],
+          "topic": "WING DESIGN"
+        },
+        {
+          "id": "ca:SARON-6:effects-of-in-flight-icing-1",
+          "text": "Lift and Drag",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ],
+          "topic": "EFFECTS OF IN-FLIGHT ICING"
+        },
+        {
+          "id": "ca:SARON-6:effects-of-in-flight-icing-2",
+          "text": "Engine and Propeller Efficiency",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ],
+          "topic": "EFFECTS OF IN-FLIGHT ICING"
+        },
+        {
+          "id": "ca:SARON-6:effects-of-in-flight-icing-3",
+          "text": "Wing and Tailplane Stalls",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ],
+          "topic": "EFFECTS OF IN-FLIGHT ICING"
+        }
+      ]
+    },
+    {
+      "code": "SARON-7",
+      "title": "Human Factors",
+      "source_url": "https://tc.canada.ca/en/aviation/publications/study-reference-guide-written-examinations-airline-transport-pilot-licence-aeroplane-tp-690",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "ca:SARON-7:aviation-physiology-1",
+          "text": "Hypoxia/Hyperventilation",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.hypoxia"
+          ],
+          "topic": "AVIATION PHYSIOLOGY"
+        },
+        {
+          "id": "ca:SARON-7:aviation-physiology-2",
+          "text": "Gas Expansion Effects",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "AVIATION PHYSIOLOGY"
+        },
+        {
+          "id": "ca:SARON-7:aviation-physiology-3",
+          "text": "Decompression (Including SCUBA Diving)",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "AVIATION PHYSIOLOGY"
+        },
+        {
+          "id": "ca:SARON-7:aviation-physiology-4",
+          "text": "Vision/Visual Scanning Techniques",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "AVIATION PHYSIOLOGY"
+        },
+        {
+          "id": "ca:SARON-7:aviation-physiology-5",
+          "text": "Hearing",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "AVIATION PHYSIOLOGY"
+        },
+        {
+          "id": "ca:SARON-7:aviation-physiology-6",
+          "text": "Orientation/Disorientation (Including Visual and Vestibular Illusions)",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "AVIATION PHYSIOLOGY"
+        },
+        {
+          "id": "ca:SARON-7:aviation-physiology-7",
+          "text": "Positive and Negative “G”",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "AVIATION PHYSIOLOGY"
+        },
+        {
+          "id": "ca:SARON-7:aviation-physiology-8",
+          "text": "Circadian Rhythms/Jet Lag",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "AVIATION PHYSIOLOGY"
+        },
+        {
+          "id": "ca:SARON-7:aviation-physiology-9",
+          "text": "Sleep/Fatigue",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "AVIATION PHYSIOLOGY"
+        },
+        {
+          "id": "ca:SARON-7:operating-environment-1",
+          "text": "Personal Health Exercise / Fitness",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "OPERATING ENVIRONMENT"
+        },
+        {
+          "id": "ca:SARON-7:operating-environment-2",
+          "text": "Obesity/Diet/Nutrition",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "OPERATING ENVIRONMENT"
+        },
+        {
+          "id": "ca:SARON-7:operating-environment-3",
+          "text": "Medications (Prescribed and Over-the-Counter)",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "OPERATING ENVIRONMENT"
+        },
+        {
+          "id": "ca:SARON-7:operating-environment-4",
+          "text": "Substance Abuse (Alcohol and Drugs)",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "OPERATING ENVIRONMENT"
+        },
+        {
+          "id": "ca:SARON-7:operating-environment-5",
+          "text": "Pregnancy",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "OPERATING ENVIRONMENT"
+        },
+        {
+          "id": "ca:SARON-7:operating-environment-6",
+          "text": "Heat/Cold",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "OPERATING ENVIRONMENT"
+        },
+        {
+          "id": "ca:SARON-7:operating-environment-7",
+          "text": "Noise/Vibration",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "OPERATING ENVIRONMENT"
+        },
+        {
+          "id": "ca:SARON-7:operating-environment-8",
+          "text": "Effects of Smoking",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "OPERATING ENVIRONMENT"
+        },
+        {
+          "id": "ca:SARON-7:operating-environment-9",
+          "text": "Toxic Hazards (Including Carbon Monoxide)",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "OPERATING ENVIRONMENT"
+        },
+        {
+          "id": "ca:SARON-7:operating-environment-10",
+          "text": "Fitness for Flight",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "OPERATING ENVIRONMENT"
+        },
+        {
+          "id": "ca:SARON-7:aviation-psychology-1",
+          "text": "The Decision-Making Process",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "AVIATION PSYCHOLOGY"
+        },
+        {
+          "id": "ca:SARON-7:aviation-psychology-2",
+          "text": "Factors That Influence Decision-Making",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "AVIATION PSYCHOLOGY"
+        },
+        {
+          "id": "ca:SARON-7:aviation-psychology-3",
+          "text": "Situational Awareness",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "AVIATION PSYCHOLOGY"
+        },
+        {
+          "id": "ca:SARON-7:aviation-psychology-4",
+          "text": "Stress",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "AVIATION PSYCHOLOGY"
+        },
+        {
+          "id": "ca:SARON-7:aviation-psychology-5",
+          "text": "Managing Risk",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "AVIATION PSYCHOLOGY"
+        },
+        {
+          "id": "ca:SARON-7:aviation-psychology-6",
+          "text": "Attitudes",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "AVIATION PSYCHOLOGY"
+        },
+        {
+          "id": "ca:SARON-7:aviation-psychology-7",
+          "text": "Workload (Attention and Information Processing)",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "AVIATION PSYCHOLOGY"
+        },
+        {
+          "id": "ca:SARON-7:relationship-1",
+          "text": "Controls and Displays – Errors in Interpretation and Control – Information Selection: e.g. “glass” cockpits",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "RELATIONSHIP"
+        },
+        {
+          "id": "ca:SARON-7:relationship-2",
+          "text": "Alerting and Warning Systems – Appropriate Selection and Set Up – False Indications – Distractions and Responses",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "RELATIONSHIP"
+        },
+        {
+          "id": "ca:SARON-7:relationship-3",
+          "text": "Standard Operating Procedures (SOPs)",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "RELATIONSHIP"
+        },
+        {
+          "id": "ca:SARON-7:relationship-4",
+          "text": "Correct Use of Charts, Checklists and Manuals",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "RELATIONSHIP"
+        },
+        {
+          "id": "ca:SARON-7:relationship-5",
+          "text": "Cockpit Visibility and Eye Reference Position/Seat Position",
+          "kind": "objective",
+          "concept_ids": [
+            "met.ceiling"
+          ],
+          "topic": "RELATIONSHIP"
+        },
+        {
+          "id": "ca:SARON-7:relationship-6",
+          "text": "Automation and Complacency",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "RELATIONSHIP"
+        },
+        {
+          "id": "ca:SARON-7:interpersonal-relations-1",
+          "text": "Communications with Flight and Cabin Crew/Passengers/ Company Management/Flight Operations/Maintenance Personnel/Air Traffic Services",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "INTERPERSONAL RELATIONS"
+        },
+        {
+          "id": "ca:SARON-7:interpersonal-relations-2",
+          "text": "Operating Pressures Family / Peer Group / Employer",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "INTERPERSONAL RELATIONS"
+        },
+        {
+          "id": "ca:SARON-7:crew-resource-management-crm-1",
+          "text": "Crew Problem Solving and Decision Making",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "CREW RESOURCE MANAGEMENT (CRM)"
+        },
+        {
+          "id": "ca:SARON-7:crew-resource-management-crm-2",
+          "text": "Crew Management/Small Group Dynamics",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "CREW RESOURCE MANAGEMENT (CRM)"
+        },
+        {
+          "id": "ca:SARON-7:tem-1",
+          "text": "Sources, Contributors",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "(TEM)"
+        },
+        {
+          "id": "ca:SARON-7:tem-2",
+          "text": "Countermeasures",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "(TEM)"
+        },
+        {
+          "id": "ca:SARON-7:tem-3",
+          "text": "Undesired Aircraft State",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "(TEM)"
+        },
+        {
+          "id": "ca:SARON-7:tem-4",
+          "text": "Pilot’s Role in Safety Management System",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ],
+          "topic": "(TEM)"
+        }
+      ]
+    },
+    {
+      "code": "SAMRA-8",
+      "title": "Meteorology",
+      "source_url": "https://tc.canada.ca/en/aviation/publications/study-reference-guide-written-examinations-airline-transport-pilot-licence-aeroplane-tp-690",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "ca:SAMRA-8:the-earth-s-atmosphere-1",
+          "text": "Properties",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "THE EARTH’S ATMOSPHERE"
+        },
+        {
+          "id": "ca:SAMRA-8:the-earth-s-atmosphere-2",
+          "text": "Vertical Structure",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "THE EARTH’S ATMOSPHERE"
+        },
+        {
+          "id": "ca:SAMRA-8:the-earth-s-atmosphere-3",
+          "text": "ICAO Standard Atmosphere",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "THE EARTH’S ATMOSPHERE"
+        },
+        {
+          "id": "ca:SAMRA-8:atmospheric-pressure-1",
+          "text": "Pressure Measurements",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "ATMOSPHERIC PRESSURE"
+        },
+        {
+          "id": "ca:SAMRA-8:atmospheric-pressure-2",
+          "text": "Station Pressure",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "ATMOSPHERIC PRESSURE"
+        },
+        {
+          "id": "ca:SAMRA-8:atmospheric-pressure-3",
+          "text": "Mean Sea Level Pressure",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "ATMOSPHERIC PRESSURE"
+        },
+        {
+          "id": "ca:SAMRA-8:atmospheric-pressure-4",
+          "text": "Pressure Systems and their Variations",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "ATMOSPHERIC PRESSURE"
+        },
+        {
+          "id": "ca:SAMRA-8:atmospheric-pressure-5",
+          "text": "Effects of Temperature",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "ATMOSPHERIC PRESSURE"
+        },
+        {
+          "id": "ca:SAMRA-8:atmospheric-pressure-6",
+          "text": "Horizontal Pressure Differences",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "ATMOSPHERIC PRESSURE"
+        },
+        {
+          "id": "ca:SAMRA-8:of-altimetry-1",
+          "text": "Pressure Altitude",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.pressure-altitude"
+          ],
+          "topic": "OF ALTIMETRY"
+        },
+        {
+          "id": "ca:SAMRA-8:of-altimetry-2",
+          "text": "Density Altitude",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.density-altitude"
+          ],
+          "topic": "OF ALTIMETRY"
+        },
+        {
+          "id": "ca:SAMRA-8:of-altimetry-3",
+          "text": "True Altitude",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "OF ALTIMETRY"
+        },
+        {
+          "id": "ca:SAMRA-8:of-altimetry-4",
+          "text": "Altimeter Setting",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.pressure-altitude"
+          ],
+          "topic": "OF ALTIMETRY"
+        },
+        {
+          "id": "ca:SAMRA-8:of-altimetry-5",
+          "text": "Effects of both Pressure and Temperature",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "OF ALTIMETRY"
+        },
+        {
+          "id": "ca:SAMRA-8:of-altimetry-6",
+          "text": "Reduction to Sea Level Pressure",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "OF ALTIMETRY"
+        },
+        {
+          "id": "ca:SAMRA-8:temperature-1",
+          "text": "Heating and Cooling of the Atmosphere – Convection/ Advection/Radiation",
+          "kind": "objective",
+          "concept_ids": [
+            "met.temperature"
+          ],
+          "topic": "TEMPERATURE"
+        },
+        {
+          "id": "ca:SAMRA-8:temperature-2",
+          "text": "Horizontal Differences",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "TEMPERATURE"
+        },
+        {
+          "id": "ca:SAMRA-8:temperature-3",
+          "text": "Temperature Variations with Altitude",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "TEMPERATURE"
+        },
+        {
+          "id": "ca:SAMRA-8:temperature-4",
+          "text": "Inversions",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "TEMPERATURE"
+        },
+        {
+          "id": "ca:SAMRA-8:temperature-5",
+          "text": "Isothermal Layers",
+          "kind": "objective",
+          "concept_ids": [
+            "met.temperature"
+          ],
+          "topic": "TEMPERATURE"
+        },
+        {
+          "id": "ca:SAMRA-8:moisture-1",
+          "text": "Relative Humidity/Dewpoint",
+          "kind": "objective",
+          "concept_ids": [
+            "met.moisture"
+          ],
+          "topic": "MOISTURE"
+        },
+        {
+          "id": "ca:SAMRA-8:moisture-2",
+          "text": "Change of State - Sublimation/ Condensation/Evaporation",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "MOISTURE"
+        },
+        {
+          "id": "ca:SAMRA-8:moisture-3",
+          "text": "Cloud Formation",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "MOISTURE"
+        },
+        {
+          "id": "ca:SAMRA-8:moisture-4",
+          "text": "Precipitation",
+          "kind": "objective",
+          "concept_ids": [
+            "met.moisture"
+          ],
+          "topic": "MOISTURE"
+        },
+        {
+          "id": "ca:SAMRA-8:moisture-5",
+          "text": "Saturated/Dry Adiabatic Lapse Rates",
+          "kind": "objective",
+          "concept_ids": [
+            "met.stability"
+          ],
+          "topic": "MOISTURE"
+        },
+        {
+          "id": "ca:SAMRA-8:stability-and-instability-1",
+          "text": "Lapse Rate and Stability",
+          "kind": "objective",
+          "concept_ids": [
+            "met.stability"
+          ],
+          "topic": "STABILITY AND INSTABILITY"
+        },
+        {
+          "id": "ca:SAMRA-8:stability-and-instability-2",
+          "text": "Modification of Stability",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "STABILITY AND INSTABILITY"
+        },
+        {
+          "id": "ca:SAMRA-8:stability-and-instability-3",
+          "text": "Characteristics of Stable/Unstable Air",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "STABILITY AND INSTABILITY"
+        },
+        {
+          "id": "ca:SAMRA-8:stability-and-instability-4",
+          "text": "Surface Heating and Cooling",
+          "kind": "objective",
+          "concept_ids": [
+            "met.temperature"
+          ],
+          "topic": "STABILITY AND INSTABILITY"
+        },
+        {
+          "id": "ca:SAMRA-8:stability-and-instability-5",
+          "text": "Lifting Process",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "STABILITY AND INSTABILITY"
+        },
+        {
+          "id": "ca:SAMRA-8:stability-and-instability-6",
+          "text": "Subsidence/Convergence",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "STABILITY AND INSTABILITY"
+        },
+        {
+          "id": "ca:SAMRA-8:clouds-1",
+          "text": "Classification",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "CLOUDS"
+        },
+        {
+          "id": "ca:SAMRA-8:clouds-2",
+          "text": "Formation",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "CLOUDS"
+        },
+        {
+          "id": "ca:SAMRA-8:clouds-3",
+          "text": "Types and Recognition",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "CLOUDS"
+        },
+        {
+          "id": "ca:SAMRA-8:clouds-4",
+          "text": "Associated Precipitation and Turbulence",
+          "kind": "objective",
+          "concept_ids": [
+            "met.turbulence"
+          ],
+          "topic": "CLOUDS"
+        },
+        {
+          "id": "ca:SAMRA-8:turbulence-1",
+          "text": "Convection",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "TURBULENCE"
+        },
+        {
+          "id": "ca:SAMRA-8:turbulence-2",
+          "text": "Mechanical",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "TURBULENCE"
+        },
+        {
+          "id": "ca:SAMRA-8:turbulence-3",
+          "text": "Orographic",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "TURBULENCE"
+        },
+        {
+          "id": "ca:SAMRA-8:turbulence-4",
+          "text": "Clear Air Turbulence",
+          "kind": "objective",
+          "concept_ids": [
+            "met.turbulence"
+          ],
+          "topic": "TURBULENCE"
+        },
+        {
+          "id": "ca:SAMRA-8:turbulence-5",
+          "text": "VIRGA – Evaporation Cooling",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "TURBULENCE"
+        },
+        {
+          "id": "ca:SAMRA-8:turbulence-6",
+          "text": "Reporting Criteria",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "TURBULENCE"
+        },
+        {
+          "id": "ca:SAMRA-8:turbulence-7",
+          "text": "Mountain Waves",
+          "kind": "objective",
+          "concept_ids": [
+            "met.turbulence"
+          ],
+          "topic": "TURBULENCE"
+        },
+        {
+          "id": "ca:SAMRA-8:wind-1",
+          "text": "Pressure Gradient",
+          "kind": "objective",
+          "concept_ids": [
+            "met.pressure-gradient"
+          ],
+          "topic": "WIND"
+        },
+        {
+          "id": "ca:SAMRA-8:wind-2",
+          "text": "Deflection Caused by the Earth’s Rotation",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "WIND"
+        },
+        {
+          "id": "ca:SAMRA-8:wind-3",
+          "text": "Low Level Winds – Variation in Surface Wind",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "WIND"
+        },
+        {
+          "id": "ca:SAMRA-8:wind-4",
+          "text": "Friction",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "WIND"
+        },
+        {
+          "id": "ca:SAMRA-8:wind-5",
+          "text": "Centrifugal Force",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "WIND"
+        },
+        {
+          "id": "ca:SAMRA-8:wind-6",
+          "text": "Veer and Back",
+          "kind": "objective",
+          "concept_ids": [
+            "met.surface-friction"
+          ],
+          "topic": "WIND"
+        },
+        {
+          "id": "ca:SAMRA-8:wind-7",
+          "text": "Squalls and Gusts",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "WIND"
+        },
+        {
+          "id": "ca:SAMRA-8:wind-8",
+          "text": "Diurnal Effects",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "WIND"
+        },
+        {
+          "id": "ca:SAMRA-8:wind-9",
+          "text": "Land and Sea Breezes",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "WIND"
+        },
+        {
+          "id": "ca:SAMRA-8:wind-10",
+          "text": "Katabatic/Anabatic Effects",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "WIND"
+        },
+        {
+          "id": "ca:SAMRA-8:wind-11",
+          "text": "Topographical Effects",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "WIND"
+        },
+        {
+          "id": "ca:SAMRA-8:wind-12",
+          "text": "Wind Shear, Types and Causes",
+          "kind": "objective",
+          "concept_ids": [
+            "met.turbulence"
+          ],
+          "topic": "WIND"
+        },
+        {
+          "id": "ca:SAMRA-8:jet-streams-1",
+          "text": "Frontal Jet Streams",
+          "kind": "objective",
+          "concept_ids": [
+            "met.jet-stream"
+          ],
+          "topic": "JET STREAMS"
+        },
+        {
+          "id": "ca:SAMRA-8:jet-streams-2",
+          "text": "Wind Distribution / Location",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "JET STREAMS"
+        },
+        {
+          "id": "ca:SAMRA-8:jet-streams-3",
+          "text": "Temperature Distribution",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "JET STREAMS"
+        },
+        {
+          "id": "ca:SAMRA-8:jet-streams-4",
+          "text": "Seasonal Variations in Latitude and Speed",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "JET STREAMS"
+        },
+        {
+          "id": "ca:SAMRA-8:jet-streams-5",
+          "text": "Arctic Stratospheric Jets",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "JET STREAMS"
+        },
+        {
+          "id": "ca:SAMRA-8:jet-streams-6",
+          "text": "Subtropical Jet Streams",
+          "kind": "objective",
+          "concept_ids": [
+            "met.jet-stream"
+          ],
+          "topic": "JET STREAMS"
+        },
+        {
+          "id": "ca:SAMRA-8:jet-streams-7",
+          "text": "Low Level Nocturnal Jet Streams",
+          "kind": "objective",
+          "concept_ids": [
+            "met.jet-stream"
+          ],
+          "topic": "JET STREAMS"
+        },
+        {
+          "id": "ca:SAMRA-8:jet-streams-8",
+          "text": "Turbulence",
+          "kind": "objective",
+          "concept_ids": [
+            "met.turbulence"
+          ],
+          "topic": "JET STREAMS"
+        },
+        {
+          "id": "ca:SAMRA-8:air-masses-1",
+          "text": "Definition and Characteristics",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AIR MASSES"
+        },
+        {
+          "id": "ca:SAMRA-8:air-masses-2",
+          "text": "Formation",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AIR MASSES"
+        },
+        {
+          "id": "ca:SAMRA-8:air-masses-3",
+          "text": "Classification",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AIR MASSES"
+        },
+        {
+          "id": "ca:SAMRA-8:air-masses-4",
+          "text": "Modification",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AIR MASSES"
+        },
+        {
+          "id": "ca:SAMRA-8:air-masses-5",
+          "text": "Factors that Determine Weather",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AIR MASSES"
+        },
+        {
+          "id": "ca:SAMRA-8:air-masses-6",
+          "text": "Seasonal and Geographic Effects",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AIR MASSES"
+        },
+        {
+          "id": "ca:SAMRA-8:air-masses-7",
+          "text": "Air Masses Affecting North America",
+          "kind": "objective",
+          "concept_ids": [
+            "met.fronts"
+          ],
+          "topic": "AIR MASSES"
+        },
+        {
+          "id": "ca:SAMRA-8:fronts-1",
+          "text": "Structure",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "FRONTS"
+        },
+        {
+          "id": "ca:SAMRA-8:fronts-2",
+          "text": "Types",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "FRONTS"
+        },
+        {
+          "id": "ca:SAMRA-8:fronts-3",
+          "text": "Formation",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "FRONTS"
+        },
+        {
+          "id": "ca:SAMRA-8:fronts-4",
+          "text": "Cross-sections",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "FRONTS"
+        },
+        {
+          "id": "ca:SAMRA-8:fronts-5",
+          "text": "Discontinuities Along Fronts",
+          "kind": "objective",
+          "concept_ids": [
+            "met.fronts"
+          ],
+          "topic": "FRONTS"
+        },
+        {
+          "id": "ca:SAMRA-8:fronts-6",
+          "text": "Frontal Waves and Occlusions",
+          "kind": "objective",
+          "concept_ids": [
+            "met.fronts"
+          ],
+          "topic": "FRONTS"
+        },
+        {
+          "id": "ca:SAMRA-8:fronts-7",
+          "text": "Frontogenesis and Frontolysis",
+          "kind": "objective",
+          "concept_ids": [
+            "met.fronts"
+          ],
+          "topic": "FRONTS"
+        },
+        {
+          "id": "ca:SAMRA-8:frontal-weather-1",
+          "text": "Warm Front",
+          "kind": "objective",
+          "concept_ids": [
+            "met.fronts"
+          ],
+          "topic": "FRONTAL WEATHER"
+        },
+        {
+          "id": "ca:SAMRA-8:frontal-weather-2",
+          "text": "Cold Front",
+          "kind": "objective",
+          "concept_ids": [
+            "met.fronts"
+          ],
+          "topic": "FRONTAL WEATHER"
+        },
+        {
+          "id": "ca:SAMRA-8:frontal-weather-3",
+          "text": "Stationary Front",
+          "kind": "objective",
+          "concept_ids": [
+            "met.fronts"
+          ],
+          "topic": "FRONTAL WEATHER"
+        },
+        {
+          "id": "ca:SAMRA-8:frontal-weather-4",
+          "text": "TROWAL and Upper Fronts",
+          "kind": "objective",
+          "concept_ids": [
+            "met.fronts"
+          ],
+          "topic": "FRONTAL WEATHER"
+        },
+        {
+          "id": "ca:SAMRA-8:aircraft-icing-1",
+          "text": "Formation",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AIRCRAFT ICING"
+        },
+        {
+          "id": "ca:SAMRA-8:aircraft-icing-2",
+          "text": "Type of Ice",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AIRCRAFT ICING"
+        },
+        {
+          "id": "ca:SAMRA-8:aircraft-icing-3",
+          "text": "Reporting Criteria",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AIRCRAFT ICING"
+        },
+        {
+          "id": "ca:SAMRA-8:aircraft-icing-4",
+          "text": "Cloud Types and Icing",
+          "kind": "objective",
+          "concept_ids": [
+            "met.icing"
+          ],
+          "topic": "AIRCRAFT ICING"
+        },
+        {
+          "id": "ca:SAMRA-8:aircraft-icing-5",
+          "text": "Freezing Rain and Drizzle",
+          "kind": "objective",
+          "concept_ids": [
+            "met.icing"
+          ],
+          "topic": "AIRCRAFT ICING"
+        },
+        {
+          "id": "ca:SAMRA-8:aircraft-icing-6",
+          "text": "Collection Efficiency",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AIRCRAFT ICING"
+        },
+        {
+          "id": "ca:SAMRA-8:aircraft-icing-7",
+          "text": "Aerodynamic Heating",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AIRCRAFT ICING"
+        },
+        {
+          "id": "ca:SAMRA-8:thunderstorms-1",
+          "text": "Requirements for Development",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "THUNDERSTORMS"
+        },
+        {
+          "id": "ca:SAMRA-8:thunderstorms-2",
+          "text": "Life Cycle",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "THUNDERSTORMS"
+        },
+        {
+          "id": "ca:SAMRA-8:thunderstorms-3",
+          "text": "Classification – Air Mass, Frontal, Squall Line, Convective, Orographic and Nocturnal",
+          "kind": "objective",
+          "concept_ids": [
+            "met.fronts"
+          ],
+          "topic": "THUNDERSTORMS"
+        },
+        {
+          "id": "ca:SAMRA-8:thunderstorms-4",
+          "text": "Tornadoes and Hurricanes",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "THUNDERSTORMS"
+        },
+        {
+          "id": "ca:SAMRA-8:thunderstorms-5",
+          "text": "Hazards – Turbulence, Hail, Rain, Icing, Altimetry, Lightning, Gust Fronts, Downbursts and Microbursts",
+          "kind": "objective",
+          "concept_ids": [
+            "met.turbulence"
+          ],
+          "topic": "THUNDERSTORMS"
+        },
+        {
+          "id": "ca:SAMRA-8:surface-based-layers-1",
+          "text": "Fog Formation",
+          "kind": "objective",
+          "concept_ids": [
+            "met.ceiling"
+          ],
+          "topic": "SURFACE BASED LAYERS"
+        },
+        {
+          "id": "ca:SAMRA-8:surface-based-layers-2",
+          "text": "Fog Types",
+          "kind": "objective",
+          "concept_ids": [
+            "met.ceiling"
+          ],
+          "topic": "SURFACE BASED LAYERS"
+        },
+        {
+          "id": "ca:SAMRA-8:surface-based-layers-3",
+          "text": "Haze and Smoke",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "SURFACE BASED LAYERS"
+        },
+        {
+          "id": "ca:SAMRA-8:surface-based-layers-4",
+          "text": "Blowing Obstructions to Vision",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "SURFACE BASED LAYERS"
+        },
+        {
+          "id": "ca:SAMRA-8:available-to-pilots-1",
+          "text": "Pilot Briefing Service (FICs)",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AVAILABLE TO PILOTS"
+        },
+        {
+          "id": "ca:SAMRA-8:available-to-pilots-2",
+          "text": "Aviation Weather Web Sites",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AVAILABLE TO PILOTS"
+        },
+        {
+          "id": "ca:SAMRA-8:available-to-pilots-3",
+          "text": "Pilots Automatic Telephone Weather Answering Service (PATWAS)",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AVAILABLE TO PILOTS"
+        },
+        {
+          "id": "ca:SAMRA-8:available-to-pilots-4",
+          "text": "Automatic Terminal Information Service",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AVAILABLE TO PILOTS"
+        },
+        {
+          "id": "ca:SAMRA-8:atis-5",
+          "text": "VOLMET (HF) Broadcast",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "(ATIS)"
+        },
+        {
+          "id": "ca:SAMRA-8:atis-6",
+          "text": "Automatic Weather Observation Systems (AWOS)/Limited Weather Information Systems",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "(ATIS)"
+        },
+        {
+          "id": "ca:SAMRA-8:aviation-weather-reports-1",
+          "text": "Aviation Routine Weather Report (METAR)",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AVIATION WEATHER REPORTS"
+        },
+        {
+          "id": "ca:SAMRA-8:aviation-weather-reports-2",
+          "text": "SPECI",
+          "kind": "objective",
+          "concept_ids": [
+            "met.taf-groups"
+          ],
+          "topic": "AVIATION WEATHER REPORTS"
+        },
+        {
+          "id": "ca:SAMRA-8:aviation-weather-reports-3",
+          "text": "Decoding",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AVIATION WEATHER REPORTS"
+        },
+        {
+          "id": "ca:SAMRA-8:aviation-weather-reports-4",
+          "text": "AWOS/LWIS",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AVIATION WEATHER REPORTS"
+        },
+        {
+          "id": "ca:SAMRA-8:aviation-weather-reports-5",
+          "text": "Pilot Reports (PIREP/AIREP)",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AVIATION WEATHER REPORTS"
+        },
+        {
+          "id": "ca:SAMRA-8:aviation-forecasts-1",
+          "text": "Times Issued / Validity Periods",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AVIATION FORECASTS"
+        },
+        {
+          "id": "ca:SAMRA-8:aviation-forecasts-2",
+          "text": "Decoding",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AVIATION FORECASTS"
+        },
+        {
+          "id": "ca:SAMRA-8:aviation-forecasts-2-109",
+          "text": "Graphical Area Forecasts (GFA)",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "AVIATION FORECASTS"
+        },
+        {
+          "id": "ca:SAMRA-8:airmet-4",
+          "text": "Terminal Area Forecasts (TAF)",
+          "kind": "objective",
+          "concept_ids": [
+            "met.taf-groups"
+          ],
+          "topic": "/AIRMET"
+        },
+        {
+          "id": "ca:SAMRA-8:airmet-5",
+          "text": "Upper Level Winds and Temperature Forecasts (FD)",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "/AIRMET"
+        },
+        {
+          "id": "ca:SAMRA-8:airmet-6",
+          "text": "Significant In-flight Weather Warning Message (SIGMET)",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "/AIRMET"
+        },
+        {
+          "id": "ca:SAMRA-8:weather-maps-and-prognostic-charts-1",
+          "text": "Times Issued / Validity Periods",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "WEATHER MAPS AND PROGNOSTIC CHARTS"
+        },
+        {
+          "id": "ca:SAMRA-8:weather-maps-and-prognostic-charts-2",
+          "text": "Symbols/Decoding",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "WEATHER MAPS AND PROGNOSTIC CHARTS"
+        },
+        {
+          "id": "ca:SAMRA-8:weather-maps-and-prognostic-charts-3",
+          "text": "Surface Weather Map",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "WEATHER MAPS AND PROGNOSTIC CHARTS"
+        },
+        {
+          "id": "ca:SAMRA-8:weather-maps-and-prognostic-charts-4",
+          "text": "Prognostic Surface Chart",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "WEATHER MAPS AND PROGNOSTIC CHARTS"
+        },
+        {
+          "id": "ca:SAMRA-8:weather-maps-and-prognostic-charts-5",
+          "text": "Upper Level Charts – ANAL (850mb, 700mb, 500mb & 250mb)",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "WEATHER MAPS AND PROGNOSTIC CHARTS"
+        },
+        {
+          "id": "ca:SAMRA-8:weather-maps-and-prognostic-charts-6",
+          "text": "Upper Level Charts – PROG (FL240,",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "WEATHER MAPS AND PROGNOSTIC CHARTS"
+        },
+        {
+          "id": "ca:SAMRA-8:fl340-fl450-7",
+          "text": "Significant Weather Prognostic Chart FL100-250 (700-400mb) & FL250-630 (400-100mb)",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ],
+          "topic": "FL340, FL450)"
+        }
+      ]
+    },
+    {
+      "code": "SAMRA-9",
+      "title": "Flight Planning",
+      "source_url": "https://tc.canada.ca/en/aviation/publications/study-reference-guide-written-examinations-airline-transport-pilot-licence-aeroplane-tp-690",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "ca:SAMRA-9:flight-planning-and-forms-1",
+          "text": "Flight Planning Fuel Requirements",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.fuel-plan"
+          ],
+          "topic": "FLIGHT PLANNING AND FORMS"
+        },
+        {
+          "id": "ca:SAMRA-9:flight-planning-and-forms-2",
+          "text": "Fuel Load, Zero Fuel Weight",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ],
+          "topic": "FLIGHT PLANNING AND FORMS"
+        },
+        {
+          "id": "ca:SAMRA-9:flight-planning-and-forms-3",
+          "text": "Critical Point/Equal time Point",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.safe-return"
+          ],
+          "topic": "FLIGHT PLANNING AND FORMS"
+        },
+        {
+          "id": "ca:SAMRA-9:flight-planning-and-forms-4",
+          "text": "Flight Plans",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ],
+          "topic": "FLIGHT PLANNING AND FORMS"
+        },
+        {
+          "id": "ca:SAMRA-9:flight-planning-and-forms-5",
+          "text": "Flight Itineraries",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ],
+          "topic": "FLIGHT PLANNING AND FORMS"
+        },
+        {
+          "id": "ca:SAMRA-9:flight-planning-and-forms-6",
+          "text": "Aeronautical Information Sources",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ],
+          "topic": "FLIGHT PLANNING AND FORMS"
+        },
+        {
+          "id": "ca:SAMRA-9:flight-planning-and-forms-7",
+          "text": "NOTAMs",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ],
+          "topic": "FLIGHT PLANNING AND FORMS"
+        },
+        {
+          "id": "ca:SAMRA-9:computerized-flight-plans-1",
+          "text": "Decode (refer to Annex 2)",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ],
+          "topic": "COMPUTERIZED FLIGHT PLANS"
+        },
+        {
+          "id": "ca:SAMRA-9:computerized-flight-plans-2",
+          "text": "Analysis and Interpolation",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ],
+          "topic": "COMPUTERIZED FLIGHT PLANS"
+        },
+        {
+          "id": "ca:SAMRA-9:air-navigation-traffic-systems-1",
+          "text": "Canadian Domestic Routes",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ],
+          "topic": "AIR NAVIGATION/TRAFFIC SYSTEMS"
+        },
+        {
+          "id": "ca:SAMRA-9:air-navigation-traffic-systems-2",
+          "text": "Use of Preferred Routes",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ],
+          "topic": "AIR NAVIGATION/TRAFFIC SYSTEMS"
+        },
+        {
+          "id": "ca:SAMRA-9:air-navigation-traffic-systems-3",
+          "text": "Regional Procedures (North Atlantic, Northern Pacific, Polar) – determination and publication of routes",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ],
+          "topic": "AIR NAVIGATION/TRAFFIC SYSTEMS"
+        }
+      ]
+    },
+    {
+      "code": "SAMRA-10",
+      "title": "Radio Communications And Aids To Navigation",
+      "source_url": "https://tc.canada.ca/en/aviation/publications/study-reference-guide-written-examinations-airline-transport-pilot-licence-aeroplane-tp-690",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "ca:SAMRA-10:basic-principles-and-use-radio-1",
+          "text": "Elementary Theory",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "BASIC PRINCIPLES AND USE RADIO"
+        },
+        {
+          "id": "ca:SAMRA-10:basic-principles-and-use-radio-2",
+          "text": "Wave Length and Frequency",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "BASIC PRINCIPLES AND USE RADIO"
+        },
+        {
+          "id": "ca:SAMRA-10:basic-principles-and-use-radio-3",
+          "text": "Frequency Bands Used in Communication and Navigation",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "BASIC PRINCIPLES AND USE RADIO"
+        },
+        {
+          "id": "ca:SAMRA-10:basic-principles-and-use-radio-4",
+          "text": "Characteristics of Low, High and Very High Frequency Radio Waves",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "BASIC PRINCIPLES AND USE RADIO"
+        },
+        {
+          "id": "ca:SAMRA-10:basic-principles-and-use-radio-5",
+          "text": "Ground Waves and Sky Waves",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "BASIC PRINCIPLES AND USE RADIO"
+        },
+        {
+          "id": "ca:SAMRA-10:basic-principles-and-use-radio-6",
+          "text": "Skip Distance",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "BASIC PRINCIPLES AND USE RADIO"
+        },
+        {
+          "id": "ca:SAMRA-10:basic-principles-and-use-radio-7",
+          "text": "Reflection and Refraction",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "BASIC PRINCIPLES AND USE RADIO"
+        },
+        {
+          "id": "ca:SAMRA-10:basic-principles-and-use-radio-8",
+          "text": "Night Effect",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "BASIC PRINCIPLES AND USE RADIO"
+        },
+        {
+          "id": "ca:SAMRA-10:aircraft-radio-transceivers-1",
+          "text": "VHF",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "AIRCRAFT RADIO TRANSCEIVERS"
+        },
+        {
+          "id": "ca:SAMRA-10:aircraft-radio-transceivers-2",
+          "text": "HF",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "AIRCRAFT RADIO TRANSCEIVERS"
+        },
+        {
+          "id": "ca:SAMRA-10:aircraft-radio-transceivers-3",
+          "text": "DATALINK, ACARS",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "AIRCRAFT RADIO TRANSCEIVERS"
+        },
+        {
+          "id": "ca:SAMRA-10:selective-call-system-selcal-1",
+          "text": "VHF",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "SELECTIVE CALL SYSTEM (SELCAL)"
+        },
+        {
+          "id": "ca:SAMRA-10:selective-call-system-selcal-2",
+          "text": "HF",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "SELECTIVE CALL SYSTEM (SELCAL)"
+        },
+        {
+          "id": "ca:SAMRA-10:transmitter-elt-1",
+          "text": "Requirements",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "TRANSMITTER (ELT)"
+        },
+        {
+          "id": "ca:SAMRA-10:transmitter-elt-2",
+          "text": "Testing",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "TRANSMITTER (ELT)"
+        },
+        {
+          "id": "ca:SAMRA-10:transmitter-elt-3",
+          "text": "Flight Planning",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "TRANSMITTER (ELT)"
+        },
+        {
+          "id": "ca:SAMRA-10:transmitter-elt-4",
+          "text": "Accidental Transmission",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "TRANSMITTER (ELT)"
+        },
+        {
+          "id": "ca:SAMRA-10:transmitter-elt-5",
+          "text": "Pilot Response to Signals",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "TRANSMITTER (ELT)"
+        },
+        {
+          "id": "ca:SAMRA-10:transmitter-elt-6",
+          "text": "Downed Aircraft Procedures",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "TRANSMITTER (ELT)"
+        },
+        {
+          "id": "ca:SAMRA-10:air-traffic-surveillance-1",
+          "text": "Elementary RADAR Theory",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "AIR TRAFFIC SURVEILLANCE"
+        },
+        {
+          "id": "ca:SAMRA-10:air-traffic-surveillance-2",
+          "text": "Primary Returns",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "AIR TRAFFIC SURVEILLANCE"
+        },
+        {
+          "id": "ca:SAMRA-10:air-traffic-surveillance-3",
+          "text": "Secondary Returns",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "AIR TRAFFIC SURVEILLANCE"
+        },
+        {
+          "id": "ca:SAMRA-10:air-traffic-surveillance-4",
+          "text": "ADS-B",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "AIR TRAFFIC SURVEILLANCE"
+        },
+        {
+          "id": "ca:SAMRA-10:air-traffic-surveillance-5",
+          "text": "Multilateration (MLAT)",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "AIR TRAFFIC SURVEILLANCE"
+        },
+        {
+          "id": "ca:SAMRA-10:weather-radar-1",
+          "text": "Operating Principles",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "WEATHER RADAR"
+        },
+        {
+          "id": "ca:SAMRA-10:weather-radar-2",
+          "text": "Operation and Interpretation",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "WEATHER RADAR"
+        },
+        {
+          "id": "ca:SAMRA-10:navigation-systems-1",
+          "text": "Automatic Direction Finder (ADF)",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "NAVIGATION SYSTEMS"
+        },
+        {
+          "id": "ca:SAMRA-10:navigation-systems-2",
+          "text": "VHF Omnidirectional Range (VOR)",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "NAVIGATION SYSTEMS"
+        },
+        {
+          "id": "ca:SAMRA-10:navigation-systems-3",
+          "text": "Distance Measuring Equipment (DME)",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "NAVIGATION SYSTEMS"
+        },
+        {
+          "id": "ca:SAMRA-10:navigation-systems-4",
+          "text": "Co-located VOR and TACAN (VORTAC)",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "NAVIGATION SYSTEMS"
+        },
+        {
+          "id": "ca:SAMRA-10:navigation-systems-5",
+          "text": "Global Navigation Satellite System (GNSS – GPS)",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "NAVIGATION SYSTEMS"
+        },
+        {
+          "id": "ca:SAMRA-10:navigation-systems-6",
+          "text": "Very High Frequency Direction Finding (VHF – DF)",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "NAVIGATION SYSTEMS"
+        },
+        {
+          "id": "ca:SAMRA-10:navigation-systems-7",
+          "text": "Area Navigation System (RNAV)",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "NAVIGATION SYSTEMS"
+        },
+        {
+          "id": "ca:SAMRA-10:navigation-systems-8",
+          "text": "Inertial Navigation System (INS)",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "NAVIGATION SYSTEMS"
+        },
+        {
+          "id": "ca:SAMRA-10:navigation-systems-9",
+          "text": "Inertial Reference System (IRS)",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "NAVIGATION SYSTEMS"
+        },
+        {
+          "id": "ca:SAMRA-10:approach-aids-1",
+          "text": "Instrument Landing System (ILS)",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "APPROACH AIDS"
+        },
+        {
+          "id": "ca:SAMRA-10:approach-aids-2",
+          "text": "Global Navigation Satellite System Approaches",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "APPROACH AIDS"
+        },
+        {
+          "id": "ca:SAMRA-10:approach-aids-3",
+          "text": "Primary Surveillance Radar (PSR)",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "APPROACH AIDS"
+        },
+        {
+          "id": "ca:SAMRA-10:approach-aids-4",
+          "text": "Precision Approach Radar (PAR)",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "APPROACH AIDS"
+        },
+        {
+          "id": "ca:SAMRA-10:approach-aids-5",
+          "text": "Secondary Surveillance Radar (SSR)",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "APPROACH AIDS"
+        },
+        {
+          "id": "ca:SAMRA-10:approach-aids-6",
+          "text": "VASIS/PAPI",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "APPROACH AIDS"
+        },
+        {
+          "id": "ca:SAMRA-10:acas-tcas-1",
+          "text": "General",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "ACAS/TCAS"
+        },
+        {
+          "id": "ca:SAMRA-10:acas-tcas-2",
+          "text": "Use of TCAS/ACAS",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "ACAS/TCAS"
+        },
+        {
+          "id": "ca:SAMRA-10:acas-tcas-3",
+          "text": "Pilot Immunity from Enforcement Action",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "ACAS/TCAS"
+        },
+        {
+          "id": "ca:SAMRA-10:acas-tcas-4",
+          "text": "Pilot/Controller Actions",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "ACAS/TCAS"
+        },
+        {
+          "id": "ca:SAMRA-10:acas-tcas-5",
+          "text": "Pilot and Controller Interchange",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ],
+          "topic": "ACAS/TCAS"
+        }
+      ]
+    }
+  ]
+}

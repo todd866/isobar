@@ -39,6 +39,8 @@ typedef struct {
     double centreLon;
     double zoom;
     double globe;
+    // Continuous camera tilt in radians. Zero is the overhead view.
+    double pitch;
     double viewportW;
     double viewportH;
 } IsobarCamera;
@@ -46,6 +48,10 @@ typedef struct {
 // Screen x right, y down.
 BOOL IsobarCameraProject(IsobarCamera camera, double latitude, double longitude,
     double *x, double *y);
+// Projects a point at metres AMSL. The sea-level globe is the occlusion
+// reference; native DEM occlusion is not available yet.
+BOOL IsobarCameraProjectAltitude(IsobarCamera camera, double latitude, double longitude,
+    double heightM, double *x, double *y);
 // Closed form at globe 0 and globe 1. The morph uses the same front-most
 // root as Project. The pick API does not use this; it reads the lat/lon
 // attachment.

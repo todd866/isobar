@@ -292,6 +292,8 @@ static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, dou
 @end
 
 @implementation DayStripView {
+    NSTimer *_hoverArmTimer;
+    NSInteger _hoverPendingIndex;
     NSMutableArray<DayCell *> *_cells;
     NSTextField *_hourLine;
     DayPlayheadMark *_highlight;
@@ -310,11 +312,28 @@ static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, dou
     _selectedIndex = -1;
     _highlightedDayIndex = -1;
     _hoverIndex = -1;
+    _hoverPendingIndex = -1;
     _playheadTemperature = NAN;
     _cells = [NSMutableArray array];
     self.accessibilityIdentifier = @"hub.days";
     self.accessibilityLabel = @"Seven day forecast";
     return self;
+}
+- (void)removeFromSuperview {
+    [_hoverArmTimer invalidate];
+    _hoverArmTimer = nil;
+    _hoverPendingIndex = -1;
+    _hoverIndex = -1;
+    [super removeFromSuperview];
+}
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    if (!self.window) {
+        [_hoverArmTimer invalidate];
+        _hoverArmTimer = nil;
+        _hoverPendingIndex = -1;
+        _hoverIndex = -1;
+    }
 }
 
 - (BOOL)isFlipped { return YES; }
@@ -388,6 +407,9 @@ static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, dou
 }
 
 - (void)choose:(DayCell *)sender {
+    [_hoverArmTimer invalidate];
+    _hoverArmTimer = nil;
+    _hoverPendingIndex = -1;
     self.selectedIndex = sender.tag;
     if (self.onSelect) self.onSelect(sender.tag);
 }
@@ -587,10 +609,27 @@ static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, dou
 
 - (void)hoverAtPoint:(NSPoint)point {
     NSInteger index = [self dayIndexAtPoint:point];
-    if (index == _hoverIndex) return;
-    _hoverIndex = index;
-    if (self.onHover) self.onHover(index);
-    if (index >= 0) AnnouncePolite(self, [self accessibilityLabelForDay:index]);
+    _hoverPendingIndex = index;
+    if (_hoverIndex >= 0) {
+        if (index == _hoverIndex) return;
+        _hoverIndex = index;
+        if (self.onHover) self.onHover(index);
+        if (index >= 0) AnnouncePolite(self, [self accessibilityLabelForDay:index]);
+        return;
+    }
+    if (_hoverArmTimer || index < 0) return;
+    __weak DayStripView *weakSelf = self;
+    _hoverArmTimer = [NSTimer timerWithTimeInterval:.3 repeats:NO block:^(NSTimer *timer) {
+        DayStripView *strongSelf = weakSelf;
+        if (!strongSelf || strongSelf->_hoverArmTimer != timer) return;
+        strongSelf->_hoverArmTimer = nil;
+        NSInteger armed = strongSelf->_hoverPendingIndex;
+        if (armed < 0) return;
+        strongSelf->_hoverIndex = armed;
+        if (strongSelf.onHover) strongSelf.onHover(armed);
+        AnnouncePolite(strongSelf, [strongSelf accessibilityLabelForDay:armed]);
+    }];
+    [[NSRunLoop mainRunLoop] addTimer:_hoverArmTimer forMode:NSRunLoopCommonModes];
 }
 
 - (void)mouseMoved:(NSEvent *)event {
@@ -601,6 +640,9 @@ static void DrawTemperatureRange(NSRect track, BOOL hasWeek, double weekMin, dou
 
 - (void)mouseExited:(NSEvent *)event {
     (void)event;
+    [_hoverArmTimer invalidate];
+    _hoverArmTimer = nil;
+    _hoverPendingIndex = -1;
     if (_hoverIndex < 0) return;
     _hoverIndex = -1;
     if (self.onHover) self.onHover(-1);

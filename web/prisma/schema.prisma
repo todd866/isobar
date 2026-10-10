@@ -1,0 +1,349 @@
+// Isobar accounts: Auth.js (NextAuth v5) tables plus one small per-user store.
+// Migrations: prisma/migrations, applied with DATABASE_URL_UNPOOLED (see web/README.md).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime? @db.Timestamptz(3)
+  image         String?
+  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
+  // Linked accounts share blocks, suspensions and tiers. Null until chat sees them.
+  clusterId     String?
+  accounts      Account[]
+  sessions      Session[]
+  docs          UserDoc[]
+  chatThreads   ChatThread[]
+  chatStanding  ChatStanding?
+  usageEvents   UsageEvent[]
+  agentTokens   AgentToken[]
+  entitlement   Entitlement?
+  reportSubscriptions ReportSubscription[]
+
+  @@index([clusterId])
+}
+
+// Provider references only. Payment methods and invoice details stay at Stripe.
+model Entitlement {
+  userId                 String    @id
+  plan                   String?
+  status                 String    @default("none")
+  currentPeriodStart     DateTime? @db.Timestamptz(3)
+  currentPeriodEnd       DateTime? @db.Timestamptz(3)
+  billingAnchor          DateTime? @db.Timestamptz(3)
+  stripeCustomerId       String?   @unique
+  stripeSubscriptionId   String?   @unique
+  checkoutSessionId      String?
+  cancelAtPeriodEnd      Boolean   @default(false)
+  deleting               Boolean   @default(false)
+  updatedAt              DateTime  @updatedAt @db.Timestamptz(3)
+  user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, currentPeriodEnd])
+}
+
+// Receipt and entitlement commit atomically; no webhook body or billing PII.
+model BillingEvent {
+  id          String   @id
+  processedAt DateTime @default(now()) @db.Timestamptz(3)
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime @db.Timestamptz(3)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// The token is a 6-digit code (hashed with AUTH_SECRET), so two addresses can
+// hold the same hash: unique per (identifier, token), not per token.
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime @db.Timestamptz(3)
+
+  @@unique([identifier, token])
+  @@index([expires])
+}
+
+// One JSON document per user and kind ('settings' | 'training' | 'e6b').
+// rev increments on every write; a PUT names the rev it was based on.
+model UserDoc {
+  userId    String
+  kind      String
+  data      Json
+  rev       Int      @default(1)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, kind])
+}
+
+// Sign-in throttle. bucket is an HMAC of the email or IP (never the raw value).
+model AuthThrottle {
+  id     BigInt   @id @default(autoincrement())
+  bucket String
+  at     DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([bucket, at])
+  @@index([at])
+}
+
+// One thread per signed-in user, or per anonymous device. The slow lane writes
+// into the same thread; phase 2's daemon is the only writer of those replies.
+model ChatThread {
+  id         String        @id @default(cuid())
+  userId     String?
+  deviceHash String?
+  laptopBriefing Json?
+  createdAt  DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime      @updatedAt @db.Timestamptz(3)
+  user       User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages   ChatMessage[]
+
+  @@index([userId, updatedAt])
+  @@index([deviceHash])
+}
+
+model ChatMessage {
+  id               String   @id @default(cuid())
+  threadId         String
+  role             String // user | assistant | screen | grade
+  content          String   @db.Text
+  status           String   @default("complete") // pending | claimed | complete | held | failed | cancelled
+  lane             String   @default("fast") // fast | slow
+  context          Json?
+  model            String?
+  effort           String?
+  promptTokens     Int?
+  completionTokens Int?
+  latencyMs        Int?
+  costUsd          Float?
+  grade            String? // interesting | ordinary | off-purpose | abusive
+  gradeReason      String?
+  failureReason    String?
+  toolCalls        Json?
+  example          Boolean  @default(false)
+  leaseId          String?
+  leaseUntil       DateTime? @db.Timestamptz(3)
+  agentTokenId     String?
+  claimedBy        String?
+  toolsUsed        String[] @default([])
+  images           Json?
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+  deliveredAt      DateTime? @db.Timestamptz(3)
+  thread           ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  agentToken       AgentToken? @relation(fields: [agentTokenId], references: [id], onDelete: SetNull)
+
+  @@index([threadId, createdAt])
+  @@index([status, lane])
+  @@index([status, createdAt])
+  @@index([createdAt])
+  @@index([example, createdAt])
+  @@index([agentTokenId])
+  @@index([status, leaseUntil])
+  @@index([lane, deliveredAt])
+}
+
+// Bearer secrets are printed once; only an AUTH_SECRET HMAC is retained.
+model AgentToken {
+  id         String   @id @default(cuid())
+  userId     String
+  hashedToken String  @unique
+  label      String
+  scope      String   @default("user") // owner | user (database CHECK)
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  lastUsedAt DateTime? @db.Timestamptz(3)
+  revokedAt  DateTime? @db.Timestamptz(3)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages   ChatMessage[]
+  heartbeats AgentHeartbeat[]
+
+  @@index([userId])
+}
+
+model AgentHeartbeat {
+  id        String   @id @default(cuid())
+  host      String
+  tokenId   String
+  role      String
+  runtime   String
+  version   String
+  lastSeen  DateTime @default(now()) @db.Timestamptz(3)
+  token     AgentToken @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+
+  @@unique([host, tokenId])
+  @@index([lastSeen])
+  @@index([tokenId])
+}
+
+model AiAccessBlock {
+  id        String   @id @default(cuid())
+  scope     String
+  until     DateTime @db.Timestamptz(3)
+  reason    String
+  source    String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  liftedAt  DateTime? @db.Timestamptz(3)
+  @@index([scope, liftedAt, until])
+  @@index([liftedAt, until])
+}
+
+// The tier the next message will use. pinnedTier wins over the grade ladder.
+model ChatStanding {
+  userId     String   @id
+  tier       String   @default("opus") // opus | sonnet | haiku | off
+  pinnedTier String?
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Signed-out messages per UTC day. deviceHash is a device key or an IP key.
+model AnonChatQuota {
+  deviceHash String
+  day        String
+  count      Int    @default(0)
+
+  @@id([deviceHash, day])
+}
+
+// Blocks and suspensions apply to the whole linked cluster.
+model ChatCluster {
+  id         String   @id
+  suspended  Boolean  @default(false)
+  blockDay   String?
+  blockCount Int      @default(0)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+}
+
+// device, ip, or normalised email → cluster. Email is the plus-stripped address.
+model ChatLink {
+  id        String   @id @default(cuid())
+  clusterId String
+  kind      String
+  hash      String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([kind, hash])
+  @@index([clusterId])
+}
+
+// One row per owner notice, e.g. ceiling-2026-10, so the ceiling email sends once.
+model ChatNotice {
+  id     String   @id
+  sentAt DateTime @default(now()) @db.Timestamptz(3)
+}
+
+// Map, chat and Train use. Signed-out rows keep a device id and a null user.
+// Account deletion sets userId null; it does not remove the event.
+model UsageEvent {
+  id       String   @id @default(cuid())
+  userId   String?
+  deviceId String
+  at       DateTime @db.Timestamptz(3)
+  kind     String
+  payload  Json
+  user     User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([at])
+  @@index([userId, at])
+  @@index([deviceId, at])
+}
+
+model ReportSubscription {
+  id String @id @default(cuid())
+  userId String
+  kind String @default("recurring")
+  schedule String?
+  timezone String
+  places Json
+  instructions String @db.Text
+  tier String @default("free")
+  complexity String @default("simple")
+  status String @default("active")
+  nextRunAt DateTime? @db.Timestamptz(3)
+  autoApprove Boolean @default(false)
+  tokenVersion Int @default(1)
+  threadId String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  runs ReportRun[]
+  @@index([status, nextRunAt])
+  @@index([userId, status])
+}
+
+model ReportRun {
+  id String @id @default(cuid())
+  subscriptionId String
+  dueAt DateTime @db.Timestamptz(3)
+  status String @default("queued")
+  html String? @db.Text
+  text String? @db.Text
+  ownerNotifiedAt DateTime? @db.Timestamptz(3)
+  sendAfterAt DateTime? @db.Timestamptz(3)
+  sentAt DateTime? @db.Timestamptz(3)
+  failureReason String?
+  leaseId String?
+  leaseUntil DateTime? @db.Timestamptz(3)
+  claimedBy String?
+  agentTokenId String?
+  generationAttempts Int @default(0)
+  sendAttempts Int @default(0)
+  retryAt DateTime? @db.Timestamptz(3)
+  // Stable recipient and provider key on retry after an ambiguous network result.
+  deliveryPayload Json?
+  deliveryEmail String?
+  dispatchAt DateTime? @db.Timestamptz(3)
+  providerId String?
+  messageId String @unique
+  inReplyTo String?
+  failureNotifiedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  subscription ReportSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  @@unique([subscriptionId, dueAt])
+  @@index([status, dueAt])
+  @@index([status, leaseUntil])
+  @@index([sentAt])
+  @@index([dispatchAt])
+}
+
+// Trusted ingress event IDs deduplicate webhook retries before model calls.
+model ReportInbound {
+  id String @id
+  userId String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  status String @default("accepted")
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}

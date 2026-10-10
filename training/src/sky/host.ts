@@ -13,36 +13,18 @@
  * After each new picture, window.skyState holds what was drawn and the app is
  * told through the `sky` message handler.
  */
-import { profileAt, skyState, type ProfileSeries, type SkyState } from './physics.ts';
+import { prepareCloudSprites } from './painted.ts';
+import type { SkyState } from './physics.ts';
+import { sceneForFeed, type SkyFeed } from './feed.ts';
+export type { SkyFeed } from './feed.ts';
 import { SkyAnimator, stateKey, yForFt, type SkyOptions } from './render.ts';
-import { reportAt, type SkyAirport } from './scene.ts';
-
-/**
- * One point's feed: any place, not only an aerodrome. The profile is the
- * pressure-level series (ECMWF upper air today; any per-point source later);
- * the report (METAR/TAF) is optional and only an aerodrome has one.
- */
-export interface SkyFeed {
-  lat: number;
-  lon: number;
-  /** Shown on the ground line and used as the picture's seed, e.g. "YPPH". */
-  name: string;
-  /** Ground elevation, ft AMSL (AIP for an aerodrome). */
-  elevationFt: number;
-  /** Signed distance to the coast along the W–E section, km; null inland or unknown. */
-  coastKm: number | null;
-  profile: ProfileSeries | null;
-  report: { metar: SkyAirport['metar']; taf: SkyAirport['taf'] } | null;
-  nowMs: number;
-  timeMs?: number;
-}
 
 export interface SkySummary {
   icao: string;
   timeMs: number;
   source: SkyState['source'];
   hasProfile: boolean;
-  elevationFt: number;
+  elevationFt: number | null;
   freezingFt: number | null;
   notes: string[];
   width: number;
@@ -87,26 +69,15 @@ function render() {
   const width = Math.max(1, Math.round(window.innerWidth));
   const height = Math.max(1, Math.round(window.innerHeight));
   const t = Number.isFinite(timeMs) ? timeMs : feed.nowMs;
-  const report = feed.report
-    ? reportAt({ icao: feed.name, lat: feed.lat, lon: feed.lon, metar: feed.report.metar, taf: feed.report.taf }, t, feed.nowMs)
-    : { source: 'none' as const, groups: [] };
-  const state = skyState({
-    icao: feed.name,
-    elevationFt: feed.elevationFt,
-    lat: feed.lat,
-    lon: feed.lon,
-    timeMs: t,
-    source: report.source,
-    groups: report.groups,
-    profile: profileAt(feed.profile, t),
-  });
+  const { state, groundKnown } = sceneForFeed(feed, t);
   const options: SkyOptions = {
     width,
     height,
     dpr: Math.min(3, window.devicePixelRatio || 1),
     dark,
     seed: `${feed.name}|${feed.profile?.run ?? ''}`,
-    coastKm: feed.coastKm,
+    coastKm: groundKnown ? feed.coastKm : null,
+    groundKnown,
     compact: height < 80,
   };
   animator.show(state, options);
@@ -121,7 +92,7 @@ function render() {
     timeMs: state.timeMs,
     source: state.source,
     hasProfile: state.hasProfile,
-    elevationFt: state.elevationFt,
+    elevationFt: groundKnown ? state.elevationFt : null,
     freezingFt: state.freezingFt,
     notes: state.notes,
     width,
@@ -172,5 +143,7 @@ window.isobarSky = {
 };
 applyTheme();
 new ResizeObserver(() => { shownKey = ''; schedule(); }).observe(document.body);
-window.__SKY_READY = true;
-window.webkit?.messageHandlers?.sky?.postMessage({ ready: true });
+void prepareCloudSprites().catch(() => { /* The renderer retains reported bases if art is unavailable. */ }).then(() => {
+  window.__SKY_READY = true;
+  window.webkit?.messageHandlers?.sky?.postMessage({ ready: true });
+});

@@ -1,0 +1,42 @@
+.panel { --below: #986000; --inside: #14763b; --above: #bd2828; }
+:global(.dark) .panel { --below: #fbbf24; --inside: #65df94; --above: #ff8c8c; }
+.phone { transition: height 200ms ease-out, top 200ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .phone { transition: none; } }
+.grabber { position: relative; display: flex; align-items: flex-start; justify-content: center; height: 8px; min-height: 0; width: 100%; flex: 0 0 8px; padding: 2px 0 0; border: 0; border-radius: 0; background: transparent; line-height: 0; cursor: ns-resize; touch-action: none; }
+.grabber span { width: 36px; height: 4px; border-radius: 999px; background: var(--md-outline); }
+.heading { display: flex; align-items: center; min-height: 44px; padding-left: 10px; gap: 8px; flex-shrink: 0; }
+.identity { display: flex; flex-direction: column; justify-content: center; min-width: 0; flex: 1; }
+.heading strong { font-size: .875rem; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.coords { color: var(--md-on-surface-variant); font-size: 11px; line-height: 14px; font-variant-numeric: tabular-nums; }
+.mark { position: relative; display: grid; }
+.heading .markButton { width: 32px; height: 44px; flex: 0 0 32px; font-size: 1rem; }
+.heading button { width: 40px; height: 44px; flex: 0 0 40px; font-size: 1.5rem; cursor: pointer; }
+.heading button:hover, .best button:hover { background: var(--md-surface-container-high); }
+.band { display: flex; align-items: center; gap: 3px; font-size: .8125rem; white-space: nowrap; }
+.band input { width: 3.25em; min-height: 32px; background: var(--md-surface-container-high); border: 1px solid var(--md-outline-soft); border-radius: 4px; text-align: center; font: inherit; font-variant-numeric: tabular-nums; }
+.best { display: flex; align-items: center; justify-content: space-between; min-height: 22px; padding: 0 10px; font-size: .8125rem; line-height: 22px; border-bottom: 1px solid var(--md-outline-soft); flex-shrink: 0; }
+.best button { width: 36px; height: 22px; font-size: 1.25rem; cursor: pointer; }
+.scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 0 8px; }
+.kite, .surf { width: 100%; font-size: .8125rem; font-variant-numeric: tabular-nums; }
+.row, .columns { display: grid; align-items: center; gap: 5px; white-space: nowrap; }
+.kite .row, .kite .columns { grid-template-columns: minmax(6.6em, max-content) minmax(0, 1fr) 6.2em; min-width: 0; }
+.surf { font-size: .75rem; }
+.surf .row, .surf .columns { grid-template-columns: minmax(6.4em, max-content) 2.5em minmax(4.6em, 1fr) minmax(5.2em, 6.2em) 2.4em; min-width: 0; }
+.surf[data-secondary="true"] .row, .surf[data-secondary="true"] .columns { grid-template-columns: minmax(6.2em, max-content) 2.2em minmax(4.2em, 1fr) minmax(4.2em, 1fr) minmax(4.8em, 5.6em) 2.2em; min-width: 0; gap: 3px; }
+.row { min-height: 26px; border-bottom: 1px solid var(--md-outline-soft); }
+.columns { min-height: 20px; color: var(--md-on-surface-variant); position: sticky; top: 0; z-index: 1; background: var(--md-surface); }
+.row > span, .columns > span { text-align: right; }
+.columns > span:first-child, .row time { text-align: left; }
+.row time { color: var(--md-on-surface-variant); }
+.wind, .swell { display: flex; justify-content: flex-end; align-items: center; gap: 3px; }
+.arrow { width: 17px; height: 17px; flex: 0 0 17px; }
+.surfWind { display: flex; align-items: center; justify-content: flex-end; gap: 3px; }
+.surfWind [data-shore] { font-size: .6875rem; }
+.panel [data-band="below"] { color: var(--below); }
+.panel [data-band="inside"], .clean { color: var(--inside); }
+.panel [data-band="above"], .hazard { color: var(--above); }
+.status { margin: 0; padding: 8px 10px; font-size: .8125rem; color: var(--md-on-surface-variant); }
+
+.heading .info { font-size: 1rem; width: 28px; flex-basis: 28px; }
+.sources { position: absolute; z-index: 5; top: 50px; right: 8px; left: 8px; padding: 10px; background: var(--md-surface-container-high); border: 1px solid var(--md-outline-soft); border-radius: 6px; box-shadow: 0 3px 12px #0003; font-size: .8125rem; }
+.sources a { text-decoration: underline; }

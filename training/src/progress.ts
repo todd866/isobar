@@ -1,4 +1,7 @@
+import type { SkillBook } from './adaptive.ts';
 import type { CardMemory } from './scheduler.ts';
+import type { E6BRecord } from './instruments/e6b/skills.ts';
+import type { LearnRecord } from './learn-profile.ts';
 import { emptyMemory, reviewCard, startOfStudyDay } from './scheduler.ts';
 
 export interface ProgressFlag {
@@ -12,6 +15,12 @@ export interface ProgressFile {
   cards: Record<string, CardMemory>;
   streak: { count: number; lastDay: string | null };
   flags?: ProgressFlag[];
+  /** E6-B skill memory (scheduler cards e6b:<skill>), stages, personal bests and the daily-set streak. */
+  e6b?: E6BRecord;
+  /** Part-task skill state from the adaptive follow-ups (src/adaptive.ts). */
+  skills?: SkillBook;
+  /** Learn picker, priors and the ability estimate. Absent on the ATPL bank. */
+  learn?: LearnRecord;
 }
 
 export function emptyProgress(): ProgressFile {

@@ -52,7 +52,42 @@ int main(void) { @autoreleasepool {
     NSDictionary *missing=TrafficSnapshot(Payload(now,@[Aircraft(@{@"gs":NSNull.null,@"track":@-1,@"flight":@"@@@@@@"})]),now,-31.94,115.967)[@"aircraft"][0];
     Check(!missing[@"groundSpeedKt"] && !missing[@"trackDegrees"],@"missing speed and direction stay unknown");
     Check([missing[@"callsign"] isEqual:@"VH-TEST"],@"placeholder callsign falls back to registration");
+    NSDictionary *vertical=TrafficSnapshot(Payload(now,@[Aircraft(@{@"baro_rate":@650,@"squawk":@"1200"})]),now,-31.94,115.967)[@"aircraft"][0];
+    Check([vertical[@"verticalRateFpm"] doubleValue]==650 && [vertical[@"verticalTrend"] isEqual:@"climb"] && [vertical[@"squawk"] isEqual:@"1200"],@"vertical trend and squawk are retained");
+    NSDictionary *level=TrafficSnapshot(Payload(now,@[Aircraft(@{@"baro_rate":@50})]),now,-31.94,115.967)[@"aircraft"][0];
+    Check([level[@"verticalTrend"] isEqual:@"level"],@"small vertical rates are level");
     Check(TrafficSnapshot(@{},now,-31.94,115.967)==nil && TrafficSnapshot(Payload(now,@[]),now,NAN,115.967)==nil,@"invalid schema and location rejected");
+
+    TrafficTrackSession *tracks=[[TrafficTrackSession alloc] initWithMaximumPointsPerAircraft:3];
+    NSDictionary *(^Report)(NSDate *,NSString *,double,double,double)=^NSDictionary *(NSDate *date,NSString *hex,double lat,double lon,double alt) {
+        return @{ @"time":date, @"aircraft":@[@{@"hex":hex, @"latitude":@(lat), @"longitude":@(lon), @"pressureAltitudeFt":@(alt), @"positionTime":date}] };
+    };
+    [tracks mergeSnapshot:Report(now,@"abc",-31.9,115.9,10000)];
+    [tracks mergeSnapshot:Report([now dateByAddingTimeInterval:20],@"abc",-31.8,116.0,12000)];
+    [tracks mergeSnapshot:Report([now dateByAddingTimeInterval:10],@"abc",-31.85,115.95,11000)];
+    [tracks mergeSnapshot:Report([now dateByAddingTimeInterval:30],@"abc",-31.7,116.1,13000)];
+    [tracks mergeSnapshot:Report([now dateByAddingTimeInterval:5],@"abc",-31.9,115.9,9000)];
+    Check([[[tracks aircraftForHex:@"abc"] objectForKey:@"positionTime"] isEqual:[now dateByAddingTimeInterval:30]],@"out of order report does not regress selected metadata");
+    NSArray *path=[tracks trackForHex:@"abc"];
+    Check(path.count==3 && [path[0][@"pressureAltitudeFt"] doubleValue]==11000 && [path[2][@"pressureAltitudeFt"] doubleValue]==13000,@"track merge orders points, preserves altitude and bounds history");
+    NSArray *sampled=[tracks aircraftAtDate:[now dateByAddingTimeInterval:15]];
+    Check(sampled.count==1 && [sampled[0][@"latitude"] doubleValue] < -31.8 && [sampled[0][@"pressureAltitudeFt"] doubleValue]==11500,@"historical sample interpolates position and pressure altitude");
+    Check(!sampled[0][@"groundSpeedKt"] && !sampled[0][@"squawk"] && sampled[0][@"trackDegrees"],@"historical sample does not leak current fields and derives heading");
+    Check([tracks aircraftAtDate:[now dateByAddingTimeInterval:-120]].count==0 && [tracks aircraftAtDate:[now dateByAddingTimeInterval:31]].count==0,@"historical sample has no unseen past or future");
+    TrafficTrackSession *dateline=[TrafficTrackSession new];
+    [dateline mergeSnapshot:Report(now,@"dateline",0,179.8,10000)];
+    [dateline mergeSnapshot:Report([now dateByAddingTimeInterval:60],@"dateline",0,-179.8,12000)];
+    NSDictionary *crossing=[dateline aircraftAtDate:[now dateByAddingTimeInterval:30]].firstObject;
+    Check(fabs([crossing[@"longitude"] doubleValue])>179.9 && [crossing[@"trackDegrees"] doubleValue]>80 && [crossing[@"trackDegrees"] doubleValue]<100,@"historical interpolation takes the short dateline path");
+    Check([tracks toggleSelectionForHex:@"abc"] && ![tracks toggleSelectionForHex:@"abc"] && tracks.selectedHexes.count==0,@"selection toggles off on second tap");
+    NSMutableArray *selected=[NSMutableArray array];
+    for (NSUInteger i=0;i<8;i++) { NSString *hex=[NSString stringWithFormat:@"%02lu",(unsigned long)i]; Check([tracks toggleSelectionForHex:hex],@"selection admits up to eight aircraft"); [selected addObject:hex]; }
+    Check(![tracks toggleSelectionForHex:@"overflow"] && tracks.selectedHexes.count==8,@"ninth selection is bounded");
+    NSMutableSet *colourSet=[NSMutableSet set]; for (NSString *hex in selected) [colourSet addObject:@([tracks colourIndexForHex:hex])];
+    Check(colourSet.count==8,@"selected aircraft receive distinct stable colours");
+    NSInteger retainedColour=[tracks colourIndexForHex:@"03"];
+    Check([tracks removeSelectionForHex:@"03"] && [tracks colourIndexForHex:@"03"]==retainedColour,@"remove is undoable and colour assignment remains stable");
+    [tracks clearSelections]; Check(tracks.selectedHexes.count==0,@"Escape clear operation has an explicit model helper");
 
     NSURLSessionConfiguration *configuration=NSURLSessionConfiguration.ephemeralSessionConfiguration;
     configuration.protocolClasses=@[TrafficProtocol.class];

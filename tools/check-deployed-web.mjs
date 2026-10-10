@@ -53,7 +53,7 @@ try {
       catch (error) { target.checks.push({ id, status: 'fail', detail: error.message }); }
     };
     for (const theme of ['light', 'dark']) {
-      const context = await browser.newContext({ colorScheme: theme, viewport: { width: 1280, height: 720 } });
+      const context = await browser.newContext({ colorScheme: theme, viewport: { width: 1280, height: 720 }, extraHTTPHeaders: { 'isobar-test': '1' } });
       try {
         await context.addInitScript((mode) => localStorage.setItem('isobar-theme', mode), theme);
         const page = await context.newPage();

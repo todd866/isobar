@@ -17,7 +17,7 @@ SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
     Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Sources/notices.m \
     Sources/notacconnection.m Sources/surfview.m Sources/motion.m Sources/rawmovie.m Sources/scrub.m Sources/mapdetail.m \
     Sources/collector.m Sources/archive.m Sources/ownchart.m Sources/daystrip.m Sources/fullscreenwindow.m Sources/playback.m \
-    Sources/storereload.m Sources/mapcamera.m Sources/gpumapview.m Sources/hazard.m Sources/fieldrender.m \
+    Sources/storereload.m Sources/mapcamera.m Sources/gpumapview.m Sources/windmapview.m Sources/atmospheremapview.m   Sources/trafficroute.m Sources/hazard.m Sources/fieldrender.m \
     Sources/trainingdata.m Sources/trainingwindow.m tools/own-chart.m tools/check-journeys.m \
     -framework Cocoa -framework WebKit -framework Security -framework ServiceManagement -framework CoreLocation \
     -framework Vision -framework CoreVideo -framework CoreMedia -framework AVFoundation -framework QuartzCore \

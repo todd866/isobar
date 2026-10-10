@@ -1,0 +1,48 @@
+.panel { display: flex; flex-direction: column; min-height: 0; color: var(--md-on-surface); background: var(--md-surface); }
+.side { position: absolute; z-index: 32; inset: 0 0 0 auto; width: clamp(328px, 48%, 400px); border-left: 1px solid var(--md-outline-soft); }
+.sheet { position: fixed; z-index: 32; overflow: hidden; border-radius: 14px 14px 0 0; border-top: 1px solid var(--md-outline-soft); box-shadow: 0 -6px 18px rgb(0 0 0 / .12); }
+.bar { display: flex; align-items: center; gap: 8px; min-height: 44px; padding-left: 12px; flex-shrink: 0; }
+.chips { display: flex; flex: 1; min-width: 0; gap: 6px; overflow: hidden; white-space: nowrap; font-size: 13px; font-variant-numeric: tabular-nums; }
+.chips span { flex: 0 0 auto; color: var(--md-on-surface); }
+.chips span + span::before { content: "·"; margin-right: 6px; color: var(--md-outline); }
+.close { width: 44px; min-height: 44px; line-height: 1; flex-shrink: 0; font-size: 1.5rem; border-radius: 6px; cursor: pointer; }
+.close:hover { background: var(--md-surface-container-high); }
+.earlier { flex-shrink: 0; min-height: 44px; padding: 0 8px; border-radius: 6px; font-size: 13px; color: var(--md-primary); cursor: pointer; }
+.earlier:hover, .earlier[aria-expanded="true"] { background: var(--md-surface-container-high); }
+.log { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 4px 12px 8px; display: flex; flex-direction: column; gap: 10px; }
+.user { overflow-wrap: anywhere; font-size: 15px; line-height: 1.35; color: var(--md-on-surface-variant); }
+.reply { overflow-wrap: anywhere; font-size: 16px; line-height: 1.4; white-space: pre-wrap; }
+.chip { margin-right: 6px; font-size: 12px; font-weight: 650; color: var(--md-primary); }
+.link { color: var(--md-primary); font-weight: 650; text-decoration: underline; text-underline-offset: 2px; }
+.archive { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; color: var(--md-on-surface-variant); }
+.archiveText { margin-left: 6px; }
+.actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 4px; white-space: normal; }
+.feedback { font-size: 13px; color: var(--md-on-surface-variant); }
+.deeper { display: inline-block; min-height: 36px; padding: 4px 2px; color: var(--md-primary); font-size: 12px; font-weight: 650; }
+.deeper:disabled { opacity: .55; }
+/* Anchored inside the map panel so it never covers the floating Ask button
+ * (phone) or the lens-row controls (desktop). On a phone it stacks just above
+ * the chat float, following the same exposed-map offset. */
+.notice { position: absolute; right: 10px; bottom: 56px; z-index: 40; padding: 8px 12px; border: 1px solid var(--md-outline-soft); border-radius: 999px; background: var(--md-surface); color: var(--md-primary); box-shadow: 0 3px 12px rgb(0 0 0 / .18); font-size: 13px; font-weight: 650; }
+@media (max-width: 767px) {
+  .notice { right: var(--map-chat-right, 10px); bottom: max(80px, calc(100% - var(--map-exposed-height, 100%) + 72px)); }
+}
+.image { display: block; max-width: 100%; max-height: 220px; margin-top: 8px; border-radius: 6px; object-fit: contain; }
+.line { font-size: 15px; color: var(--md-on-surface-variant); }
+.form { display: flex; gap: 8px; align-items: center; padding: 8px; flex-shrink: 0; }
+.form input { flex: 1; min-width: 0; min-height: 36px; border-radius: 6px; border: 1px solid var(--md-outline-soft); background: var(--md-surface-container-lowest); padding: 6px 10px; line-height: 1.25; font-size: 16px; color: inherit; }
+.form button { min-height: 36px; padding: 6px 12px; line-height: 1.25; border-radius: 6px; background: #2f7de1; color: #fff; font-weight: 650; font-size: 14px; }
+.form button:disabled { opacity: .5; }
+/* A phone opens at the input chrome. Lines of conversation add their height; the log shrinks and scrolls once the sheet hits its cap, so the field stays on screen. */
+.sheet[data-chat-empty="true"] .log { display: none; }
+.sheet .log { flex: 0 1 auto; min-height: 0; overflow: auto; }
+.sheet [data-usage-notice] { flex-shrink: 0; }
+.sheet .bar { min-height: 44px; }
+.sheet .close { width: 44px; min-height: 44px; height: 44px; }
+.sheet .form { padding: 4px 8px; }
+
+.status { display: flex; align-items: center; gap: 7px; min-height: 24px; font-size: 14px; line-height: 1.4; white-space: normal; color: var(--md-on-surface-variant); }
+.activity { flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: chat-activity 1.4s ease-in-out infinite; }
+.caveat { margin-top: 6px; font-size: 14px; line-height: 1.4; color: var(--md-on-surface-variant); }
+@keyframes chat-activity { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .activity { animation: none; } }

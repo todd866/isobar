@@ -42,7 +42,15 @@ export function keyIntent(input: {
   return { type: 'ignore' };
 }
 
-export function shortcutRows(phase: 'ask' | 'revealed'): { keys: string; label: string }[] {
+export function shortcutRows(phase: 'ask' | 'revealed', kind: 'mcq' | 'later' | 'numeric' = 'mcq'): { keys: string; label: string }[] {
+  if (phase === 'ask' && kind === 'numeric') {
+    return [
+      { keys: 'Enter', label: 'Submit' },
+      { keys: 'Space', label: 'Show answer' },
+      { keys: 'F', label: 'Flag this item' },
+      { keys: '?', label: 'Shortcuts' },
+    ];
+  }
   if (phase === 'ask') {
     return [
       { keys: '1–4', label: 'Choose an answer' },

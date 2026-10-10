@@ -1,0 +1,18 @@
+.flow-study { width: min(1440px, 100%); margin: 0 auto; padding: 1.25rem 1.5rem 1.75rem; box-sizing: border-box; }
+.flow-study-controls { display: flex; align-items: center; gap: 1.125rem; min-height: 2.375rem; border-bottom: 1px solid var(--md-outline-soft); color: var(--md-on-surface-variant); font-size: .75rem; }
+.flow-study-kicker { margin-right: auto; color: var(--md-primary); font-weight: 700; letter-spacing: .1em; }
+.flow-study-controls label { display: inline-flex; align-items: center; gap: .375rem; white-space: nowrap; }
+.flow-study-toggle input { accent-color: var(--md-primary); }
+.flow-study-legend { display: inline-flex; align-items: center; gap: 1rem; color: var(--md-on-surface-variant); font-size: .75rem; font-variant-numeric: tabular-nums; }
+.flow-study-legend span:first-child { color: var(--md-primary); font-weight: 700; }
+.flow-study-legend .legend-down { color: var(--md-tertiary); font-weight: 700; }
+.flow-study-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .875rem; padding-top: 1rem; }
+.flow-study-card { min-width: 0; overflow: hidden; border: 1px solid var(--md-outline-soft); border-radius: .5625rem; background: var(--md-surface-container-lowest); box-shadow: var(--md-shadow-1); }
+.flow-study-card-head { display: flex; align-items: baseline; padding: .5625rem .75rem .4375rem; border-bottom: 1px solid var(--md-outline-soft); }
+.flow-study-card-head h2 { margin: 0; color: var(--md-on-surface); font-size: .875rem; font-weight: 700; }
+.flow-study-canvas { display: block; width: 100%; height: clamp(13.125rem, 31vw, 22.5rem); }
+@media (max-width: 820px) { .flow-study { padding: .875rem .875rem 1.25rem; } .flow-study-grid { grid-template-columns: 1fr; } .flow-study-canvas { height: 13.125rem; } }
+@media (max-width: 560px) { .flow-study-controls { flex-wrap: wrap; gap: .5rem .875rem; padding: .375rem 0; } .flow-study-kicker { flex-basis: 100%; } .flow-study-legend { gap: .5rem .75rem; } }
+@media (prefers-reduced-motion: reduce) { .flow-study-canvas { animation: none; } }
+.flow-study-heading { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:.5rem 1rem; min-height:3.5rem; border-bottom:1px solid var(--md-outline-soft); }
+.flow-study-heading h1 { margin:0; font-size:1rem; font-weight:600; }

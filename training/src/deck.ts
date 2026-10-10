@@ -5,6 +5,7 @@
  * recalled exam item.
  */
 import { liveCards } from './live.ts';
+import { drillCards } from './skills/index.ts';
 import type { Snapshot } from './snapshot.ts';
 import type { Card, Citation } from './model.ts';
 
@@ -13,6 +14,24 @@ const bom = (section: string): Citation => ({ sourceId: 'bom-aviation', section 
 const mos91 = (section: string): Citation => ({ sourceId: 'casa-91-mos', section });
 const mos121 = (section: string): Citation => ({ sourceId: 'casa-121', section });
 const book727 = (section: string): Citation => ({ sourceId: 'casa-727', section });
+
+/** Stable per-card option order. Authors write the key first; serving it first everywhere is a
+ * position tell (md3: "the most aggressive option is the key"). A hash of the card id picks the
+ * key's slot, so the order is the same every time the card is seen but spread across the bank. */
+function placeOptions(id: string, options: string[], correct: number): { options: Card['options']; correctId: string } {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i += 1) { h ^= id.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  const order = options.map((_, index) => index);
+  for (let i = order.length - 1; i > 0; i -= 1) {
+    h = Math.imul(h ^ (h >>> 15), 2246822507) >>> 0;
+    const j = h % (i + 1);
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return {
+    options: order.map((source, slot) => ({ id: String(slot + 1), text: options[source] })),
+    correctId: String(order.indexOf(correct) + 1),
+  };
+}
 
 function mcq(
   id: string,
@@ -33,8 +52,7 @@ function mcq(
     kind: 'mcq',
     planStep,
     stem,
-    options: options.map((text, index) => ({ id: String(index + 1), text })),
-    correctId: String(correct + 1),
+    ...placeOptions(id, options, correct),
     explanation,
     citations,
     complexity,
@@ -910,6 +928,8 @@ export const laterCard: Card = {
 
 export const fuelPlanCardId = 'fp.fuel.list';
 
+export { learnCards, anchorCard, cardsForLevel, cueFromSnapshot } from './learn-cards.ts';
+
 export function library(snapshot: Snapshot | null): Card[] {
-  return [...staticCards, laterCard, ...liveCards(snapshot)];
+  return [...staticCards, laterCard, ...drillCards(), ...liveCards(snapshot)];
 }

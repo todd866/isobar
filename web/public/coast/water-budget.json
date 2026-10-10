@@ -1,0 +1,21 @@
+{
+  "lakes": {
+    "bytes": 1748972,
+    "rings": 3460,
+    "points": 215160,
+    "source": "Natural Earth 1:10m lakes, lakes_europe, lakes_north_america (public domain)"
+  },
+  "rivers": {
+    "bytes": 730404,
+    "lines": 1961,
+    "points": 89338,
+    "source": "Natural Earth 1:10m rivers_lake_centerlines (public domain), lake centerlines omitted"
+  },
+  "closeTiles": {
+    "source": "OpenFreeMap OpenMapTiles water polygons (OpenStreetMap, ODbL)",
+    "cacheTiles": 32,
+    "coordBudgetPerTile": 65536,
+    "cacheBytes": 2097152,
+    "maxTilesPerView": 24
+  }
+}

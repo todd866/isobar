@@ -65,6 +65,12 @@ static void WriteScreenshot(NSBitmapImageRep *bitmap, NSString *name) {
 - (BOOL)isVisible { return _fakeVisible; }
 - (NSWindowOcclusionState)occlusionState { return _fakeOcclusionState; }
 @end
+// Model an opaque WKWebView without starting WebKit in the unit test.
+@interface OpaqueSkyFixture : NSView
+@end
+@implementation OpaqueSkyFixture
+- (void)drawRect:(NSRect)rect { (void)rect; [[NSColor colorWithSRGBRed:.7 green:.8 blue:.9 alpha:1] setFill]; NSRectFill(self.bounds); }
+@end
 static NSEvent *MouseEvent(NSEventType type, NSPoint point, NSWindow *window) {
     return [NSEvent mouseEventWithType:type location:point modifierFlags:0 timestamp:0 windowNumber:window.windowNumber context:nil eventNumber:0 clickCount:1 pressure:1];
 }
@@ -196,10 +202,55 @@ int main(void) { @autoreleasepool {
     NSRect liveRect=[view.liveAircraftRects[0] rectValue];
     Move(view,window,NSMakePoint(0,0)); Move(view,window,NSMakePoint(NSMidX(liveRect),NSMidY(liveRect)));
     Check([view.hoverCardSummary containsString:@"TEST123"] && [view.hoverCardSummary containsString:@"Pressure altitude 12000 ft"] && [view.hoverCardSummary containsString:@"180 kt"],@"live card identifies aircraft, pressure altitude and knots");
+    [view mouseDown:MouseEvent(NSEventTypeLeftMouseDown,[view convertPoint:NSMakePoint(NSMidX(liveRect),NSMidY(liveRect)) toView:nil],window)];
+    Check(view.selectedTrafficHexes.count==1 && [view.selectedTrafficHexes.firstObject isEqual:@"7c1234"],@"clicking a live aircraft starts a tracked selection");
+    NSStackView *chipStack=[view valueForKey:@"trafficChipStack"];
+    Check(chipStack.arrangedSubviews.count==1, @"selected aircraft gets an accessible remove chip");
+    [(NSButton *)chipStack.arrangedSubviews.firstObject performClick:nil];
+    Check(view.selectedTrafficHexes.count==0, @"chip close removes the selected aircraft");
+    [view mouseDown:MouseEvent(NSEventTypeLeftMouseDown,[view convertPoint:NSMakePoint(NSMidX(liveRect),NSMidY(liveRect)) toView:nil],window)];
+    NSDictionary *laterTraffic=TrafficSnapshot(@{@"now":@(NSDate.date.timeIntervalSince1970*1000),@"ac":@[
+        @{ @"hex":@"7c1234", @"flight":@"TEST123", @"t":@"BE20", @"lat":@-31.98, @"lon":@116.04, @"alt_baro":@13000, @"gs":@180, @"seen_pos":@1}]},NSDate.date,-32,116);
+    view.trafficSnapshot=laterTraffic;
+    NSArray *track=[view valueForKeyPath:@"trafficTracks.tracks.7c1234"];
+    Check(track.count>=2, @"selected aircraft accumulates a second live position");
+    WriteScreenshot(BitmapForView(view,900,620),@"selected-traffic");
+    [window.contentView addSubview:view];
+    [view keyDown:[NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint modifierFlags:0 timestamp:0 windowNumber:window.windowNumber context:nil characters:@"\e" charactersIgnoringModifiers:@"\e" isARepeat:NO keyCode:53]];
+    Check(view.selectedTrafficHexes.count==0, @"Escape clears all tracked aircraft selections");
     WriteScreenshot(BitmapForView(view,900,620),@"live-card");
     [window.contentView addSubview:view];
     [view inspectDate:[view.now dateByAddingTimeInterval:3600]];
     Check(view.liveAircraft.count==0 && view.hoverCardSummary==nil,@"future scrub never presents live positions as forecast aircraft");
+    view.trafficEnabled=YES;
+    NSView *skySection=[[OpaqueSkyFixture alloc] initWithFrame:NSZeroRect];
+    view.sectionView=skySection;
+    Check(view.trafficEnabled,@"installing sky section preserves airborne toggle state");
+    Check(![[view valueForKey:@"trafficButton"] isHidden],@"airborne control remains visible with sky section");
+    NSView *trafficOverlay=[view valueForKey:@"trafficOverlay"];
+    Check(trafficOverlay && NSContainsRect(view.bounds,trafficOverlay.frame) && ![trafficOverlay hitTest:NSMakePoint(100,100)],@"sky traffic overlay covers the view without intercepting hit testing");
+    NSView *chips=[view valueForKey:@"trafficChipScroll"];
+    Check([view.subviews indexOfObject:skySection]<[view.subviews indexOfObject:trafficOverlay] &&
+          [view.subviews indexOfObject:trafficOverlay]<[view.subviews indexOfObject:chips],@"sky and traffic paint below the removable selection chips");
+    trafficOverlay.needsDisplay=NO; view.needsDisplay=YES;
+    Check(trafficOverlay.needsDisplay,@"traffic overlay redraws with selection and time changes");
+    [view inspectDate:view.now];
+    [view setValue:nil forKey:@"hoveredAircraft"]; [view setValue:nil forKey:@"trafficTransient"];
+    NSBitmapImageRep *skyBare=BitmapForView(view,900,620);
+    [view setValue:@"Tracking TEST123" forKey:@"trafficTransient"];
+    [view setValue:[NSDate dateWithTimeIntervalSinceNow:60] forKey:@"trafficTransientUntil"];
+    NSBitmapImageRep *skyFeedback=BitmapForView(view,900,620);
+    Check(PixelDifference(skyBare,skyFeedback,NSMakeRect(NSMinX(view.plotRect)+8,NSMinY(view.plotRect)+48,190,16),900,620)>20,
+          @"traffic feedback is painted above the opaque sky");
+    [view setValue:nil forKey:@"trafficTransient"];
+    [window.contentView addSubview:view];
+    liveRect=[view.liveAircraftRects[0] rectValue];
+    Move(view,window,NSMakePoint(NSMidX(liveRect),NSMidY(liveRect)));
+    NSRect skyCardRect=view.hoverCardRect;
+    NSBitmapImageRep *skyCard=BitmapForView(view,900,620);
+    Check(PixelDifference(skyBare,skyCard,skyCardRect,900,620)>100,@"aircraft card is painted above the opaque sky");
+    WriteScreenshot(skyCard,@"sky-traffic-overlay-fixture");
+    view.sectionView=nil;
     view.trafficEnabled=NO;
     [view removeFromSuperview]; [window close];
 

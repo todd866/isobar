@@ -1,11 +1,11 @@
 # Isobar for Mac
 
-The first Mac download is awaiting Apple notarization.
-[Use Isobar in your browser](https://todd866.github.io/isobar/) now.
+[Download the latest signed Mac release](https://github.com/todd866/isobar/releases/latest),
+or [use Isobar in your browser](https://isobar.md).
 
 **Apple silicon (M1 or newer) · macOS 15 or later**
 
-Once the download is available:
+To install:
 
 1. Open the downloaded Isobar disk image.
 2. Drag **Isobar** into **Applications**.
@@ -13,10 +13,12 @@ Once the download is available:
 
 The first forecast downloads when you open the app. The app includes everything
 it needs; no developer tools or accounts are required. You can allow location
-access for nearby weather, or keep the Perth coastal default.
+access for nearby weather, or choose a place.
 
 Click the menu bar temperature to open the map. Hover or drag along the timeline
-to explore the forecast; click the map to return to now and keep playing.
+to explore the forecast. Hold the map to freeze time; release to resume.
+Click-drag pans, pinch zooms, and the **2D / 3D** toggle selects the map mode. Two-finger scroll tilts only in 3D. Use **Now**
+to return to the current time.
 
 To update, quit Isobar and replace the copy in Applications with the newer one.
 Your preferences and downloaded weather stay in place.

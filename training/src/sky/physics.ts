@@ -1,3 +1,4 @@
+import { classifyLayer } from './cloud-rules.ts';
 /**
  * Sky section physics: the air over one aerodrome at one time, as cloud
  * layers, precipitation, freezing level, icing bands, winds by level and a
@@ -22,7 +23,14 @@ const HOUR = 3_600_000;
 /** One aerodrome's upper-air point series, as written by scripts/export-data.ts (sky.json). */
 export interface ProfileSeries {
   icao: string;
+  /** This profile's own cycle. Never another product's run (the map can be 12Z while this is 18Z). */
   run: string;
+  /** Distributor of this series: "ECMWF" for the collector, "Open-Meteo" for a live point. */
+  source?: string;
+  /** Model id, e.g. ecmwf_ifs025. */
+  model?: string;
+  /** False when `run` is the fetch time because the source named no cycle. */
+  runKnown?: boolean;
   lat: number;
   lon: number;
   /** Aerodrome elevation, ft AMSL (AIP). */
@@ -337,11 +345,12 @@ export function parseReport(text: string): Report {
 /* ---------- the sky ---------- */
 
 export type CloudType = 'cumulus' | 'towering' | 'cumulonimbus' | 'stratocumulus' | 'stratus'
-  | 'altostratus' | 'altocumulus' | 'cirrus' | 'fog';
+  | 'altostratus' | 'altocumulus' | 'cirrus' | 'fog' | 'nimbostratus' | 'unknown';
 export type Precip = 'rain' | 'showers' | 'drizzle' | 'snow' | 'virga' | 'none';
 
 export interface SkyLayer {
   type: CloudType;
+  reportedType?: 'CB' | 'TCU' | null;
   baseFtAmsl: number;
   /** Null when no profile can say where the cloud ends. */
   topFtAmsl: number | null;
@@ -456,7 +465,32 @@ function moistTop(col: Column, baseFt: number): number | null {
 
 interface ModelLayer { baseFt: number; topFt: number; oktas: number; maxRh: number }
 
-/** Layer cloud the model holds: base where RH first reaches 90 % (ice-equivalent when freezing), up while ≥ 80 %. */
+/** Contiguous levels at or above 25 % cloud cover (2 oktas). Edges sit halfway to the next level. */
+function coverLayers(levels: ProfileLevel[], groundM: number): ModelLayer[] {
+  const sorted = levels.filter((level) => level.zM >= groundM - 1).sort((a, b) => a.zM - b.zM);
+  const out: ModelLayer[] = [];
+  let i = 0;
+  while (i < sorted.length) {
+    const cover = sorted[i].cloudPct;
+    if (cover == null || cover < 25) { i++; continue; }
+    let j = i;
+    let maxCc = cover;
+    while (j + 1 < sorted.length && sorted[j + 1].cloudPct != null && (sorted[j + 1].cloudPct as number) >= 25) {
+      j++;
+      maxCc = Math.max(maxCc, sorted[j].cloudPct as number);
+    }
+    const below = sorted[i - 1];
+    const above = sorted[j + 1];
+    const baseM = Math.max(groundM, below ? (below.zM + sorted[i].zM) / 2 : sorted[i].zM);
+    const topM = above ? (sorted[j].zM + above.zM) / 2 : sorted[j].zM;
+    const oktas = Math.round((maxCc / 100) * 8);
+    if (oktas >= 1 && topM > baseM + 30) out.push({ baseFt: baseM * FT_PER_M, topFt: topM * FT_PER_M, oktas, maxRh: 0 });
+    i = j + 1;
+  }
+  return out;
+}
+
+/** Layer cloud the model holds: base where RH first reaches 90 % (ice-equivalent when freezing), up while ≥ 80 %. Cloud cover by level adds a layer the humidity does not. */
 export function modelLayers(levels: ProfileLevel[], groundM: number): ModelLayer[] {
   const col: Column = { groundM, levels };
   const out: ModelLayer[] = [];
@@ -488,7 +522,8 @@ export function modelLayers(levels: ProfileLevel[], groundM: number): ModelLayer
     }
     z += step;
   }
-  return out;
+  const extra = coverLayers(levels, groundM).filter((layer) => !out.some((existing) => existing.baseFt <= layer.topFt && layer.baseFt <= existing.topFt));
+  return [...out, ...extra].sort((a, b) => a.baseFt - b.baseFt);
 }
 
 function precipFor(weather: ReportWeather[]): { kind: Precip; heavy: boolean; thunder: boolean; convective: boolean } {
@@ -591,24 +626,12 @@ export function skyState(input: SkyInput): SkyState {
         const el = parcel?.elFt ?? null;
         top = el != null && el > baseFt + 5000 ? Math.min(el, Math.max(top ?? 0, baseFt + 8000)) : top;
       } else {
-        const lapse = lapseBelow(col, surface?.tC ?? null, baseFt);
-        const convectiveWx = precip.convective;
-        // Mixed (≥ 2.5 °C/1000 ft, near dry adiabatic) below a low base: cumulus.
-        const unstable = (lapse != null && lapse >= 2.3) || convectiveWx;
-        const agl = layer.baseFtAgl;
-        if (agl < 6500 && unstable && precip.kind !== 'drizzle') type = 'cumulus';
-        else type = stratiformType(baseFt, top == null ? null : top - baseFt, oktas, tempAtFt(col, baseFt), elevationFt);
-        if (type === 'cumulus' && parcel?.elFt != null && top != null) top = Math.min(top, Math.max(parcel.elFt, baseFt + 1500));
-        // Model instability deep enough for towers, and the report does not rule them out.
-        if (type === 'cumulus' && report.noCloud !== 'CAVOK' && parcel && parcel.capeJkg > 500
-          && parcel.elFt != null && parcel.elFt - baseFt > 10000) {
-          type = 'towering';
-          top = parcel.elFt;
-        }
+        type = 'unknown';
       }
       if (top != null && top < baseFt + 200) top = baseFt + 200;
       groupLayers.push({
         type,
+        reportedType: layer.type,
         baseFtAmsl: baseFt,
         topFtAmsl: top,
         oktas,
@@ -706,6 +729,25 @@ export function skyState(input: SkyInput): SkyState {
     }
   }
 
+  // Classify after report precipitation and profile tops have been assigned.
+  // Local layer lapse outranks parcel CAPE; depth alone never creates an anvil.
+  const ruleProfile = hasProfile ? { levels: col.levels.map(l => ({ heightFt: l.zM * FT_PER_M, tempC: l.tC })), capeJkg: parcel?.capeJkg ?? null } : null;
+  for (const layer of layers) {
+    const levels = ruleProfile ? [...ruleProfile.levels] : [];
+    for (const ft of [layer.baseFtAmsl, layer.topFtAmsl]) {
+      if (ft == null || levels.some(l => l.heightFt === ft)) continue;
+      const tempC = tempAtFt(col, ft);
+      if (tempC != null) levels.push({ heightFt: ft, tempC });
+    }
+    const genus = classifyLayer({ baseFt: layer.baseFtAmsl, topFt: layer.topFtAmsl,
+      cover: layer.cover, reportedType: layer.reportedType ?? (layer.thunder ? 'TS' : null),
+      precipitating: layer.precip !== 'none' }, ruleProfile ? { ...ruleProfile, levels } : null).genus;
+    // Retain the production model's cold high ice veil (including thick cirrostratus),
+    // beyond the phase-1 study's high/thin FEW-SCT cases. No report is invented.
+    if (layer.source === 'model' && layer.type === 'cirrus') continue;
+    layer.type = genus === 'towering-cumulus' ? 'towering' : genus;
+  }
+
   const winds: WindLevel[] = hasProfile
     ? col.levels.filter((level) => level.zM >= groundM - 10 && level.windKt != null && level.windFrom != null)
       .map((level) => ({ ftAmsl: level.zM * FT_PER_M, kt: level.windKt as number, fromDeg: level.windFrom as number, hPa: level.hPa }))
@@ -715,7 +757,7 @@ export function skyState(input: SkyInput): SkyState {
   if (freezingFt != null) {
     const top20 = minus20Ft ?? Infinity;
     for (const layer of layers) {
-      if (layer.type === 'fog' || layer.type === 'cirrus' || layer.topFtAmsl == null) continue;
+      if (layer.type === 'fog' || layer.type === 'cirrus' || layer.type === 'unknown' || layer.topFtAmsl == null) continue;
       const lo = Math.max(layer.baseFtAmsl, freezingFt);
       const hi = Math.min(layer.topFtAmsl, top20);
       if (hi > lo) icing.push({ baseFt: lo, topFt: hi });

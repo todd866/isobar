@@ -28,6 +28,7 @@
 #import "playback.h"
 #import "storereload.h"
 #import "gpumapview.h"
+#import "trafficroute.h"
 #import "trainingwindow.h"
 #import <math.h>
 #import <zlib.h>
@@ -1181,6 +1182,8 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
     double _previewDisplayed;
     double _previewRestoreFraction;
     BOOL _previewHasRestoreFraction;
+    NSTimer *_hoverArmTimer;
+    NSPoint _hoverPoint;
     NSArray *_rulerDays, *_rulerHours;
     NSArray *_rulerTimes, *_rulerTicks;
     CGFloat _rulerWidth;
@@ -1201,6 +1204,8 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
 }
 - (void)viewDidMoveToWindow {
     [super viewDidMoveToWindow];
+    [_hoverArmTimer invalidate];
+    _hoverArmTimer = nil;
     if (!self.window && !self.preservesInteraction) {
         _dragging = NO;
         _hovering = NO;
@@ -1388,6 +1393,8 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
     self.needsDisplay = YES;
 }
 - (void)removeFromSuperview {
+    [_hoverArmTimer invalidate];
+    _hoverArmTimer = nil;
     if (self.preservesInteraction) { [super removeFromSuperview]; return; }
     _previewHasDisplayed = NO;
     _previewHasRestoreFraction = NO;
@@ -1397,6 +1404,8 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
 }
 - (void)mouseDown:(NSEvent *)event {
     if (!self.onSelect && !self.onSeek) return;
+    [_hoverArmTimer invalidate];
+    _hoverArmTimer = nil;
     _dragging = YES;
     _previewHasRestoreFraction = NO;
     [self.window makeFirstResponder:self];
@@ -1436,13 +1445,34 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
         if (!_dragging && self.onPreview) {
             NSPoint point = [self convertPoint:event.locationInWindow fromView:nil];
             NSRect hoverRect = _hovering ? NSInsetRect(self.bounds, 0, -36) : self.bounds;
+            if (!_hovering && !NSPointInRect(point, self.bounds)) {
+                [_hoverArmTimer invalidate];
+                _hoverArmTimer = nil;
+                return;
+            }
             if (NSPointInRect(point, hoverRect)) {
+                _hoverPoint = point;
                 if (!_hovering) {
-                    _hovering = YES; self.needsDisplay = YES;
-                    _previewRestoreFraction = [self currentPreviewFraction];
-                    _previewHasRestoreFraction = YES;
-                    _previewHasDisplayed = YES;
-                    _previewDisplayed = _previewRestoreFraction;
+                    if (!_hoverArmTimer) {
+                        __weak TimelineStrip *weakSelf = self;
+                        _hoverArmTimer = [NSTimer timerWithTimeInterval:.3 repeats:NO block:^(NSTimer *timer) {
+                            TimelineStrip *strongSelf = weakSelf;
+                            if (!strongSelf || strongSelf->_hoverArmTimer != timer) return;
+                            strongSelf->_hoverArmTimer = nil;
+                            if (strongSelf->_dragging || !NSPointInRect(strongSelf->_hoverPoint, strongSelf.bounds)) return;
+                            strongSelf->_hovering = YES;
+                            strongSelf.needsDisplay = YES;
+                            strongSelf->_previewRestoreFraction = [strongSelf currentPreviewFraction];
+                            strongSelf->_previewHasRestoreFraction = YES;
+                            strongSelf->_previewHasDisplayed = YES;
+                            strongSelf->_previewDisplayed = strongSelf->_previewRestoreFraction;
+                            [strongSelf updateTrackingAreas];
+                            [strongSelf retargetPreview:[strongSelf fractionAt:strongSelf->_hoverPoint]];
+                            if (strongSelf.bandDates.count) strongSelf.toolTip = [strongSelf clockTextForFraction:[strongSelf fractionAt:strongSelf->_hoverPoint]];
+                        }];
+                        [[NSRunLoop mainRunLoop] addTimer:_hoverArmTimer forMode:NSRunLoopCommonModes];
+                    }
+                    return;
                 }
                 [self retargetPreview:[self fractionAt:point]];
                 if (self.bandDates.count) self.toolTip = [self clockTextForFraction:[self fractionAt:point]];
@@ -1462,7 +1492,11 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
     (void)event;
     if (self.onSeek) {
         if (_dragging) return;
+        [_hoverArmTimer invalidate];
+        _hoverArmTimer = nil;
+        if (!_hovering) return;
         _hovering = NO; self.needsDisplay = YES;
+        [self updateTrackingAreas];
         if (self.bandDates.count) self.toolTip = [self clockTextForFraction:self.progress];
         [self finishPreviewAtCurrentTime];
         return;
@@ -2295,6 +2329,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 - (void)requestStoreReload;
 - (void)requestStoreReloadThen:(void (^)(void))then;
 - (void)commitStoreSnapshot:(StoreSnapshot *)snapshot;
+- (void)syncGPUAtmosphere;
 - (NSDictionary *)hubPlace;
 - (NSTimeZone *)placeZone;
 - (void)toggleChartSource;
@@ -2427,6 +2462,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     BOOL _timelinePreviewing;
     BOOL _mapHolding;
     BOOL _mapHoldWasPlaying;
+    BOOL _mapHoldWasFollowingNow;
+    NSTimeInterval _mapHeldAt;
     NSDate *_mapHoldDate;
     BOOL _timelinePreviewWasPlaying;
     double _timelinePreviewRestoreFraction;
@@ -2479,6 +2516,13 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     BOOL _barbs;
     BOOL _newMap;
     GPUMapView *_gpuMap;
+    AirborneTraffic *_mapTrafficClient;
+    TrafficRouteLookup *_mapRouteLookup;
+    NSMutableDictionary *_mapTrafficRoutes;
+    TrafficTrackSession *_mapTrafficSession;
+    NSDictionary *_mapTrafficSnapshot;
+    NSString *_mapTrafficPlace;
+    BOOL _trafficFollowNow;
     BOOL _gpuPlaced;
     // The GPU layer presented nothing within 0.5 s. Show the classic chart
     // until the user turns New map back on.
@@ -2500,6 +2544,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     NSTextField *_forecastReading;
     NSMutableSet<NSNumber *> *_mapDetailModes;
     NSMutableDictionary *_mapDetailCache;
+    NSMutableDictionary *_mapAtmosphereProducts;
     BOOL _rainLayer;
     BOOL _tempAloft;
     double _kiteMin;
@@ -2575,6 +2620,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     _timeLensShown = NSIntegerMin;
     _mapDetailModes = [NSMutableSet set];
     _mapDetailCache = [NSMutableDictionary dictionary];
+    _mapAtmosphereProducts = [NSMutableDictionary dictionary];
     // Lenses are a session disclosure. A previous launch must not reopen them as map chips.
     // Fixture runs leave the owner's standard defaults alone; a private suite still drops the key.
     NSUserDefaults *prefs = [self chartPreferences];
@@ -2887,7 +2933,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (BOOL)timeLensIsNow:(NSDate *)date {
-    NSDate *now = _chartNow ?: NSDate.date;
+    NSDate *now = [self currentPlaybackNow];
     if (![date isKindOfClass:NSDate.class]) return YES;
     if (fabs([date timeIntervalSinceDate:now]) < kTimeLensNow) return YES;
     // A seek or a moving playhead leaves the observation. The resting chart
@@ -3034,6 +3080,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (void)syncTimeLens:(NSDate *)date {
+    [self syncMapTraffic];
     if (![date isKindOfClass:NSDate.class]) date = [self selectedForecastDate];
     // The Fly sky follows every playhead move; it coalesces to the display rate.
     _flyLens.sky.time = date;
@@ -3395,6 +3442,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 
 - (void)startLivePlaybackFromDate:(NSDate *)date {
     if (![self livePlaybackAvailable]) return;
+    if (date && fabs([date timeIntervalSinceDate:[self currentPlaybackNow]])>1) _trafficFollowNow=NO;
     [self ensureLivePlayer];
     [_scrubRenderer cancelRequests];
     _scrubHasFraction = NO;
@@ -3408,6 +3456,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (void)pauseLivePlayback {
+    _trafficFollowNow=NO;
     [_liveSizeTimer invalidate];
     _liveSizeTimer = nil;
     [_live pause];
@@ -3415,6 +3464,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     _liveTimer = nil;
     [self setTimelinePlaying:NO];
     [self updatePopoverPlayControl];
+    [self syncMapTraffic];
 }
 
 - (void)setForecastPaused:(BOOL)paused {
@@ -3426,6 +3476,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     _mapHolding = held;
     if (held) {
         _mapHoldWasPlaying = [self timelinePlaying];
+        _mapHoldWasFollowingNow = _trafficFollowNow;
+        _mapHeldAt = NSProcessInfo.processInfo.systemUptime;
         [self pauseLivePlayback];
         _mapHoldDate = _live.playhead ?: [self selectedForecastDate];
         [_popoverLoopTimer invalidate]; _popoverLoopTimer = nil;
@@ -3436,6 +3488,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
         _mapHoldWasPlaying = NO;
         NSDate *date = _mapHoldDate;
         _mapHoldDate = nil;
+        _trafficFollowNow = _mapHoldWasFollowingNow && NSProcessInfo.processInfo.systemUptime-_mapHeldAt<.3;
         if (resume && [self livePlaybackAvailable]) [self startLivePlaybackFromDate:date];
         else if (resume) {
             [self setTimelinePlaying:YES];
@@ -3457,6 +3510,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (void)noteMapVisibility {
+    [self syncMapTraffic];
     if (![self mapIsVisible]) {
         [_liveTimer invalidate];
         _liveTimer = nil;
@@ -3468,7 +3522,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     }
     if (_mapHolding || _forecastPaused || ![self allowsAutomaticEvolution]) return;
     if (![self timelinePlaying] && [self livePlaybackAvailable])
-        [self startLivePlaybackFromDate:_chartNow ?: NSDate.date];
+        [self startLivePlaybackFromDate:[self currentPlaybackNow]];
 }
 
 - (void)applyPlaybackSpeed:(NSInteger)speed {
@@ -3495,8 +3549,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     if (cached > 0) return cached;
     NSPopUpButton *probe = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, 0, 48, 26) pullsDown:NO];
     probe.font = [NSFont systemFontOfSize:12 weight:NSFontWeightMedium];
-    for (NSNumber *multiple in @[@1, @2, @4, @8, @16, @32, @64, @128, @256])
-        [probe addItemWithTitle:[NSString stringWithFormat:@"%@×", multiple]];
+    for (NSNumber *multiple in @[@0, @1, @2, @4, @8, @16, @32, @64, @128, @256])
+        [probe addItemWithTitle:(multiple.integerValue == IsobarLiveSpeedRealTime ? @"Real time" : [NSString stringWithFormat:@"%@ min/s", multiple])];
     CGFloat width = 48;
     for (; width <= 160; width += 1) {
         probe.frame = NSMakeRect(0, 0, width, 26);
@@ -3522,9 +3576,9 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     speed.font = [NSFont systemFontOfSize:12 weight:NSFontWeightMedium];
     speed.accessibilityIdentifier = identifier;
     speed.accessibilityLabel = @"Animation speed";
-    speed.toolTip = @"Animation speed · 1× = 1 forecast minute per second";
-    for (NSNumber *multiple in @[@1,@2,@4,@8,@16,@32,@64,@128,@256]) {
-        [speed addItemWithTitle:[NSString stringWithFormat:@"%@×", multiple]];
+    speed.toolTip = @"Real time, or forecast minutes per second";
+    for (NSNumber *multiple in @[@0,@1,@2,@4,@8,@16,@32,@64,@128,@256]) {
+        [speed addItemWithTitle:(multiple.integerValue == IsobarLiveSpeedRealTime ? @"Real time" : [NSString stringWithFormat:@"%@ min/s", multiple])];
         speed.lastItem.tag = multiple.integerValue;
     }
     [speed selectItemWithTag:_liveSpeed];
@@ -3762,7 +3816,13 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     return [first dateByAddingTimeInterval:[last timeIntervalSinceDate:first] * fraction];
 }
 
+- (NSDate *)currentPlaybackNow {
+    // Fixture/manual clocks remain deterministic; the running app uses actual now.
+    return (_manualLiveClock || getenv("ISOBAR_CHECK_NOW")) ? (_chartNow ?: NSDate.date) : NSDate.date;
+}
+
 - (void)resetPopoverToNow {
+    [self applyPlaybackSpeed:IsobarLiveSpeedRealTime];
     [self endChartComparison];
     [_scrubRenderer cancelRequests];
     _scrubHasFraction = NO;
@@ -3774,7 +3834,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     _motionResetToNow = NO;
     _motionPendingFraction = nil;
     if ([self livePlaybackAvailable]) {
-        [self startLivePlaybackFromDate:_chartNow ?: NSDate.date];
+        _trafficFollowNow=YES;
+        [self startLivePlaybackFromDate:[self currentPlaybackNow]];
         return;
     }
     [self setTimelinePlaying:YES];
@@ -3797,7 +3858,10 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     }
     // The popover is opening; its window may not report itself visible yet,
     // so do not wait on occlusion here.
-    if ([self livePlaybackAvailable] && self.popover.isShown) [self startLivePlaybackFromDate:_chartNow ?: NSDate.date];
+    if ([self livePlaybackAvailable] && self.popover.isShown) {
+        if (_forecastMode==1) [self resetPopoverToNow];
+        else [self startLivePlaybackFromDate:[self currentPlaybackNow]];
+    }
     else [self noteMapVisibility];
     NSWindow *window = self.popover.contentViewController.view.window;
     if (window) {
@@ -4596,8 +4660,7 @@ static NSImage *WindBarbGlyph(void) {
     CGFloat segmentsH = MIN(height, 24);
     NSButton *barbs = [NSButton buttonWithImage:WindBarbGlyph() target:self action:@selector(toggleWindBarbs:)];
     // One toggle shape on this row: the system push-on/push-off button, as Hazards.
-    // Barbs exist only on the classic map, so the button is absent elsewhere
-    // rather than a permanently dimmed control.
+    // The same wind-vector toggle controls the classic and tilted GPU maps.
     barbs.buttonType = NSButtonTypePushOnPushOff;
     barbs.bezelStyle = NSBezelStyleRounded;
     barbs.imagePosition = NSImageOnly;
@@ -4758,6 +4821,10 @@ static NSImage *WindBarbGlyph(void) {
     if (tag == 3) {
         // A stored wind setting is not a visible layer on the Bureau PDF.
         _barbs = !_sourceECMWF || !_barbs;
+        // The overlay belongs to the existing map, including a paused or
+        // temporarily detached popover. Updating its controls need not rebuild
+        // the surface, so keep the drawing state in sync at the point of change.
+        _gpuMap.windBarbs = _barbs;
         [[self chartPreferences] setBool:_barbs forKey:@"chartBarbs"];
     } else {
         // A single colour field keeps the scale unambiguous; direction hints
@@ -4820,6 +4887,51 @@ static NSImage *WindBarbGlyph(void) {
     }
 }
 
+- (void)clearMapTraffic {
+    [_mapTrafficClient stop]; _mapTrafficClient.onUpdate=nil; _mapTrafficClient=nil;
+    [_mapRouteLookup clear]; _mapRouteLookup=nil; _mapTrafficRoutes=nil; _gpuMap.trafficRoutes=nil;
+    _mapTrafficSession=nil; _mapTrafficSnapshot=nil; _mapTrafficPlace=nil;
+    _gpuMap.trafficHolding=NO;
+    _gpuMap.trafficIsNow=NO;
+    _gpuMap.trafficEnabled=NO; _gpuMap.trafficSnapshot=nil; _gpuMap.trafficSession=nil;
+}
+
+- (void)syncMapTraffic {
+    BOOL visible = _forecastMode == 1 && _gpuMap.superview && !_gpuMap.hidden && [self mapIsVisible];
+    _gpuMap.trafficEnabled = _forecastMode == 1;
+    if (!visible) { [_mapTrafficClient stop]; return; }
+    NSDictionary *place=[self hubPlace];
+    NSString *key=[NSString stringWithFormat:@"%@:%@",place[@"latitude"],place[@"longitude"]];
+    if (!_mapTrafficClient || ![_mapTrafficPlace isEqual:key]) {
+        [self clearMapTraffic];
+        _mapTrafficPlace=key; _mapTrafficSession=[TrafficTrackSession new];
+        _mapRouteLookup=[TrafficRouteLookup configuredWithConfiguration:nil]; _mapTrafficRoutes=[NSMutableDictionary dictionary];
+        _mapTrafficClient=[[AirborneTraffic alloc] initWithLatitude:[place[@"latitude"] doubleValue]
+            longitude:[place[@"longitude"] doubleValue] configuration:nil];
+        __weak Controller *weak=self;
+        _mapTrafficClient.onUpdate=^(NSDictionary *snapshot,NSString *status) {
+            (void)status; Controller *strong=weak; if (!strong) return;
+            if (snapshot) { strong->_mapTrafficSnapshot=snapshot; [strong->_mapTrafficSession mergeSnapshot:snapshot]; }
+            strong->_gpuMap.trafficSnapshot=strong->_mapTrafficSnapshot;
+            strong->_gpuMap.trafficSession=strong->_mapTrafficSession;
+        };
+    }
+    _gpuMap.trafficEnabled=YES;
+    if (_gpuMap.trafficSession != _mapTrafficSession) _gpuMap.trafficSession=_mapTrafficSession;
+    if (_gpuMap.trafficSnapshot != _mapTrafficSnapshot) _gpuMap.trafficSnapshot=_mapTrafficSnapshot;
+    _gpuMap.trafficZone=[self placeZone];
+    NSDate *selected=[self selectedForecastDate];
+    _gpuMap.trafficDate=selected;
+    _gpuMap.trafficHolding=!_live.playing || _mapHolding || _forecastPaused;
+    if (_timelinePreviewing || _scrubHasFraction || _liveSpeed!=IsobarLiveSpeedRealTime) _trafficFollowNow=NO;
+    BOOL isNow=_trafficFollowNow && _liveSpeed==IsobarLiveSpeedRealTime && _live.playing &&
+        !_forecastPaused && !_timelinePreviewing && !_scrubHasFraction &&
+        fabs([selected timeIntervalSinceDate:[self currentPlaybackNow]])<90;
+    _gpuMap.trafficIsNow=isNow;
+    // Frozen offscreen QA never makes live requests.
+    if (!getenv("ISOBAR_CHECK_NOW") && !getenv("ISOBAR_TRAFFIC_OFFLINE")) [_mapTrafficClient start];
+}
+
 - (void)chooseLens:(NSSegmentedControl *)sender {
     NSInteger segment = sender.selectedSegment;
     if (segment < 0 || segment >= 7) return;
@@ -4846,6 +4958,7 @@ static NSImage *WindBarbGlyph(void) {
     else if (next == 5 || next == 0) fieldTag = 6; // wind / kite
     else if (next == 4) fieldTag = _tempAloft ? 1 : 2;
     [self applyChartLayer:fieldTag rebuild:NO];
+    [self clearMapTraffic];
     [_warningPop close];
     if (rebuild) [self rebuildContent];
     if (_expandedMap) [self layoutChartWindow];
@@ -4861,6 +4974,7 @@ static NSImage *WindBarbGlyph(void) {
     NSInteger mode = _forecastMode;
     [_warningPop close];
     _forecastMode = -1;
+    [self clearMapTraffic];
     _selectedLens = -1;
     [self followLensHazards];
     [self applyChartLayer:0 rebuild:NO];
@@ -4870,6 +4984,7 @@ static NSImage *WindBarbGlyph(void) {
 }
 
 - (void)escapePopover {
+    if (_mapTrafficSession.selectedHexes.count) { [_mapTrafficSession clearSelections]; _gpuMap.trafficSession=_mapTrafficSession; [_gpuMap showTrafficNotice:@"Tracks cleared"]; return; }
     if (_forecastMode >= 0) [self closeForecast:nil];
     else [self.popover performClose:nil];
 }
@@ -4917,6 +5032,7 @@ static NSImage *WindBarbGlyph(void) {
         _atmosphereView.trafficClient=[[AirborneTraffic alloc] initWithLatitude:[field[@"latitude"] doubleValue] longitude:[field[@"longitude"] doubleValue] configuration:nil];
     _atmosphereView.latitude=[field[@"latitude"] doubleValue]; _atmosphereView.longitude=[field[@"longitude"] doubleValue];
     _atmosphereView.timeZone=[self aviationTimeZone];
+    if (_mapTrafficSession) _atmosphereView.trafficSession=_mapTrafficSession;
     NSDictionary *upper=ArchiveAtmosphereProduct(_storeRoot,field[@"code"]);
     _atmosphereView.product=upper;
     _atmosphereView.now=_chartNow ?: NSDate.date;
@@ -6246,7 +6362,10 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     else [self stopChartLoop];
 }
 
-- (void)escapeFullscreen { [self closeChartWindow]; }
+- (void)escapeFullscreen {
+    if (_mapTrafficSession.selectedHexes.count) { [_mapTrafficSession clearSelections]; _gpuMap.trafficSession=_mapTrafficSession; [_gpuMap showTrafficNotice:@"Tracks cleared"]; return; }
+    [self closeChartWindow];
+}
 
 - (void)stepFullscreenPanel:(NSInteger)delta {
     _motionHasCursor = NO;
@@ -6376,6 +6495,8 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
 - (void)syncGPUPlayhead {
     if (!_gpuMap) return;
     _gpuMap.timeline = _live;
+    [self syncMapTraffic];
+    [self syncGPUAtmosphere];
     if (!_gpuMap.superview || _gpuMap.hidden) return;
     _gpuMap.stale = _dataStale || _storeLoadFailed;
     // Playing frames sample the shared anchor themselves. A 30 Hz push here
@@ -6383,6 +6504,45 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     if (_live.playing || _live.seaming) return;
     if (_scrubHasFraction || _timelinePreviewing) return;
     _gpuMap.fractionalStep = [self liveModelIndexForDate:[self selectedForecastDate]];
+}
+
+static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, double bLon) {
+    double r = M_PI / 180.0;
+    double p1 = aLat * r, p2 = bLat * r, dp = (bLat - aLat) * r, dl = (bLon - aLon) * r;
+    double h = sin(dp * 0.5) * sin(dp * 0.5) + cos(p1) * cos(p2) * sin(dl * 0.5) * sin(dl * 0.5);
+    return 6371.0 * 2.0 * asin(sqrt(MIN(1.0, MAX(0.0, h))));
+}
+
+- (void)syncGPUAtmosphere {
+    if (!_gpuMap) return;
+    double lat = _gpuMap.camera.centreLat, lon = _gpuMap.camera.centreLon;
+    NSDictionary *nearest = nil;
+    double best = 10.0;
+    for (NSDictionary *field in [self tafAerodromes]) {
+        if (![field[@"latitude"] isKindOfClass:NSNumber.class] || ![field[@"longitude"] isKindOfClass:NSNumber.class]) continue;
+        double d = GPUAtmosphereDistanceKm(lat, lon, [field[@"latitude"] doubleValue], [field[@"longitude"] doubleValue]);
+        if (d <= best) { best = d; nearest = field; }
+    }
+    if (!nearest) {
+        _gpuMap.atmosphereProduct = nil;
+        _gpuMap.atmosphereDate = nil;
+        return;
+    }
+    NSString *code = [nearest[@"code"] isKindOfClass:NSString.class] ? [nearest[@"code"] uppercaseString] : @"";
+    id cached = code.length ? _mapAtmosphereProducts[code] : nil;
+    NSDictionary *product = [cached isKindOfClass:NSDictionary.class] ? cached : nil;
+    if (!cached && code.length) {
+        if (_storeRoot.length) product = ArchiveAtmosphereProduct(_storeRoot, code);
+        _mapAtmosphereProducts[code] = product ?: (id)NSNull.null;
+    }
+    _gpuMap.atmosphereProduct = product;
+    if (!product) {
+        _gpuMap.atmosphereDate = nil;
+        return;
+    }
+    _gpuMap.atmosphereLatitude = [nearest[@"latitude"] doubleValue];
+    _gpuMap.atmosphereLongitude = [nearest[@"longitude"] doubleValue];
+    _gpuMap.atmosphereDate = [self selectedForecastDate];
 }
 
 - (void)setHazardLayer:(BOOL)hazardLayer {
@@ -6409,6 +6569,22 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
         if (!_gpuMap) return;
         __weak Controller *weak = self;
         _gpuMap.onHoldChanged = ^(BOOL held) { [weak setMapHeld:held]; };
+        _gpuMap.onCameraChanged = ^(IsobarCamera camera) {
+            (void)camera;
+            Controller *strong = weak;
+            if (strong) [strong syncGPUAtmosphere];
+        };
+        _gpuMap.onTrafficSelection = ^(NSString *hex, BOOL selected) {
+            Controller *strong=weak; if (!strong || !selected || !strong->_mapRouteLookup.enabled) return;
+            TrafficTrackSession *session=strong->_mapTrafficSession;
+            NSString *callsign=[session aircraftForHex:hex][@"callsign"];
+            [strong->_mapRouteLookup lookupCallsign:callsign?:@"" completion:^(NSDictionary *route) {
+                Controller *current=weak; if (!current || current->_mapTrafficSession!=session || !route) return;
+                if (![[session aircraftForHex:hex][@"callsign"] isEqual:callsign]) return;
+                current->_mapTrafficRoutes[callsign]=route;
+                current->_gpuMap.trafficRoutes=current->_mapTrafficRoutes;
+            }];
+        };
         _gpuMap.onPresentFailed = ^{
             dispatch_async(dispatch_get_main_queue(), ^{ [weak noteGPUPresentFailed]; });
         };
@@ -6422,6 +6598,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     [root addSubview:_gpuMap];
     _gpuMap.hazardStoreRoot = _storeRoot;
     _gpuMap.sigmetProduct = _sigmets;
+    _gpuMap.windBarbs = _barbs;
     [_gpuMap adoptRun:_ownRun temperature:(int)_tempLayer windFill:_windFill rain:_rainLayer];
     _gpuMap.hazards = self.hazardLayer;
     NSDictionary *place = [self hubPlace];
@@ -6432,10 +6609,12 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
         _gpuPlaced = YES;
     }
     _gpuMap.stale = _dataStale || _storeLoadFailed;
+    [self syncMapTraffic];
     if (_live.playing || _live.seaming)
         _gpuMap.fractionalStep = [_live modelIndexAtTime:[_live clockNow]];
     else if (!(_scrubHasFraction || _timelinePreviewing))
         _gpuMap.fractionalStep = [self liveModelIndexForDate:[self selectedForecastDate]];
+    [self syncGPUAtmosphere];
     NSResponder *first = root.window.firstResponder;
     if (root.window && (!first || first == root || first == root.window))
         [root.window makeFirstResponder:_gpuMap];
@@ -6467,6 +6646,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
 }
 
 - (void)closeChartWindow {
+    [self clearMapTraffic];
     [_chartTimeline finishPreviewAtCurrentTime];
     [self stopChartLoop];
     [self stopPopoverPlayback];
@@ -6643,7 +6823,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     }
     _popoverClosedAt = [NSDate timeIntervalSinceReferenceDate];
     if (!_expandedMap) {
-        _forecastMode=-1; _selectedLens=-1; [self followLensHazards];
+        [self clearMapTraffic]; _forecastMode=-1; _selectedLens=-1; [self followLensHazards];
         _pairPinned=NO; _previewIndex=-1; [self applyChartLayer:0 rebuild:NO];
     }
     _scrollAccum=0;
@@ -7156,6 +7336,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     NSArray *cachedFrames = _frameIndices, *cachedRain = _rainDots;
     NSDate *now = snapshot.now;
     _storeRoot = snapshot.root;
+    [_mapAtmosphereProducts removeAllObjects];
     _storeStatusOK = snapshot.statusOK;
     _publishedGrid = snapshot.publishedGrid;
     _publishedStore = snapshot.publishedStore;

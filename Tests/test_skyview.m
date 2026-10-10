@@ -75,6 +75,23 @@ int main(int argc, const char **argv) {
         Check(point[@"report"] == NSNull.null && [point[@"profile"][@"levels"] count] == 13 && point[@"coastKm"] == NSNull.null,
             @"a plain point feeds its profile without a report");
 
+        NSDictionary *unknown = SkyPointFeed(-31.5, 116.5, @"Unknown", NAN, nil, upper, aviation, metarTime);
+        Check(unknown[@"elevationFt"] == NSNull.null && unknown[@"profile"][@"elevationFt"] == NSNull.null,
+            @"unknown ground stays null through feed and profile");
+        Check([NSJSONSerialization isValidJSONObject:unknown], @"unknown ground is valid JSON");
+        NSMutableDictionary *lowercase = [aviation mutableCopy]; lowercase[@"icao"] = @"ypph";
+        Check([SkySectionFeed(lowercase, upper, ypph, metarTime)[@"report"] isKindOfClass:NSDictionary.class],
+            @"the primary report ICAO is case insensitive");
+        [lowercase removeObjectForKey:@"icao"];
+        NSMutableDictionary *lowerMetar = [aviation[@"metar"] mutableCopy]; lowerMetar[@"icao"] = @"ypph";
+        lowercase[@"metar"] = lowerMetar;
+        Check([SkySectionFeed(lowercase, upper, ypph, metarTime)[@"report"] isKindOfClass:NSDictionary.class],
+            @"the fallback METAR ICAO is case insensitive");
+        // Feed checks can run without WKWebView; the default still runs every page check.
+        if (argc > 2 && [@(argv[2]) isEqual:@"--feed-only"]) {
+            printf("sky feed failures: %d\n", failures); return failures ? 1 : 0;
+        }
+
         NSString *root = SkySectionWebRoot();
         Check(root.length > 0, @"sky page is built (ISOBAR_TRAINING_DIST)");
         if (!root.length) { fprintf(stderr, "sky view failures: %d\n", failures); return 1; }

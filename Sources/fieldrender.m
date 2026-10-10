@@ -16,6 +16,8 @@ static NSString *const kIsobarFieldDomain = @"IsobarFieldRender";
 // which would paint missing data as the bottom of a palette.
 static const float kMissingSentinel = -1.0e30f;
 static const double kDeg = 0.017453292519943295;
+static const double kMaxCameraPitch = 1.30;
+static const double kPerspectiveFov = 0.4363323129985824;
 static const int kContourCellCap = 100000;
 
 static double Wrap180(double lon) {
@@ -29,6 +31,12 @@ static double Clamp01(double g) {
     if (g < 0) return 0;
     if (g > 1) return 1;
     return g;
+}
+
+static double SmoothStep01(double t) {
+    if (t <= 0) return 0;
+    if (t >= 1) return 1;
+    return t * t * (3.0 - 2.0 * t);
 }
 
 static double gTestingNow = -1;
@@ -49,7 +57,7 @@ static BOOL Metrics(IsobarCamera cam, double *vw, double *vh, double *pxPerDeg,
     if (!(cam.viewportW >= 2) || !(cam.viewportH >= 2)) return NO;
     if (cam.viewportW > 8192 || cam.viewportH > 8192) return NO;
     if (!isfinite(cam.centreLat) || !isfinite(cam.centreLon) || !isfinite(cam.zoom)) return NO;
-    if (!isfinite(cam.globe) || !(cam.zoom > 0)) return NO;
+    if (!isfinite(cam.globe) || !isfinite(cam.pitch) || !(cam.zoom > 0)) return NO;
     if (cam.centreLat < -90 || cam.centreLat > 90) return NO;
     *vw = cam.viewportW;
     *vh = cam.viewportH;
@@ -64,43 +72,88 @@ static BOOL Metrics(IsobarCamera cam, double *vw, double *vh, double *pxPerDeg,
 typedef struct {
     double x, y;
     double px, py, pz;
+    BOOL visible;
 } Surface;
+static BOOL IsFront(IsobarCamera cam, double lat, double lon, Surface self);
 
-static BOOL SurfaceAt(IsobarCamera cam, double lat, double dlonDeg, Surface *s) {
+static BOOL SurfaceAtHeight(IsobarCamera cam, double lat, double dlonDeg, double heightM, Surface *s) {
     double vw, vh, px, radius, globe;
     if (!Metrics(cam, &vw, &vh, &px, &radius, &globe)) return NO;
-    if (!isfinite(lat) || !isfinite(dlonDeg) || lat < -90 || lat > 90) return NO;
-    // Flat map: longitude and latitude are linear. The popover stays here,
-    // and projecting every isobar vertex through the globe trig is the
-    // difference between a 120 Hz frame and a missed one.
-    if (globe <= 1e-6) {
+    if (!isfinite(lat) || !isfinite(dlonDeg) || !isfinite(heightM) || lat < -90 || lat > 90) return NO;
+    if (heightM < -6371000.0) return NO;
+    if (cam.pitch <= 1e-7 || SmoothStep01(cam.pitch / (20.0 * kDeg)) < 1e-3) {
         double fx = dlonDeg * kDeg * cos(cam.centreLat * kDeg);
         double fy = (lat - cam.centreLat) * kDeg;
-        s->px = fx;
-        s->py = fy;
-        s->pz = 1;
-        s->x = vw * 0.5 + fx * radius;
-        s->y = vh * 0.5 - fy * radius;
-        return isfinite(s->x) && isfinite(s->y);
+        double g = cam.pitch > 1e-7 ? 0 : globe;
+        if(g <= 1e-6) {
+            s->px=fx; s->py=fy; s->pz=1; s->visible=YES;
+            s->x=vw*.5+fx*radius; s->y=vh*.5-fy*radius;
+            return isfinite(s->x)&&isfinite(s->y);
+        }
+        double phi = lat * kDeg, lam = dlonDeg * kDeg, phi0 = cam.centreLat * kDeg;
+        double cp = cos(phi), sp = sin(phi), c0 = cos(phi0), s0 = sin(phi0);
+        double sx = cp * sin(lam);
+        double sy = sp * c0 - cp * s0 * cos(lam);
+        double sz = s0 * sp + c0 * cp * cos(lam);
+        double bx = (1 - g) * fx + g * sx, by = (1 - g) * fy + g * sy, bz = (1 - g) + g * sz;
+        s->px = fx; s->py = fy; s->pz = bz;
+        if (g > 1e-6) { s->px = bx; s->py = by; }
+        s->x = vw * 0.5 + s->px * radius;
+        s->y = vh * 0.5 - s->py * radius;
+        s->visible = YES;
+        return isfinite(s->x) && isfinite(s->y) && isfinite(s->pz);
     }
-    double phi = lat * kDeg;
-    double lam = dlonDeg * kDeg;
-    double phi0 = cam.centreLat * kDeg;
-    double cosPhi = cos(phi), sinPhi = sin(phi);
-    double cosLam = cos(lam), sinLam = sin(lam);
-    double cos0 = cos(phi0), sin0 = sin(phi0);
-    double sx = cosPhi * sinLam;
-    double sy = sinPhi * cos0 - cosPhi * sin0 * cosLam;
-    double sz = sin0 * sinPhi + cos0 * cosPhi * cosLam;
-    double fx = lam * cos0;
-    double fy = (lat - cam.centreLat) * kDeg;
-    double g = globe;
-    s->px = (1 - g) * fx + g * sx;
-    s->py = (1 - g) * fy + g * sy;
-    s->pz = (1 - g) + g * sz;
+    double pitch = cam.pitch;
+    if (pitch < 0) pitch = 0;
+    if (pitch > kMaxCameraPitch) pitch = kMaxCameraPitch;
+    double k = SmoothStep01(pitch / (20.0 * kDeg));
+    double re = 1.0 / fmax(k, 1e-3);
+    double phi = k * lat * kDeg, phi0 = k * cam.centreLat * kDeg;
+    double lonCorrection = cos(cam.centreLat * kDeg) * (1.0 - k) + k;
+    double lam = k * dlonDeg * kDeg * lonCorrection;
+    double cp = cos(phi), sp = sin(phi), c0 = cos(phi0), s0 = sin(phi0);
+    double cl = cos(lam), sl = sin(lam);
+    double nx = cp * sl;
+    double ny = sp * c0 - cp * cl * s0;
+    double nz = cp * cl * c0 + sp * s0;
+    double altitude = heightM / 6371000.0;
+    double pointRadius = re + altitude;
+    double pointX = pointRadius * nx, pointY = pointRadius * ny, pointZ = re * (nz - 1.0) + altitude * nz;
+    double sn = sin(pitch), cn = cos(pitch);
+    double distance = (vh * 0.5 / radius) / (tan(kPerspectiveFov) * fmax(k, 1e-3));
+
+    double eyeY = -sn * distance, eyeZ = cn * distance;
+    double relX = pointX, relY = pointY - eyeY, relZ = pointZ - eyeZ;
+    double forwardY = sn, forwardZ = -cn;
+    double upY = cn, upZ = sn;
+    double depth = relY * forwardY + relZ * forwardZ;
+    double denom = depth * tan(kPerspectiveFov) * fmax(k, 1e-3);
+    if (!(fabs(denom) > 1e-9) || !isfinite(denom)) return NO;
+    double viewZ = depth;
+    double yNumerator = relY * upY + relZ * upZ;
+    s->px = relX / denom * (vh * 0.5 / radius);
+    s->py = yNumerator / denom * (vh * 0.5 / radius);
+    s->pz = viewZ;
     s->x = vw * 0.5 + s->px * radius;
     s->y = vh * 0.5 - s->py * radius;
+    double length2 = relX*relX + relY*relY + relZ*relZ;
+    double t = fmax(0, fmin(1, -(eyeY*relY + eyeZ*relZ + re*relZ)/length2));
+    double qx=relX*t, qy=eyeY+relY*t, qz=eyeZ+relZ*t;
+    s->visible = depth > 0 && qx*qx+qy*qy+qz*qz+2*re*qz >= -1e-10;
     return isfinite(s->x) && isfinite(s->y) && isfinite(s->pz);
+}
+
+static BOOL SurfaceAt(IsobarCamera cam, double lat, double dlonDeg, Surface *s) {
+    return SurfaceAtHeight(cam, lat, dlonDeg, 0, s);
+}
+
+BOOL IsobarCameraProjectAltitude(IsobarCamera camera, double latitude, double longitude,
+    double heightM, double *x, double *y) {
+    Surface s;
+    if (!SurfaceAtHeight(camera, latitude, Wrap180(longitude - camera.centreLon), heightM, &s)) return NO;
+    if (x) *x = s.x;
+    if (y) *y = s.y;
+    return IsFront(camera, latitude, longitude, s);
 }
 
 static BOOL SurfaceLon(IsobarCamera cam, double lat, double lon, Surface *s) {
@@ -201,6 +254,8 @@ static double HighestZ(IsobarCamera cam, double targetX, double targetY, double 
 }
 
 static BOOL IsFront(IsobarCamera cam, double lat, double lon, Surface self) {
+    if (!self.visible) return NO;
+    if (cam.pitch > 1e-7) return YES;
     double globe = Clamp01(cam.globe);
     if (globe <= 1e-7) return YES;
     if (globe >= 1 - 1e-7) return self.pz >= -1e-5;
@@ -271,6 +326,49 @@ static BOOL ClosePixel(IsobarCamera cam, double lat, double lon, double x, doubl
     return hypot(px - x, py - y) <= tol;
 }
 
+static BOOL UnprojectTilted(IsobarCamera cam, double x, double y, double *lat, double *lon) {
+    double vw, vh, px, radius, globe;
+    if (!Metrics(cam, &vw, &vh, &px, &radius, &globe)) return NO;
+    double pitch = cam.pitch;
+    double k = SmoothStep01(pitch / (20.0 * kDeg));
+    if (k < 1e-3) return UnprojectFlat(cam, x, y, lat, lon);
+    double halfH = vh * 0.5 / radius, aspect = vw / vh;
+    double d = tan(kPerspectiveFov) * k;
+    double sn = sin(pitch), cn = cos(pitch);
+    double distance = halfH / d;
+    if (!(distance > 1e-6) || !isfinite(distance)) return NO;
+    double eyeY = -sn * distance, eyeZ = cn * distance;
+    double fy = sn, fz = -cn, uy = cn, uz = sn;
+    double cx = (x - vw * 0.5) / (vw * 0.5);
+    double cy = (vh * 0.5 - y) / (vh * 0.5);
+    double dx = cx * d * aspect, dy = fy + cy * d * uy, dz = fz + cy * d * uz;
+    double norm = sqrt(dx * dx + dy * dy + dz * dz);
+    if (!(norm > 1e-9)) return NO;
+    dx /= norm; dy /= norm; dz /= norm;
+    double re = 1.0 / k;
+    double ocx = 0, ocy = eyeY, ocz = eyeZ + re;
+    double b = ocx * dx + ocy * dy + ocz * dz;
+    double c = eyeY * eyeY + eyeZ * eyeZ + 2.0 * eyeZ * re;
+    double disc = b * b - c;
+    if (disc < 0) return NO;
+    double root = sqrt(disc), q = b < 0 ? -b + root : -b - root;
+    double t0 = q, t1 = fabs(q) > 1e-12 ? c / q : INFINITY;
+    double t = (t0 > 0 && t1 > 0) ? fmin(t0, t1) : (t0 > 0 ? t0 : t1);
+    if (!(t > 0) || !isfinite(t)) return NO;
+    double hx = dx * t, hy = eyeY + dy * t, hz = eyeZ + dz * t;
+    double nx = hx / re, ny = hy / re, nz = (hz + re) / re;
+    double phi0 = k * cam.centreLat * kDeg;
+    double sp = ny * cos(phi0) + nz * sin(phi0);
+    if (sp < -1) sp = -1;
+    if (sp > 1) sp = 1;
+    double la = asin(sp) / k / kDeg;
+    double lonCorrection = cos(cam.centreLat * kDeg) * (1.0 - k) + k;
+    double lo = cam.centreLon + atan2(nx, nz * cos(phi0) - ny * sin(phi0)) / (k * lonCorrection) / kDeg;
+    if (!isfinite(la) || !isfinite(lo) || la < -90 || la > 90 || fabs(lo-cam.centreLon)>180.000001) return NO;
+    *lat = la; *lon = Wrap180(lo);
+    return YES;
+}
+
 static BOOL UnprojectMorph(IsobarCamera cam, double x, double y, double *lat, double *lon) {
     double vw, vh, px, radius, globe;
     if (!Metrics(cam, &vw, &vh, &px, &radius, &globe)) return NO;
@@ -332,8 +430,9 @@ BOOL IsobarCameraUnproject(IsobarCamera camera, double x, double y, double *lati
     double globe = Clamp01(camera.globe);
     double lat = 0, lon = 0;
     BOOL ok = NO;
-    if (globe <= 1e-7) ok = UnprojectFlat(camera, x, y, &lat, &lon);
-    else if (globe >= 1 - 1e-7) ok = UnprojectSphere(camera, x, y, &lat, &lon);
+    if (camera.pitch > 1e-7) ok = UnprojectTilted(camera, x, y, &lat, &lon);
+    else if (globe <= 1e-7) ok = UnprojectFlat(camera, x, y, &lat, &lon);
+    else if (globe >= 1 - 1e-7 && fabs(camera.pitch) <= 1e-7) ok = UnprojectSphere(camera, x, y, &lat, &lon);
     else ok = UnprojectMorph(camera, x, y, &lat, &lon);
     if (!ok) return NO;
     if (!ClosePixel(camera, lat, lon, x, y, globe > 1e-7 && globe < 1 - 1e-7 ? 0.05 : 1e-3)) return NO;
@@ -343,12 +442,15 @@ BOOL IsobarCameraUnproject(IsobarCamera camera, double x, double y, double *lati
 }
 
 static const double kZoomMin = 1.0;
-static const double kZoomMax = 64.0;
+static const double kZoomMax = 18000.0;
 
 IsobarCamera IsobarCameraClamp(IsobarCamera camera) {
     if (!isfinite(camera.globe)) camera.globe = 0;
     if (camera.globe < 0) camera.globe = 0;
     if (camera.globe > 1) camera.globe = 1;
+    if (!isfinite(camera.pitch)) camera.pitch = 0;
+    if (camera.pitch < 0) camera.pitch = 0;
+    if (camera.pitch > kMaxCameraPitch) camera.pitch = kMaxCameraPitch;
     if (!isfinite(camera.centreLon)) camera.centreLon = 0;
     if (!isfinite(camera.viewportW) || camera.viewportW < 2) camera.viewportW = 2;
     if (!isfinite(camera.viewportH) || camera.viewportH < 2) camera.viewportH = 2;
@@ -413,6 +515,7 @@ static NSString *const kShader = @""
 "using namespace metal;\n"
 "struct U {\n"
 "    float4 cam;\n"
+"    float4 cam2;\n"
 "    float4 view;\n"
 "    float4 geo0;\n"
 "    float4 geo1;\n"
@@ -455,19 +558,42 @@ static NSString *const kShader = @""
 "static float3 projectAt(float lat, float dlon, constant U &u) {\n"
 "    float centreLat = u.cam.x;\n"
 "    float globe = clamp(u.cam.z, 0.0, 1.0);\n"
+"    float pitch = clamp(u.cam2.x, 0.0, 1.30);\n"
 "    float vw = u.view.x, vh = u.view.y, radius = u.view.w;\n"
-"    float phi = lat * 0.017453292519943295;\n"
-"    float lam = dlon * 0.017453292519943295;\n"
-"    float phi0 = centreLat * 0.017453292519943295;\n"
-"    float cosPhi = cos(phi), sinPhi = sin(phi);\n"
-"    float cosLam = cos(lam), sinLam = sin(lam);\n"
-"    float cos0 = cos(phi0), sin0 = sin(phi0);\n"
-"    float Sx = cosPhi * sinLam;\n"
-"    float Sy = sinPhi * cos0 - cosPhi * sin0 * cosLam;\n"
-"    float Sz = sin0 * sinPhi + cos0 * cosPhi * cosLam;\n"
-"    float3 F = float3(lam * cos0, (lat - centreLat) * 0.017453292519943295, 1.0);\n"
-"    float3 P = mix(F, float3(Sx, Sy, Sz), globe);\n"
-"    return float3(vw * 0.5 + P.x * radius, vh * 0.5 - P.y * radius, P.z);\n"
+"    if (pitch <= 0.0000001 || smoothstep(0.0, 1.0, pitch / 0.3490658504) < 0.001) {\n"
+"        if(pitch > 0.0000001) globe=0.0;\n"
+"        float phi = lat * 0.017453292519943295, lam = dlon * 0.017453292519943295;\n"
+"        float phi0 = centreLat * 0.017453292519943295, cp = cos(phi), sp = sin(phi);\n"
+"        float c0 = cos(phi0), s0 = sin(phi0), cl = cos(lam), sl = sin(lam);\n"
+"        float sx = cp * sl, sy = sp * c0 - cp * cl * s0, sz = cp * cl * c0 + sp * s0;\n"
+"        float fx = lam * c0, fy = (lat - centreLat) * 0.017453292519943295;\n"
+"        float bx = mix(fx, sx, globe), by = mix(fy, sy, globe), bz = mix(1.0, sz, globe);\n"
+"        return float3(vw * 0.5 + bx * radius, vh * 0.5 - by * radius, bz);\n"
+"    }\n"
+"    float k = smoothstep(0.0, 1.0, pitch / 0.3490658504);\n"
+"    float re = 1.0 / max(k, 0.001);\n"
+"    float phi = k * lat * 0.017453292519943295;\n"
+"    float phi0 = k * centreLat * 0.017453292519943295;\n"
+"    float lonCorrection = cos(centreLat * 0.017453292519943295) * (1.0 - k) + k;\n"
+"    float lam = k * dlon * 0.017453292519943295 * lonCorrection, cp = cos(phi), sp = sin(phi);\n"
+"    float c0 = cos(phi0), s0 = sin(phi0), cl = cos(lam), sl = sin(lam);\n"
+"    float nx = cp * sl, ny = sp * c0 - cp * cl * s0, nz = cp * cl * c0 + sp * s0;\n"
+"    float3 point = float3(re * nx, re * ny, re * (nz - 1.0));\n"
+"    float sn = sin(pitch), cn = cos(pitch);\n"
+"    float distance = (vh * 0.5 / radius) / (0.46630766 * max(k, 0.001));\n"
+"    float3 eye = float3(0.0, -sn * distance, cn * distance);\n"
+"    float3 rel = point - eye, forward = float3(0.0, sn, -cn), up = float3(0.0, cn, sn);\n"
+"    float depth = dot(rel, forward);\n"
+"    float scale = vh * 0.5 / (depth * 0.46630766 * max(k, 0.001));\n"
+"    return float3(vw * 0.5 + rel.x * scale, vh * 0.5 - dot(rel, up) * scale, depth);\n"
+"}\n"
+"static float4 clipPoint(float3 p, constant U &u) {\n"
+"    float2 xy=float2(p.x/u.view.x*2.0-1.0,1.0-p.y/u.view.y*2.0);\n"
+"    float k=smoothstep(0.0,1.0,u.cam2.x/0.3490658504);\n"
+"    if(u.cam2.x<=0.0000001 || k<0.001) return float4(xy,depthOf(p.z),1.0);\n"
+"    float distance=(u.view.y*0.5/u.view.w)/(0.46630766*k);\n"
+"    float nearZ=max(0.00000001,distance*0.001);\n"
+"    return float4(xy*p.z,p.z-nearZ,p.z);\n"
 "}\n"
 "vertex VOut fieldVertex(uint vid [[vertex_id]], constant U &u [[buffer(0)]],\n"
 "    const device float2 *verts [[buffer(1)]]) {\n"
@@ -475,7 +601,7 @@ static NSString *const kShader = @""
 "    float dlon = verts[vid].y;\n"
 "    float3 p = projectAt(lat, dlon, u);\n"
 "    VOut o;\n"
-"    o.position = float4((p.x / u.view.x) * 2.0 - 1.0, 1.0 - (p.y / u.view.y) * 2.0, depthOf(p.z), 1.0);\n"
+"    o.position = clipPoint(p,u);\n"
 "    o.lat = lat;\n"
 "    o.lon = u.cam.y + dlon;\n"
 "    return o;\n"
@@ -497,7 +623,7 @@ static NSString *const kShader = @""
 "    float z = mix(p0.z, p1.z, v.t);\n"
 "    LOut o;\n"
 "    if (len > fmax(u.view.x, u.view.y) * 1.25) o.position = float4(4.0, 4.0, 1.0, 1.0);\n"
-"    else o.position = float4((c.x / u.view.x) * 2.0 - 1.0, 1.0 - (c.y / u.view.y) * 2.0, depthOf(z), 1.0);\n"
+"    else o.position = clipPoint(float3(c,z),u);\n"
 "    o.side = v.side;\n"
 "    o.halfInk = v.halfInk;\n"
 "    o.halfOuter = v.halfOuter;\n"
@@ -738,6 +864,7 @@ static NSString *const kShader = @""
 
 typedef struct {
     simd_float4 cam;
+    simd_float4 cam2;
     simd_float4 view;
     simd_float4 geo0;
     simd_float4 geo1;
@@ -749,7 +876,7 @@ typedef struct {
     simd_float4 ocean;
     simd_float4 uncovered;
 } FieldUniform;
-_Static_assert(sizeof(FieldUniform) == 304, "field uniform must match the shader");
+_Static_assert(sizeof(FieldUniform) == 320, "field uniform must match the shader");
 
 typedef struct {
     float lat0, lon0, lat1, lon1;
@@ -2692,13 +2819,14 @@ static BOOL ProjectMark(IsobarCamera cam, double lat, double lon, double *x, dou
     if (!SurfaceLon(cam, lat, lon, &s)) return NO;
     if (x) *x = s.x;
     if (y) *y = s.y;
+    if (cam.pitch > 1e-7) return s.visible;
     if (Clamp01(cam.globe) <= 0.5 + 1e-9) return YES;
     return s.pz >= -0.002;
 }
 
 static BOOL CamSame(IsobarCamera a, IsobarCamera b) {
     return a.centreLat == b.centreLat && a.centreLon == b.centreLon && a.zoom == b.zoom
-        && a.globe == b.globe && a.viewportW == b.viewportW && a.viewportH == b.viewportH;
+        && a.globe == b.globe && a.pitch == b.pitch && a.viewportW == b.viewportW && a.viewportH == b.viewportH;
 }
 
 static int GlyphIndex(int klass, char ch) {
@@ -3092,8 +3220,9 @@ static void PushSolidStroke(TextVertex **verts, int *n, int *cap, float x0, floa
     double lat = 0, lon = 0;
     double g = Clamp01(cam.globe);
     BOOL ok = NO;
-    if (g <= 1e-7) ok = UnprojectFlat(cam, x, y, &lat, &lon);
-    else if (g >= 1 - 1e-7) ok = UnprojectSphere(cam, x, y, &lat, &lon);
+    if (cam.pitch > 1e-7) ok = UnprojectTilted(cam,x,y,&lat,&lon);
+    else if (g <= 1e-7) ok = UnprojectFlat(cam, x, y, &lat, &lon);
+    else if (g >= 1 - 1e-7 && fabs(cam.pitch) <= 1e-7) ok = UnprojectSphere(cam, x, y, &lat, &lon);
     else {
         // One short Newton from the closer closed form. The coarse net and
         // HighestZ stay on the public unproject.
@@ -3125,6 +3254,7 @@ static void PushSolidStroke(TextVertex **verts, int *n, int *cap, float x0, floa
     if (!ok) return NO;
     Surface s;
     if (!SurfaceLon(cam, lat, lon, &s)) return NO;
+    if (cam.pitch > 1e-7 && !s.visible) return NO;
     if (g > 0.5 + 1e-9 && s.pz < -0.002) return NO;
     if (hypot(s.x - x, s.y - y) > (g > 1e-7 && g < 1 - 1e-7 ? 1.5 : 1.0)) return NO;
     double south = GridSouth(_grid);
@@ -3581,7 +3711,14 @@ enum { kLandMaskFactor = 4 };
 
 - (void)ensureLandTexture {
     OwnCoast coast = CoastForGrid(_grid, _coast, _worldCoast);
-    if (_landTex || !_gridOK || (!ChartPlate(_grid) && !_grid.wrapsLongitude) ||
+    // Display geography follows the supported archive extent, not its weather
+    // sampling resolution. The 1-degree archive/fixtures cover the same coast
+    // as the 0.25-degree chart; restricting this to ChartPlate silently dropped
+    // their land/sea tokens and exposed the light-only pressure fallback ramp.
+    BOOL australianExtent = !_grid.wrapsLongitude && fabs(_grid.west - 95.0) < 1e-4 &&
+        fabs(_grid.north) < 1e-4 && fabs(GridEast(_grid) - 170.0) < 1e-4 &&
+        fabs(GridSouth(_grid) + 50.0) < 1e-4;
+    if (_landTex || !_gridOK || (!australianExtent && !_grid.wrapsLongitude) ||
         coast.rings < 1 || !_device) return;
     int maskLon = _grid.wrapsLongitude ? _grid.nLon * kLandMaskFactor
         : (_grid.nLon - 1) * kLandMaskFactor + 1;
@@ -4109,7 +4246,7 @@ static void ProjectContour(ContourSet *set, IsobarCamera cam) {
                 q.x = (float)s.x;
                 q.y = (float)s.y;
                 q.pz = (float)s.pz;
-                q.front = (g <= 0.5 + 1e-9 || s.pz >= -0.002) ? 1 : 0;
+                q.front = cam.pitch > 1e-7 ? s.visible : (g <= 0.5 + 1e-9 || s.pz >= -0.002);
             }
             proj[cursor++] = q;
         }
@@ -4455,7 +4592,7 @@ static ContourSet *BuildContourSet(const float *va, const float *vb, float mix,
                 q.x = (float)s.x;
                 q.y = (float)s.y;
                 q.pz = (float)s.pz;
-                q.front = (g <= 0.5 + 1e-9 || s.pz >= -0.002) ? 1 : 0;
+                q.front = cam.pitch > 1e-7 ? s.visible : (g <= 0.5 + 1e-9 || s.pz >= -0.002);
             }
             _proj[cursor++] = q;
         }
@@ -5142,6 +5279,7 @@ static void LocalOf(double x, double y, double cx, double cy, double ang, double
     FieldUniform u;
     memset(&u, 0, sizeof u);
     u.cam = (simd_float4){(float)camera.centreLat, (float)camera.centreLon, (float)globe, (float)camera.zoom};
+    u.cam2 = (simd_float4){(float)camera.pitch, 0, 0, 0};
     u.view = (simd_float4){(float)vw, (float)vh, (float)px, (float)radius};
     u.geo0 = (simd_float4){(float)_grid.west, (float)_grid.north, (float)_grid.step, (float)GridEast(_grid)};
     u.geo1 = (simd_float4){(float)GridSouth(_grid), (float)_grid.nLon, (float)_grid.nLat, _grid.wrapsLongitude ? 1.f : 0.f};

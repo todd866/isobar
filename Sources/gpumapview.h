@@ -5,6 +5,8 @@
 #import "fieldrender.h"
 #import "ownrender.h"
 #import "playback.h"
+#import "traffic.h"
+#import "windmapview.h"
 
 // Absent key is on, so this build opens on the new map. The classic chart
 // stays one switch away.
@@ -20,16 +22,31 @@ typedef NS_ENUM(NSInteger, GPUMapSurface) {
 // A failed cold start is unavailable either way. A kept run stays on screen.
 GPUMapSurface GPUMapSurfaceFor(BOOL newMapEnabled, BOOL chartsReady);
 
-// Wind barbs and place readings have no GPU drawing yet. Colour fields do.
+// Place readings remain classic-only; existing wind barbs project in 3D.
 BOOL GPUMapTagIsClassicOnly(NSInteger tag);
 // When `note` is set and the item is classic-only, append "Classic map only".
 NSString *GPUMapMenuTitle(NSString *title, BOOL classicOnly, BOOL note);
 
 @interface GPUMapView : NSView
+@property (nonatomic, copy) NSDictionary *trafficSnapshot;
+@property (nonatomic, strong) TrafficTrackSession *trafficSession;
+@property (nonatomic) BOOL trafficEnabled;
+@property (nonatomic) BOOL trafficIsNow;
+// Selected forecast/live timestamp used to sample locally captured traffic.
+@property (nonatomic, strong) NSDate *trafficDate;
+// A held Now frame stays visible while the playhead is paused; later polls
+// cannot move that picture until live playback is explicitly resumed.
+@property (nonatomic, copy) NSDictionary *trafficHoldSnapshot;
+@property (nonatomic, strong) NSDate *trafficHoldDate;
+@property (nonatomic) BOOL trafficHolding;
+@property (nonatomic, strong) NSTimeZone *trafficZone;
+@property (nonatomic, copy) NSDictionary *trafficRoutes;
+@property (nonatomic, copy) void (^onTrafficSelection)(NSString *hex, BOOL selected);
 @property (nonatomic, copy) void (^onPlainClick)(void);
-// The controller freezes forecast time for the full pointer hold, including
-// a drag that becomes a map pan.
+// Pointer ownership for the shared clock. YES is emitted on mouse-down and
+// NO on mouse-up, cancellation, or window teardown; dragging remains camera-only.
 @property (nonatomic, copy) void (^onHoldChanged)(BOOL held);
+@property (nonatomic, copy) void (^onCameraChanged)(IsobarCamera camera);
 @property (nonatomic, weak) IsobarLivePlayer *timeline;
 @property (nonatomic) double fractionalStep;
 @property (nonatomic, readonly) double renderedStep;
@@ -51,6 +68,7 @@ NSString *GPUMapMenuTitle(NSString *title, BOOL classicOnly, BOOL note);
 @property (nonatomic, copy) void (^onPresentFailed)(void);
 @property (nonatomic) BOOL suppressPresentation;
 - (void)presentNow;
+- (void)showTrafficNotice:(NSString *)notice;
 // The popover hides the 2D/3D control. Recenter appears only after a move.
 @property (nonatomic) BOOL popoverChrome;
 @property (nonatomic, readonly) BOOL userMovedMap;
@@ -68,6 +86,13 @@ NSString *GPUMapMenuTitle(NSString *title, BOOL classicOnly, BOOL note);
 @property (nonatomic, readonly, copy) NSArray<NSString *> *snapshotPlaceNames;
 @property (nonatomic) BOOL stale;
 @property (nonatomic) BOOL unavailable;
+@property (nonatomic) BOOL windBarbs;
+// Optional atmospheric profile supplied by the shared controller. This view
+// only stores the profile and its focus; atmospheric drawing is a later layer.
+@property (nonatomic, copy) NSDictionary *atmosphereProduct;
+@property (nonatomic) double atmosphereLatitude;
+@property (nonatomic) double atmosphereLongitude;
+@property (nonatomic, strong) NSDate *atmosphereDate;
 // Nil follows the system setting. Tests pin YES or NO.
 @property (nonatomic, strong) NSNumber *reducedMotionOverride;
 @property (nonatomic, readonly) IsobarFieldKind fill;

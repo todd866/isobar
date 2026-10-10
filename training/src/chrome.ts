@@ -1,6 +1,6 @@
 import type { Card } from './model.ts';
 
-export type Page = 'review' | 'live' | 'plan' | 'exam' | 'profile';
+export type Page = 'review' | 'live' | 'plan' | 'exam' | 'profile' | 'lab';
 
 export type Mode =
   | 'mixed'
@@ -26,10 +26,13 @@ export const MODES: { id: Mode; label: string }[] = [
 ];
 
 export function modePool(cards: Card[], mode: Mode): Card[] {
-  if (mode === 'mixed') return cards;
+  if (mode === 'mixed') return cards.filter((card) => card.kind !== 'numeric');
   if (mode === 'met') return cards.filter((card) => card.subject === 'met');
-  if (mode === 'plan') return cards.filter((card) => card.subject === 'plan' && card.kind !== 'later');
-  if (mode === 'performance') return cards.filter((card) => card.kind === 'later');
+  if (mode === 'plan') return cards.filter((card) => card.subject === 'plan' && card.kind !== 'later' && card.kind !== 'numeric');
+  if (mode === 'performance') {
+    const drills = cards.filter((card) => card.kind === 'numeric');
+    return drills.length ? drills : cards.filter((card) => card.kind === 'later');
+  }
   return [];
 }
 
@@ -49,7 +52,8 @@ export function planQueue(cards: Card[]): string[] {
 export function chipFor(card: Card | null, page: Page, mode: Mode = 'mixed'): { id: string; label: string } {
   if (page === 'live') return { id: 'live', label: 'Live' };
   if (page === 'profile') return { id: 'profile', label: 'Profile' };
-  if (card?.kind === 'later') return { id: 'performance', label: 'Performance & loading' };
+  if (page === 'lab') return { id: 'lab', label: 'Flight computer' };
+  if (card?.kind === 'later' || card?.kind === 'numeric') return { id: 'performance', label: 'Performance & loading' };
   if (card?.subject === 'plan') return { id: 'plan', label: 'Flight planning' };
   if (card?.subject === 'live') return { id: 'live', label: 'Live' };
   if (card?.subject === 'met') return { id: 'met', label: 'Met' };

@@ -1,0 +1,2751 @@
+{
+  "schema": "isobar.training.syllabus/v1",
+  "id": "faa-atp",
+  "authority": "FAA",
+  "title": "ATP airplane airman certification standards and ATP CTP",
+  "version": "FAA-S-ACS-11A (November 2023, effective 31 May 2024); 14 CFR 61.156 as in the 2025 CFR",
+  "version_date": "2024-05-31",
+  "retrieved": "2026-10-09",
+  "licence": "US government work, public domain",
+  "licence_note": "FAA ACS and the Code of Federal Regulations are US government works.",
+  "source_url": "https://www.faa.gov/training_testing/testing/acs/atp_airplane_acs_11.pdf",
+  "gap": "Risk-management (R) and skill (S) elements are in the same ACS and are not knowledge elements, so they are not listed. Letter codes were read from FAA-S-ACS-11A.",
+  "subjects": [
+    {
+      "code": "I. Preflight Preparation",
+      "title": "I. Preflight Preparation",
+      "objectives": [
+        {
+          "id": "faa:AA.I.A.K1",
+          "text": "A. Operation of Systems: Landing gear–extension/retraction system(s), indicators, float devices, brakes, antiskid, tires, nose- wheel steering, and shock absorbers.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.A.K2",
+          "text": "A. Operation of Systems: Powerplant–controls and indications, induction system, carburetor and fuel injection, turbocharging, cooling, mounting points, turbine wheels, compressors, deicing, anti-icing, and other related components.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.icing"
+          ]
+        },
+        {
+          "id": "faa:AA.I.A.K3",
+          "text": "A. Operation of Systems: Propellers–type, controls, feathering/unfeathering, auto-feather, negative torque sensing, synchronizing, synchrophasing, and thrust reverse, including uncommanded reverse procedures.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.I.A.K4",
+          "text": "A. Operation of Systems: Fuel system–capacity, drains, pumps, controls, indicators, cross-feeding, transferring, jettisoning, fuel grade, color and additives, fueling and defueling procedures, and fuel substitutions.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.A.K5",
+          "text": "A. Operation of Systems: Oil system–capacity, allowable types of oil, quantities, and indicators.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.A.K6",
+          "text": "A. Operation of Systems: Hydraulic system–capacity, pumps, pressure, reservoirs, allowable types of fluid, and regulators.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.hydraulics"
+          ]
+        },
+        {
+          "id": "faa:AA.I.A.K7",
+          "text": "A. Operation of Systems: Electrical system–alternators, generators, batteries, circuit breakers and protection devices, controls, indicators, and external and auxiliary power sources and ratings.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.electrical"
+          ]
+        },
+        {
+          "id": "faa:AA.I.A.K8",
+          "text": "A. Operation of Systems: Pneumatic and environmental systems–heating, cooling, ventilation, oxygen, pressurization, supply for ice protection systems, controls, indicators, and regulating devices.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.anti-ice"
+          ]
+        },
+        {
+          "id": "faa:AA.I.A.K9",
+          "text": "A. Operation of Systems: Avionics and communications–autopilot, flight director, Electronic Flight Instrument Systems (EFIS), Flight Management System (FMS), Electronic Flight Bag (EFB), Radar, Inertial Navigation Systems (INS), Global Navigation Satellite System (GNSS), Space-Based Augmentation System (SBAS), Ground-Based Augmentation System (GBAS), ground-based navigation systems and components, Automatic Dependent Surveillance – Broadcast (ADS-B) In and Out, Automatic Dependent Surveillance – Contract (ADS-C), traffic awareness/warning/avoidance systems, terrain awareness/ warning/alert systems, communication systems (e.g., data link, Ultra High Frequency (UHF)/Very High Frequency (VHF)/High Frequency (HF), satellite), Controller Pilot Data Link Communication (CPDLC), indicating devices, transponder, and emergency locator transmitter, Head Up-Display (HUD).",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "faa:AA.I.A.K10",
+          "text": "A. Operation of Systems: Ice protection–anti-ice, deice, pitot-static system protection, turbine inlet, propeller, windshield, airfoil surfaces, and other related components.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ]
+        },
+        {
+          "id": "faa:AA.I.A.K11",
+          "text": "A. Operation of Systems: Crewmember and passenger equipment–oxygen system, survival gear, emergency exits, evacuation procedures and crew duties, quick donning oxygen mask for crewmembers, passenger oxygen system.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.A.K12",
+          "text": "A. Operation of Systems: Flight controls–ailerons, elevator(s), rudder(s), control tabs, control boost/augmentation systems, flaps, spoilers, leading edge devices, speed brakes, stability augmentation system (e.g., yaw damper), and trim systems.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.flight-controls"
+          ]
+        },
+        {
+          "id": "faa:AA.I.A.K13",
+          "text": "A. Operation of Systems: Pitot-static system–associated instruments and the power source for those flight instruments. Operation and power sources for other flight instruments.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pitot-static"
+          ]
+        },
+        {
+          "id": "faa:AA.I.A.K14",
+          "text": "A. Operation of Systems: Fire & smoke detection, protection, and suppression–powerplant, cargo and passenger compartments, lavatory, pneumatic and environmental, electrical/avionics, and batteries (on aircraft and personal electronic devices).",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.I.A.K15",
+          "text": "A. Operation of Systems: Envelope protection–angle of attack warning and protection, and speed protection.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.stall-aoa"
+          ]
+        },
+        {
+          "id": "faa:AA.I.A.K16",
+          "text": "A. Operation of Systems: The contents of the Pilot Owner's Handbook (POH) or Airplane Flight Manual (AFM) with regard to the systems and components in the airplane.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.A.K17",
+          "text": "A. Operation of Systems: How to use a Minimum Equipment List (MEL) and a Configuration Deviation List (CDL).",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.mel-dispatch"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K1",
+          "text": "B. Performance and Limitations: Elements related to performance and limitations by explaining the use of charts, tables, and data to determine performance.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K2",
+          "text": "B. Performance and Limitations: How to determine the following, as applicable to the class sought:",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K2a",
+          "text": "B. Performance and Limitations: a. Accelerate-stop / accelerate-go distance",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.takeoff-factors"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K2b",
+          "text": "B. Performance and Limitations: b. Takeoff performance [e.g., balance field length and Velocity, Minimum Control (ground) (VMCG)]",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.takeoff-factors"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K2c",
+          "text": "B. Performance and Limitations: c. Climb performance",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K2d",
+          "text": "B. Performance and Limitations: d. Cruise performance (e.g., optimum and maximum operating altitudes)",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K2e",
+          "text": "B. Performance and Limitations: e. Descent performance",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K2f",
+          "text": "B. Performance and Limitations: f. Landing performance",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K2g",
+          "text": "B. Performance and Limitations: g. Performance with an inoperative powerplant for all phases of flight (AMEL, AMES)",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K2h",
+          "text": "B. Performance and Limitations: h. Weight and balance and how to shift weight",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K3",
+          "text": "B. Performance and Limitations: Factors affecting performance, including:",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K3a",
+          "text": "B. Performance and Limitations: a. Atmospheric conditions",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K3b",
+          "text": "B. Performance and Limitations: b. Pilot technique",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K3c",
+          "text": "B. Performance and Limitations: c. Aircraft configuration (e.g., flap setting)",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K3d",
+          "text": "B. Performance and Limitations: d. Airport environment (e.g., runway condition, land and hold short operations (LAHSO))",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K3e",
+          "text": "B. Performance and Limitations: e. Loading (e.g., center of gravity)",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.weight"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K3f",
+          "text": "B. Performance and Limitations: f. Aircraft weight",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K4",
+          "text": "B. Performance and Limitations: Aerodynamics and how it relates to performance.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K5",
+          "text": "B. Performance and Limitations: Adverse effects of exceeding an airplane limitation or the aircraft operating envelope.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K6",
+          "text": "B. Performance and Limitations: Effects of icing on performance.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.icing"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K7",
+          "text": "B. Performance and Limitations: Clean wing concept; deicing and anti-icing procedures, including use of appropriate deice fluid, hold- over tables, calculating hold-over times, and pre-takeoff contamination checks.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.icing"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K8",
+          "text": "B. Performance and Limitations: Air carrier weight and balance systems (e.g., average weight program). Air Transport Pilot (ATP) (AMEL, AMES).",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.I.B.K9",
+          "text": "B. Performance and Limitations: Runway assessment and condition reporting and use of the Runway Condition Assessment Matrix (RCAM). (ATP)(AMEL, AMES).",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K1",
+          "text": "C. Weather Information (ATP): Sources of weather data (e.g., National Weather Service, Flight Service) for flight planning purposes.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K2",
+          "text": "C. Weather Information (ATP): Acceptable weather products and resources required for preflight planning, current and forecast weather for departure, en route, and arrival phases of flight such as:",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K2a",
+          "text": "C. Weather Information (ATP): a. Airport Observations (METAR and SPECI) and Pilot Observations (PIREP)",
+          "kind": "objective",
+          "concept_ids": [
+            "met.taf-groups"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K2b",
+          "text": "C. Weather Information (ATP): b. Surface Analysis Chart, Ceiling and Visibility Chart (CVA)",
+          "kind": "objective",
+          "concept_ids": [
+            "met.ceiling"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K2c",
+          "text": "C. Weather Information (ATP): c. Terminal Aerodrome Forecasts (TAF)",
+          "kind": "objective",
+          "concept_ids": [
+            "met.taf-groups"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K2d",
+          "text": "C. Weather Information (ATP): d. Graphical Forecasts for Aviation (GFA)",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K2e",
+          "text": "C. Weather Information (ATP): e. Wind and Temperature Aloft Forecast (FB)",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K2f",
+          "text": "C. Weather Information (ATP): f. Convective Outlook (AC)",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K2g",
+          "text": "C. Weather Information (ATP): g. Inflight Aviation Weather Advisories including Airmen's Meteorological Information (AIRMET), Significant Meteorological Information (SIGMET), and Convective SIGMET",
+          "kind": "objective",
+          "concept_ids": [
+            "met.taf-groups"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K3",
+          "text": "C. Weather Information (ATP): Meteorology applicable to the departure, en route, alternate, and destination for flights conducted under Instrument Flight Rules (IFR) to include expected climate and hazardous conditions such as:",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K3a",
+          "text": "C. Weather Information (ATP): a. Atmospheric composition and stability",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K3b",
+          "text": "C. Weather Information (ATP): b. Wind (e.g., windshear, mountain wave, factors affecting wind, etc.)",
+          "kind": "objective",
+          "concept_ids": [
+            "met.turbulence"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K3c",
+          "text": "C. Weather Information (ATP): c. Temperature and heat exchange",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K3d",
+          "text": "C. Weather Information (ATP): d. Moisture/precipitation",
+          "kind": "objective",
+          "concept_ids": [
+            "met.moisture"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K3e",
+          "text": "C. Weather Information (ATP): e. Weather system formation, including air masses and fronts",
+          "kind": "objective",
+          "concept_ids": [
+            "met.fronts"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K3f",
+          "text": "C. Weather Information (ATP): f. Clouds",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K3g",
+          "text": "C. Weather Information (ATP): g. Turbulence",
+          "kind": "objective",
+          "concept_ids": [
+            "met.turbulence"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K3h",
+          "text": "C. Weather Information (ATP): h. Thunderstorms and microbursts",
+          "kind": "objective",
+          "concept_ids": [
+            "met.thunderstorm"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K3i",
+          "text": "C. Weather Information (ATP): i. Icing and freezing level information",
+          "kind": "objective",
+          "concept_ids": [
+            "met.icing"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K3j",
+          "text": "C. Weather Information (ATP): j. Fog/mist",
+          "kind": "objective",
+          "concept_ids": [
+            "met.ceiling"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K3k",
+          "text": "C. Weather Information (ATP): k. Frost",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K3l",
+          "text": "C. Weather Information (ATP): l. Obstructions to visibility (e.g., smoke, haze, volcanic ash, etc.)",
+          "kind": "objective",
+          "concept_ids": [
+            "met.ceiling"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K4",
+          "text": "C. Weather Information (ATP): Flight deck displays of digital weather and aeronautical information, their use to navigate around weather, and equipment limitations.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K5",
+          "text": "C. Weather Information (ATP): Low-visibility operations (e.g., surface movement, category II and III approaches). (ATP)(AMEL, AMES).",
+          "kind": "objective",
+          "concept_ids": [
+            "met.ceiling"
+          ]
+        },
+        {
+          "id": "faa:AA.I.C.K6",
+          "text": "C. Weather Information (ATP): Flight Risk Assessment Tools.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "faa:AA.I.D.K1",
+          "text": "D. High-Altitude Aerodynamics (ATP) (AMEL, AMES): Aerodynamics of large transport category airplanes, including flight characteristics of swept wing airplanes (e.g., Mach buffet).",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ]
+        },
+        {
+          "id": "faa:AA.I.D.K2",
+          "text": "D. High-Altitude Aerodynamics (ATP) (AMEL, AMES): Energy management.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ]
+        },
+        {
+          "id": "faa:AA.I.D.K3",
+          "text": "D. High-Altitude Aerodynamics (ATP) (AMEL, AMES): Relationship between Mach number, indicated airspeed, true airspeed, and change over altitudes.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ]
+        },
+        {
+          "id": "faa:AA.I.D.K4",
+          "text": "D. High-Altitude Aerodynamics (ATP) (AMEL, AMES): Load factor at high altitude and its effect on high and low speed operating margins.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.load-factor"
+          ]
+        },
+        {
+          "id": "faa:AA.I.D.K5",
+          "text": "D. High-Altitude Aerodynamics (ATP) (AMEL, AMES): Relationship between altitude capability, weight, and temperature.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ]
+        },
+        {
+          "id": "faa:AA.I.D.K6",
+          "text": "D. High-Altitude Aerodynamics (ATP) (AMEL, AMES): Maximum Operating Speed - Knots (VMO) / Maximum Operating Speed - Mach (MMO) convergence and stall angle of attack.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.stall-aoa"
+          ]
+        },
+        {
+          "id": "faa:AA.I.D.K7",
+          "text": "D. High-Altitude Aerodynamics (ATP) (AMEL, AMES): Maximum Lift over Drag Ratio (L/DMAX).",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ]
+        },
+        {
+          "id": "faa:AA.I.D.K8",
+          "text": "D. High-Altitude Aerodynamics (ATP) (AMEL, AMES): Best range and best endurance.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ]
+        },
+        {
+          "id": "faa:AA.I.D.K9",
+          "text": "D. High-Altitude Aerodynamics (ATP) (AMEL, AMES): Factors which contribute to airplane upsets at high altitude and upset prevention and recovery techniques.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ]
+        },
+        {
+          "id": "faa:AA.I.E.K1",
+          "text": "E. Air Carrier Operations (ATP) (AMEL, AMES): Turbine engines, thrust reversing systems, and system malfunctions.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.I.E.K2",
+          "text": "E. Air Carrier Operations (ATP) (AMEL, AMES): Airplane automation components (e.g., flight director, autopilot), their relationship to each other, and how to manage the automation for flight.",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ]
+        },
+        {
+          "id": "faa:AA.I.E.K3",
+          "text": "E. Air Carrier Operations (ATP) (AMEL, AMES): Advanced navigation equipment (e.g., FMS, Required Navigation Performance (RNP), ADS-B, EFB, etc.) and how it is used inflight.",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ]
+        },
+        {
+          "id": "faa:AA.I.E.K4",
+          "text": "E. Air Carrier Operations (ATP) (AMEL, AMES): Flightpath warning systems (e.g., Traffic Alert and Collision Avoidance Systems (TCAS), Terrain Awareness and Warning System (TAWS) and how to respond to a warning.",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ]
+        },
+        {
+          "id": "faa:AA.I.E.K5",
+          "text": "E. Air Carrier Operations (ATP) (AMEL, AMES): Altitudes and conditions that require the use of oxygen masks.",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ]
+        },
+        {
+          "id": "faa:AA.I.E.K6",
+          "text": "E. Air Carrier Operations (ATP) (AMEL, AMES): Causes and recognition of cabin pressure loss.",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ]
+        },
+        {
+          "id": "faa:AA.I.E.K7",
+          "text": "E. Air Carrier Operations (ATP) (AMEL, AMES): Appropriate rudder use in transport aircraft to avoid rudder reversal.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.flight-controls"
+          ]
+        },
+        {
+          "id": "faa:AA.I.E.K8",
+          "text": "E. Air Carrier Operations (ATP) (AMEL, AMES): Crew communications (e.g., sterile flight deck rules, briefings).",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ]
+        },
+        {
+          "id": "faa:AA.I.E.K9",
+          "text": "E. Air Carrier Operations (ATP) (AMEL, AMES): Operational control.",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ]
+        },
+        {
+          "id": "faa:AA.I.E.K10",
+          "text": "E. Air Carrier Operations (ATP) (AMEL, AMES): Elements associated with operating at complex and high traffic airports with emphasis on runway incursion prevention techniques.",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ]
+        },
+        {
+          "id": "faa:AA.I.E.K11",
+          "text": "E. Air Carrier Operations (ATP) (AMEL, AMES): Professional responsibilities associated with being an ATP certificate holder and how to apply leadership skills as pilot-in-command.",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ]
+        },
+        {
+          "id": "faa:AA.I.E.K12",
+          "text": "E. Air Carrier Operations (ATP) (AMEL, AMES): Crew resource management (CRM) principles and application in a multi-crew environment.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:AA.I.E.K13",
+          "text": "E. Air Carrier Operations (ATP) (AMEL, AMES): Use of safety programs to manage risk across an organization (e.g., Threat and error management (TEM), or Aviation Safety Action Program (ASAP)).",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:AA.I.E.K14",
+          "text": "E. Air Carrier Operations (ATP) (AMEL, AMES): Operations specifications.",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ]
+        },
+        {
+          "id": "faa:AA.I.F.K1",
+          "text": "F. Human Factors (ATP): Causes, effects, recognition, and corrective actions associated with aeromedical and physiological issues, including:",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:AA.I.F.K1a",
+          "text": "F. Human Factors (ATP): a. Hypoxia",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.hypoxia"
+          ]
+        },
+        {
+          "id": "faa:AA.I.F.K1b",
+          "text": "F. Human Factors (ATP): b. Hyperventilation",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:AA.I.F.K1c",
+          "text": "F. Human Factors (ATP): c. Middle ear and sinus problems",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:AA.I.F.K1d",
+          "text": "F. Human Factors (ATP): d. Spatial disorientation",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.vestibular"
+          ]
+        },
+        {
+          "id": "faa:AA.I.F.K1e",
+          "text": "F. Human Factors (ATP): e. Motion sickness",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:AA.I.F.K1f",
+          "text": "F. Human Factors (ATP): f. Carbon monoxide poisoning",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:AA.I.F.K1g",
+          "text": "F. Human Factors (ATP): g. Stress",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:AA.I.F.K1h",
+          "text": "F. Human Factors (ATP): h. Fatigue",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:AA.I.F.K1i",
+          "text": "F. Human Factors (ATP): i. Dehydration and nutrition",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:AA.I.F.K1j",
+          "text": "F. Human Factors (ATP): j. Hypothermia",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:AA.I.F.K1k",
+          "text": "F. Human Factors (ATP): k. Optical illusions",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:AA.I.F.K1l",
+          "text": "F. Human Factors (ATP): l. Dissolved nitrogen in the bloodstream after scuba dives",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:AA.I.F.K2",
+          "text": "F. Human Factors (ATP): Effects of alcohol, drugs, and over-the-counter medications.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:AA.I.F.K3",
+          "text": "F. Human Factors (ATP): Aeronautical Decision-Making (ADM) to include using Crew Resource Management (CRM) or Single- Pilot Resource Management (SRM), as appropriate.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:AA.I.F.K4",
+          "text": "F. Human Factors (ATP): Components of self-assessment for determining fitness for flight.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:AA.I.G.K1",
+          "text": "G. The Code of Federal Regulations (CFR) (ATP): 14 CFR part 61, subparts A, B, and G.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "faa:AA.I.G.K2",
+          "text": "G. The Code of Federal Regulations (CFR) (ATP): 14 CFR part 91 subparts A, B, C, F, G, H.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "faa:AA.I.G.K3",
+          "text": "G. The Code of Federal Regulations (CFR) (ATP): 14 CFR part 117 (AMEL, AMES).",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "faa:AA.I.G.K4",
+          "text": "G. The Code of Federal Regulations (CFR) (ATP): 14 CFR part 121 subparts A, G, K, M, O, T, U, V (AMEL, AMES).",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "faa:AA.I.G.K5",
+          "text": "G. The Code of Federal Regulations (CFR) (ATP): 14 CFR part 135 subparts A, B, C, D, E, F, G (ASEL, ASES).",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "faa:AA.I.G.K6",
+          "text": "G. The Code of Federal Regulations (CFR) (ATP): 49 CFR part 830.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "faa:AA.I.G.K7",
+          "text": "G. The Code of Federal Regulations (CFR) (ATP): 14 CFR part 111 subparts A, D.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "faa:AA.I.H.K1",
+          "text": "H. Water and Seaplane Characteristics, Seaplane Bases, Maritime Rules, and Aids to Marine: The characteristics of a water surface as affected by features, such as:",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.H.K1a",
+          "text": "H. Water and Seaplane Characteristics, Seaplane Bases, Maritime Rules, and Aids to Marine: a. Size and location",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.H.K1b",
+          "text": "H. Water and Seaplane Characteristics, Seaplane Bases, Maritime Rules, and Aids to Marine: b. Protected and unprotected areas",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.H.K1c",
+          "text": "H. Water and Seaplane Characteristics, Seaplane Bases, Maritime Rules, and Aids to Marine: c. Surface wind",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.H.K1d",
+          "text": "H. Water and Seaplane Characteristics, Seaplane Bases, Maritime Rules, and Aids to Marine: d. Direction and strength of water current",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.H.K1e",
+          "text": "H. Water and Seaplane Characteristics, Seaplane Bases, Maritime Rules, and Aids to Marine: e. Floating and partially submerged debris",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.H.K1f",
+          "text": "H. Water and Seaplane Characteristics, Seaplane Bases, Maritime Rules, and Aids to Marine: f. Sandbars, islands, and shoals",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.H.K1g",
+          "text": "H. Water and Seaplane Characteristics, Seaplane Bases, Maritime Rules, and Aids to Marine: g. Vessel traffic and wakes",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.H.K1h",
+          "text": "H. Water and Seaplane Characteristics, Seaplane Bases, Maritime Rules, and Aids to Marine: h. Other characteristics specific to the area",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.H.K1i",
+          "text": "H. Water and Seaplane Characteristics, Seaplane Bases, Maritime Rules, and Aids to Marine: i. Direction and height of waves",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.H.K2",
+          "text": "H. Water and Seaplane Characteristics, Seaplane Bases, Maritime Rules, and Aids to Marine: Float and hull construction, and its effect on seaplane performance.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.H.K3",
+          "text": "H. Water and Seaplane Characteristics, Seaplane Bases, Maritime Rules, and Aids to Marine: Causes of porpoising and skipping, and the pilot action needed to prevent or correct these occurrences.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.H.K4",
+          "text": "H. Water and Seaplane Characteristics, Seaplane Bases, Maritime Rules, and Aids to Marine: How to locate and identify seaplane bases on charts or in directories.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.H.K5",
+          "text": "H. Water and Seaplane Characteristics, Seaplane Bases, Maritime Rules, and Aids to Marine: Operating restrictions at various bases.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.H.K6",
+          "text": "H. Water and Seaplane Characteristics, Seaplane Bases, Maritime Rules, and Aids to Marine: Right-of-way, steering, and sailing rules pertinent to seaplane operation.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.airspace"
+          ]
+        },
+        {
+          "id": "faa:AA.I.H.K7",
+          "text": "H. Water and Seaplane Characteristics, Seaplane Bases, Maritime Rules, and Aids to Marine: Marine navigation aids, such as buoys, beacons, lights, sound signals, and range markers.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.H.K8",
+          "text": "H. Water and Seaplane Characteristics, Seaplane Bases, Maritime Rules, and Aids to Marine: Naval vessel protection zones.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.I.H.K9",
+          "text": "H. Water and Seaplane Characteristics, Seaplane Bases, Maritime Rules, and Aids to Marine: No wake zones.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        }
+      ],
+      "source_url": "https://www.faa.gov/training_testing/testing/acs/atp_airplane_acs_11.pdf",
+      "gap": null
+    },
+    {
+      "code": "II. Preflight Procedures",
+      "title": "II. Preflight Procedures",
+      "objectives": [
+        {
+          "id": "faa:AA.II.A.K1",
+          "text": "A. Preflight Assessment: Pilot self-assessment.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.A.K2",
+          "text": "A. Preflight Assessment: Determining that the aircraft to be used is appropriate, airworthy, and in a condition for safe flight by locating and explaining related documents such as:",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.A.K2a",
+          "text": "A. Preflight Assessment: a. Airworthiness and registration certificates",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.A.K2b",
+          "text": "A. Preflight Assessment: b. Operating limitations, handbooks, and manuals",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.A.K2c",
+          "text": "A. Preflight Assessment: c. Minimum Equipment List (MEL) and Configuration Deviation List (CDL), Kinds of Operations Equipment Lists (KOEL)",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.mel-dispatch"
+          ]
+        },
+        {
+          "id": "faa:AA.II.A.K2d",
+          "text": "A. Preflight Assessment: d. Weight and balance data",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.A.K2e",
+          "text": "A. Preflight Assessment: e. Required inspections or tests and appropriate records and documentation (e.g., dispatch release) as applicable to the proposed flight or operation",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.A.K3",
+          "text": "A. Preflight Assessment: Preventive maintenance that can be performed by the pilot or other designated crewmember.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.A.K4",
+          "text": "A. Preflight Assessment: Aircraft preflight inspection, including:",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.A.K4a",
+          "text": "A. Preflight Assessment: a. Which items should be inspected",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.A.K4b",
+          "text": "A. Preflight Assessment: b. The reasons for checking each item",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.A.K4c",
+          "text": "A. Preflight Assessment: c. How to detect possible defects",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.A.K4d",
+          "text": "A. Preflight Assessment: d. The associated regulations",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.A.K5",
+          "text": "A. Preflight Assessment: Environmental factors, including weather, terrain, route selection, and obstructions.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.A.K6",
+          "text": "A. Preflight Assessment: Requirements for current and appropriate navigation data.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.A.K7",
+          "text": "A. Preflight Assessment: Operations specifications, management specifications, or letters of authorization applying to a particular aircraft and operation, if applicable.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.B.K1",
+          "text": "B. Powerplant Start: Normal and abnormal powerplant start procedures and limitations, including the use of an auxiliary power unit (APU) or external power source, if applicable.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.II.B.K2",
+          "text": "B. Powerplant Start: Starting under various conditions.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.II.B.K3",
+          "text": "B. Powerplant Start: Malfunctions during powerplant start, procedures to address the malfunction, and any associated limitations.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.II.B.K4",
+          "text": "B. Powerplant Start: Coordinating and communicating with ground personnel for powerplant start, if applicable.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.II.C.K1",
+          "text": "C. Taxiing (ASEL, AMEL): Current airport aeronautical references and information resources such as the Chart Supplement, airport diagram, and Notices to Air Missions (NOTAMs).",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.C.K2",
+          "text": "C. Taxiing (ASEL, AMEL): Taxi instructions/clearances, including published taxi routes.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.C.K3",
+          "text": "C. Taxiing (ASEL, AMEL): Airport markings, signs, and lights.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.C.K4",
+          "text": "C. Taxiing (ASEL, AMEL): Appropriate aircraft lighting for day and night operations.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.C.K5",
+          "text": "C. Taxiing (ASEL, AMEL): Push-back procedures, if applicable.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.C.K6",
+          "text": "C. Taxiing (ASEL, AMEL): Appropriate flight deck activities prior to taxi, including route planning, identifying the location of Hot Spots, and coordinating with crew if, applicable.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.C.K7",
+          "text": "C. Taxiing (ASEL, AMEL): Communications at towered and nontowered airports.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.C.K8",
+          "text": "C. Taxiing (ASEL, AMEL): Entering or crossing runways.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.C.K9",
+          "text": "C. Taxiing (ASEL, AMEL): Night taxi operations.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.C.K10",
+          "text": "C. Taxiing (ASEL, AMEL): Low visibility taxi operations and techniques used to avoid disorientation.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.ceiling"
+          ]
+        },
+        {
+          "id": "faa:AA.II.C.K11",
+          "text": "C. Taxiing (ASEL, AMEL): Single-Engine taxi procedures for (AMEL).",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.D.K1",
+          "text": "D. Taxiing and Sailing (ASES, AMES): Current airport/seaplane base aeronautical references and information resources, including Chart Supplements, airport diagram, and appropriate references.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.D.K2",
+          "text": "D. Taxiing and Sailing (ASES, AMES): Taxi instructions/clearances, if applicable.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.D.K3",
+          "text": "D. Taxiing and Sailing (ASES, AMES): Airport/seaplane base markings, signs, and lights.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.D.K4",
+          "text": "D. Taxiing and Sailing (ASES, AMES): Appropriate aircraft lighting for day and night operations.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.D.K5",
+          "text": "D. Taxiing and Sailing (ASES, AMES): Sailing elements and techniques and when sailing should be used.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.D.K6",
+          "text": "D. Taxiing and Sailing (ASES, AMES): Considerations for determining the most favorable sailing course.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.D.K7",
+          "text": "D. Taxiing and Sailing (ASES, AMES): Airport/seaplane base procedures, including:",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.D.K7a",
+          "text": "D. Taxiing and Sailing (ASES, AMES): a. Appropriate flight deck activities prior to taxi or sailing, including route planning, and coordinating with crew, if applicable",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.D.K7b",
+          "text": "D. Taxiing and Sailing (ASES, AMES): b. Communications at towered and nontowered seaplane bases",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.D.K7c",
+          "text": "D. Taxiing and Sailing (ASES, AMES): c. Entering or crossing runways (land operation)",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.D.K7d",
+          "text": "D. Taxiing and Sailing (ASES, AMES): d. Night taxi and sailing operations",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.D.K7e",
+          "text": "D. Taxiing and Sailing (ASES, AMES): e. Low visibility taxi and sailing operations",
+          "kind": "objective",
+          "concept_ids": [
+            "met.ceiling"
+          ]
+        },
+        {
+          "id": "faa:AA.II.E.K1",
+          "text": "E. Before Takeoff Checks: Purpose of pre-takeoff checklist items, including:",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.E.K1a",
+          "text": "E. Before Takeoff Checks: a. Reasons for checking each item",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.E.K1b",
+          "text": "E. Before Takeoff Checks: b. Detecting malfunctions",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.E.K1c",
+          "text": "E. Before Takeoff Checks: c. Ensuring the aircraft is in safe operating condition",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.II.E.K2",
+          "text": "E. Before Takeoff Checks: Deicing and anti-icing procedures, holdover times, and pre-takeoff contamination check.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.icing"
+          ]
+        },
+        {
+          "id": "faa:AA.II.E.K3",
+          "text": "E. Before Takeoff Checks: Adverse weather considerations for performance on takeoff (e.g., snow, ice, gusting crosswinds, low- visibility).",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.wind-component"
+          ]
+        },
+        {
+          "id": "faa:AA.II.E.K4",
+          "text": "E. Before Takeoff Checks: Items to be included in a before takeoff briefing.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        }
+      ],
+      "source_url": "https://www.faa.gov/training_testing/testing/acs/atp_airplane_acs_11.pdf",
+      "gap": null
+    },
+    {
+      "code": "III. Takeoffs and Landings",
+      "title": "III. Takeoffs and Landings",
+      "objectives": [
+        {
+          "id": "faa:AA.III.A.K1",
+          "text": "A. Normal Takeoff and Climb: Effects of atmospheric conditions, including wind, on takeoff and climb performance.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.A.K2",
+          "text": "A. Normal Takeoff and Climb: Appropriate V-speeds for takeoff and climb.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.A.K3",
+          "text": "A. Normal Takeoff and Climb: Appropriate aircraft configuration and power setting for takeoff and climb.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.A.K4",
+          "text": "A. Normal Takeoff and Climb: Runway markings and lighting.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.B.K1",
+          "text": "B. Normal Approach and Landing: A stabilized approach, including energy management concepts.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.B.K2",
+          "text": "B. Normal Approach and Landing: Effects of atmospheric conditions, including wind, on approach and landing performance.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.B.K3",
+          "text": "B. Normal Approach and Landing: Wind correction techniques on approach and landing.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.B.K4",
+          "text": "B. Normal Approach and Landing: Runway markings and lighting.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.C.K1",
+          "text": "C. Glassy Water Takeoff and Climb (ASES, AMES): Effects of atmospheric conditions, including wind, on takeoff and climb performance.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.C.K2",
+          "text": "C. Glassy Water Takeoff and Climb (ASES, AMES): Appropriate power settings and V-speeds for takeoff and climb.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.C.K3",
+          "text": "C. Glassy Water Takeoff and Climb (ASES, AMES): Appropriate airplane configuration.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.C.K4",
+          "text": "C. Glassy Water Takeoff and Climb (ASES, AMES): Appropriate use of glassy water takeoff and climb technique.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.D.K1",
+          "text": "D. Glassy Water Approach and Landing (ASES, AMES): A stabilized approach, including energy management concepts.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.D.K2",
+          "text": "D. Glassy Water Approach and Landing (ASES, AMES): Effects of atmospheric conditions, including wind, on approach and landing performance.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.D.K3",
+          "text": "D. Glassy Water Approach and Landing (ASES, AMES): Wind correction techniques on approach and landing.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.D.K4",
+          "text": "D. Glassy Water Approach and Landing (ASES, AMES): When and why glassy water techniques are used.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.D.K5",
+          "text": "D. Glassy Water Approach and Landing (ASES, AMES): How a glassy water approach and landing is executed.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.E.K1",
+          "text": "E. Rough Water Takeoff and Climb (ASES, AMES): Effects of atmospheric conditions, including wind, on takeoff and climb performance.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.E.K2",
+          "text": "E. Rough Water Takeoff and Climb (ASES, AMES): Appropriate power settings and V-speeds for takeoff and climb.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.E.K3",
+          "text": "E. Rough Water Takeoff and Climb (ASES, AMES): Appropriate airplane configuration.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.E.K4",
+          "text": "E. Rough Water Takeoff and Climb (ASES, AMES): Appropriate use of rough water takeoff and climb technique.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.F.K1",
+          "text": "F. Rough Water Approach and Landing (ASES, AMES): A stabilized approach, including energy management concepts.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.F.K2",
+          "text": "F. Rough Water Approach and Landing (ASES, AMES): Effects of atmospheric conditions, including wind, on approach and landing performance.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.F.K3",
+          "text": "F. Rough Water Approach and Landing (ASES, AMES): Wind correction techniques on approach and landing.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.F.K4",
+          "text": "F. Rough Water Approach and Landing (ASES, AMES): When and why rough water techniques are used.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.F.K5",
+          "text": "F. Rough Water Approach and Landing (ASES, AMES): How to perform a proper rough water approach and landing.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.G.K1",
+          "text": "G. Confined Area Takeoff and Maximum Performance Climb (ASES, AMES): Effects of atmospheric conditions, including wind, on takeoff and climb performance.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.III.G.K2",
+          "text": "G. Confined Area Takeoff and Maximum Performance Climb (ASES, AMES): Appropriate power settings and V-speeds for takeoff and climb.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.III.G.K3",
+          "text": "G. Confined Area Takeoff and Maximum Performance Climb (ASES, AMES): Appropriate airplane configuration.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.III.G.K4",
+          "text": "G. Confined Area Takeoff and Maximum Performance Climb (ASES, AMES): Effects of water surface.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.III.G.K5",
+          "text": "G. Confined Area Takeoff and Maximum Performance Climb (ASES, AMES): Available techniques for confined-area takeoff and climb.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.III.H.K1",
+          "text": "H. Confined Area Approach and Landing (ASES, AMES): A stabilized approach, including energy management concepts.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.H.K2",
+          "text": "H. Confined Area Approach and Landing (ASES, AMES): Effects of atmospheric conditions, including wind, on approach and landing performance.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.H.K3",
+          "text": "H. Confined Area Approach and Landing (ASES, AMES): Available techniques for confined-area approach and landing.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.H.K4",
+          "text": "H. Confined Area Approach and Landing (ASES, AMES): Wind correction techniques on approach and landing.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.I.K1",
+          "text": "I. Rejected Takeoff: Conditions and situations that could warrant a rejected takeoff (e.g., takeoff warning systems, powerplant failure, other systems warning/failure).",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.III.I.K2",
+          "text": "I. Rejected Takeoff: Safety considerations following a rejected takeoff.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.I.K3",
+          "text": "I. Rejected Takeoff: The procedure for accomplishing a rejected takeoff.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.I.K4",
+          "text": "I. Rejected Takeoff: Accelerate/stop distance.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.I.K5",
+          "text": "I. Rejected Takeoff: Relevant V-speeds for a rejected takeoff.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.J.K1",
+          "text": "J. Go-Around/Rejected Landing: A stabilized approach, including energy management concepts.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.J.K2",
+          "text": "J. Go-Around/Rejected Landing: Effects of atmospheric conditions, including wind and density altitude, on a go-around or rejected landing.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.density-altitude"
+          ]
+        },
+        {
+          "id": "faa:AA.III.J.K3",
+          "text": "J. Go-Around/Rejected Landing: Wind correction techniques on takeoff/departure and approach/landing.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.J.K4",
+          "text": "J. Go-Around/Rejected Landing: Situations and considerations on approach that could require a go-around/rejected landing, including the inability to comply with a LAHSO clearance.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.III.J.K5",
+          "text": "J. Go-Around/Rejected Landing: Go-around/rejected landing procedures, the importance of a timely decision, and appropriate airspeed/ V-speeds for the maneuver.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        }
+      ],
+      "source_url": "https://www.faa.gov/training_testing/testing/acs/atp_airplane_acs_11.pdf",
+      "gap": null
+    },
+    {
+      "code": "IV. In-flight Maneuvers",
+      "title": "IV. In-flight Maneuvers",
+      "objectives": [
+        {
+          "id": "faa:AA.IV.A.K1",
+          "text": "A. Steep Turns: Energy management concepts.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.IV.A.K2",
+          "text": "A. Steep Turns: Aerodynamics associated with steep turns, including:",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ]
+        },
+        {
+          "id": "faa:AA.IV.A.K2a",
+          "text": "A. Steep Turns: a. Maintaining coordinated flight",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.IV.A.K2b",
+          "text": "A. Steep Turns: b. Overbanking tendencies",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.IV.A.K2c",
+          "text": "A. Steep Turns: c. Maneuvering speed, including the impact of weight changes",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.manoeuvre-speed"
+          ]
+        },
+        {
+          "id": "faa:AA.IV.A.K2d",
+          "text": "A. Steep Turns: d. Load factor and accelerated stalls",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.load-factor"
+          ]
+        },
+        {
+          "id": "faa:AA.IV.A.K2e",
+          "text": "A. Steep Turns: e. Rate and radius of turn",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.IV.B.K1",
+          "text": "B. Recovery from Unusual Flight Attitudes: Procedures for recovery from unusual flight attitudes.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.IV.B.K2",
+          "text": "B. Recovery from Unusual Flight Attitudes: Unusual flight attitude causal factors, including physiological factors, system and equipment failures, and environmental factors.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.IV.B.K3",
+          "text": "B. Recovery from Unusual Flight Attitudes: The operating envelope and structural limitations for the aircraft.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.IV.B.K4",
+          "text": "B. Recovery from Unusual Flight Attitudes: Effects of engine location, wing design, and other specific design characteristics that could affect aircraft control during the recovery.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.IV.C.K1",
+          "text": "C. Specific Flight Characteristics: All specific flight and performance characteristics associated with the aircraft.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        }
+      ],
+      "source_url": "https://www.faa.gov/training_testing/testing/acs/atp_airplane_acs_11.pdf",
+      "gap": null
+    },
+    {
+      "code": "V. Stall Prevention",
+      "title": "V. Stall Prevention",
+      "objectives": [
+        {
+          "id": "faa:AA.V.A.K1",
+          "text": "A. Partial Flap Configuration Stall Prevention: Aerodynamics associated with stalls in a partial flap configuration, including the relationship between angle of attack, airspeed, load factor, power setting, aircraft weight and balance, aircraft attitude, and sideslip effects.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.load-factor"
+          ]
+        },
+        {
+          "id": "faa:AA.V.A.K2",
+          "text": "A. Partial Flap Configuration Stall Prevention: Stall characteristics as they relate to airplane design, and recognition impending stall and full stall indications using sight, sound, or feel.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.stall-aoa"
+          ]
+        },
+        {
+          "id": "faa:AA.V.A.K3",
+          "text": "A. Partial Flap Configuration Stall Prevention: Factors and situations that can lead to a stall during takeoff or while on approach and actions that can be taken to prevent it.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.stall-aoa"
+          ]
+        },
+        {
+          "id": "faa:AA.V.A.K4",
+          "text": "A. Partial Flap Configuration Stall Prevention: Effects of autoflight, flight envelope protection in normal and degraded modes, and unexpected disconnects of the autopilot or autothrottle/autothrust, if applicable to the aircraft used for the evaluation.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.stall-aoa"
+          ]
+        },
+        {
+          "id": "faa:AA.V.A.K5",
+          "text": "A. Partial Flap Configuration Stall Prevention: Fundamentals of stall recovery.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.stall-aoa"
+          ]
+        },
+        {
+          "id": "faa:AA.V.B.K1",
+          "text": "B. Clean Configuration Stall Prevention: Aerodynamics associated with stalls in a clean configuration, including the relationship between angle of attack, airspeed, load factor, power setting, aircraft weight and balance, and aircraft attitude.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.load-factor"
+          ]
+        },
+        {
+          "id": "faa:AA.V.B.K2",
+          "text": "B. Clean Configuration Stall Prevention: Stall characteristics as they relate to airplane design, and recognition impending stall and full stall indications using sight, sound, or feel.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.stall-aoa"
+          ]
+        },
+        {
+          "id": "faa:AA.V.B.K3",
+          "text": "B. Clean Configuration Stall Prevention: Factors and situations that can lead to a stall during cruise flight and actions that can be taken to prevent it.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.stall-aoa"
+          ]
+        },
+        {
+          "id": "faa:AA.V.B.K4",
+          "text": "B. Clean Configuration Stall Prevention: Effects of autoflight, flight envelope protection in normal and degraded modes, and unexpected disconnects of the autopilot or autothrottle/autothrust, if applicable to the aircraft used for the evaluation.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.stall-aoa"
+          ]
+        },
+        {
+          "id": "faa:AA.V.B.K5",
+          "text": "B. Clean Configuration Stall Prevention: Fundamentals of stall recovery.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.stall-aoa"
+          ]
+        },
+        {
+          "id": "faa:AA.V.B.K6",
+          "text": "B. Clean Configuration Stall Prevention: Effects of altitude on performance (e.g., thrust available) and flight control effectiveness during a recovery.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.flight-controls"
+          ]
+        },
+        {
+          "id": "faa:AA.V.C.K1",
+          "text": "C. Landing Configuration Stall Prevention: Aerodynamics associated with stalls in the landing configuration, including the relationship between angle of attack, airspeed, load factor, power setting, aircraft weight and balance, aircraft attitude, and sideslip effects.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.load-factor"
+          ]
+        },
+        {
+          "id": "faa:AA.V.C.K2",
+          "text": "C. Landing Configuration Stall Prevention: Stall characteristics as they relate to airplane design, and recognition impending stall and full stall indications using sight, sound, or feel.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.stall-aoa"
+          ]
+        },
+        {
+          "id": "faa:AA.V.C.K3",
+          "text": "C. Landing Configuration Stall Prevention: Factors and situations that can lead to a stall when configured for landing and actions that can be taken to prevent it.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.stall-aoa"
+          ]
+        },
+        {
+          "id": "faa:AA.V.C.K4",
+          "text": "C. Landing Configuration Stall Prevention: Effects of autoflight, flight envelope protection in normal and degraded modes, and unexpected disconnects of the autopilot or autothrottle/autothrust, if applicable to the aircraft used for the evaluation.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.stall-aoa"
+          ]
+        },
+        {
+          "id": "faa:AA.V.C.K5",
+          "text": "C. Landing Configuration Stall Prevention: Fundamentals of stall recovery.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.stall-aoa"
+          ]
+        }
+      ],
+      "source_url": "https://www.faa.gov/training_testing/testing/acs/atp_airplane_acs_11.pdf",
+      "gap": null
+    },
+    {
+      "code": "VI. Instrument Procedures",
+      "title": "VI. Instrument Procedures",
+      "objectives": [
+        {
+          "id": "faa:AA.VI.A.K1",
+          "text": "A. Instrument Takeoff: Operational factors that could affect an instrument takeoff (e.g., runway length, runway lighting, surface conditions, wind, wake turbulence, icing conditions, obstructions, available instrument approaches or alternate airports available) in the event of an emergency after takeoff.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.alternate"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.B.K1",
+          "text": "B. Departure Procedures: Takeoff minimums; (Obstacle) Departure Procedure (ODP), including Visual Climb over the Airport (VCOA) and Diverse Vector Area (Radar Vectors); Standard Instrument Departure (SID), including Area Navigation (RNAV) departure; required climb gradients; U.S. Terminal Procedures Publications; and En Route Charts.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.B.K2",
+          "text": "B. Departure Procedures: Use of a Flight Management System (FMS) or Global Positioning System (GPS) to follow a DP.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.B.K3",
+          "text": "B. Departure Procedures: Pilot/controller responsibilities, communication procedures, and ATC services available to pilots.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.B.K4",
+          "text": "B. Departure Procedures: Two-way radio communication failure procedures after takeoff.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.B.K5",
+          "text": "B. Departure Procedures: Ground-based and satellite-based navigation systems (orientation, course determination, equipment, tests and regulations, interference, appropriate use of navigation data, signal integrity).",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.C.K1",
+          "text": "C. Arrival Procedures: Standard Terminal Arrival (STAR) charts, U.S. Terminal Procedures Publications, and IFR En Route High and Low Altitude Charts.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.C.K2",
+          "text": "C. Arrival Procedures: Use of a Flight Management System (FMS) or GPS to follow a STAR.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.C.K3",
+          "text": "C. Arrival Procedures: Pilot/controller responsibilities, communication procedures, and ATC services available to pilots.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.C.K4",
+          "text": "C. Arrival Procedures: Two-way radio communication failure procedures during an arrival.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.C.K5",
+          "text": "C. Arrival Procedures: Ground-based and satellite-based navigation systems (orientation, course determination, equipment, tests and regulations, interference, appropriate use of navigation data, signal integrity).",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.D.K1",
+          "text": "D. Non-precision Approaches: Procedures and limitations associated with a non-precision approach, including the differences between Localizer Performance (LP) and Lateral Navigation (LNAV) approach guidance.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.D.K2",
+          "text": "D. Non-precision Approaches: Navigation system displays and annunciations, modes of operation, and Required Navigation Performance (RNP) lateral accuracy values associated with an RNAV (GPS) approach.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.D.K3",
+          "text": "D. Non-precision Approaches: Ground-based and satellite-based navigation systems (orientation, course determination, equipment, tests and regulations, interference, appropriate use of navigation data, signal integrity).",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.D.K4",
+          "text": "D. Non-precision Approaches: A stabilized approach, including energy management concepts.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.E.K1",
+          "text": "E. Precision Approaches: Procedures and limitations associated with a precision approach, including determining required descent rates and adjusting minimums in the case of inoperative equipment.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.E.K2",
+          "text": "E. Precision Approaches: Navigation system displays, annunciations, and modes of operation.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.E.K3",
+          "text": "E. Precision Approaches: Ground-based and satellite-based navigation systems (orientation, course determination, equipment, tests and regulations, interference, appropriate use of navigation data, signal integrity).",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.E.K4",
+          "text": "E. Precision Approaches: A stabilized approach, including energy management concepts.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.F.K1",
+          "text": "F. Landing from a Precision Approach: Elements related to the pilot’s responsibilities, and the environmental, operational, and meteorological factors that affect landing from a precision approach.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.F.K2",
+          "text": "F. Landing from a Precision Approach: Approach lighting systems and runway and taxiway signs, markings, and lighting.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.G.K1",
+          "text": "G. Circling Approach: Elements related to circling approach procedures and limitations, including approach categories and related airspeed restrictions.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.H.K1",
+          "text": "H. Landing from a Circling Approach: Elements related to the pilot’s responsibilities, and the environmental, operational, and meteorological factors that affect landing from a circling approach.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.H.K2",
+          "text": "H. Landing from a Circling Approach: Approach lighting systems and runway and taxiway signs, markings, and lighting.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.I.K1",
+          "text": "I. Missed Approaches: Elements related to missed approach procedures, including reference to standby or backup instruments.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.I.K2",
+          "text": "I. Missed Approaches: Limitations associated with standard instrument approaches, including while using an FMS or autopilot, if equipped.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.J.K1",
+          "text": "J. Holding Procedures: Elements related to holding procedures, including reporting criteria, appropriate speeds, and recommended entry procedures for standard, nonstandard, published, and non-published holding patterns.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.J.K2",
+          "text": "J. Holding Procedures: Determining holding endurance based upon factors, including an expect further clearance (EFC) time, fuel on board, fuel flow while holding, fuel required to destination and alternate, etc., as appropriate.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.J.K3",
+          "text": "J. Holding Procedures: When to declare minimum fuel or a fuel-related emergency.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "faa:AA.VI.J.K4",
+          "text": "J. Holding Procedures: Use of automation for holding, including autopilot and flight management systems, if equipped.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        }
+      ],
+      "source_url": "https://www.faa.gov/training_testing/testing/acs/atp_airplane_acs_11.pdf",
+      "gap": null
+    },
+    {
+      "code": "VII. Emergency Operations",
+      "title": "VII. Emergency Operations",
+      "objectives": [
+        {
+          "id": "faa:AA.VII.A.K1",
+          "text": "A. Emergency Procedures: Declaring an emergency and selection of a suitable airport or landing location.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.A.K2",
+          "text": "A. Emergency Procedures: Situations that would require an emergency descent (e.g., depressurization, smoke, or engine fire).",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.A.K3",
+          "text": "A. Emergency Procedures: Causes of inflight fire or smoke.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.A.K4",
+          "text": "A. Emergency Procedures: Airplane decompression.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.A.K5",
+          "text": "A. Emergency Procedures: When an emergency evacuation may be necessary.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.A.K6",
+          "text": "A. Emergency Procedures: Actions required if icing conditions exceed the capabilities of the aircraft.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.icing"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.B.K1",
+          "text": "B. Powerplant Failure During Takeoff: The procedures used during a powerplant(s) failure on takeoff, the appropriate reference airspeeds, and the specific pilot actions required.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.B.K2",
+          "text": "B. Powerplant Failure During Takeoff: Operational considerations, including: airplane performance (e.g., sideslip, bank angle, rudder input), takeoff warning systems, runway length, surface conditions, density altitude, wake turbulence, environmental conditions, obstructions, and other related factors that could adversely affect safety.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.density-altitude"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.C.K1",
+          "text": "C. Powerplant Failure (Simulated) (ASEL, ASES): Immediate action items and emergency procedures for a forced landing.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.C.K2",
+          "text": "C. Powerplant Failure (Simulated) (ASEL, ASES): Airspeed, including:",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.C.K2a",
+          "text": "C. Powerplant Failure (Simulated) (ASEL, ASES): a. Importance of best glide speed and its relationship to distance",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.C.K2b",
+          "text": "C. Powerplant Failure (Simulated) (ASEL, ASES): b. Difference between best glide speed and minimum sink speed",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.C.K2c",
+          "text": "C. Powerplant Failure (Simulated) (ASEL, ASES): c. Effects of wind on glide distance",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.C.K3",
+          "text": "C. Powerplant Failure (Simulated) (ASEL, ASES): Effects of atmospheric conditions on emergency approach and landing.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.C.K4",
+          "text": "C. Powerplant Failure (Simulated) (ASEL, ASES): A stabilized approach, including energy management concepts.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.C.K5",
+          "text": "C. Powerplant Failure (Simulated) (ASEL, ASES): Emergency Locator Transmitters (ELTs) and other emergency locating devices.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.C.K6",
+          "text": "C. Powerplant Failure (Simulated) (ASEL, ASES): Air traffic control (ATC) services to aircraft in distress.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.D.K1",
+          "text": "D. Inflight Powerplant(s) Failure and Restart (AMEL, AMES): Flight characteristics and controllability associated with maneuvering the airplane with powerplant(s) inoperative, including the importance of drag reduction.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.D.K2",
+          "text": "D. Inflight Powerplant(s) Failure and Restart (AMEL, AMES): Powerplant restart procedures and conditions where a restart attempt is appropriate.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.E.K1",
+          "text": "E. Approach and Landing with a Powerplant Failure (Simulated) (AMEL, AMES): Flight characteristics and controllability associated with maneuvering to a landing with inoperative powerplant(s).",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.E.K2",
+          "text": "E. Approach and Landing with a Powerplant Failure (Simulated) (AMEL, AMES): Go-around/rejected landing procedures with a powerplant failure.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.E.K3",
+          "text": "E. Approach and Landing with a Powerplant Failure (Simulated) (AMEL, AMES): How to determine a suitable airport.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.F.K1",
+          "text": "F. Precision Approach (Manually Flown) with a Powerplant Failure (Simulated) (AMEL, AMES): Flight characteristics and controllability associated with maneuvering to a landing with inoperative powerplant(s).",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.F.K2",
+          "text": "F. Precision Approach (Manually Flown) with a Powerplant Failure (Simulated) (AMEL, AMES): Missed approach considerations with a powerplant failure.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.F.K3",
+          "text": "F. Precision Approach (Manually Flown) with a Powerplant Failure (Simulated) (AMEL, AMES): How to determine a suitable airport.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.G.K1",
+          "text": "G. Landing from a No Flap or a Nonstandard Flap Approach: Airplane flight characteristics when flaps, leading edge devices, and other similar devices malfunction or become inoperative.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.G.K2",
+          "text": "G. Landing from a No Flap or a Nonstandard Flap Approach: Other airplane system limitations when landing at a high speed.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VII.G.K3",
+          "text": "G. Landing from a No Flap or a Nonstandard Flap Approach: How to determine required landing distance and a suitable runway for landing.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.landing-distance"
+          ]
+        }
+      ],
+      "source_url": "https://www.faa.gov/training_testing/testing/acs/atp_airplane_acs_11.pdf",
+      "gap": null
+    },
+    {
+      "code": "VIII. Postflight Procedures",
+      "title": "VIII. Postflight Procedures",
+      "objectives": [
+        {
+          "id": "faa:AA.VIII.A.K1",
+          "text": "A. After Landing, Parking, and Securing (ASEL, AMEL): Parking, shutdown, securing, and postflight inspection.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VIII.A.K2",
+          "text": "A. After Landing, Parking, and Securing (ASEL, AMEL): Documenting in-flight/postflight discrepancies.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VIII.B.K1",
+          "text": "B. Seaplane Post-Landing Procedures (ASES, AMES): Mooring.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VIII.B.K2",
+          "text": "B. Seaplane Post-Landing Procedures (ASES, AMES): Docking.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VIII.B.K3",
+          "text": "B. Seaplane Post-Landing Procedures (ASES, AMES): Anchoring.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "faa:AA.VIII.B.K4",
+          "text": "B. Seaplane Post-Landing Procedures (ASES, AMES): Beaching/ramping.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        }
+      ],
+      "source_url": "https://www.faa.gov/training_testing/testing/acs/atp_airplane_acs_11.pdf",
+      "gap": null
+    },
+    {
+      "code": "ATP-CTP",
+      "title": "ATP certification training program topics (14 CFR 61.156)",
+      "source_url": "https://www.govinfo.gov/content/pkg/CFR-2025-title14-vol2/xml/CFR-2025-title14-vol2-sec61-156.xml",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "faa:61.156(a)(1)",
+          "text": "At least 8 hours of instruction on aerodynamics including high altitude operations.",
+          "kind": "objective",
+          "concept_ids": [
+            "aero.lift"
+          ]
+        },
+        {
+          "id": "faa:61.156(a)(2)",
+          "text": "At least 2 hours of instruction on meteorology, including adverse weather phenomena and weather detection systems.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:61.156(a)(3)(i)",
+          "text": "Air carrier operations: physiology.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:61.156(a)(3)(ii)",
+          "text": "Air carrier operations: communications.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:61.156(a)(3)(iii)",
+          "text": "Air carrier operations: checklist philosophy.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:61.156(a)(3)(iv)",
+          "text": "Air carrier operations: operational control.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:61.156(a)(3)(v)",
+          "text": "Air carrier operations: minimum equipment list/configuration deviation list.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.mel-dispatch"
+          ]
+        },
+        {
+          "id": "faa:61.156(a)(3)(vi)",
+          "text": "Air carrier operations: ground operations.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:61.156(a)(3)(vii)",
+          "text": "Air carrier operations: turbine engines.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "faa:61.156(a)(3)(viii)",
+          "text": "Air carrier operations: transport category aircraft performance.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:61.156(a)(3)(ix)",
+          "text": "Air carrier operations: automation, navigation, and flight path warning systems.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:61.156(a)(4)",
+          "text": "At least 6 hours of instruction on leadership, professional development, crew resource management, and safety culture.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:61.156(b)(1)(i)",
+          "text": "FSTD: low energy states/stalls.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:61.156(b)(1)(ii)",
+          "text": "FSTD: upset recovery techniques.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:61.156(b)(1)(iii)",
+          "text": "FSTD: adverse weather conditions, including icing, thunderstorms, and crosswinds with gusts.",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.wind-component"
+          ]
+        },
+        {
+          "id": "faa:61.156(b)(2)(i)",
+          "text": "FSTD: navigation including flight management systems.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "faa:61.156(b)(2)(ii)",
+          "text": "FSTD: automation including autoflight.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        }
+      ]
+    }
+  ]
+}

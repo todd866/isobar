@@ -8,12 +8,17 @@ import { selectQueue } from '../src/queue.ts';
 import { emptyMemory, reviewCard } from '../src/scheduler.ts';
 import { lintCard, validateCard, validateLibrary } from '../src/validate.ts';
 
-test('the served syllabus is the Australian concept graph', () => {
+test('the served syllabus keeps the Australian graph and adds level tracks', () => {
   const served = australianConcepts(raw.concepts as SyllabusConcept[]);
-  assert.equal(served.length, 41);
+  const ids = new Set(served.map((concept) => concept.id));
+  assert.equal(ids.size, served.length);
+  assert.ok(ids.has('met.gradient-wind'));
+  assert.ok(ids.has('law.documents'));
+  assert.ok(ids.has('drone.low-level-wind'));
+  assert.ok(ids.has('def.illumination'));
+  assert.ok(served.length > 41);
   assert.equal(JSON.stringify(served).includes('FAA'), false);
   assert.equal(JSON.stringify(served).includes('ACS'), false);
-  assert.equal(served.some((concept) => concept.id === 'met.gradient-wind'), true);
   assert.equal(sources.some((source) => source.id.startsWith('faa')), false);
   assert.equal(raw.concepts.length, served.length);
 });
@@ -107,4 +112,12 @@ test('the worked plan leads the all-subject queue', () => {
   assert.equal(queue[0], 'fp.fuel.list');
   assert.ok(queue.includes('fp.b727.later'));
   assert.ok(queue.indexOf('fp.fuel.list') < queue.indexOf('fp.b727.later'));
+});
+
+import { staticCards as keyPositionCards } from '../src/deck.ts';
+test('static card keys are spread across positions (no position tell)', () => {
+  const counts = new Map<string, number>();
+  for (const card of keyPositionCards) counts.set(card.correctId, (counts.get(card.correctId) ?? 0) + 1);
+  const max = Math.max(...counts.values());
+  assert.ok(counts.size >= 3 && max <= keyPositionCards.length * 0.45, `key positions ${JSON.stringify([...counts])}`);
 });

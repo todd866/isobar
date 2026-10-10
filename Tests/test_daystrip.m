@@ -7,6 +7,11 @@ static void Check(BOOL ok, const char *message) {
     fprintf(stderr, "%s %s\n", ok ? "ok  " : "FAIL", message);
     if (!ok) failures++;
 }
+static void Pump(NSTimeInterval seconds) {
+    NSDate *end=[NSDate dateWithTimeIntervalSinceNow:seconds];
+    while ([end timeIntervalSinceNow] > 0)
+        [NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode beforeDate:end];
+}
 
 @interface StripBackdrop : NSView
 @end
@@ -186,7 +191,9 @@ int main(void) {
             modifierFlags:0 timestamp:0 windowNumber:logicWindow.windowNumber context:nil
             eventNumber:1 clickCount:0 pressure:0];
         [logic mouseMoved:moved];
-        Check(hovered == 1 && logic.hoverIndex == 1, "hovering a day cell reports that day");
+        Check(hovered == -2 && logic.hoverIndex == -1, "a fast day hover does not change the shared time");
+        Pump(.35);
+        Check(hovered == 1 && logic.hoverIndex == 1, "a stationary day hover reports that day");
         [logic mouseExited:moved];
         Check(hovered == -1 && logic.hoverIndex == -1, "leaving the strip clears the hover");
         logic.series = @[

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "jobs": [
+    {
+      "id": "dday",
+      "label": "D-Day · World",
+      "start": "1944-06-05",
+      "end": "1944-06-06",
+      "maps": "tools/history/dday-maps.json"
+    },
+    {
+      "id": "cyclone-tracy",
+      "label": "Cyclone Tracy · World",
+      "start": "1974-12-25",
+      "end": "1974-12-25"
+    },
+    {
+      "id": "apollo-11",
+      "label": "Apollo 11 landing · World",
+      "start": "1969-07-20",
+      "end": "1969-07-20"
+    },
+    {
+      "id": "ve-day",
+      "label": "VE Day · World",
+      "start": "1945-05-08",
+      "end": "1945-05-08"
+    }
+  ]
+}

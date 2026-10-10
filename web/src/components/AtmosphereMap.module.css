@@ -1,0 +1,18 @@
+.canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+.instrument { display:flex; flex-direction:column; max-height:calc(100% - 20px); position:absolute; z-index:4; left:10px; top:10px; max-width:min(280px,calc(100% - 66px)); color:var(--md-on-surface); border:1px solid var(--md-outline-soft); background:var(--md-surface); border-radius:8px; box-shadow:0 2px 12px #10283812; }
+.row { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:36px; padding:0 8px; font-size:.8rem; }
+.row button { display:flex; align-items:center; gap:6px; min-height:36px; min-width:28px; cursor:pointer; }
+.state { font-size:1.1rem; color:var(--md-primary); }
+.section { width:270px; max-width:100%; min-height:0; overflow:auto; border-top:1px solid var(--md-outline-soft); }
+.section svg { display:block; width:100%; max-height:220px; }
+.section svg text { font:.6875rem system-ui,sans-serif; fill:currentColor; }
+.grid { stroke:var(--md-outline-soft); stroke-width:.7; fill:none; }
+.cloud { fill:var(--md-surface-container-high); stroke:#7a9daf; stroke-width:1; }
+.ground { fill:#91866a; opacity:.5; }
+.aircraftLine { fill:none; stroke:#b67c39; stroke-dasharray:3 3; }
+.altitude { display:flex; align-items:center; gap:6px; padding:4px 10px; font-size:.75rem; }
+.altitude input { width:100%; min-width:40px; accent-color:var(--md-primary); }
+.altitude output { white-space:nowrap; font-variant-numeric:tabular-nums; }
+.meta { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px; font-size:.65rem; padding:3px 10px; color:var(--md-on-surface-variant); }
+@media (max-height:500px) { .instrument { top:auto; bottom:30px; } .instrument { max-height:calc(100% - 44px); } }
+@media (min-resolution:2dppx) { .grid { stroke-width:1; } }

@@ -30,6 +30,7 @@ static IsobarCamera Cam(double lat, double lon, double zoom, double globe, doubl
     c.centreLon = lon;
     c.zoom = zoom;
     c.globe = globe;
+    c.pitch = 0;
     c.viewportW = w;
     c.viewportH = h;
     return c;
@@ -139,6 +140,34 @@ static void TestCamera(void) {
         check(IsobarCameraUnproject(cam, x, y, &lat, &lon), @"viewport centre unprojects");
         check(fabs(lat) < 1e-4 && LonErr(lon, 0) < 1e-4, @"viewport centre is the camera centre");
     }
+
+    for (int p = 1; p <= 3; p++) {
+        IsobarCamera tilted = Cam(0, 179, 2, 1, 640, 420);
+        tilted.pitch = p == 1 ? 0.02 : (p == 2 ? 0.349 : 1.12);
+        double points[][2] = {{-8, 152}, {10, -170}};
+        BOOL displaced = NO;
+        for (int i = 0; i < 2; i++) {
+            double x = 0, y = 0, la = 0, lo = 0;
+            check(IsobarCameraProject(tilted, points[i][0], points[i][1], &x, &y),
+                [NSString stringWithFormat:@"tilted globe %.2f projects a front point", tilted.pitch]);
+            check(IsobarCameraUnproject(tilted, x, y, &la, &lo) &&
+                fabs(la - points[i][0]) < 0.02 && LonErr(lo, points[i][1]) < 0.02,
+                [NSString stringWithFormat:@"tilted globe %.2f global round trip", tilted.pitch]);
+            displaced |= fabs(x - tilted.viewportW * 0.5) > 0.1 || fabs(y - tilted.viewportH * 0.5) > 0.1;
+        }
+        check(displaced,
+            @"tilt produces a perspective displacement away from the focus");
+    }
+    IsobarCamera altitudeCam = Cam(-18, 137, 2, 1, 640, 420);
+    altitudeCam.pitch = 0.9;
+    double gx = 0, gy = 0, ax = 0, ay = 0;
+    BOOL ground = IsobarCameraProjectAltitude(altitudeCam, -8, 152, 0, &gx, &gy);
+    BOOL high = IsobarCameraProjectAltitude(altitudeCam, -8, 152, 12000, &ax, &ay);
+    check(ground && high && isfinite(ax) && isfinite(ay), @"altitude projection accepts a visible atmospheric point");
+    check(hypot(ax - gx, ay - gy) > 0.001, @"altitude projection has perspective parallax");
+    IsobarCamera lowEye=Cam(0,0,10000,1,640,420); lowEye.pitch=1.2;
+    check(IsobarCameraProjectAltitude(lowEye,.1,0,3000,&ax,&ay), @"cloud above the eye remains visible from below its shell");
+    check(!IsobarCameraProjectAltitude(lowEye,0,180,3000,&ax,&ay), @"Earth occludes elevated backside objects");
     IsobarCamera flat = Cam(-20, 179, 1, 0, 720, 360);
     double xWest = 0, yWest = 0, xEast = 0, yEast = 0, xC = 0, yC = 0;
     check(IsobarCameraProject(flat, -20, 170, &xWest, &yWest), @"170E is visible beside the dateline");
@@ -244,15 +273,15 @@ static void TestCamera(void) {
             [NSString stringWithFormat:@"flat poles stay at the edge (N %.1f S %.1f, view %.0f)",
                 ny, sy, c.viewportH]);
         check(fabs(c.centreLon - raw.centreLon) < 1e-9, @"clamp keeps centre longitude");
-        check(c.zoom >= 1 && c.zoom <= 64, @"flat zoom stays in range");
+        check(c.zoom >= 1 && c.zoom <= 18000, @"flat zoom stays in range");
     }
     IsobarCamera spun = IsobarCameraClamp(Cam(80, 17, 2, 1, 600, 600));
     check(fabs(spun.centreLat - 80) < 1e-9 && fabs(spun.centreLon - 17) < 1e-9,
         @"globe clamp leaves the pole free to rotate into view");
-    IsobarCamera far = IsobarCameraClamp(Cam(0, 40, 100, 1, 640, 480));
+    IsobarCamera far = IsobarCameraClamp(Cam(0, 40, 20000, 1, 640, 480));
     IsobarCamera near = IsobarCameraClamp(Cam(0, 40, 0.05, 0.5, 640, 480));
-    check(fabs(far.zoom - 64) < 1e-9 && near.zoom >= 1 && near.zoom <= 64,
-        [NSString stringWithFormat:@"zoom clamps into 1...64 (%.2f, %.2f)", far.zoom, near.zoom]);
+    check(fabs(far.zoom - 18000) < 1e-9 && near.zoom >= 1 && near.zoom <= 18000,
+        [NSString stringWithFormat:@"zoom clamps into 1...18000 (%.2f, %.2f)", far.zoom, near.zoom]);
 }
 
 static void ReadAt(Image im, IsobarCamera cam, double lat, double lon, int *r, int *g, int *b) {
@@ -796,6 +825,62 @@ static void TestVisibility(IsobarFieldRenderer *r) {
         check(hit >= 30 && bad == 0,
             [NSString stringWithFormat:@"globe %.1f pick round-trips (%d hit, %d bad, worst %.2f px)",
                 globes[gi], hit, bad, worst]);
+    }
+}
+
+static void TestTiltedMetalPick(IsobarFieldRenderer *r) {
+    IsobarGeoGrid g = {.west = -180, .north = 90, .step = 1, .nLon = 360, .nLat = 181, .wrapsLongitude = YES};
+    [r setGrid:g];
+    size_t count = (size_t)g.nLon * (size_t)g.nLat;
+    float *values = malloc(sizeof(float) * count);
+    if (!values) { check(NO, @"tilted pick field allocates"); return; }
+    for (size_t i = 0; i < count; i++) values[i] = 1000;
+    check(Upload(r, 0, IsobarFieldPressure, values), @"tilted pick field uploads");
+    free(values);
+    struct { double lat, lon, zoom, pitch; const char *name; } cameras[] = {
+        {-31.95, 115.86, 2, .1, "Perth world"},
+        {-31.95, 115.86, 16, .6, "Perth local"},
+        {-33.87, 151.21, 2, 1.3, "Sydney world"},
+        {-33.87, 151.21, 16, .6, "Sydney local"},
+        {0, 179, 2, .6, "dateline"},
+        {12, -45, 1, 1.3, "global"},
+    };
+    for (NSUInteger ci = 0; ci < sizeof(cameras) / sizeof(cameras[0]); ci++) {
+        IsobarCamera cam = Cam(cameras[ci].lat, cameras[ci].lon, cameras[ci].zoom, 1, 640, 420);
+        cam.pitch = cameras[ci].pitch;
+        double points[][2] = {
+            {cam.centreLat, cam.centreLon},
+            {cam.centreLat + .8, cam.centreLon + .9},
+            {cam.centreLat - .7, cam.centreLon - .8},
+        };
+        int hits = 0;
+        for (NSUInteger pi = 0; pi < sizeof(points) / sizeof(points[0]); pi++) {
+            double x = 0, y = 0;
+            if (!IsobarCameraProject(cam, points[pi][0], points[pi][1], &x, &y)) continue;
+            double lat = 0, lon = 0;
+            BOOL picked = [r pickLatitude:&lat longitude:&lon atX:x y:y camera:cam];
+            // GPU picking samples the pixel centre, not the fractional cursor.
+            double expectedLat=0,expectedLon=0;
+            BOOL ray=IsobarCameraUnproject(cam,floor(x)+.5,floor(y)+.5,&expectedLat,&expectedLon);
+            double geoError = picked && ray ? hypot(lat - expectedLat, LonErr(lon, expectedLon)) : INFINITY;
+            double pickedX = 0, pickedY = 0;
+            BOOL reproj = picked && IsobarCameraProject(cam, lat, lon, &pickedX, &pickedY);
+            double pixelError = reproj ? hypot(pickedX - x, pickedY - y) : INFINITY;
+            double geoTolerance = .1;
+            check(reproj && pixelError < 2.0 && geoError < geoTolerance,
+                [NSString stringWithFormat:@"%s tilted GPU pick follows CPU point %.1f (%.2f px %.3f deg)", cameras[ci].name, cam.pitch, pixelError, geoError]);
+            if (reproj && pixelError < 2.0 && geoError < geoTolerance) hits++;
+        }
+        check(hits >= 2, [NSString stringWithFormat:@"%s keeps front points pickable", cameras[ci].name]);
+        double backLat = -cam.centreLat, backLon = cam.centreLon + 180;
+        double bx = 0, by = 0;
+        BOOL backVisible = IsobarCameraProject(cam, backLat, backLon, &bx, &by);
+        if (!backVisible) {
+            double pickedLat = 0, pickedLon = 0;
+            BOOL picked = [r pickLatitude:&pickedLat longitude:&pickedLon atX:bx y:by camera:cam];
+            double hiddenError = picked ? hypot(pickedLat - backLat, LonErr(pickedLon, backLon)) : INFINITY;
+            check(!picked || hiddenError > 1.0, [NSString stringWithFormat:@"%s does not report the hidden backside point (%.2f deg away)", cameras[ci].name, hiddenError]);
+        }
     }
 }
 
@@ -2419,7 +2504,7 @@ static void Pump(double seconds) {
 
 static BOOL CamEq(IsobarCamera a, IsobarCamera b) {
     return a.centreLat == b.centreLat && a.centreLon == b.centreLon && a.zoom == b.zoom
-        && a.globe == b.globe && a.viewportW == b.viewportW && a.viewportH == b.viewportH;
+        && a.globe == b.globe && a.pitch == b.pitch && a.viewportW == b.viewportW && a.viewportH == b.viewportH;
 }
 
 static uint64_t ContourSig(IsobarFieldRenderer *r) {
@@ -3229,11 +3314,61 @@ static void TestFieldContrast(IsobarFieldRenderer *r) {
     free(v);
 }
 
+// A coarser archive of the supported Australian extent must retain the
+// appearance-aware geographic plate rather than a light pressure gradient.
+static void TestCoarsePressureAppearance(IsobarFieldRenderer *r) {
+    IsobarGeoGrid grid = {.west=95, .north=0, .step=1, .nLon=76, .nLat=51};
+    [r setGrid:grid];
+    float *values = malloc(sizeof(float) * grid.nLon * grid.nLat);
+    if (!values) { check(NO, @"coarse pressure fixture allocates"); return; }
+    for (int j=0; j<grid.nLat; j++) for (int i=0; i<grid.nLon; i++)
+        values[j*grid.nLon+i] = 1000 + i * .3;
+    check(Upload(r, 0, IsobarFieldPressure, values), @"coarse pressure uploads");
+    free(values);
+    for (int dark=0; dark<2; dark++) {
+        r.chartDark=dark;
+        OwnChartPalette palette=OwnChartPaletteFor(dark);
+        for (int tilt=0; tilt<2; tilt++) {
+            IsobarCamera camera=Cam(-25,132.5,4,tilt,640,480); camera.pitch=tilt*.6;
+            CGImageRef plainImage=Render(r,0,IsobarFieldPressure,NO,camera);
+            Image plain={0}, chart={0};
+            BOOL plainOK=plainImage && ImageFrom(plainImage,&plain);
+            if (plainImage) CGImageRelease(plainImage);
+            struct {double lat,lon;OwnRGB colour;const char *name;} probes[]={
+                {-25,133,palette.land,"land"},{-25,110,palette.sea,"sea"}};
+            for (int p=0;p<2;p++) {
+                int red=-1,green=-1,blue=-1;
+                if (plainOK) ReadAt(plain,camera,probes[p].lat,probes[p].lon,&red,&green,&blue);
+                OwnRGB expected=probes[p].colour;
+                check(plainOK && NearRGB(red,green,blue,(IsobarRGB){expected.r,expected.g,expected.b},4),
+                    [NSString stringWithFormat:@"1-degree %s %s %s uses its geographic plate (%d %d %d)",
+                    dark?"dark":"light",tilt?"tilted":"flat",probes[p].name,red,green,blue]);
+            }
+            CGImageRef chartImage=Render(r,0,IsobarFieldPressure,YES,camera);
+            BOOL chartOK=chartImage && ImageFrom(chartImage,&chart);
+            if (chartImage) CGImageRelease(chartImage);
+            NSUInteger readable=0;
+            if (plainOK && chartOK && plain.w==chart.w && plain.h==chart.h)
+                for (int y=0;y<plain.h;y++) for (int x=0;x<plain.w;x++) {
+                    int ar,ag,ab,br,bg,bb;
+                    At(plain,x,y,&ar,&ag,&ab);At(chart,x,y,&br,&bg,&bb);
+                    int contrast=Lum(br,bg,bb)-Lum(ar,ag,ab);
+                    if (dark?contrast>100:contrast< -100) readable++;
+                }
+            check(readable>100,[NSString stringWithFormat:@"1-degree %s %s pressure contours contrast with plate (%lu pixels)",
+                dark?"dark":"light",tilt?"tilted":"flat",(unsigned long)readable]);
+            ImageFree(&plain);ImageFree(&chart);
+        }
+    }
+    r.chartDark=NO;
+}
+
 int main(int argc, char **argv) {
     @autoreleasepool {
-        BOOL asyncOnly = NO, sliceOnly = NO, coastOnly = NO, contrastOnly = NO, notesOnly = NO;
+        BOOL asyncOnly = NO, sliceOnly = NO, coastOnly = NO, contrastOnly = NO, notesOnly = NO, tiltOnly = NO;
         for (int i = 1; i < argc; i++) {
             if (strcmp(argv[i], "--async") == 0) asyncOnly = YES;
+            if (strcmp(argv[i], "--tilt") == 0) tiltOnly = YES;
             if (strcmp(argv[i], "--slice") == 0) sliceOnly = YES;
             if (strcmp(argv[i], "--coast") == 0) coastOnly = YES;
             if (strcmp(argv[i], "--contrast") == 0) contrastOnly = YES;
@@ -3278,7 +3413,7 @@ int main(int argc, char **argv) {
                 return 0;
             }
             IsobarFieldRenderer *contrast = MakeRenderer(nil);
-            if (contrast) TestFieldContrast(contrast);
+            if (contrast) { TestFieldContrast(contrast); TestCoarsePressureAppearance(contrast); }
             else check(NO, @"field renderer compiles");
             fprintf(stderr, "%s\n", failures ? "FAILED" : "ok");
             return failures ? 1 : 0;
@@ -3294,15 +3429,18 @@ int main(int argc, char **argv) {
             fprintf(stderr, "FAIL Metal device exists but the field renderer did not compile\n");
             return 1;
         }
+        if (tiltOnly) { TestTiltedMetalPick(renderer); return failures ? 1 : 0; }
         TestCoverageEdge(renderer);
         TestAustralia(renderer);
         TestColourAndCoast(renderer);
         TestCoastOverFields(renderer);
         TestFieldContrast(renderer);
+        TestCoarsePressureAppearance(renderer);
         TestRainDisplay(renderer);
         TestTimeAndIsobar(renderer);
         TestDateline(renderer);
         TestGlobeAndDeterminism(renderer, device);
+        TestTiltedMetalPick(renderer);
         TestLRU();
         IsobarFieldRenderer *slice = MakeRenderer(device);
         TestSmear(slice);

@@ -1,0 +1,419 @@
+{
+  "latitude": -31.95,
+  "longitude": 115.86,
+  "elevation": 27,
+  "generationtime_ms": 0.12,
+  "utc_offset_seconds": 0,
+  "timezone": "GMT",
+  "timezone_abbreviation": "GMT",
+  "hourly_units": {
+    "time": "iso8601",
+    "temperature_1000hPa": "°C",
+    "relative_humidity_1000hPa": "%",
+    "wind_speed_1000hPa": "kn",
+    "wind_direction_1000hPa": "°",
+    "geopotential_height_1000hPa": "m",
+    "temperature_925hPa": "°C",
+    "relative_humidity_925hPa": "%",
+    "wind_speed_925hPa": "kn",
+    "wind_direction_925hPa": "°",
+    "geopotential_height_925hPa": "m",
+    "temperature_850hPa": "°C",
+    "relative_humidity_850hPa": "%",
+    "wind_speed_850hPa": "kn",
+    "wind_direction_850hPa": "°",
+    "geopotential_height_850hPa": "m",
+    "temperature_700hPa": "°C",
+    "relative_humidity_700hPa": "%",
+    "wind_speed_700hPa": "kn",
+    "wind_direction_700hPa": "°",
+    "geopotential_height_700hPa": "m",
+    "temperature_600hPa": "°C",
+    "relative_humidity_600hPa": "%",
+    "wind_speed_600hPa": "kn",
+    "wind_direction_600hPa": "°",
+    "geopotential_height_600hPa": "m",
+    "temperature_500hPa": "°C",
+    "relative_humidity_500hPa": "%",
+    "wind_speed_500hPa": "kn",
+    "wind_direction_500hPa": "°",
+    "geopotential_height_500hPa": "m",
+    "temperature_400hPa": "°C",
+    "relative_humidity_400hPa": "%",
+    "wind_speed_400hPa": "kn",
+    "wind_direction_400hPa": "°",
+    "geopotential_height_400hPa": "m",
+    "temperature_300hPa": "°C",
+    "relative_humidity_300hPa": "%",
+    "wind_speed_300hPa": "kn",
+    "wind_direction_300hPa": "°",
+    "geopotential_height_300hPa": "m",
+    "temperature_250hPa": "°C",
+    "relative_humidity_250hPa": "%",
+    "wind_speed_250hPa": "kn",
+    "wind_direction_250hPa": "°",
+    "geopotential_height_250hPa": "m",
+    "temperature_200hPa": "°C",
+    "relative_humidity_200hPa": "%",
+    "wind_speed_200hPa": "kn",
+    "wind_direction_200hPa": "°",
+    "geopotential_height_200hPa": "m",
+    "temperature_2m": "°C",
+    "dew_point_2m": "°C",
+    "wind_speed_10m": "kn",
+    "wind_direction_10m": "°",
+    "cloud_cover": "%",
+    "precipitation": "mm",
+    "surface_pressure": "hPa"
+  },
+  "hourly": {
+    "time": [
+      "2026-10-08T00:00",
+      "2026-10-08T03:00",
+      "2026-10-08T06:00",
+      "2026-10-08T12:00"
+    ],
+    "temperature_1000hPa": [
+      18.2,
+      17.5,
+      16.8,
+      15.1
+    ],
+    "relative_humidity_1000hPa": [
+      62,
+      66,
+      70,
+      78
+    ],
+    "wind_speed_1000hPa": [
+      14,
+      16,
+      18,
+      22
+    ],
+    "wind_direction_1000hPa": [
+      220,
+      225,
+      230,
+      240
+    ],
+    "geopotential_height_1000hPa": [
+      155,
+      153,
+      151,
+      148
+    ],
+    "temperature_925hPa": [
+      14.1,
+      13.5,
+      12.8,
+      11.0
+    ],
+    "relative_humidity_925hPa": [
+      55,
+      60,
+      65,
+      72
+    ],
+    "wind_speed_925hPa": [
+      20,
+      22,
+      24,
+      28
+    ],
+    "wind_direction_925hPa": [
+      235,
+      240,
+      245,
+      250
+    ],
+    "geopotential_height_925hPa": [
+      810,
+      808,
+      806,
+      800
+    ],
+    "temperature_850hPa": [
+      9.0,
+      8.4,
+      7.8,
+      6.1
+    ],
+    "relative_humidity_850hPa": [
+      48,
+      52,
+      57,
+      64
+    ],
+    "wind_speed_850hPa": [
+      26,
+      28,
+      30,
+      34
+    ],
+    "wind_direction_850hPa": [
+      245,
+      250,
+      255,
+      260
+    ],
+    "geopotential_height_850hPa": [
+      1510,
+      1508,
+      1506,
+      1500
+    ],
+    "temperature_700hPa": [
+      -1.5,
+      -2.1,
+      -2.8,
+      -4.2
+    ],
+    "relative_humidity_700hPa": [
+      40,
+      44,
+      48,
+      55
+    ],
+    "wind_speed_700hPa": [
+      32,
+      34,
+      36,
+      40
+    ],
+    "wind_direction_700hPa": [
+      255,
+      260,
+      265,
+      270
+    ],
+    "geopotential_height_700hPa": [
+      3020,
+      3018,
+      3016,
+      3010
+    ],
+    "temperature_600hPa": [
+      -8.2,
+      -8.8,
+      -9.4,
+      -10.8
+    ],
+    "relative_humidity_600hPa": [
+      35,
+      38,
+      42,
+      48
+    ],
+    "wind_speed_600hPa": [
+      38,
+      40,
+      42,
+      46
+    ],
+    "wind_direction_600hPa": [
+      265,
+      270,
+      275,
+      280
+    ],
+    "geopotential_height_600hPa": [
+      4210,
+      4208,
+      4206,
+      4200
+    ],
+    "temperature_500hPa": [
+      -18.4,
+      -19.0,
+      -19.7,
+      -21.2
+    ],
+    "relative_humidity_500hPa": [
+      30,
+      33,
+      36,
+      42
+    ],
+    "wind_speed_500hPa": [
+      44,
+      46,
+      48,
+      52
+    ],
+    "wind_direction_500hPa": [
+      275,
+      280,
+      285,
+      290
+    ],
+    "geopotential_height_500hPa": [
+      5580,
+      5578,
+      5576,
+      5570
+    ],
+    "temperature_400hPa": [
+      -30.0,
+      -30.7,
+      -31.4,
+      -33.0
+    ],
+    "relative_humidity_400hPa": [
+      25,
+      28,
+      31,
+      37
+    ],
+    "wind_speed_400hPa": [
+      52,
+      54,
+      56,
+      60
+    ],
+    "wind_direction_400hPa": [
+      285,
+      290,
+      295,
+      300
+    ],
+    "geopotential_height_400hPa": [
+      7190,
+      7188,
+      7186,
+      7180
+    ],
+    "temperature_300hPa": [
+      -43.0,
+      -43.8,
+      -44.5,
+      -46.2
+    ],
+    "relative_humidity_300hPa": [
+      20,
+      22,
+      25,
+      30
+    ],
+    "wind_speed_300hPa": [
+      60,
+      62,
+      64,
+      68
+    ],
+    "wind_direction_300hPa": [
+      295,
+      300,
+      305,
+      310
+    ],
+    "geopotential_height_300hPa": [
+      9170,
+      9168,
+      9166,
+      9160
+    ],
+    "temperature_250hPa": [
+      -51.0,
+      -51.7,
+      -52.4,
+      -54.0
+    ],
+    "relative_humidity_250hPa": [
+      18,
+      20,
+      23,
+      28
+    ],
+    "wind_speed_250hPa": [
+      64,
+      66,
+      68,
+      72
+    ],
+    "wind_direction_250hPa": [
+      300,
+      305,
+      310,
+      315
+    ],
+    "geopotential_height_250hPa": [
+      10370,
+      10368,
+      10366,
+      10360
+    ],
+    "temperature_200hPa": [
+      -57.0,
+      -57.8,
+      -58.5,
+      -60.0
+    ],
+    "relative_humidity_200hPa": [
+      15,
+      17,
+      20,
+      24
+    ],
+    "wind_speed_200hPa": [
+      68,
+      70,
+      72,
+      76
+    ],
+    "wind_direction_200hPa": [
+      305,
+      310,
+      315,
+      320
+    ],
+    "geopotential_height_200hPa": [
+      11790,
+      11788,
+      11786,
+      11780
+    ],
+    "temperature_2m": [
+      19.4,
+      18.7,
+      17.9,
+      16.2
+    ],
+    "dew_point_2m": [
+      11.4,
+      11.1,
+      10.8,
+      10.0
+    ],
+    "wind_speed_10m": [
+      11,
+      13,
+      15,
+      18
+    ],
+    "wind_direction_10m": [
+      215,
+      220,
+      225,
+      235
+    ],
+    "cloud_cover": [
+      35,
+      42,
+      50,
+      68
+    ],
+    "precipitation": [
+      0,
+      0,
+      0.2,
+      1.4
+    ],
+    "surface_pressure": [
+      1014,
+      1013,
+      1012,
+      1010
+    ]
+  }
+}

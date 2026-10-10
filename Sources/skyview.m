@@ -78,7 +78,7 @@ NSDictionary *SkyPointFeed(double lat, double lon, NSString *name, double elevat
     if (!isfinite(lat) || !isfinite(lon)) return nil;
     NSString *label = SkyText(name) ?: [NSString stringWithFormat:@"%.2f,%.2f", lat, lon];
     NSMutableDictionary *feed = [@{@"lat": @(lat), @"lon": @(lon), @"name": label,
-        @"elevationFt": isfinite(elevationFt) ? @(elevationFt) : @0, @"coastKm": coastKm ?: NSNull.null,
+        @"elevationFt": isfinite(elevationFt) ? @(elevationFt) : NSNull.null, @"coastKm": coastKm ?: NSNull.null,
         @"nowMs": @(llround((now ?: NSDate.date).timeIntervalSince1970 * 1000.0)),
         @"profile": NSNull.null, @"report": NSNull.null} mutableCopy];
     NSDictionary *metar = [aviation[@"metar"] isKindOfClass:NSDictionary.class] ? aviation[@"metar"] : nil;

@@ -112,7 +112,7 @@ function modelRow(snapshot: Snapshot | null, icao: string): string {
   const temp = sample.t2mC == null ? '—' : `${sample.t2mC.toFixed(0)}°`;
   const mslp = sample.mslpHpa == null ? '—' : sample.mslpHpa.toFixed(1);
   const wind = sampleWind(sample.windFromDeg, sample.windKt);
-  return `<div class="row model" title="ECMWF 10 m wind, 2 m temperature, cloud cover, MUCAPE J/kg. ${icao}.">
+  return `<div class="row model" title="ECMWF · ${icao}">
     ${icon.grid}<span>${icao}</span><span class="v">${mslp}</span><span class="v">${wind === '—' ? wind : `${wind} kt`}</span><span class="v">${temp}</span><span class="v">${cloud}</span><span class="v" title="MUCAPE J/kg">${cape}</span>
   </div>`;
 }

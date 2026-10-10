@@ -1,0 +1,36 @@
+.panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; color: var(--md-on-surface); background: var(--md-surface); font-variant-numeric: tabular-nums; }
+.side { position: absolute; z-index: 30; inset: 0 0 0 auto; width: clamp(328px, 48%, 400px); border-left: 1px solid var(--md-outline-soft); }
+.sheet { position: fixed; z-index: 30; border-radius: 14px 14px 0 0; border-top: 1px solid var(--md-outline-soft); box-shadow: 0 -6px 18px rgb(0 0 0 / .12); }
+.heading { display: flex; align-items: center; gap: 8px; min-height: 40px; height: auto; padding: 2px 0 2px 12px; flex-shrink: 0; overflow: visible; }
+.identity { display: flex; flex-direction: column; justify-content: center; min-width: 0; flex: 1; }
+.heading strong { min-width: 0; font-size: .875rem; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.coords { color: var(--md-on-surface-variant); font-size: 11px; line-height: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mark { position: relative; display: grid; flex: 0 0 36px; }
+.heading .mark button { width: 36px; height: 40px; font-size: 1rem; }
+.source { min-width: 0; color: var(--md-on-surface-variant); font-size: .6875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.elevation { flex: 0 0 auto; color: var(--md-on-surface); font-size: .75rem; font-weight: 650; white-space: nowrap; }
+.heading button { width: 40px; height: 40px; flex-shrink: 0; font-size: 1.5rem; border-radius: 6px; cursor: pointer; }
+.heading button:hover { background: var(--md-surface-container-high); }
+.graphic { flex: 1 1 0; min-height: 50%; display: flex; flex-direction: column; min-width: 0; }
+.plot { position: relative; flex: 1 1 auto; min-height: 0; touch-action: none; }
+.field { position: absolute; inset: 0; width: 100%; height: 100%; }
+.level { position: absolute; left: 4px; right: 4px; height: 16px; display: flex; align-items: center; justify-content: space-between; transform: translateY(-50%); pointer-events: none; white-space: nowrap; font-size: 11px; line-height: 16px; color: var(--md-on-surface); text-shadow: 0 0 3px var(--md-surface), 0 0 3px var(--md-surface); }
+.levelLabel { width: 68px; }
+.level[data-level="surface"] .levelLabel { width: auto; max-width: calc(100% - 92px); }
+.levelTrack { flex: 1 1 8px; align-self: center; height: 1px; min-width: 8px; margin: 0 4px; background: transparent; }
+.windText { width: 62px; text-align: right; font-weight: 650; }
+.level[data-crowded="true"] { opacity: 0; }
+.level[data-active="true"] { color: var(--md-primary); font-weight: 650; opacity: 1; }
+.level[data-active="true"] .levelTrack { background: var(--md-primary); opacity: .4; }
+.sea { flex: 0 0 auto; display: flex; flex-direction: column; gap: 1px; padding: 4px 8px 2px 12px; border-top: 1px solid var(--md-outline-soft); }
+.seaRow { display: grid; grid-template-columns: 18px 1fr; align-items: center; column-gap: 6px; height: 20px; white-space: nowrap; font-size: 12px; }
+.seaMark { width: 18px; }
+.seaArrow { width: 18px; height: 18px; }
+.readout { flex: 0 0 24px; margin: 0; padding: 0 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; line-height: 24px; font-weight: 600; }
+.status { padding: 12px; color: var(--md-on-surface-variant); }
+@media (prefers-reduced-motion: reduce) { .panel { scroll-behavior: auto; } }
+
+.marker { position: absolute; pointer-events: none; width: 22px; height: 22px; transform: translate(-50%, -50%); border: 2px solid #fff; border-radius: 50%; background: #174776; box-shadow: 0 0 0 2px #142c45, 0 2px 5px #0008; display: grid; place-items: center; }
+.marker::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #fff; }
+:global(.dark) .marker { background: #91c5ed; border-color: #142c45; box-shadow: 0 0 0 2px #f4f8ff, 0 2px 5px #0008; }
+:global(.dark) .marker::after { background: #142c45; }

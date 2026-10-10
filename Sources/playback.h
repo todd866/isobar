@@ -27,6 +27,7 @@ extern const NSTimeInterval kIsobarLiveDisplayTick;
 @end
 
 typedef NS_ENUM(NSInteger, IsobarLiveSpeed) {
+    IsobarLiveSpeedRealTime = 0, // 1 forecast second per real second
     IsobarLiveSpeed1x = 1,     // 1 forecast minute per real second
     IsobarLiveSpeed2x = 2,     // 2 forecast minutes per real second
     IsobarLiveSpeed4x = 4,     // 4 forecast minutes per real second

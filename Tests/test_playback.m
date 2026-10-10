@@ -138,7 +138,7 @@ static void TestSpeedRatesAndAdvancement(void) {
     [player setValue:@8.0 forKey:@"spanHours"];
     [player setValue:@0.0 forKey:@"hours"];
     [player setValue:@YES forKey:@"playing"];
-    NSArray *speeds = @[@(IsobarLiveSpeed1x), @(IsobarLiveSpeed2x),
+    NSArray *speeds = @[@(IsobarLiveSpeedRealTime), @(IsobarLiveSpeed1x), @(IsobarLiveSpeed2x),
         @(IsobarLiveSpeed4x), @(IsobarLiveSpeed8x), @(IsobarLiveSpeed16x),
         @(IsobarLiveSpeed32x), @(IsobarLiveSpeed64x),
         @(IsobarLiveSpeed128x), @(IsobarLiveSpeed256x)];
@@ -146,17 +146,23 @@ static void TestSpeedRatesAndAdvancement(void) {
         player.hoursPerSecond = IsobarLiveHoursPerSecond((IsobarLiveSpeed)raw.integerValue);
         [player setValue:@0.0 forKey:@"hours"];
         for (NSInteger tick = 0; tick < 4; tick++) [player tick:0.25];
-        double expected = raw.doubleValue / 60.0;
+        double expected = raw.integerValue == 0 ? 1.0 / 3600.0 : raw.doubleValue / 60.0;
         Check(fabs([player valueForKey:@"hours"] ? [[player valueForKey:@"hours"] doubleValue] - expected : -1) < 1e-8,
             [NSString stringWithFormat:@"%@x advances exactly %@ forecast hours per real second", raw, @(expected)]);
     }
-    Check(IsobarLiveSpeedIsValid(IsobarLiveSpeed1x) &&
+    player.hoursPerSecond = IsobarLiveHoursPerSecond(IsobarLiveSpeedRealTime);
+    [player setValue:@0.0 forKey:@"hours"];
+    [player setValue:[NSMutableDictionary dictionary] forKey:@"frames"];
+    [player tick:90];
+    Check(fabs([[player valueForKey:@"hours"] doubleValue] - 90.0/3600.0)<1e-9,
+        @"real time keeps 90 elapsed seconds even when rendering is late");
+    Check(IsobarLiveSpeedIsValid(IsobarLiveSpeedRealTime) && IsobarLiveSpeedIsValid(IsobarLiveSpeed1x) &&
         IsobarLiveSpeedIsValid(IsobarLiveSpeed16x) &&
         IsobarLiveSpeedIsValid(IsobarLiveSpeed64x) &&
         IsobarLiveSpeedIsValid(IsobarLiveSpeed128x) &&
         IsobarLiveSpeedIsValid(IsobarLiveSpeed256x) &&
         !IsobarLiveSpeedIsValid((IsobarLiveSpeed)3),
-        @"only the nine supported playback multipliers are valid");
+        @"Real time and the nine accelerated rates are valid");
     Check(fabs(IsobarLiveHoursPerSecond((IsobarLiveSpeed)99) - 8.0 / 60.0) < 1e-9,
         @"invalid playback values fall back to 8x");
 }

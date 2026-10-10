@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { profileAt, type ProfileSeries } from '../src/sky/physics.ts';
 import { reportAt, sceneFor, type SkyAirport } from '../src/sky/scene.ts';
+import { sceneForFeed, type SkyFeed } from '../src/sky/feed.ts';
 
 const HOUR = 3_600_000;
 const metarAt = Date.UTC(2026, 8, 26, 12, 0);
@@ -37,4 +38,20 @@ test('the nearest profile within 3 h is used before the first sample; none beyon
   assert.ok(profileAt(s, metarAt));
   assert.equal(profileAt(s, metarAt - 2 * HOUR), null);
   assert.deepEqual(sceneFor(ypph, s, metarAt - 2 * HOUR, metarAt - 2 * HOUR).notes, ['No model profile at this time']);
+});
+
+test('native feeds preserve unknown ground without placing AGL reports at sea level', () => {
+  const feed: SkyFeed = { lat: ypph.lat, lon: ypph.lon, name: 'YPPH', elevationFt: null, coastKm: null,
+    profile: { ...series(metarAt, 2), elevationFt: null }, report: ypph, nowMs: metarAt };
+  const unknown = sceneForFeed(feed, metarAt);
+  assert.equal(unknown.groundKnown, false);
+  assert.equal(unknown.state.elevationFt, 111 * 3.28084, 'inference stops at the lowest measured level');
+  assert.equal(unknown.state.surface, null);
+  assert.equal(unknown.state.parcel, null);
+  assert.ok(unknown.state.layers.every(layer => layer.source === 'model'));
+  assert.equal(sceneForFeed({ ...feed, profile: null }, metarAt).state.layers.length, 0);
+  const known = sceneForFeed({ ...feed, elevationFt: 67 }, metarAt);
+  assert.equal(known.groundKnown, true);
+  assert.equal(known.state.source, 'METAR');
+  assert.equal(known.state.layers[0].baseFtAmsl, 3467);
 });

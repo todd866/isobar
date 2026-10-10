@@ -1,0 +1,7 @@
+{
+  "name": "isobar-cloud-study",
+  "private": true,
+  "type": "module",
+  "scripts": { "render": "node render-offline.mjs", "capture": "node capture.mjs" },
+  "devDependencies": { "@napi-rs/canvas": "0.1.80" }
+}

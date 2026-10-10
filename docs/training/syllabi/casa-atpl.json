@@ -1,0 +1,3453 @@
+{
+  "schema": "isobar.training.syllabus/v1",
+  "id": "casa-atpl",
+  "authority": "CASA",
+  "title": "ATPL(A) aeronautical knowledge standards",
+  "version": "Part 61 Manual of Standards Instrument 2014, Compilation No. 6 (F2025C00050)",
+  "version_date": "2024-11-19",
+  "retrieved": "2026-10-09",
+  "licence": "CC BY 4.0",
+  "licence_note": "Commonwealth legislation on the Federal Register of Legislation. This repo records those compilations as CC BY 4.0. The register copyright page returned no article text on this fetch.",
+  "source_url": "https://www.legislation.gov.au/F2014L01102/latest/text",
+  "gap": "Appendix K.1 prints AAGA and AGKA in one cell titled aircraft general knowledge – aeroplane. Schedule 3 titles AAGA as the aerial-application endorsement, so AAGA is not listed here. Schedule 3 also has AMTA (ATPL meteorology – aeroplane), which Appendix K.1 does not list. Practical flight standards are unit titles only.",
+  "subjects": [
+    {
+      "code": "AGKC",
+      "title": "ATPL aircraft general knowledge – all aircraft categories",
+      "source_url": "https://www.legislation.gov.au/F2014L01102/latest/text",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "casa:AGKC:2.1.1",
+          "text": "2.1.1 Explain the following airspeeds; (a) IAS; (b) CAS; (c) EAS; (d) TAS.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:2.1.2",
+          "text": "2.1.2 Explain the aerodynamic forces acting on an aircraft in flight.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:3.1.1",
+          "text": "3.1.1 With reference to the basic principles of hydromechanics, explain and compare the following: (a) transmission of force by an incompressible fluid; (b) transmission of force by a compressible fluid.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:3.2.1",
+          "text": "3.2.1 For the following: (a) describe the functioning of a typical hydraulic system comprising main, standby and emergency systems that have multiple pumps and services; (b) describe the purpose and function of the major components of a hydraulic system comprising: (c) recognise on a diagram the symbols for major components of a hydraulic system and be able to trace the functioning of a diagrammatic system (system detail at the level of typical operations manual diagram); (d) describe the typical services operated by a hydraulic system and for a typical system, how priority is allocated to certain services.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:3.3.1",
+          "text": "3.3.1 Jet fuels (a) Avtur (Jet A1) – difference from other fuel cuts: (i) volatility; (ii) additives (discussion only); (b) specific gravity: (i) meaning; (ii) variation with temperature; (iii) effect of variation.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:3.3.2",
+          "text": "3.3.2 Carriage of fuel on aircraft (a) fuel tanks: (b) CG balance during fuel usage; (c) problems: (d) need for venting.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:3.3.3",
+          "text": "3.3.3 Operation of fuel system (a) understand function of a typical multi-engine fuel system with multiple fuel tanks, tank-to-tank transfer; (b) understand purpose/function of major components (for example, engine-driven pumps (HP/LP), fuel tank pumps, override/transfer pumps jettison pumps, fuel/oil heat exchange, vent lines, single-point refuelling; (c) recognise on diagrams the symbols for major components and be able to trace the functioning off a diagrammatic system (system details at level of flight manual diagrams); (d) understand suction feed/transfer as backup for pressure feed/transfer.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:3.3.4",
+          "text": "3.3.4 Operational considerations (a) fuel temperature (max/min): (i) need for fuel heating (oil, bleed air); (b) cooling/lubrication of pumps; (c) cooling of oil/hydraulic systems: (i) effect of fuel flow rates; (d) minimum fuel level: (i) pick-up for delivery to engine; (ii) maintain oil/hydraulic cooling; (iii) effects of aircraft attitude; (iv) fuel jettison.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:3.3.5",
+          "text": "3.3.5 Fuel system monitoring (a) gauges: (i) fuel contents, flow meters; (ii) effect of check angle; (iii) likely errors; (b) warning systems; (c) measurement of tank contents: (i) dipstick/dripstick/floatsticks; (ii) importance of having aircraft level; (iii) precautions in use.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:3.4.1",
+          "text": "3.4.1 Selected components (a) bus: (i) concept of a bus; (ii) common terminology:",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:3.4.2",
+          "text": "3.4.2 Operation of electrical system (a) functioning of a typical AC-based electrical system with multiple generators, multiple AC and DC buses, APU and GPU; (b) recognise on a diagram the symbols for the major components, and be able to trace the functioning of the diagrammatic system. (system detail at the level of typical Operations Manager diagram).",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.electrical"
+          ]
+        },
+        {
+          "id": "casa:AGKC:3.4.3",
+          "text": "3.4.3 The aircraft structure as an electrical conductor.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:4.1.1",
+          "text": "4.1.1 Explain the thrust formula for turbine engines and for thrust, state the functional relationship between airspeed, air density, pressure and temperature, and RPM.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.powerplant"
+          ]
+        },
+        {
+          "id": "casa:AGKC:4.2.1",
+          "text": "4.2.1 Describe the basic principles of jet propulsion theory with reference to the following: (a) working cycle: (i) gas flow; (ii) changes in velocity, pressure, temperature; (iii) engine pressure ratio; (b) the differences and advantages of the following types of engine: (i) centrifugal flow; (ii) axial flow.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:5.1.1",
+          "text": "5.1.1 Describe the basic features of the following commonly available types of displays: (a) pointer-and-dial; (b) vertical strip; (c) EICAS.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:5.1.2",
+          "text": "5.1.2 Explain the purpose of monitoring engine parameters in regards to the following: (a) comparison of engine performance; (b) trends; (c) identification of malfunctions/failures.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:5.1.3",
+          "text": "5.1.3 In relation to identifying an engine gauge with its engine: (a) explain the desirability of being able to rapidly identify the correct gauge engine combination; and (b) give examples of good/bad instrumentation layouts; and (c) describe the consequence of engine misidentification.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:6.1.1",
+          "text": "6.1.1 Describe how the following computer-based systems and technologies are used in aircraft: (a) flight management systems; (b) performance management systems; (c) fly-by-wire aircraft.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:6.2.1",
+          "text": "6.2.1 In relation to EFIS: (a) describe the advantages of EFIS compared to conventional system; and (b) list typical inputs and outputs; and (c) describe typical data inputs; and (d) describe typical control panels and display units; and (e) provide examples of typical aircraft installation.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:6.3.1",
+          "text": "6.3.1 In relation to a typical FMS: (a) describe the advantages of FMS compared to conventional system; and (b) explain the general principles of operation; and (c) list the typical inputs and outputs; and (d) describe typical control panel and display units; and (e) provide examples of typical aircraft installations.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:6.4.1",
+          "text": "6.4.1 In relation to TAT: (a) explain the purpose and operation of TAT gauges and the following terms: (i) ram rise; (ii) recovery factor; and (b) describe typical indicators of a TAT gauge in relation to malfunctions.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:7.1.1",
+          "text": "7.1.1 In relation to typical GPWS: (a) explain the purpose and operation of GPWS; and (b) describe the modes of operation and operating envelopes; and (c) describe hard and soft aural and visual warnings; and (d) list the typical inputs and outputs; and (e) describe the limitations and restrictions in function and use; and (f) describe typical GPWS displays and control panels.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:7.2.1",
+          "text": "7.2.1 Explain the basic concepts of ACAS operation.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:7.2.2",
+          "text": "7.2.2 Describe the effect on ACAS operation for each mode of operation that an be selected on the TCAS/Transponder control panel selected by the flight crew.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:7.2.3",
+          "text": "7.2.3 Describe the limitation of ACAS for tracking aircraft fitted with Mode A/C transponders.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:7.2.4",
+          "text": "7.2.4 Describe the range of the altitude band in which traffic are displayed in normal operation.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:7.2.5",
+          "text": "7.2.5 Explain the traffic display visual symbology used to determine the possibility of conflict with other aircraft and associated aural warnings.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:7.2.6",
+          "text": "7.2.6 Describe how ‘proximate’ aircraft are displayed on the traffic display.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:7.2.7",
+          "text": "7.2.7 Describe the aural and visual alerts for the following: (a) ‘intruder’ aircraft; (b) ’threat’ aircraft.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:7.2.8",
+          "text": "7.2.8 Describe pilot actions in response to the following: (a) ACAS Traffic Advisory (TA) alert; (b) ACAS Resolution Advisory (RA) alerts.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:7.2.9",
+          "text": "7.2.9 State the standard phraseology pilots should use to communicate with ATC in the following cases: (a) in response to an ACAS RA alert; (b) on cessation of a RA alert.",
+          "kind": "objective",
+          "concept_ids": [
+            "comm.procedures"
+          ]
+        },
+        {
+          "id": "casa:AGKC:7.2.10",
+          "text": "7.2.10 Explain the requirements for complying with ACAS RA instructions as overriding Air traffic Control (ATC) directions.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:7.2.11",
+          "text": "7.2.11 Describe the reporting/notification obligations when ACAS alerts are generated.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:7.3.1",
+          "text": "7.3.1 In relation to a typical DFDR system: (a) explain the purpose and function of DFDR; and (b) describe the typical data coverage available; and (c) describe the physical appearance of a set of gauges of typical recorder and recorded data.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:7.4.1",
+          "text": "7.4.1 Explain the purpose and function of HUMS, including the following: (a) actuation; (b) down loading.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:7.5.1",
+          "text": "7.5.1 In relation to a typical CVR system: (a) explain the purpose and function of a CVS; and (b) describe a typical audio/radio channel coverage available in a multi-seat flight deck environment; and (c) describe the physical appearance of a set of gauges of a typical recorder and control panel.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:7.6.1",
+          "text": "7.6.1 In relation to a typical MWS: (a) explain the purpose and function of the system; and (b) describe the typical warning systems incorporated or covered by a MWS; and (c) describe the aural and visual outputs for the following: (i) warnings; (ii) cautions; (d) describe the features of a typical displays; (e) explain take-off inhibiting of MWS outputs.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:7.7.1",
+          "text": "7.7.1 Describe the following in relation to fire detection, warning and extinguishing systems: (a) types of systems commonly used in aircraft; and (b) typical warnings; and (c) system limitations; and (d) actuation mechanisms; and (e) effects.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKC:8.1.1",
+          "text": "8.1.1 For the following, describe: (a) the principles of operation, performance limitations and errors of a GNSS system, including: (i) methods of position fixing using a GNSS system; (ii) the GNSS operating procedures which provide safeguards against navigational error and loss of situational awareness; (iii) GNSS operating procedures for typical navigational tasks using a specific type of aircraft equipment; (iv) indications of waypoint passage; (v) GNSS operational and serviceability checks; (vi) the human factors limitations associated with the use of GNSS equipment; (vii) the requirements applicable to pilots and equipment for GNSS operations.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "AGKA",
+      "title": "ATPL aircraft general knowledge – aeroplane",
+      "source_url": "https://www.legislation.gov.au/F2014L01102/latest/text",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "casa:AGKA:2.1.1",
+          "text": "2.1.1 Definitions (a) Mach No; (b) reference speeds, including MCRIT, VMO, MMO, VS.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKA:3.1.1",
+          "text": "3.1.1 Review flight controls (a) primary flight controls: (b) secondary flight controls: (i) spoilers/airbrakes; (ii) trim systems: (iii) flying tail, stabiliser trim.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.flight-controls"
+          ]
+        },
+        {
+          "id": "casa:AGKA:3.1.2",
+          "text": "3.1.2 Leading edge flaps (a) review trailing edge flaps; (b) leading edge flaps/devices: (i) purpose/function of leading edge flaps; (ii) types in common use; (iii) typical interconnection with trailing edge flaps; (c) common methods of operation: (i) hydraulic; (ii) electric; (iii) pneumatic (outline knowledge only is required; actuating systems are at later section).",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKA:3.1.3",
+          "text": "3.1.3 Powered controls (a) methods of transmitting demand to control surfaces; (b) feedback; (c) feel, natural or artificial; (d) possibility or availability of manual reversion.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKA:3.2.1",
+          "text": "3.2.1 Wheel systems (a) arrangements: (i) multi-wheel; (ii) bogie wheel; (iii) effects on PCN/ACN; (b) main components; (c) brief outline of typical retract/extend operation: (i) normal, alternate, emergency operation; (ii) landing gear doors may be disabled under some conditions.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKA:3.2.2",
+          "text": "3.2.2 Wheels and tyres (a) wheels and brake energy limits, thermal plugs; (b) cooling charts, minimum turn-around times.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKA:3.2.3",
+          "text": "3.2.3 Braking systems (a) typical multi-wheel systems: (A) hydraulic supply and back-up; (B) emergency air bottles. (b) parking brake; (c) principles of operations/limitations of: (i) anti-skid system; (ii) auto brake system.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKA:3.2.4",
+          "text": "3.2.4 Hydroplaning (a) cause and effect; (b) factors affecting hydroplaning, including speed formulae.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKA:3.2.5",
+          "text": "3.2.5 Steering systems (a) types available: (i) rudder pedal steering; (ii) hand/wheel/tiller steering; (iii) body-gear steering on some aircraft; (b) degree of steering commonly available with each: (i) understand that some steering systems are incompatible with asymmetric brake and/or power, while others are improved by them.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKA:3.3.1",
+          "text": "3.3.1 Pneumatic systems (a) basic system knowledge as for hydraulics; (b) compare system differences with hydraulic system; (c) compare operating differences with hydraulic system; (i) speed of response; (ii) force available; (iii) supply of operating fluid; (iv) weight of system.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKA:3.4.1",
+          "text": "3.4.1 Typical air supply system (a) power sources: (i) engine driven compressors; (ii) bleed air: (A) gas turbine compressor; (B) turbo charger compressor; (b) typical services provided; (c) availability of services: (d) possibility of limitations under take-off or asymmetric power conditions, or during engine start.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKA:3.4.2",
+          "text": "3.4.2 Airconditioning system (a) types of systems: (i) freon; (ii) air cycle machine; (b) brief outline of operation of system; (i) single zone cabin; (ii) multiple zones; (c) purpose of/necessity for humidifiers.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKA:3.4.3",
+          "text": "3.4.3 Pressurisation system (a) terminology: (i) cabin altitude, differential pressure; (b) brief outline of operation of typical system: (i) supply; (ii) outflow valves; (iii) overpressure and negative pressure relief; (iv) control of cabin altitude and rate (no detail of internal mechanism of controller required); (c) normal pressurised zones in the aircraft; (d) rapid decompression, cabin altitude warning.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.pressurisation"
+          ]
+        },
+        {
+          "id": "casa:AGKA:3.5.1",
+          "text": "3.5.1 Distinction between anti-ice and de-ice system.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.anti-ice"
+          ]
+        },
+        {
+          "id": "casa:AGKA:3.5.2",
+          "text": "3.5.2 Pneumatic systems (brief coverage only) (a) where used: (i) leading edges; (b) limitations.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKA:3.5.3",
+          "text": "3.5.3 Thermal ice protection (a) where used: (i) propellers, flying surfaces, air intakes, pitot and other sensors, windshields; (b) methods: (i) electrical, air, oil; (c) limitations.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.anti-ice"
+          ]
+        },
+        {
+          "id": "casa:AGKA:3.5.4",
+          "text": "3.5.4 Fluid ice protection (a) where used: (i) inflight leading edge of flying surfaces, propellers, windshield; (ii) ground de-icing; (b) limitations.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.anti-ice"
+          ]
+        },
+        {
+          "id": "casa:AGKA:3.5.5",
+          "text": "3.5.5 Rain removal from windscreen (a) methods: (i) wipers; (ii) fluid dispersant; (iii) air jets.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKA:3.5.6",
+          "text": "3.5.6 Effects on aeroplane performance (discussion only) (a) ice accumulations; (b) use of ice control systems.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKA:3.6.1",
+          "text": "3.6.1 Carriage of fuel on aircraft (a) structural consequences: (i) wing bending; (ii) zero-fuel weight; (iii) CG movement; (b) understand suction feed and gravity feed/transfer as backup for pressure feed/transfer.",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        },
+        {
+          "id": "casa:AGKA:3.6.2",
+          "text": "3.6.2 Operational considerations (a) minimum fuel levels: (i) pick-up for delivery to engine; (ii) maintain oil/hydraulic cooling; (iii) effect of aircraft attitude (for example, missed approach); (b) fuel jettison: (i) legislation; (ii) precautions to be observed; (iii) minimum fuel after jettison (stand-pipes).",
+          "kind": "objective",
+          "concept_ids": [
+            "sys.aircraft-general"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "AFRC",
+      "title": "ATPL flight rules and air law – all aircraft categories",
+      "source_url": "https://www.legislation.gov.au/F2014L01102/latest/text",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "casa:AFRC:2.1.1",
+          "text": "2.1.1 Airworthiness and equipment.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.1.2",
+          "text": "2.1.2 State the purpose of certificates of airworthiness and registration.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.1.3",
+          "text": "2.1.3 Given a typical scenario, extract from CASA regulations/orders/instructions the communication and normal and emergency equipment required to be on board an aircraft. State the responsibilities of a pilot in command with regard to: (a) daily inspections; and (b) recording/reporting aircraft defects.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.1.4",
+          "text": "2.1.4 As applicable, determine the types of maintenance that may be carried out by licence holder.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.1.5",
+          "text": "2.1.5 Given a copy of a maintenance release: (a) determine its validity; and (b) list the class(es) of operation applicable to the aircraft; and (c) list outstanding defects/endorsements and decide whether these affect the airworthiness of the aircraft.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.2.1",
+          "text": "2.2.1 ICAO provisions (Annex).",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.2.2",
+          "text": "2.2.2 General applicability – brief reference only.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.2.3",
+          "text": "2.2.3 Australian national legislation: (a) requirement to register aircraft; (b) registration of aircraft in Australia; (c) transfer of interest and cancellation of registration.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.3.1",
+          "text": "2.3.1 ICAO Provisions (Annex 8): (a) general applicability – brief reference only.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.3.2",
+          "text": "2.3.2 Australian national legislation: (a) requirements for Certificates of Airworthiness; (b) conditions relating to Certificates of Airworthiness; (c) suspension or cancellation of Certificates of Airworthiness; (d) permissible unserviceability: (i) use of PUS; (ii) MEL as an alternative to PUS; (iii) use of an MEL; (e) requirements for maintenance; (f) pilot's responsibilities with respect to maintenance within Australia; (g) pilot's responsibilities with respect to maintenance outside Australia; (h) maintenance release requirements; (i) suspension, cancellation of a maintenance release; (j) cessation or recommencement of a maintenance release; (k) pilot's responsibilities with respect to defects or damage; (l) compliance and certification of Airworthiness Directives; (m) classes of controlled airspace.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.4.1",
+          "text": "2.4.1 ICAO Provisions (Annex 1): (a) general applicability.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.4.2",
+          "text": "2.4.2 Australian national legislation: (a) general provisions: (i) licences; (ii) ratings; (b) ATPL: (i) privileges; (ii) limitations; (iii) recency requirements; (c) classification of operations; (d) multi-crew aircraft: (i) composition of crew; (ii) flight and duty time limitations.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.5.1",
+          "text": "2.5.1 ICAO Annex 2: (a) general applicability.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.5.2",
+          "text": "2.5.2 Australian national legislation.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.5.3",
+          "text": "2.5.3 Rules of the Air Review (CAR Part XII).",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.5.4",
+          "text": "2.5.4 Conditions of flight (CAR PART XI): (a) flight manuals; (b) documents required for flight; (c) carriage and discharge of firearms; (d) drunkenness and violence on board an aircraft; (e) dropping of articles; (f) flight over public gatherings; (g) low flying.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.6.1",
+          "text": "2.6.1 ICAO Doc 8168 – OPS/611: (a) general provisions – brief reference only.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.6.2",
+          "text": "2.6.2 Australian national legislation Review AIP (DAP): (a) general requirements; (b) alternate planning requirements.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.7.1",
+          "text": "2.7.1 ICAO Annex II and Doc 4444: (a) general provisions – brief reference only.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.7.2",
+          "text": "2.7.2 Australian national legislation.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.7.3",
+          "text": "2.7.3 General provisions: (a) objectives of ATS; (b) division of ATS; (c) designation of the portions of the airspace and controlled aerodromes where ATS will be provided; (d) establishment and designation of the units providing ATS; (e) specifications: (i) flight information regions; (ii) control areas; (iii) control zones; (f) minimum flight attitudes; (g) priority for aircraft in emergency; (h) inflight contingencies in ATS.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.7.4",
+          "text": "2.7.4 ATC service: (a) function and purpose of ATC; (b) provision of ATC service; (c) operation of ATC service; (d) separation minima; (e) contents of clearances; (f) coordination of clearances; (g) control of persons and vehicles at aerodromes.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.7.5",
+          "text": "2.7.5 Flight information service: (a) application and scope of flight information service: (b) operational flight information service broadcasts.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.7.6",
+          "text": "2.7.6 Alerting service: (a) function/purpose; (b) phases of alert: INCERFA, ALERFA, DISTRESFA; (c) notification of rescue coordination centre; (d) information to aircraft in a state of emergency.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.7.7",
+          "text": "2.7.7 Principles governing the identification of ATS routes other than standard departure and arrival routes.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.8.1",
+          "text": "2.8.1 ICAO Doc 444 and RAC501/11: (a) general provisions – brief reference only.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.8.2",
+          "text": "2.8.2 Australian national legislation.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.8.3",
+          "text": "2.8.3 General provisions: (a) general air traffic services operating practices: (i) submission of a flight plan; (ii) flight clearances and information; (iii) control of air traffic flow; (iv) altimeter setting procedures; (v) position reporting requirements; (vi) requirements and format for AIREP.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.8.4",
+          "text": "2.8.4 Area control service: (a) vertical separation: (i) requirements; (ii) vertical separation minima; (iii) minimum cruising level; (iv) assignment of cruising level; (v) vertical separation during climb or descent; (b) horizontal separation (subsonic aircraft only): (i) requirements; (ii) geographical separation; (iii) track separation for aircraft using the same navaid; (iv) longitudinal separation; (c) reduction in separation minima; (d) ATC clearances: (i) requirement for clearance; (ii) function of clearance; (iii) contents of clearance; (iv) maintaining own separation while in VMC; (v) essential traffic information while in VMC; (vi) essential traffic information; (vii) clearance of a requested change in flight plan; (e) emergency: (i) general, priority, emergency descent only (action by pilot in command only); (f) communication failure: (i) air-ground communication failure (actions by pilot in command only); (g) interception of civil aircraft.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.8.5",
+          "text": "2.8.5 Approach control service (a) departing aircraft: (i) general procedures for departing aircraft; (ii) information for departing aircraft; (iii) clearances to climb maintaining own separation while in VMC; (iv) wake turbulence separation; (b) arriving aircraft: (i) general procedures for arriving aircraft; (ii) clearance to descend maintaining own separation while in VMC; (iii) visual approach; (iv) instrument approach; (v) holding; (vi) approach sequence; (vii) expected approach; (viii) time information for arriving aircraft.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.8.6",
+          "text": "2.8.6 Aerodrome control service: (a) functions of aerodrome control towers: (i) general functions; (ii) alerting service; (iii) suspension of VFR operations; (b) control of traffic: (i) traffic circuit(s); (ii) start-up; (iii) taxiing traffic; (iv) vehicular traffic; (v) coordination of take-off and landings; (vi) order of priority for arriving and departing aircraft; (vii) control of departing and arriving aircraft; (c) information provided to aircraft: (i) operation of the aircraft; (ii) aerodrome conditions.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.8.7",
+          "text": "2.8.7 Flight Information service and alerting service (a) air traffic advisory service; (b) alerting service.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.8.8",
+          "text": "2.8.8 Use of radar in air traffic services: (a) limitations in the use of radar; (b) functions of radar service: (i) identification procedure (establishment of radar identity only); (ii) position information; (iii) radar vectoring; (iv) speed control; (c) use of radar in the ATC service; (d) descent below MSA under radar control.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.9.1",
+          "text": "2.9.1 ICAO Annex 15: (a) general provisions – brief reference only.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.9.2",
+          "text": "2.9.2 Australian documentation: (a) availability and procurement of AIP, NOTAM, AIC.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.10.1",
+          "text": "2.10.1 ICAO Annex 14: (a) general provisions – brief reference only.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.10.2",
+          "text": "2.10.2 Australian national legislation: (a) AIP AD requirements: (i) aerodrome markers and markings; (ii) aerodrome lighting; (iii) visual aids; (iv) domestic aerodrome directory (ERSA); (v) pavement strength limitations.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.11.1",
+          "text": "2.11.1 ICAO Annex 9: (a) general provisions – brief reference only.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.11.2",
+          "text": "2.11.2 Australian national legislation.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.11.3",
+          "text": "2.11.3 AIP GEN requirements: (a) responsibility of DIT; (b) differences to international standards and practices: 9 Annex 9; (c) entry and departure of international aircraft: (i) documents required; (ii) description, purpose and use; (d) entry and departure of persons and baggage: (i) normal requirements; (ii) procedures for flight crew and similar personnel; (e) identification of designated international airports.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.12.1",
+          "text": "2.12.1 ICAO Annex 12: (a) general provisions – brief reference only.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.12.2",
+          "text": "2.12.2 Australian national legislation (a) SAR organisation: (i) establishment of SAR regions; (ii) establishment and designation of SAR services units; (b) operating procedures: (i) SAR phases; (ii) distress and urgency signals; (iii) use of SSR transponder; (iv) procedures for pilots in command at the scene of an accident; (v) procedures for pilots in command intercepting; (vi) distress transmissions; (vii) participation in searches.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.13.1",
+          "text": "2.13.1 ICAO Annex 17: (a) general provisions – brief reference only.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.13.2",
+          "text": "2.13.2 Air Defence identification zones (ADIZ): (a) Pilot's responsibilities for flight within the zone; (b) exemptions; (c) non-compliance; (d) action in the event of interception; (e) interpretation of visual signals; (f) powers of pilot in command.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.14.1",
+          "text": "2.14.1 Terminology: (a) definition of accident; (b) definition of incident.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRC:2.14.2",
+          "text": "2.14.2 Responsibilities of pilot in command regarding notification.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "AFRA",
+      "title": "ATPL flight rules and air law – aeroplane",
+      "source_url": "https://www.legislation.gov.au/F2014L01102/latest/text",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "casa:AFRA:2.1.1",
+          "text": "2.1.1 Flight information service: (a) application and scope of flight information service: (i) IFR traffic.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRA:3.1.1",
+          "text": "3.1.1 Review AIP (DAP): (a) approach procedures: (i) altimeter checks; (b) entry and holding procedures; (c) instrument landing system: (i) failures; (d) meteorological minima: (i) take-off; (ii) landing; (iii) alternate; (e) category 1 and 2 minima; (f) SIDs, STARs and NAPs; (g) DME and GNSSGNSS arrival procedures; (h) GNSSGNSS as a route navigation and approach aid; (i) RNP and PBN: (i) aircraft requirements; (ii) application.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        },
+        {
+          "id": "casa:AFRA:4.1.1",
+          "text": "4.1.1 General provisions: (a) general air traffic services operating practices:",
+          "kind": "objective",
+          "concept_ids": [
+            "law.flight-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "AHFC",
+      "title": "ATPL human factors",
+      "source_url": "https://www.legislation.gov.au/F2014L01102/latest/text",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "casa:AHFC:2.1.1",
+          "text": "2.1.1 Metabolism.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:2.1.2",
+          "text": "2.1.2 Oxygen requirement of tissues.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:2.1.3",
+          "text": "2.1.3 Composition of the atmosphere.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:2.1.4",
+          "text": "2.1.4 The gas laws.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:2.2.1",
+          "text": "2.2.1 Interrelationship of respiration and circulation.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:2.2.2",
+          "text": "2.2.2 Composition and function of the blood.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:2.2.3",
+          "text": "2.2.3 Blood pressure: (a) control of blood pressure; (b) hypotension and hypertension; (c) hemodynamic effects of acceleration.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:2.2.4",
+          "text": "2.2.4 Functional anatomy of the respiratory system.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:2.2.5",
+          "text": "2.2.5 Ventilation of the alveolar space, respiratory control.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:2.2.6",
+          "text": "2.2.6 Hypoxia: (a) definition and causes of hypoxia; (b) symptoms of oxygen deficiency and treatment; (c) time of useful consciousness.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.hypoxia"
+          ]
+        },
+        {
+          "id": "casa:AHFC:2.2.7",
+          "text": "2.2.7 Hyperventilation: (a) definition and causes of hyperventilation; (b) symptoms and treatment.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:2.3.1",
+          "text": "2.3.1 Rapid decompression, effects and counter measures.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:2.3.2",
+          "text": "2.3.2 Entrapped gases, barotrauma.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:3.1.1",
+          "text": "3.1.1 Central and peripheral nervous system.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:3.1.2",
+          "text": "3.1.2 Sensory threshold, sensitivity, adaptation, habituation.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:3.1.3",
+          "text": "3.1.3 Reflexes and biological control systems.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:3.1.4",
+          "text": "3.1.4 Information processing by the central nervous system: (a) mental set, attention (selective, divided, failure); (b) channel capacity, filtering; (c) mechanisms of perception, constancies, selective perception.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:3.2.1",
+          "text": "3.2.1 Vision: (a) functional anatomy of the eye; (b) physiology of the visual system; (c) visual acuity, refraction and refractive errors, presbyopia; (d) the visual field, scanning of the environment; (e) binocular vision; (f) the intraocular pressure, glaucoma; (g) hypoxia and vision; (h) night vision (dark adaptation); (i) defective colour vision.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:3.2.2",
+          "text": "3.2.2 Hearing: (a) functional anatomy of the ear; (b) physiology of hearing; (c) hearing loss (perceptive, conductive); (d) flight-related hazards to hearing: noise-related hearing loss, barotrauma.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:3.2.3",
+          "text": "3.2.3 Equilibrium: (a) functional anatomy and physiology; (b) detection of rotary and linear acceleration; (c) the subjective vertical; (d) motion sickness.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:3.3.1",
+          "text": "3.3.1 Basic concepts and definitions.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:3.3.2",
+          "text": "3.3.2 Categories of disorientation: (a) flight circumstances; (b) vertigo coriolis effect, pressure, vertigo, flicker vertigo; (c) visual illusions (the leans, approach and landing problems); (d) prevention and handling of disorientation.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:3.4.1",
+          "text": "3.4.1 Functional description.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:3.4.2",
+          "text": "3.4.2 Information storage and recall: (a) short-term memory; (b) long-term memory; (c) motor memory; (d) effects of stress and time of day.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:4.1.1",
+          "text": "4.1.1 Personality: (a) characteristics; (b) individual differences in personality; (c) self concept; (d) attitude development; (e) cognitive dissonance.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:4.1.2",
+          "text": "4.1.2 Behaviour and skills: (a) drives; (b) learning; (c) motivation and performance.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:4.1.3",
+          "text": "4.1.3 Human error and reliability: (a) human error model; (b) types of errors; (c) prevention and counter measures; (d) reliability of human behaviour; (e) errors induced by external factors (ergonomics, organisations).",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:4.1.4",
+          "text": "4.1.4 Working in an automated cockpit: (a) advantages; (b) disadvantages; (c) coping behaviour.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:4.2.1",
+          "text": "4.2.1 Crew coordination: (a) distribution of responsibilities; (b) working with a crew concept.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:4.2.2",
+          "text": "4.2.2 Crew cooperation: (a) small group dynamics (norms, atmosphere, pressure, communication, structure); (b) conflict management.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:4.2.3",
+          "text": "4.2.3 Leadership, style of management: (a) concern for performance; (b) concern for people; (c) democratic vs autocratic style; (d) encouraging inputs and feedback; (e) optimising of crew performance in flight; (f) correcting crew coordination deficiencies.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:4.2.4",
+          "text": "4.2.4 Communication: (a) verbal and non-verbal communication; (b) one and two-way communication; (c) effects of different communication styles; (d) miscommunication (including cultural differences).",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:4.3.1",
+          "text": "4.3.1 Pilot judgment concepts: (a) types of judgment; (b) motor skills and human factors.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:4.3.2",
+          "text": "4.3.2 Aeronautical decision-making: (a) decision-making concepts; (b) pilot responsibilities; (c) behavioural aspects.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:4.3.3",
+          "text": "4.3.3 Identification of hazardous attitudes: (a) physical factors; (b) psychological factors; (c) social influences and interface between people.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:4.3.4",
+          "text": "4.3.4 Pilot judgment awareness: (a) risk assessment; (b) cockpit stress management.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:4.3.5",
+          "text": "4.3.5 Applying decision-making concepts: (a) practical application; (b) managing resources; (c) safety awareness.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.3.1",
+          "text": "5.3.1 Causes and symptoms: (a) gastro intestinal; (b) cardiovascular; (c) side effects of drug and medication; (d) migraine; (e) epilepsy; (f) brain disorders.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.3.2",
+          "text": "5.3.2 Recognition: insidious and sudden incapacitation.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.3.3",
+          "text": "5.3.3 Procedures for dealing with incapacitation.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.4.1",
+          "text": "5.4.1 Tobacco.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.4.2",
+          "text": "5.4.2 Alcohol.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.4.3",
+          "text": "5.4.3 Drugs and self-medication.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.4.4",
+          "text": "5.4.4 Various toxic materials.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.5.1",
+          "text": "5.5.1 The biological clock.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.5.2",
+          "text": "5.5.2 Disturbances of circadian rhythms: (a) causes (shift work, time-zone crossing); (b) symptoms; (c) treatment.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.5.3",
+          "text": "5.5.3 Sleep (a) functions; (b) patterns; (c) effects of disturbances and treatment.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.6.1",
+          "text": "5.6.1 Definition.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.6.2",
+          "text": "5.6.2 Causes.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.6.3",
+          "text": "5.6.3 Types and symptoms.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.6.4",
+          "text": "5.6.4 Prevention and treatment.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.7.1",
+          "text": "5.7.1 Definition of stress.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.7.2",
+          "text": "5.7.2 Stress components.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.7.3",
+          "text": "5.7.3 Causes, stressors.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.7.4",
+          "text": "5.7.4 Coping behaviour: (a) identifying and reducing stress; (b) life stress management.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.7.5",
+          "text": "5.7.5 Effects on performance.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.7.6",
+          "text": "5.7.6 Anxiety.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.7.7",
+          "text": "5.7.7 Defence mechanisms.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.7.8",
+          "text": "5.7.8 Effects of anxiety and defence mechanism.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.8.1",
+          "text": "5.8.1 Common minor ailments (colds, influenza, gastro-intestinal upsets).",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.8.2",
+          "text": "5.8.2 Tropical climates: risk, regulatory aspects.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.8.3",
+          "text": "5.8.3 Personal hygiene: oral, external, internal hygiene.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.8.4",
+          "text": "5.8.4 Diabetes.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.8.5",
+          "text": "5.8.5 Hypotension and hypertension.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.8.6",
+          "text": "5.8.6 Obesitas, lack of exercise.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:5.8.7",
+          "text": "5.8.7 Epidermic diseases.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.1.1",
+          "text": "6.1.1 Explain what is TEM.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.2.1",
+          "text": "6.2.1 Explain the principles of TEM.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.2.2",
+          "text": "6.2.2 Explain the components of TEM.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.3.1",
+          "text": "6.3.1 Define and explain 'threat'.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.3.2",
+          "text": "6.3.2 Explain types of 'threats' such as 'expected', 'unexpected' and 'latent' threats – recognise and give examples.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.3.3",
+          "text": "6.3.3 Explain categories of 'threats' such as 'environmental' and 'organisational' threats – give examples of these 'threat(s) and recognise the 'threat(s)' in a given scenario.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.4.1",
+          "text": "6.4.1 Define and explain 'error'.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.4.2",
+          "text": "6.4.2 Explain types of 'errors', such as those independent of 'threat(s)', induced by 'threat(s)' and with the potential to escalate other 'errors' (chain of errors) – recognise and give examples.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.4.3",
+          "text": "6.4.3 Explain categories of 'errors' such as those due to aircraft handling, flight management, procedures and communication – give examples of these 'error(s) and recognise the 'error(s)' in a given scenario.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.4.4",
+          "text": "6.4.4 Describe some measures or practices (for example, use of checklist, SOPs) to prevent occurrence of 'errors'.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.4.5",
+          "text": "6.4.5 Analyse scenarios of crew facing 'error(s)', and how crew may recognise and prevent 'errors' to ensure safe flight.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.5.1",
+          "text": "6.5.1 Define and explain UAS.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.5.2",
+          "text": "6.5.2 Explain categories of UAS such as those arising from ineffective 'threat' and/or 'error' management, and those spontaneously and directly from a 'threat' – recognise and give examples.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.5.3",
+          "text": "6.5.3 Explain categories of UAS such as those due to aircraft handling, ground navigation and incorrect aircraft configuration – give examples of these UAS and recognise the UAS in a given scenario.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.5.4",
+          "text": "6.5.4 Explain the primacy of UAS management over 'error' or 'threat' management – recognise and give examples of the importance of ensuring that tasks are prioritised to manage a UAS.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.5.5",
+          "text": "6.5.5 Explain what resources an aircraft cockpit crew could identify and use to avoid or manage a UAS.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.5.6",
+          "text": "6.5.6 Analyse scenarios of crew facing UAS, and what should be the recovery action, and what would be the end states (outcomes) if recovery action is not taken.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.6.1",
+          "text": "6.6.1 Define and explain 'countermeasures'.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.6.2",
+          "text": "6.6.2 Describe and give examples of types of 'countermeasures' such as systemic-based, individual and team 'countermeasures'.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.6.3",
+          "text": "6.6.3 Describe and give examples of 'countermeasures'.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.7.1",
+          "text": "6.7.1 Detail a process to identify and manage threats and errors during multi-crew operations, such as data gathering, threat analysis, decision making.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.7.2",
+          "text": "6.7.2 Analyse scenarios of multi-crew operations with regards to TEM.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:AHFC:6.7.3",
+          "text": "6.7.3 Give examples of how establishing and maintaining interpersonal relationships in multi-crew operations can promote safe flight.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ANVC",
+      "title": "ATPL navigation – all aircraft categories",
+      "source_url": "https://www.legislation.gov.au/F2014L01102/latest/text",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "casa:ANVC:2.1.1",
+          "text": "2.1.1 Lambert Conformal Conic Projection: (a) review properties: (i) great circles, rhumb lines, rules lines; (ii) scales, chart convergence; (b) brief comparison with properties of other projections: (i) Mercator; (ii) Polar sterographic.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.1.2",
+          "text": "2.1.2 Use of AIP (MAP) charts.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.3.1",
+          "text": "2.3.1 Air data instruments: (a) review of altimeter, ASI, VSI, IVSI and Machmeter: (i) principles of operation; (ii) errors; (iii) relationship between IAS, CAS, EAS, TAS and TMN; (b) modern instrumentation: (i) integrated displays; (ii) EFIS; (iii) standby instruments.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.3.2",
+          "text": "2.3.2 Air data computer (ADC): (a) principles of operation; (b) input and output data; (c) uses of output data.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.3.3",
+          "text": "2.3.3 Gyroscopic principles: (a) rigidity, precession: (i) real and apparent precession; (ii) correcting for precession; (b) types of gyros in common use: (i) mechanical; (ii) laser gyros; (c) gyro platforms: (i) two- and three-dimensional stability; (d) introduce concept of self-contained instruments versus gyro-platform output displays.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.4.1",
+          "text": "2.4.1 Direct reading compass: (a) principle of operation and errors; (b) advantages and disadvantages.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.4.2",
+          "text": "2.4.2 Slaved gyro-stabilised compass: (a) principles of operation; (b) errors; (c) advantages and disadvantages; (d) uses of output data.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.4.3",
+          "text": "2.4.3 Inertial heading: (a) use of a gyro platform to compute true heading: (i) principles; (ii) significance of initial positions insert; (b) magnetic heading as a modification of true heading.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.5.1",
+          "text": "2.5.1 Terminology: (a) understand general principles of radio propagation; (b) understand and be able to use in correct sense: (i) wavelength; (ii) amplitude; (iii) frequency; (iv) phase angle; (v) frequency bands; (vi) the following sidebands: (A) SSB; (B) LSB; (C) USB; (vii) carrier; (viii) modulation, including the following: (A) amplitude; (B) frequency; (C) pulse; (D) multiplex; (ix) demodulation.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.5.2",
+          "text": "2.5.2 Wave propagation: (a) groundwaves, space (direct) waves, skywaves; (b) propagation within the frequency bands; (c) factors affecting reception: (i) fading; (ii) static; (d) use of HF for communications: (i) frequency prognosis; (ii) SELCAL.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.5.3",
+          "text": "2.5.3 Antennas: (a) function/purpose of antennas; (b) types of antennas in common use for aircraft: (i) uses; (ii) characteristics (outline only): (A) directionality; (B) polarisation.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.6.1",
+          "text": "2.6.1 ADF (including NDBs and use of RMI): (a) application for navigation; (b) principles; (c) presentation and interpretation; (d) coverage; (e) range; (f) errors and accuracy; (g) factors affecting range and accuracy.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.6.2",
+          "text": "2.6.2 VOR and Doppler-VOR (including use of RMI): (a) application for navigation; (b) principles; (c) presentation and interpretation; (d) coverage; (e) range; (f) errors and accuracy; (g) factors affecting range and accuracy.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.6.3",
+          "text": "2.6.3 DME (distance measurement equipment): (a) application for navigation; (b) principles; (c) presentation and interpretation; (d) range; (e) errors and accuracy; (f) factors affecting range and accuracy.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.6.4",
+          "text": "2.6.4 ILS (instrument landing system): (a) application for navigation; (b) principles; (c) presentation and interpretation; (d) coverage; (e) range; (f) errors and accuracy; (g) factors affecting range and accuracy.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.6.5",
+          "text": "2.6.5 MLS (microwave landing system): (a) application for navigation; (b) principles; (c) presentation and interpretation; (d) coverage; (e) range; (f) errors and accuracy; (g) factors affecting range and accuracy.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.7.1",
+          "text": "2.7.1 Route selection: (a) great circle tracks; (b) choice of speed and flight level; (c) ETOPS considerations.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.7.2",
+          "text": "2.7.2 Navigation on climb and descent: (a) wind and temperature variations: (i) desirability of allowing for variations; (ii) availability of data in actual situations. (b) weather/traffic avoidance: (i) concept of track miles. (c) allowance for use of anti-ice equipment: (i) reduced rate of climb; (ii) reduced rate of descent.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.7.3",
+          "text": "2.7.3 Use of radio NavAids: (a) requirement for regular position fixing; (b) use of navaid position lines to establish position: (i) along track; (ii) across track; (iii) desired/preferred form of P/L intersections; (c) computer-controlled navaid receivers: (i) auto-tuning; (ii) manual selection; (iii) precautions.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.7.4",
+          "text": "2.7.4 Calculation of track and groundspeed: (a) review basic track and groundspeed calculations: (i) plotted positions, IAS/TAS/GS, HDG/TRK; (ii) determination of wind velocity (track and groundspeed methods only); (iii) calculation of ETAs, EETs; (b) review ETP and PNR calculations; (c) inflight diversion to fixed point: (i) last PSD; (ii) time and fuel required.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.8.1",
+          "text": "2.8.1 Pulse techniques and associated terminology.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.8.2",
+          "text": "2.8.2 Ground radar: (a) coverage of ATC radars, factors affecting range and accuracy; (b) facilities provided by Met radars for storm warning and avoidance.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.8.3",
+          "text": "2.8.3 Airborne weather radar: (a) principles; (b) types; (c) presentation and interpretation; (d) factors affecting range and accuracy.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.8.4",
+          "text": "2.8.4 SSR (secondary surveillance radar) and transponder: (a) principles; (b) application for traffic control; (c) presentation and interpretation; (d) advantages compared to primary radar for traffic control.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.8.5",
+          "text": "2.8.5 Radio altimeter: (a) principle of operation; (b) display; (c) accuracy, errors.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.9.1",
+          "text": "2.9.1 Type of systems (a) Self-contained on-board systems including the following; (i) INS; (ii) DOPPLER; (b) External sensor systems including the following: (i) VOR and DME; (ii) GNSS.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.9.2",
+          "text": "2.9.2 General principles: (a) inputs required: (i) air data inputs; (ii) other inputs; (b) outputs generated: (i) types of outputs; (ii) uses.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.9.3",
+          "text": "2.9.3 RNAV systems: (a) principle of VOR/DME area navigation (RNAV); (b) advantages and disadvantages; (c) limitations and restrictions: (i) errors, accuracy, reliability; (ii) coverage; (iii) range. (d) typical control panel.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.9.4",
+          "text": "2.9.4 Reserved:",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.9.5",
+          "text": "2.9.5 Satellite navigation systems: (a) principle of GNSS navigation: (i) elements of GNSS (for example, GPS, GLONASS); (b) advantages and disadvantages; (c) limitations and restrictions: (i) errors, accuracy, reliability; (ii) coverage; (iii) range; (d) typical control panel; (e) approvals for IFR Navigation; (f) GNSS system enhancements (for example, DGNSS, GLS, WAAS).",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        },
+        {
+          "id": "casa:ANVC:2.9.6",
+          "text": "2.9.6 Updating area navigation systems: (a) need for updating position; (b) requirements for updating: (i) manual inserting; (ii) automatic updating; (iii) inhibiting updating;",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.charts"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "AMTC",
+      "title": "ATPL meteorology – all aircraft categories",
+      "source_url": "https://www.legislation.gov.au/F2014L01102/latest/text",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "casa:AMTC:2.1.1",
+          "text": "2.1.1 Student should know the following vertical divisions in the atmosphere: (a) troposphere, tropopause, stratosphere; (b) that most weather effects occur below the stratosphere.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.2.1",
+          "text": "2.2.1 Describe the method of measuring surface air temperature, and explain how the actual temperatures may be much higher, for example, above a runway.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.2.2",
+          "text": "2.2.2 Describe the meaning of the following terms: (a) isotherm, temperature inversion; (b) radiation, advection, convection, conduction; (c) isobar, horizontal pressure gradient; (d) saturated air, relative humidity, dew point; (e) evaporation, condensation, freezing.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.2.3",
+          "text": "2.2.3 Describe the effect of changes in temperature, pressure and humidity on air density.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.2.4",
+          "text": "2.2.4 Explain the factors that influence the diurnal variation of surface air temperature and explain the temperature gradient between land and sea surfaces.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.temperature"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.3.1",
+          "text": "2.3.1 Differentiate between stable, unstable and conditionally atmospheric conditions.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.3.2",
+          "text": "2.3.2 Describe the adiabatic process and the parcel method of assessing stability.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.stability"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.4.1",
+          "text": "2.4.1 Identify and classify cloud ‘types’ as cumuliform or stratform for the following: (a) high level; (b) medium level; (c) low level.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.4.2",
+          "text": "2.4.2 State the standard abbreviation for each cloud type, and the method used to report cloud amount.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.4.3",
+          "text": "2.4.3 Describe the weather associated with each cloud type.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.4.4",
+          "text": "2.4.4 Differentiate between drizzle, rain, showers and virga, however, actual droplet size is NOT required.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.4.5",
+          "text": "2.4.5 Select statements that describe the conditions necessary for the formation/dispersal of various types of cloud.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.5.1",
+          "text": "2.5.1 Know the method used in meteorological forecasts and reports to determine visibility.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.ceiling"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.5.2",
+          "text": "2.5.2 Describe the term ‘runway visual range’.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.ceiling"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.5.3",
+          "text": "2.5.3 Give reasons for differences between ‘inflight’ and ‘reported’ visibility.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.ceiling"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.5.4",
+          "text": "2.5.4 List meteorological factors that will reduce inflight visibility.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.ceiling"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.6.1",
+          "text": "2.6.1 Describe the relationship between pressure and wind and apply Buys Ballot’s law to assess the approximate location of high and low pressure systems.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.geostrophic"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.6.2",
+          "text": "2.6.2 Differentiate between: (a) squalls and gusts; and (b) backing and veering.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.6.3",
+          "text": "2.6.3 Compare surface and gradient winds in terms of direction and strength.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.gradient-wind"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.6.4",
+          "text": "2.6.4 List the ‘factors’ that effect the diurnal variation of wind and describe typical ‘variations’ in surface wind strength during a 24-hour period.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.7.1",
+          "text": "2.7.1 Describe typical ‘flying weather’ associated with the following, with reference to the parameters mentioned in subsection 2.7.2: (a) cold fronts; and (b) warm fronts; and (c) wave depressions; and (d) occluded fronts; and (e) tropical cyclones; and (f) the equatorial trough.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.7.2",
+          "text": "2.7.2 For subsection 2.7.1, the following are the parameters: (a) temperature (warmer/colder); (b) wind changes (back/veer, stronger/weaker); (c) stability and turbulence; (d) cloud type and approximate amount, precipitation.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.8.1",
+          "text": "2.8.1 With respect to the phenomena listed below from (i) to (xii) (a) state the conditions favourable to their development and, where applicable, their dispersal; (b) recognise signs which may indicate their presence; (c) describe their effect on flight characteristics; (d) where applicable, state the pilot actions required to minimise their effect on an aircraft in flight: (i) thermals, turbulence; and (ii) dust devils and dust storms; and (iii) wind gradient, wind shear and low-level jetstreams; and (iv) anabatic and katabatic winds; and (v) mountain waves and fohn winds; and (vi) land and sea breezes; and (vii) inversions and fog; and (viii) thunderstorms and microbursts; and (ix) downdrafts associated with terrain/cloud; and (x) atmospheric stability and instability; and (xi) hoar frost, rime, and clear airframe ice; and (xii) tropical cyclones, tornadoes.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.9.1",
+          "text": "2.9.1 Given a MSL analysis chart, identify: (a) high and low pressure systems; and (b) a trough, a ridge, a col; and (c) warm, cold and occluded fronts; and (d) a tropical cyclone; and (e) approximate wind direction.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.9.2",
+          "text": "2.9.2 Describe typical weather characteristics associated with the items listed in 2.9.1 (a) and (b) above.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.9.3",
+          "text": "2.9.3 For subclause 2.9.2, weather characteristics means the following: (a) approx wind direction; (b) moisture content (dry/humid); (c) cloud: stratiform and cumuliform; (d) clear skies; (e) turbulent or smooth air; (f) good or poor visibility.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.10.1",
+          "text": "2.10.1 For given locations, determine from CASA documents the availability of aviation forecasts, meteorological reports and weather briefing and state the method of obtaining this information.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.10.2",
+          "text": "2.10.2 State/select the conditions under which it is mandatory to obtain a forecast.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.10.3",
+          "text": "2.10.3 For information contained in an ARFOR, TAF, TTF, METAR, SPECI, AIRMET or SIGMET, do the following: (a) explain the coded information in plain language; (b) decide whether a particular forecast is valid for a flight; (c) apply the information to planning for and conducting a flight.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.taf-groups"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.10.4",
+          "text": "2.10.4 Given typical weather briefing, evaluate weather information applicable to a flight, and: (a) assess likely changes in weather during the flight (both improving and deteriorating); and (b) list phenomena which may adversely affect the flight.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.10.5",
+          "text": "2.10.5 List the conditions that require a pilot to submit a short AIREP.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.10.6",
+          "text": "2.10.6 State the purpose of VOLMET and ATIS broadcasts indicate how this information is obtained and apply this information to practical scenarios.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.10.7",
+          "text": "2.10.7 State what is meant by a Hazard Alert service.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.11.1",
+          "text": "2.11.1 Explain typical seasonal weather conditions in different regions of Australia with reference to: (a) visibility (good/poor); and (b) prevailing winds; and (c) typical cloud patterns and precipitation; and (d) seasonal pressure and frontal systems, including the ITCZ and equatorial trough; and (e) tropical cyclones.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.12.1",
+          "text": "2.12.1 Standard observation methods: (a) knowledge of the standard methods of measuring the following (however, knowledge of the mechanics of the various instruments used is not required): (i) visibility; (ii) cloud height; (iii) pressure; (iv) temperature; (v) humidity; (vi) surface wind; (vii) upper winds.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.12.2",
+          "text": "2.12.2 Q codes: (a) understand the code groups QFE and QNH, and understand the meaning of area QNH.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.12.3",
+          "text": "2.12.3 Inflight observations: (a) requirement for inflight observations by crew members; (b) reporting criteria; (c) form and circumstances in which observations are made and reported: (i) refer AIP for full position report format.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.12.4",
+          "text": "2.12.4 Satellite observations: (a) use of satellite photographs (visual and infra-red) to recognise and describe weather systems and air masses.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        },
+        {
+          "id": "casa:AMTC:2.12.5",
+          "text": "2.12.5 Australian flight weather documentation: (a) comprehension and interpretation of all weather forecasts or reports in common use in Australia for aviation purposes; (b) decoding of TAF, METAR and SIGMET messages; (c) understand the function of TREND type forecasts and the criteria for their use.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.climatology"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "AFPC",
+      "title": "ATPL flight planning – all aircraft categories – Reserved",
+      "source_url": "https://www.legislation.gov.au/F2014L01102/latest/text",
+      "gap": "Marked Reserved in Schedule 3. No knowledge elements are published for this unit.",
+      "objectives": [
+        {
+          "id": "casa:AFPC:reserved",
+          "text": "Reserved",
+          "kind": "reserved",
+          "concept_ids": [],
+          "gap": true
+        }
+      ]
+    },
+    {
+      "code": "AFPA",
+      "title": "ATPL flight planning – aeroplane",
+      "source_url": "https://www.legislation.gov.au/F2014L01102/latest/text",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "casa:AFPA:2.1.1",
+          "text": "2.1.1 Complete a practical flight planning exercise using specified initial conditions and operations manual data. Other conditions may be inserted or varied en route for test purposes. The exercise is intended as a consolidated test of a candidate's ability to apply flight planning, performance and navigational principles, and will include: (a) determine take-off limits with consideration of the following as applicable: (i) selection of runway; (ii) payload/fuel uplift capability; (iii) MTOW, including limits imposed by cruise or landing factors; (iv) calculation of V-speeds and take-off distances; (b) preparation of a weight and balance proforma: (i) adjustment of load/fuel if required; (c) selection of route and altitude: (i) allowing for wind and temperature; (ii) based on (given) forecast or actual conditions: (A) synoptic; (B) SIGMET; (C) upper winds; (D) TAF/METARs; (iii) including departure, destination and alternate requirements; (d) preparation of a fuel plan: (i) sector fuel burns; (ii) total fuel burn; (iii) alternate and reserve fuel; (iv) total fuel required; (e) preparation of a navigation plan: (i) sector times, distances, tracks; (ii) headings and ground speeds; (iii) minimum en route altitudes; (iv) allowance for climb and descent; (f) inflight computations, revisions or replanning: (i) fuel state, fuel requirements, fuel reserves; (ii) navigational progress: (A) tracks, ETAs, en route wind; (iii) diversion from track; (iv) change of cruising level; (v) engine-out flight; (vi) holding; (vii) assisting in search; (g) interpretation of AIP maps and symbols; (h) interpretation of (given) ATC requirements: (i) SID and/or STAR routings; (ii) DME descent steps; (i) calculation of the following types of CP (ETP) and PNR: (i) normal; (ii) engine-out; (iii) depressurised.",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.atpl"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "APLC",
+      "title": "ATPL performance and loading – all aircraft categories – Reserved",
+      "source_url": "https://www.legislation.gov.au/F2014L01102/latest/text",
+      "gap": "Marked Reserved in Schedule 3. No knowledge elements are published for this unit.",
+      "objectives": [
+        {
+          "id": "casa:APLC:reserved",
+          "text": "Reserved",
+          "kind": "reserved",
+          "concept_ids": [],
+          "gap": true
+        }
+      ]
+    },
+    {
+      "code": "APLA",
+      "title": "ATPL performance and loading – aeroplane",
+      "source_url": "https://www.legislation.gov.au/F2014L01102/latest/text",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "casa:APLA:2.1.1",
+          "text": "2.1.1 Explain the following terms in the context of take-off and landing performance: (a) speeds: (i) V1, VR, V2; (ii) VS and derivatives (for example, 1.3 VS); (iii) maximum rate and maximum angle climb speed; (iv) VMCA, VMCG; (v) flap retraction speed schedule; (b) distances: (i) TORR/TORA, TODR/TODA, ASDR/ASDA, LDR/LDA; (ii) balanced field length; (iii) clearway, stopway; (c) weights: (i) TOW/MTOW, LW/MLW, ZFW/MZFW; (ii) basic operating weight; (iii) useable fuel; (iv) payload; (d) take-off segments: (i) first, second, third and fourth segments; (e) pavement segments: (i) LCN, CAN, PCN; (ii) pavement concession; (iii) wheel loading.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:2.2.1",
+          "text": "2.2.1 Runway: (a) derivation/basis of take-off distance; (b) derivation/basis of accelerate-stop distance: (i) delay factors assumed; (ii) use of reverse thrust; (c) derivation/basis of V1; (d) concept of balanced field length; (e) clearways and stopways: (i) function; (ii) effect on V1; (iii) effect on TOW when runway-limited; (f) VR and V2: (i) interrelationship with V1; (ii) range of acceptable values; (g) allowance for headwind/tailwind; (h) allowance for abnormal runway surfaces: (i) wet; (ii) standing water/snow; (iii) gravel.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:2.2.2",
+          "text": "2.2.2 Take-off climb: (a) concept/purpose of take-off segments; (b) composition of segments: (i) first; (ii) second; (iii) third; (iv) fourth; (c) take-off climb gradients: (i) distinction between gross and net gradient; (ii) purpose of net gradient; (d) gradients required in each segment: (i) gross and net; (ii) two-, three- and four-engine aircraft; (e) obstacle clearance requirements: (i) take-off area (IMC case only); (ii) vertical clearance; (f) curved departures: (i) point at which turn may commence; (ii) bank angle; (iii) vertical clearance.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:2.2.3",
+          "text": "2.2.3 Take-off weight restrictions: (a) factors affecting the maximum permissible take-off weight, including; (i) structural limit; (ii) TODA limit; (iii) ASDA limit; (iv) second-segment climb limit; (v) effect of different flap settings: (A) lift-off speed; (B) lift-off distance; (C) second segment performance; (vi) effect of increased V2 (‘V2 overspeed’): (A) lift-off speed; (B) lift-off distance; (C) second segment climb performance; (vii) typical penalties applied for non-standard take-off: (A) line-up allowance; (B) use of anti-ice; (C) non-availability of reverse thrust; (D) non-availability of anti-skid braking; (E) non-availability of ground spoilers; (F) abnormal runway surface.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:2.2.4",
+          "text": "2.2.4 Effects of operating technique: (a) explain the effects of early or late rotation speed: (i) runway distance to lift-off; (ii) vertical clearance at runway end; (b) explain the effects of too-rapid or too-slow rotation rate: (i) runway distance to lift-off; (ii) obstacle clearance; (c) possibility of tail-strike or stall with early or rapid rotation.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:2.2.5",
+          "text": "2.2.5 Take-off thrust de-rating: (a) concept of de-rated thrust; (b) typical restrictions/limitations on use of de-rate; (c) typical de-rate values.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:2.4.1",
+          "text": "2.4.1 Runway: (a) derivation/basis of landing distance: (i) certification landing technique; (ii) factoring; (b) normal/abnormal runway surfaces; (c) allowance for wind.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:2.4.2",
+          "text": "2.4.2 Approach and touchdown: (a) determination/basis of VREF: (i) nominally 1.3 VS; (ii) typical additives for gust; (b) nominal approach path: (i) 3o-degree slope; (ii) runway aim point (1,000 ft from threshold); (iii) threshold crossing height; (iv) compare with certification landing technique; (c) effect of different flap settings: (i) approach speed; (ii) visibility (cockpit cutoff angle); (iii) low-speed stability; (iv) go-around capability.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:2.4.3",
+          "text": "2.4.3 Flight path gradients – landing: (a) net path at 1,500 ft above airfield; (b) missed approach climb: (i) configuration; (ii) required gradients for two-, three- and four-engine aircraft; (c) landing climb: (i) configuration; (ii) required gradients for two-, three- and four-engine aircraft.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:2.4.4",
+          "text": "2.4.4 Landing weight restrictions: (a) explain the factors affecting the maximum permissible landing weight, including: (i) structural limit; (ii) LDA limit; (iii) missed approach climb limit; (iv) landing climb limit; (v) typical penalties applied for non-standard landing: (A) non-availability of reverse thrust; (B) non-availability of anti-skid; (C) non-availability of ground spoilers; (vi) abnormal runway surface.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:2.4.5",
+          "text": "2.4.5 Effects of operating technique: (a) effect of excessive touchdown speed; (b) effect of late touchdown such as prolonged flare and holding off; (c) effect of delayed reverse thrust.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:3.1.1",
+          "text": "3.1.1 Understand and be able to use terms in correct context: (a) LRC; (b) specific range; (c) PNR; (d) point of safe diversion (PSD); (e) ETP; (f) ISA and temperature derivatives (for example, ISA+10o).",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:3.2.1",
+          "text": "3.2.1 Basis of speed and thrust management: (a) basic theory: (i) drag (thrust) versus speed; (ii) thrust/speed required for minimum drag; (iii) thrust/speed required for minimum fuel consumption; (iv) specific range; (v) thrust available versus thrust required; (vi) excess thrust; (vii) climb speeds; (viii) best rate of climb; (ix) best angle of climb; (x) graphical representations of the above. (b) effect of altitude and temperature variations: (i) fuel consumption; (ii) range; (iii) specific range; (iv) rate of climb.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:3.2.2",
+          "text": "3.2.2 Effect of operational decisions: (a) factors affecting choice of cruise speed (general discussion only): (i) direct costs; (ii) indirect costs; (iii) scheduled departure/arrival times; (iv) effect on connecting flights; (v) effects of competition; (vi) making up for delayed departure; (b) selection of cruise schedules: (i) economic cruise; (ii) LRC; (iii) use of high-speed cruise; (iv) selection of cruise altitude; (v) performance index for FMS input; (c) selection of descent point: (i) fuel used on descent; (ii) fuel used at low level; (iii) effect of early/late descent; (d) engine-out considerations.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:3.2.3",
+          "text": "3.2.3 En route flight path gradients: (a) en route climb gradient: (i) two-engine aircraft; (ii) three- and four-engine aircraft; (b) en route obstacle clearance (IMC case): (i) horizontal distance from obstacles; (ii) vertical clearance of obstacles; (iii) net gradient required at minimum clearance; (c) drift-down procedure: (i) increased vertical clearance required.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:3.3.1",
+          "text": "3.3.1 For the climb segment, given appropriate initial data, including variations from ISA, use typical operations manual information to determine each of the following: (a) time/distance/fuel used to a given altitude; (b) altitude reached after a given time or distance; (c) fuel/distance/time requirements for intermediate level changes.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:3.3.2",
+          "text": "3.3.2 Cruise and descent: (a) given appropriate initial data, including variations from ISA, use typical operations manual information to determine, under normal and engine-out conditions: (i) maximum and optimum cruise levels; (ii) TAS and fuel consumption at specified altitudes, adjusting for use of airconditioning packs, bleed air, etc. as required; (iii) maximum weight or temperature at which specified performance and/or altitudes can be attained; (iv) holding speeds and fuel consumption at specified and optimum altitudes; (v) appropriate descent points and calculate time/fuel used on descent.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:4.1.1",
+          "text": "4.1.1 Explain, and be able to apply, the following terms and concepts in their correct context: (a) CG; (b) moment arm; (c) CG index; (d) CG envelope; (e) loading zones; (f) floor limits; (g) basic weight; (h) zero-fuel weight; (i) average weights for passengers and baggage; (j) approved load control system.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:4.2.1",
+          "text": "4.2.1 Basic weight and balance: (a) explain the basic theory of CG and moments in respect to the following: (i) CG index; (ii) CG envelope; (b) explain the following terminology for weights: (i) basic weight; (ii) operating weight; (iii) zero-fuel weight; (iv) fuel weight; (v) payload; (c) explain the consequences of overloading on: (i) take-off performance; (ii) climb/cruise performance; (iii) aircraft structure; (d) understand requirement for passenger seal allocation and need to control seating changes in large aircraft.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:4.2.2",
+          "text": "4.2.2 Load control system: (a) describe purpose/function of a load control system: (i) weight control authority; (b) describe requirements and responsibilities of approved load controllers (ALC); (c) describe responsibilities of pilot in command; (d) describe the requirements for load sheet and explain the contents.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:4.3.1",
+          "text": "4.3.1 Use typical operations manual information to extract weight and balance data: (a) given appropriate initial data, determine any or all of: (i) CG at empty weight; (ii) movement of CG with addition of fuel and payload; (iii) movement of CG due to fuel consumption in flight; (iv) effect on CG of raising/lowering undercarriage and/or flaps; (b) determine CG limits for take-off, cruise and landing; (c) determine adjustments (if any) required to fuel or payload to permit operations within the CG envelope; (d) passenger load may be presented as block loads (for example, 24 adults in Zone A, 36 adults and 4 children in Zone B, etc.).",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        },
+        {
+          "id": "casa:APLA:4.3.2",
+          "text": "4.3.2 Given appropriate initial data, assess a completed weight and balance proforma and determine whether it is acceptable for flight.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.climb"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "IREX",
+      "title": "Instrument rating",
+      "source_url": "https://www.legislation.gov.au/F2014L01102/latest/text",
+      "gap": null,
+      "objectives": [
+        {
+          "id": "casa:IREX:2.1.1",
+          "text": "2.1.1 Describe the privileges of an instrument rating.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.documents"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.1.2",
+          "text": "2.1.2 State the limitations of an instrument rating, including proficiency checks and recent experience requirements.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.1.3",
+          "text": "2.1.3 State limitations for the conduct of a flight under the IFR in a type rated aircraft.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.2.1",
+          "text": "2.2.1 List the documents that must be carried on an IFR flight.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.3.1",
+          "text": "2.3.1 Operation and limitations of flight instruments required to conduct a flight under the IFR.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.3.2",
+          "text": "2.3.2 Standard radio communication phraseology used to conduct IFR operations in accordance with AIP.",
+          "kind": "objective",
+          "concept_ids": [
+            "comm.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.3.3",
+          "text": "2.3.3 Procedure to be followed in the event of loss of radio communications in different phases of flight.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.3.4",
+          "text": "2.3.4 Requirements for notifying ATC of changes in estimated time of arrival at waypoint in flight.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.3.5",
+          "text": "2.3.5 Symbology and interpretation of information published on charts used to conduct operations under the IFR.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.3.6",
+          "text": "2.3.6 Reporting requirements for a descent, approach and landing at an aerodrome outside controlled airspace.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.3.7",
+          "text": "2.3.7 Differences between 2D and 3D instrument approach operations.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.3.8",
+          "text": "2.3.8 Difference between the minimum altitude MDA and DA when published on an instrument approach chart and the pilot responsibilities.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.3.9",
+          "text": "2.3.9 How variations in temperature above and below ISA affect altimeter accuracy.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.3.10",
+          "text": "2.3.10 Pilot responsibilities when conducting 3D instrument approach operations in temperatures below ISA.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.3.11",
+          "text": "2.3.11 Validity period of flight plans submitted to ATC.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.3.12",
+          "text": "2.3.12 Pilot obligations for cancellation of SAR.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.3.13",
+          "text": "2.3.13 The circumstances in which a missed approach must be conducted.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.3.14",
+          "text": "2.3.14 The criteria for determining the published alternate aerodrome weather minimum specified for an aerodrome and its use in planning.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.alternate"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.3.15",
+          "text": "2.3.15 Aircraft separation standards from other IFR and VFR aircraft.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.vfr-minima"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.3.16",
+          "text": "2.3.16 Procedure/s for operating PAL systems.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.3.17",
+          "text": "2.3.17 The principles of operation and limitations of runway visual approach slope lighting systems used in Australia.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.3.18",
+          "text": "2.3.18 Pilot responsibilities for compliance with the following procedures: (a) SID; (b) STAR; (c) Noise abatement; (d) Missed approach; (e) Holding pattern and entry.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.3.19",
+          "text": "2.3.19 Operation of aircraft transponders.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:2.3.20",
+          "text": "2.3.20 Limitations on use of radar when on the ground.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:3.1.1",
+          "text": "3.1.1 Seasonal variations in the location and frequency of the following phenomena and their impact on IFR operations: (a) frontal weather; (b) tropical cyclones; (c) dust devils; (d) thunderstorms; (e) jetstreams; (f) fog.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:3.2.1",
+          "text": "3.2.1 Requirements for obtaining meteorological information to conduct a flight under the IFR.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:3.2.2",
+          "text": "3.2.2 Interpret meteorological forecasts required to conduct an IFR flight to determine the operational requirements that apply in accordance with AIP.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:3.2.3",
+          "text": "3.2.3 Given air temperature in clear air or in cloud, determine approximate height of freezing level, using a temperature lapse rate of 3°C per 1,000 ft in clear air and 1.5°C in cloud.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.icing"
+          ]
+        },
+        {
+          "id": "casa:IREX:3.2.4",
+          "text": "3.2.4 Given pilot observations, either in clear air or in cloud, of any 1 or more of the following phenomena — turbulence, precipitation, temperature, cloud type predict the probability and likely duration of the following: (a) airframe icing; (b) hail; (c) micro bursts and wind shear; (d) turbulence (including CAT).",
+          "kind": "objective",
+          "concept_ids": [
+            "met.turbulence"
+          ]
+        },
+        {
+          "id": "casa:IREX:3.2.5",
+          "text": "3.2.5 Interpret meteorological information required to conduct a flight under the IFR to determine the possibility of turbulence for the planned route.",
+          "kind": "objective",
+          "concept_ids": [
+            "met.turbulence"
+          ]
+        },
+        {
+          "id": "casa:IREX:3.2.6",
+          "text": "3.2.6 Sources for obtaining updates to weather information in flight, including the Volmet service as detailed in AIP.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:3.2.7",
+          "text": "3.2.7 Obligations for reporting variations to forecast meteorological conditions.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:3.4.1",
+          "text": "3.4.1 State the minimum meteorological conditions required for take-off.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.1.1",
+          "text": "4.1.1 Plan an IFR flight between aerodromes in Australia in accordance with the requirements specified in AIP and considering the following: (a) route limitations; (b) aircraft performance and forecast freezing level; (c) table of cruising altitudes/levels.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.1.2",
+          "text": "4.1.2 Determine RNP requirements applicable to an IFR flight.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.2.1",
+          "text": "4.2.1 Describe the alternate aerodrome requirements for the following: (a) weather; (b) navigation aids or approach procedures; (c) aerodrome lighting (including personnel in attendance requirements); (d) availability of weather reports; (e) divert time.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.alternate"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.2.2",
+          "text": "4.2.2 Determine holding fuel requirements for: (a) weather; and (b) traffic;",
+          "kind": "objective",
+          "concept_ids": [
+            "fpl.fuel-plan"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.2.3",
+          "text": "4.2.3 When NGT VFR operations are planned on last route segment, determine the following: (a) pilot night recency requirements; (b) alternate requirements; (c) airways clearance requirements.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.vfr-minima"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.2.4",
+          "text": "4.2.4 Requirements when weather conditions at the planned destination deteriorate below conditions prescribed for alternate or landing minima after the flight commences.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.2.5",
+          "text": "4.2.5 The implications of each type of RAIM prediction on operational requirements.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.3.1",
+          "text": "4.3.1 Calculate LSALT for a route not specified in AIP charts.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.3.2",
+          "text": "4.3.2 The minimum obstacle clearance criteria for a missed approach as specified in IAL.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.3.3",
+          "text": "4.3.3 The minimum obstacle clearance provided by the minimum circling altitude for different performance category IFR aircraft as defined in IAL, both day and night.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.3.4",
+          "text": "4.3.4 The requirements for establishing the aircraft on track after take-off.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.3.5",
+          "text": "4.3.5 Describe the requirements to establish the aircraft above the LSALT after take-off.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.3.6",
+          "text": "4.3.6 The requirements that must be satisfied for descent below LSALT or minimum safety altitude by day and night under the IFR and night VFR.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.vfr-minima"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.4.1",
+          "text": "4.4.1 Requirements for position fixing in accordance with the AIP.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.4.2",
+          "text": "4.4.2 The determination of aircraft performance category and the implications for operations under the IFR.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.4.3",
+          "text": "4.4.3 The requirements associated with the following waypoints and the symbology used on an instrument approach chart to define each point for the following: (a) initial approach fix; (b) final approach fix.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.4.4",
+          "text": "4.4.4 The requirements to conduct visual circling by day or night.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.4.5",
+          "text": "4.4.5 The use of PEC when applied to a DA to determine AOM.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.4.6",
+          "text": "4.4.6 The normal gradient applied in each segment when designing an instrument approach procedure.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.4.7",
+          "text": "4.4.7 Tracking tolerance requirements for the following: (a) avoidance of CTA; (b) utilising ground based navigation aids; (c) when navaids are not available; (d) notification requirements; (e) order of precision of navigation aids/systems.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:4.4.8",
+          "text": "4.4.8 Speed limitations and restrictions in accordance with the AIP for the following: (a) operations below 10 0000 ft AMSL; (b) during holding procedures; (c) during approach procedures; (d) issued by ATS and when speed restrictions are cancelled.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.1.1",
+          "text": "5.1.1 For ground-based radio navigation aids: (a) understand the principles of operation, indications and limitations of the ground-based navigation aids; and (b) extract from AIP: (i) the rated coverage of the radio navigation aids considering aircraft location, altitude and time of day; and (ii) pilot navigation tolerances.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.1.2",
+          "text": "5.1.2 For lateral azimuth guidance provided by NDB, describe the following: (a) the errors caused by coastal refraction; (b) the effect thunderstorms may cause; (c) the indications of loss of signal integrity; (d) the potential for errors when turning; (e) the indications of station passage.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.1.3",
+          "text": "5.1.3 Given heading and relative NDB azimuth bearings, for the following: (a) calculate track to and from the NDB; (b) fix position given relative bearings of 2 stations; (c) calculate drift relative to planned track; (d) calculate the relative bearing which will indicate the aircraft is abeam a station; (e) calculate the relative bearing which will indicate that a desired track to or from an NDB has been intercepted, given the intercept heading; (f) calculate the heading to steer to intercept desired inbound track before reaching the NDB.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.1.4",
+          "text": "5.1.4 For lateral guidance provided by VOR course deviation indicator (CDI), describe the following: (a) the cockpit indications of scalloping; (b) the indications of loss of signal integrity; (c) the indications of station passage.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.1.5",
+          "text": "5.1.5 Given VOR lateral course deviation indications, determine the position of the aircraft with reference to the VOR ground station.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.1.6",
+          "text": "5.1.6 VOR OBS settings required to provide command indications when flying on given tracks both to and from the VOR.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.1.7",
+          "text": "5.1.7 Determine aircraft position given cockpit instrument indications utilising a VOR.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.1.8",
+          "text": "5.1.8 Instrument indications when the aircraft is abeam the VOR on a given track.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.1.9",
+          "text": "5.1.9 DME including the following: (a) the use of DME and its limitations; (b) effect of aircraft altitude (slant range); (c) effect when not tracking direct to and from the aid; (d) DME arrival procedures.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.1.10",
+          "text": "5.1.10 ILS and LOC including the following: (a) components of the ILS including marker beacons; (b) operational considerations; (c) errors including G/S fluctuations and course reversal indications.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.2.1",
+          "text": "5.2.1 The GNSS system and its principles of operation, including the following: (a) GNSS system components; (b) space segment; (c) GNSS satellite signal; (d) pseudo random code (C/A course acquisition code); (e) control segment; (f) user segment (the GNSS receiver); (g) pseudo ranging; (h) principle of position fixing/minimum satellites required for navigation functions; (i) TSO/Performance limitations of various equipment types; (j) RAIM; (k) masking function; (l) receiver displays of system integrity; (m) operating modes – navigation with and without RAIM, DR; (n) explain why GNSS use the WGS84 coordinate system; (o) effect of PDOP/GDOP.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.2.2",
+          "text": "5.2.2 The following terms in relation to a navigational system and recall to what extent the GNSS system meets the associated requirements: (a) accuracy; (b) integrity; (c) means of providing GNSS integrity; (d) RAIM, procedural, systems integration; (e) availability; (f) continuity of service.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.2.3",
+          "text": "5.2.3 Degradation of GNSS accuracy by the following GNSS errors: (a) ephemeris; (b) clock; (c) receiver; (d) atmospheric/ionospheric; (e) multipath; (f) selective availability (SA); (g) typical total error associated with c/a code; (h) interference.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.2.4",
+          "text": "5.2.4 Requirements for use of GNSS in the following IFR operations: (a) en route; (b) RNP instrument approach operations; (c) alternates; (d) RNP operations.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.2.5",
+          "text": "5.2.5 Pilots actions and implications for the following GNSS warnings and messages, including the following: (a) loss of RAIM; (b) 2D navigation; (c) in dead reckoning mode; (d) database out-of-date; (e) database missing/failure; (f) GNSS fail; (g) barometric input fail; (h) power/battery fail; (i) parallel offset on.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.2.6",
+          "text": "5.2.6 Parameters applicable to tracking tolerances, automatic waypoint sequencing, CDI sensitivity and RAIM availability in each of the following segments: (a) en route; (b) terminal; (c) initial approach; (d) intermediate approach; (e) final approach; (f) missed approach.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.2.7",
+          "text": "5.2.7 Indications requiring a missed approach to be initiated.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.2.8",
+          "text": "5.2.8 The effect of availability or otherwise of baro-aiding on RAIM availability and prediction.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.2.9",
+          "text": "5.2.9 Describe the effect of satellite unserviceability on the reliability of each type of prediction.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.3.1",
+          "text": "5.3.1 Pilot responsibilities when conducting a 3D instrument approach operation utilising vertical guidance (advisory) provided by the aircraft navigation system on a 2D instrument approach procedure.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.3.2",
+          "text": "5.3.2 The different kinds of 3D instrument approach procedures.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.3.3",
+          "text": "5.3.3 The components required for a GNSS landing system (GLS) instrument approach procedure.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.3.4",
+          "text": "5.3.4 The principles of operation of a GBAS or local area augmentation system.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:5.3.5",
+          "text": "5.3.5 The validity of GLS guidance information beyond the distance of the GBAS station defined as D‑Max.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.1.1",
+          "text": "6.1.1 The basic principles of PBN, including requirements for RNAV and RNP capability.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.1.2",
+          "text": "6.1.2 The core components that make up the PBN airspace concept, including the following: (a) communications; (b) navigation; (c) surveillance (extended squitter ADS-B); (d) air traffic management.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.1.3",
+          "text": "6.1.3 The navigation system performance requirements for PBN in respect to the following: (a) accuracy; (b) integrity; (c) continuity; (d) functionality; (e) installation requirements.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.1.4",
+          "text": "6.1.4 The function of performance monitoring and alerting in a navigation system approved for PBN operations.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.2.1",
+          "text": "6.2.1 RNP specifications and system requirements and their application for the following: (a) RNP 2 (en route); (b) RNP 1 (terminal); (c) RNP APCH – LNAV and LNAV/Baro VNAV; (d) RNP APCH – LP and LPV (SBAS).",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.2.2",
+          "text": "6.2.2 The meaning of the specified RNP value, for example, RNP 1, in terms of the navigational accuracy.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.2.3",
+          "text": "6.2.3 The following RNP navigation system errors: (a) FTE (flight technical error); (b) PDE (path definition error); (c) TSE (total system error); (d) NSE or PEE (navigation system error/position estimation error).",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.2.4",
+          "text": "6.2.4 The meaning of the following RNP leg types: (a) TF (track to a fix); (b) RF (constant radius to a fix); (c) IF (initial fix); (d) HF (hold to fix); (e) HM (hold for clearance); (f) HA (hold to altitude); (g) DF (direct to a fix); (h) FA (fix to an altitude); (i) CF (course to a fix).",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.2.5",
+          "text": "6.2.5 The meaning of the following leg transitions and their use in RNP operations: (a) fly-by; (b) fly-over; (c) fixed radius (airspace design limitations).",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.2.6",
+          "text": "6.2.6 The basic requirements for an RNP navigation authorisation and use of the following: (a) communications; (b) navigation; (c) surveillance; (d) airworthiness; (e) continued airworthiness; (f) flight operations.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.2.7",
+          "text": "6.2.7 The GNSS receiver requirements to conduct a RNP APCH operation.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.2.8",
+          "text": "6.2.8 The requirements to conduct an RNP instrument approach operation to a published Barometric Vertical Navigation (Baro/VNAV) minimum altitude.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.2.9",
+          "text": "6.2.9 The requirements to conduct a RNP instrument approach operation to a published Localiser Precision (LP) or LPV minimum altitude.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.2.10",
+          "text": "6.2.10 The conditions and actions that allow the GNSS receiver to function in the appropriate mode for the successful conduct of a RNP approach.",
+          "kind": "objective",
+          "concept_ids": [
+            "nav.radio-aids"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.2.11",
+          "text": "6.2.11 The difference between augmented and non-augmented approaches.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.2.12",
+          "text": "6.2.12 Interpret IAP charts and extract the correct minima for a given approach and any relevant operational restrictions.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.2.13",
+          "text": "6.2.13 The requirement for using a valid and accurate local QNH when conducting RNP approaches.",
+          "kind": "objective",
+          "concept_ids": [
+            "perf.pressure-altitude"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.2.14",
+          "text": "6.2.14 Differentiate between the following RNP approaches that provide 3D vertical guidance: (a) RNP APCH – LNAV/VNAV (Baro VNAV); (b) RNP APCH – LPV (SBAS required).",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.2.15",
+          "text": "6.2.15 The basic principles of operation of a space-based augmentation system (SBAS) and the kind of minimum published altitudes that can be used when a SBAS is available.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.2.16",
+          "text": "6.2.16 Explain SBAS and how it affects RNP approaches.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.2.17",
+          "text": "6.2.17 Interpret APV Baro-VNAV instrument approach charts, including LNAV/VNAV minima, temperature limitations and vertical flight path angle.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.2.18",
+          "text": "6.2.18 Describe the difference between vertical guidance presented as linear deviation and angular deviation and the relevant operational considerations.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:6.2.19",
+          "text": "6.2.19 Demonstrate an understanding of the principles of Baro-VNAV vertical guidance, including path angle (VPA) construction and the effect of temperature variation from ISA on VPA.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:7.1.1",
+          "text": "7.1.1 Range of flight levels in which RVSM requirements apply within Australian airspace.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.transition-altitude"
+          ]
+        },
+        {
+          "id": "casa:IREX:7.1.2",
+          "text": "7.1.2 Operational requirements to conduct operations in designated RVSM airspace.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:7.1.3",
+          "text": "7.1.3 Requirements to ensure accuracy of aircraft altimeters are within prescribed tolerances to conduct operations in RVSM airspace.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:7.1.4",
+          "text": "7.1.4 Vertical height tolerance applicable when levelling off at assigned flight level in RVSM airspace.",
+          "kind": "objective",
+          "concept_ids": [
+            "law.transition-altitude"
+          ]
+        },
+        {
+          "id": "casa:IREX:7.1.5",
+          "text": "7.1.5 Procedures and standard communication phraseology used for operations in RVSM airspace, including procedure following failure of 1 or all primary altimetry systems.",
+          "kind": "objective",
+          "concept_ids": [
+            "comm.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:8.1.1",
+          "text": "8.1.1 Physiological factors effecting human performance when conducting flight without visual reference, including the following: (a) the part played by the vestibular systems, namely the semicircular canals and otiliths, in helping the pilot maintain orientation; (b) the circumstances aggravate vestibular disorientation, and how to overcome this problem.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:8.1.2",
+          "text": "8.1.2 The circumstances that may aggravate vestibular disorientation such as somatogravic illusions and somatogyral illusions.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.vestibular"
+          ]
+        },
+        {
+          "id": "casa:IREX:8.1.3",
+          "text": "8.1.3 State conditions and causes under which visual illusions, such as 'false horizons', visual-cue illusions, relative motion illusions, 'flicker' effect, ‘black hole' illusion, and autokinesis may occur.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:IREX:8.1.4",
+          "text": "8.1.4 GNSS operating procedures which provide safeguards against navigational errors and loss of situational awareness because of the following: (a) mode errors; (b) data entry errors; (c) data validation and checking, including independent cross-checking procedures; (d) automation induced complacency; (e) non-standardisation of the GNSS receiver units; (f) human information processing and situational awareness.",
+          "kind": "objective",
+          "concept_ids": [
+            "hum.crm"
+          ]
+        },
+        {
+          "id": "casa:IREX:8.1.5",
+          "text": "8.1.5 When conducting an instrument approach operation describe the benefits of utilising a CDFA technique from a human performance limitations perspective.",
+          "kind": "objective",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "K1-FLIGHT",
+      "title": "Appendix K.1 practical flight standards",
+      "source_url": "https://www.legislation.gov.au/F2014L01102/latest/text",
+      "gap": "Competency unit titles from Appendix K.1. Schedule 2 elements are not knowledge objectives and are not copied here.",
+      "objectives": [
+        {
+          "id": "casa:K1-FLIGHT:C2",
+          "text": "Perform pre- and post-flight actions and procedures",
+          "kind": "competency",
+          "concept_ids": [
+            "ops.flight-standards"
+          ]
+        },
+        {
+          "id": "casa:K1-FLIGHT:C3",
+          "text": "Operate aeronautical radio",
+          "kind": "competency",
+          "concept_ids": [
+            "ops.flight-standards"
+          ]
+        },
+        {
+          "id": "casa:K1-FLIGHT:C5",
+          "text": "Manage passengers and cargo",
+          "kind": "competency",
+          "concept_ids": [
+            "ops.flight-standards"
+          ]
+        },
+        {
+          "id": "casa:K1-FLIGHT:NTS1",
+          "text": "Non-technical skills 1",
+          "kind": "competency",
+          "concept_ids": [
+            "ops.flight-standards"
+          ]
+        },
+        {
+          "id": "casa:K1-FLIGHT:NTS2",
+          "text": "Non-technical skills 2",
+          "kind": "competency",
+          "concept_ids": [
+            "ops.flight-standards"
+          ]
+        },
+        {
+          "id": "casa:K1-FLIGHT:IFF",
+          "text": "Full instrument panel manoeuvres",
+          "kind": "competency",
+          "concept_ids": [
+            "ops.flight-standards"
+          ]
+        },
+        {
+          "id": "casa:K1-FLIGHT:IFL",
+          "text": "Limited instrument panel manoeuvres",
+          "kind": "competency",
+          "concept_ids": [
+            "ops.flight-standards"
+          ]
+        },
+        {
+          "id": "casa:K1-FLIGHT:RNE",
+          "text": "Radio navigation – en route",
+          "kind": "competency",
+          "concept_ids": [
+            "ops.flight-standards"
+          ]
+        },
+        {
+          "id": "casa:K1-FLIGHT:MCO",
+          "text": "Manage flight during multi-crew operations",
+          "kind": "competency",
+          "concept_ids": [
+            "ops.flight-standards"
+          ]
+        },
+        {
+          "id": "casa:K1-FLIGHT:CIR",
+          "text": "Conduct an IFR flight",
+          "kind": "competency",
+          "concept_ids": [
+            "ops.flight-standards"
+          ]
+        },
+        {
+          "id": "casa:K1-FLIGHT:IAP2",
+          "text": "Conduct an instrument approach 2D",
+          "kind": "competency",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:K1-FLIGHT:IAP3",
+          "text": "Conduct an instrument approach 3D",
+          "kind": "competency",
+          "concept_ids": [
+            "inst.procedures"
+          ]
+        },
+        {
+          "id": "casa:K1-FLIGHT:TR-MEA",
+          "text": "Type rating multi-engine aeroplane",
+          "kind": "competency",
+          "concept_ids": [
+            "ops.flight-standards"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -57,7 +57,21 @@ static void AFImage(NSString *name,NSRect rect,CGFloat alpha) {
     [image drawInRect:rect fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:alpha respectFlipped:YES hints:@{NSImageHintInterpolation:@(NSImageInterpolationHigh)}];
 }
 static NSArray *AFMarkers(void) { return AircraftRecognitionCards(); }
+static NSColor *AFTrafficColour(NSInteger index) {
+    static NSArray<NSColor *> *colours; static dispatch_once_t once;
+    dispatch_once(&once, ^{ colours=@[
+        [NSColor colorWithSRGBRed:.08 green:.48 blue:.72 alpha:1],
+        [NSColor colorWithSRGBRed:.72 green:.28 blue:.15 alpha:1],
+        [NSColor colorWithSRGBRed:.18 green:.56 blue:.30 alpha:1],
+        [NSColor colorWithSRGBRed:.55 green:.25 blue:.67 alpha:1],
+        [NSColor colorWithSRGBRed:.78 green:.47 blue:.08 alpha:1],
+        [NSColor colorWithSRGBRed:.10 green:.55 blue:.55 alpha:1],
+        [NSColor colorWithSRGBRed:.60 green:.20 blue:.36 alpha:1],
+        [NSColor colorWithSRGBRed:.35 green:.35 blue:.68 alpha:1]]; });
+    return colours[(NSUInteger)MAX(0,index)%colours.count];
+}
 
+@class AFTrafficOverlay;
 @interface AtmosphereView ()
 @property(nonatomic,strong) NSTimer *timer;
 @property(nonatomic,strong) id occlusionObserver,motionObserver;
@@ -77,11 +91,36 @@ static NSArray *AFMarkers(void) { return AircraftRecognitionCards(); }
 @property(nonatomic,copy) NSArray<NSDate *> *cachedTimes;
 @property(nonatomic,strong) NSDateFormatter *dayClock,*hourClock;
 @property(nonatomic,strong) NSMutableDictionary<NSNumber *,NSNumber *> *flowOffsets;
+@property(nonatomic,strong) TrafficTrackSession *trafficTracks;
+@property(nonatomic,strong) NSScrollView *trafficChipScroll;
+@property(nonatomic,strong) NSStackView *trafficChipStack;
+@property(nonatomic,copy) NSString *trafficTransient;
+@property(nonatomic,strong) NSDate *trafficTransientUntil;
+@property(nonatomic,strong) AFTrafficOverlay *trafficOverlay;
 @end
 
 @interface AtmosphereView (Drawing)
 - (void)drawAircraftCard;
+- (void)drawTrafficTracksInRect:(NSRect)rect;
+- (void)drawTrafficInRect:(NSRect)rect ink:(NSColor *)ink;
+- (void)drawTrafficOverlayInRect:(NSRect)rect;
 - (void)refreshAnimation;
+@end
+
+@interface AFTrafficOverlay : NSView
+@property(nonatomic,weak) AtmosphereView *owner;
+@end
+
+@implementation AFTrafficOverlay
+- (BOOL)isFlipped { return YES; }
+- (NSView *)hitTest:(NSPoint)point { (void)point; return nil; }
+- (void)drawRect:(NSRect)dirtyRect { [self.owner drawTrafficOverlayInRect:dirtyRect]; }
+@end
+
+@interface AtmosphereView (TrafficChips)
+- (void)rebuildTrafficChips;
+- (void)removeTrafficChip:(NSButton *)sender;
+- (NSDictionary *)trafficAircraftForHex:(NSString *)hex;
 @end
 
 @implementation AtmosphereView
@@ -91,6 +130,12 @@ static NSArray *AFMarkers(void) { return AircraftRecognitionCards(); }
         _latitude=NAN; _longitude=NAN; _selectedHeightM=1500; _animationTime=NSProcessInfo.processInfo.systemUptime;
         _fromTime=_toTime=_now.timeIntervalSince1970;
         _flowOffsets=[NSMutableDictionary dictionary];
+        _trafficTracks=[TrafficTrackSession new];
+        _trafficChipStack=[NSStackView stackViewWithViews:@[]]; _trafficChipStack.orientation=NSUserInterfaceLayoutOrientationHorizontal;
+        _trafficChipStack.spacing=4; _trafficChipStack.edgeInsets= NSEdgeInsetsMake(0,0,0,0);
+        _trafficChipScroll=[[NSScrollView alloc] initWithFrame:NSMakeRect(190,31,260,20)];
+        _trafficChipScroll.hasHorizontalScroller=YES; _trafficChipScroll.hasVerticalScroller=NO; _trafficChipScroll.drawsBackground=NO; _trafficChipScroll.borderType=NSNoBorder;
+        _trafficChipScroll.documentView=_trafficChipStack; [self addSubview:_trafficChipScroll];
         (void)AFAsset(@"cloud");
         for (NSDictionary *card in AFMarkers()) (void)AFAsset(card[@"name"]);
         _trafficButton=[NSButton checkboxWithTitle:@"Airborne now" target:self action:@selector(toggleTraffic:)];
@@ -98,6 +143,7 @@ static NSArray *AFMarkers(void) { return AircraftRecognitionCards(); }
         _trafficButton.accessibilityIdentifier=@"atmosphere.traffic";
         _trafficButton.toolTip=@"Live ADS-B within 80 nautical miles of this airport. Returns the forecast to now.";
         [self addSubview:_trafficButton];
+        [self rebuildTrafficChips];
         __weak AtmosphereView *weak=self;
         _motionObserver=[NSWorkspace.sharedWorkspace.notificationCenter addObserverForName:NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) { (void)n; [weak refreshAnimation]; weak.needsDisplay=YES; }];
     } return self;
@@ -107,6 +153,10 @@ static NSArray *AFMarkers(void) { return AircraftRecognitionCards(); }
     if (_occlusionObserver) [NSNotificationCenter.defaultCenter removeObserver:_occlusionObserver];
     if (_motionObserver) [NSWorkspace.sharedWorkspace.notificationCenter removeObserver:_motionObserver];
 }
+- (void)setNeedsDisplay:(BOOL)flag {
+    [super setNeedsDisplay:flag];
+    self.trafficOverlay.needsDisplay=flag;
+}
 - (BOOL)isFlipped { return YES; }
 - (BOOL)acceptsFirstResponder { return YES; }
 - (BOOL)isAccessibilityElement { return YES; }
@@ -114,6 +164,36 @@ static NSArray *AFMarkers(void) { return AircraftRecognitionCards(); }
 - (NSString *)accessibilityLabel { return @"Atmosphere: model weather and standard reference"; }
 - (NSString *)accessibilityHelp { return @"Hover the time strip to change time. Click a height to inspect it. Aircraft mark typical flying levels. Arrow keys change time and height. Escape returns to now."; }
 - (NSString *)accessibilityValue { return [self selectionSummary]; }
+- (NSArray<NSString *> *)selectedTrafficHexes { return self.trafficTracks.selectedHexes; }
+- (TrafficTrackSession *)trafficSession { return self.trafficTracks; }
+- (void)setTrafficSession:(TrafficTrackSession *)trafficSession {
+    self.trafficTracks=trafficSession?:[TrafficTrackSession new];
+    [self.trafficTracks mergeSnapshot:self.trafficSnapshot];
+    [self rebuildTrafficChips];
+    self.needsDisplay=YES;
+}
+- (void)rebuildTrafficChips {
+    if (!self.trafficChipStack) return;
+    for (NSView *view in [self.trafficChipStack.arrangedSubviews copy]) { [self.trafficChipStack removeArrangedSubview:view]; [view removeFromSuperview]; }
+    for (NSString *hex in self.trafficTracks.selectedHexes) {
+        NSDictionary *aircraft=[self trafficAircraftForHex:hex]; NSString *callsign=aircraft[@"callsign"]?:hex;
+        NSButton *button=[NSButton buttonWithTitle:[NSString stringWithFormat:@"%@ ×",callsign] target:self action:@selector(removeTrafficChip:)];
+        button.bordered=YES; button.bezelStyle=NSBezelStyleTexturedRounded; button.font=[NSFont monospacedSystemFontOfSize:9 weight:NSFontWeightSemibold];
+        button.identifier=hex; button.accessibilityLabel=[NSString stringWithFormat:@"Stop tracking %@",callsign]; button.toolTip=button.accessibilityLabel;
+        [self.trafficChipStack addArrangedSubview:button];
+    }
+    [self.trafficChipStack setFrameSize:NSMakeSize(MAX(1,self.trafficChipStack.fittingSize.width),20)];
+    self.trafficChipScroll.frame=NSMakeRect(190,NSMinY(self.plotRect)+2,MAX(80,NSWidth(self.bounds)-220),22);
+    self.trafficChipScroll.hidden=self.trafficTracks.selectedHexes.count==0;
+}
+- (void)removeTrafficChip:(NSButton *)sender {
+    NSString *hex=sender.identifier; NSDictionary *aircraft=[self trafficAircraftForHex:hex];
+    if ([self.trafficTracks removeSelectionForHex:hex]) {
+        self.trafficTransient=[NSString stringWithFormat:@"Stopped %@",aircraft[@"callsign"]?:hex]; self.trafficTransientUntil=[NSDate dateWithTimeIntervalSinceNow:1.5];
+        [self rebuildTrafficChips]; self.needsDisplay=YES;
+    }
+}
+- (void)setFrameSize:(NSSize)size { [super setFrameSize:size]; [self rebuildTrafficChips]; }
 - (void)viewDidMoveToWindow {
     [super viewDidMoveToWindow];
     if (_occlusionObserver) [NSNotificationCenter.defaultCenter removeObserver:_occlusionObserver]; _occlusionObserver=nil;
@@ -155,13 +235,17 @@ static const double AFSectionTopFt=45000, AFSectionH0=5000;
 - (void)setSectionView:(NSView *)view {
     if (_sectionView==view) return;
     [_sectionView removeFromSuperview];
+    [self.trafficOverlay removeFromSuperview];
+    self.trafficOverlay=nil;
     _sectionView=view;
     if (view) {
-        self.trafficEnabled=NO;
-        [self addSubview:view positioned:NSWindowBelow relativeTo:_trafficButton];
+        [self addSubview:view positioned:NSWindowBelow relativeTo:nil];
         view.frame=self.sectionRect;
+        AFTrafficOverlay *overlay=[[AFTrafficOverlay alloc] initWithFrame:self.bounds];
+        overlay.owner=self; overlay.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
+        self.trafficOverlay=overlay; [self addSubview:overlay positioned:NSWindowAbove relativeTo:view];
     }
-    _trafficButton.hidden=view!=nil;
+    _trafficButton.hidden=NO;
     self.needsDisplay=YES;
 }
 - (void)resizeSubviewsWithOldSize:(NSSize)oldSize {
@@ -313,7 +397,12 @@ static const double AFSectionTopFt=45000, AFSectionH0=5000;
     if (!section) { [[NSColor colorWithSRGBRed:.53 green:.64 blue:.81 alpha:.10] setFill]; NSRectFillUsingOperation(NSMakeRect(NSMinX(p),NSMinY(p),NSWidth(p),tropopause-NSMinY(p)),NSCompositingOperationSourceOver); }
     AFText([NSString stringWithFormat:@"%@ · Atmosphere",self.product[@"id"]?:@"Airport"],NSMakeRect(18,10,182,22),16,NSColor.labelColor,YES);
     NSString *phase=!isfinite(sun)?@"":sun< -6?@"Civil night":sun< -50.0/60?@"Civil twilight":@"Day";
-    AFText([NSString stringWithFormat:@"%@ · %@",[self clock:date day:YES],phase],NSMakeRect(NSWidth(self.bounds)-240,13,225,20),12,NSColor.secondaryLabelColor,NO);
+    AFText([NSString stringWithFormat:@"%@ · %@",[self clock:date day:YES],phase],NSMakeRect(NSWidth(self.bounds)-330,13,220,20),12,NSColor.secondaryLabelColor,NO);
+    BOOL nowState=[self isLiveTime];
+    NSInteger forecastHours=(NSInteger)llround(fabs([self.selectedDate timeIntervalSinceDate:self.now])/3600.0);
+    NSString *timeBadge=nowState?@"● NOW":[NSString stringWithFormat:@"△ FORECAST +%ld h",(long)forecastHours];
+    NSColor *badgeColour=nowState?[NSColor colorWithSRGBRed:.10 green:.50 blue:.25 alpha:1]:[NSColor colorWithSRGBRed:.72 green:.40 blue:.06 alpha:1];
+    AFText(timeBadge,NSMakeRect(NSWidth(self.bounds)-105,13,98,18),10,badgeColour,YES);
     if (!section) {
         AFText(@"ft AMSL",NSMakeRect(6,36,60,16),10,NSColor.secondaryLabelColor,NO);
         AFText(@"Cloud · RH · W–E",NSMakeRect(NSMinX(p)+8,35,160,16),11,NSColor.secondaryLabelColor,NO);
@@ -413,25 +502,7 @@ static const double AFSectionTopFt=45000, AFSectionH0=5000;
     AFLine(NSMakePoint(NSMinX(p),selectedY),NSMakePoint(NSMaxX(p),selectedY),[NSColor.controlAccentColor colorWithAlphaComponent:.60],1,NO);
     [[NSColor.controlAccentColor colorWithAlphaComponent:.85] setFill];
     NSRectFill(NSMakeRect(NSMinX(p),selectedY-3,4,6));
-    NSArray *markers=self.aircraftMarkerRects;
-    BOOL liveMode=self.trafficEnabled && [self isLiveTime];
-    for (NSUInteger i=0;i<markers.count;i++) AFImage(AFMarkers()[i][@"name"],[markers[i] rectValue],liveMode?.5:.9);
-    if (section) {
-    } else if (!liveMode) {
-        if (self.trafficEnabled) AFText(@"Illustrated · forecast time",NSMakeRect(NSMinX(p)+8,NSMinY(p)+30,210,16),10,ink,NO);
-    } else {
-        NSArray *live=self.liveAircraft,*rects=self.liveAircraftRects;
-        for (NSUInteger i=0;i<live.count;i++) {
-            NSRect r=[rects[i] rectValue]; CGFloat x=NSMidX(r),y=NSMidY(r);
-            NSBezierPath *icon=[NSBezierPath bezierPath];
-            [icon moveToPoint:NSMakePoint(x+12,y)]; [icon lineToPoint:NSMakePoint(x-10,y-8)];
-            [icon lineToPoint:NSMakePoint(x-6,y)]; [icon lineToPoint:NSMakePoint(x-10,y+8)]; [icon closePath];
-            [[NSColor colorWithSRGBRed:0 green:.43 blue:.58 alpha:1] setFill]; [icon fill];
-            AFText(live[i][@"type"],NSMakeRect(x-19,y+10,45,13),9,ink,YES);
-        }
-        NSString *status=self.trafficStatus.length?self.trafficStatus:!self.trafficSnapshot?@"Finding nearby aircraft…":live.count?[NSString stringWithFormat:@"%lu live · pressure ft · ADSB.lol · 80 nm",(unsigned long)live.count]:@"No recent airborne signals · ADSB.lol";
-        AFText(status,NSMakeRect(NSMinX(p)+8,NSMinY(p)+30,self.skyRight-NSMinX(p)-16,28),10,ink,NO);
-    }
+    if (!section) [self drawTrafficInRect:p ink:ink];
     [NSGraphicsContext restoreGraphicsState];
     CGFloat footer=NSMaxY(p)+19;
     AFText([self selectionSummary],NSMakeRect(18,footer,NSWidth(self.bounds)-36,18),11,NSColor.labelColor,YES);
@@ -439,7 +510,74 @@ static const double AFSectionTopFt=45000, AFSectionH0=5000;
     AFText(@"Solid: model  ·  Dashed: standard",NSMakeRect(self.skyRight+4,NSMinY(p)+10,NSMaxX(p)-self.skyRight-8,30),9,muted,NO);
     if (!sample && !section) AFText(@"No model profile for this time",NSMakeRect(NSMinX(p)+8,NSMaxY(p)-40,260,18),11,muted,YES);
     [self drawTimeline];
+    if (!section) [self drawAircraftCard];
+}
+- (void)drawTrafficInRect:(NSRect)p ink:(NSColor *)ink {
+    [self drawTrafficTracksInRect:p];
+    NSArray *markers=self.aircraftMarkerRects;
+    BOOL liveMode=self.trafficEnabled && [self isLiveTime];
+    for (NSUInteger i=0;i<markers.count;i++) AFImage(AFMarkers()[i][@"name"],[markers[i] rectValue],liveMode?.5:.9);
+    if (!liveMode) {
+        if (!self.sectionView && self.trafficEnabled) AFText(@"Illustrated · forecast time",NSMakeRect(NSMinX(p)+8,NSMinY(p)+30,210,16),10,ink,NO);
+    } else {
+        NSArray *live=self.liveAircraft,*rects=self.liveAircraftRects;
+        for (NSUInteger i=0;i<live.count;i++) {
+            NSRect r=[rects[i] rectValue]; CGFloat x=NSMidX(r),y=NSMidY(r);
+            NSBezierPath *icon=[NSBezierPath bezierPath];
+            [icon moveToPoint:NSMakePoint(x+12,y)]; [icon lineToPoint:NSMakePoint(x-10,y-8)];
+            [icon lineToPoint:NSMakePoint(x-6,y)]; [icon lineToPoint:NSMakePoint(x-10,y+8)]; [icon closePath];
+            NSColor *trafficInk=[self.trafficTracks.selectedHexes containsObject:live[i][@"hex"]]?AFTrafficColour([self.trafficTracks colourIndexForHex:live[i][@"hex"]]):[NSColor colorWithSRGBRed:0 green:.43 blue:.58 alpha:1];
+            [trafficInk setFill]; [icon fill];
+            AFText(live[i][@"type"],NSMakeRect(x-19,y+10,45,13),9,ink,YES);
+        }
+        NSString *status=self.trafficStatus.length?self.trafficStatus:!self.trafficSnapshot?@"Finding nearby aircraft…":live.count?[NSString stringWithFormat:@"%lu live · pressure ft · ADSB.lol · 80 nm",(unsigned long)live.count]:@"No recent airborne signals · ADSB.lol";
+        AFText(status,NSMakeRect(NSMinX(p)+8,NSMinY(p)+30,self.skyRight-NSMinX(p)-16,28),10,ink,NO);
+    }
+    if (self.trafficTransient.length && self.trafficTransientUntil.timeIntervalSinceNow>0)
+        AFText(self.trafficTransient,NSMakeRect(NSMinX(p)+8,NSMinY(p)+48,190,16),10,NSColor.controlAccentColor,YES);
+}
+- (void)drawTrafficOverlayInRect:(NSRect)rect {
+    (void)rect;
+    if (!self.sectionView) return;
+    [NSGraphicsContext saveGraphicsState]; NSRectClip(self.plotRect);
+    NSDictionary *level=self.selectedLevel;
+    CGFloat y=[self yForHeight:level?[level[@"heightM"] doubleValue]:self.selectedHeightM];
+    AFLine(NSMakePoint(NSMinX(self.plotRect),y),NSMakePoint(self.cloudRight,y),[NSColor.controlAccentColor colorWithAlphaComponent:.60],1,NO);
+    [self drawTrafficInRect:self.plotRect ink:NSColor.labelColor];
+    [NSGraphicsContext restoreGraphicsState];
     [self drawAircraftCard];
+}
+- (void)drawTrafficTracksInRect:(NSRect)p {
+    CGFloat left=NSMinX(p)+24,width=self.skyRight-left-38;
+    NSDate *earliest=nil,*latest=nil;
+    for (NSString *hex in self.trafficTracks.selectedHexes) {
+        NSArray *points=[self.trafficTracks trackForHex:hex]; if (points.count<2) continue;
+        NSBezierPath *path=[NSBezierPath bezierPath]; BOOL moved=NO;
+        NSColor *colour=AFTrafficColour([self.trafficTracks colourIndexForHex:hex]);
+        NSDictionary *first=points.firstObject,*last=points.lastObject,*previous=nil;
+        if (!earliest || [first[@"time"] compare:earliest]==NSOrderedAscending) earliest=first[@"time"];
+        if (!latest || [last[@"time"] compare:latest]==NSOrderedDescending) latest=last[@"time"];
+        for (NSDictionary *point in points) {
+            double east=([point[@"longitude"] doubleValue]-self.longitude)*60*cos(self.latitude*M_PI/180);
+            CGFloat x=left+width*MIN(1,MAX(0,.5+east/160));
+            CGFloat y=[self yForHeight:[point[@"pressureAltitudeFt"] doubleValue]*.3048];
+            if (previous && [point[@"time"] timeIntervalSinceDate:previous[@"time"]]>300) moved=NO;
+            if (!moved) { [path moveToPoint:NSMakePoint(x,y)]; moved=YES; } else [path lineToPoint:NSMakePoint(x,y)];
+            previous=point;
+        }
+        [[colour colorWithAlphaComponent:self.isLiveTime?.80:.55] setStroke];
+        path.lineWidth=1.2+MIN(2.5,[last[@"pressureAltitudeFt"] doubleValue]/20000*.2); [path stroke];
+    }
+    if (earliest && latest) {
+        NSString *range=[NSString stringWithFormat:@"PAST %@–%@",[self clock:earliest day:NO],[self clock:latest day:NO]];
+        AFText(range,NSMakeRect(left,NSMaxY(p)-19,135,15),9,NSColor.secondaryLabelColor,YES);
+    }
+}
+
+- (NSDictionary *)trafficAircraftForHex:(NSString *)hex {
+    for (NSDictionary *aircraft in self.trafficSnapshot[@"aircraft"])
+        if ([aircraft[@"hex"] isEqual:hex]) return aircraft;
+    return [self.trafficTracks aircraftForHex:hex];
 }
 - (void)drawTimeline {
     NSRect r=self.timelineRect; NSArray *times=self.forecastTimes;
@@ -487,11 +625,26 @@ static const double AFSectionTopFt=45000, AFSectionH0=5000;
     }
     if (NSPointInRect(p,self.timelineRect)) { self.draggingTimeline=YES; [self inspectPoint:p]; return; }
     if (!NSPointInRect(p,self.plotRect)) return;
+    NSArray *aircraft=self.liveAircraft,*rects=self.liveAircraftRects;
+    for (NSUInteger i=0;i<MIN(aircraft.count,rects.count);i++) if (NSPointInRect(p,NSInsetRect([rects[i] rectValue],-10,-8))) {
+        NSString *hex=aircraft[i][@"hex"];
+        if (![self.trafficTracks.selectedHexes containsObject:hex] && self.trafficTracks.selectedHexes.count>=8) { self.trafficTransient=@"8 aircraft selected"; self.trafficTransientUntil=[NSDate dateWithTimeIntervalSinceNow:1.5]; self.needsDisplay=YES; return; }
+        BOOL added=[self.trafficTracks toggleSelectionForHex:hex];
+        self.trafficTransient=added?[NSString stringWithFormat:@"Tracking %@",aircraft[i][@"callsign"]?:hex]:[NSString stringWithFormat:@"Stopped %@",aircraft[i][@"callsign"]?:hex];
+        self.trafficTransientUntil=[NSDate dateWithTimeIntervalSinceNow:1.5]; self.hoveredAircraft=aircraft[i]; [self rebuildTrafficChips]; self.needsDisplay=YES; return;
+    }
     self.selectedHeightM=[self heightForY:p.y];
     self.needsDisplay=YES; if (self.onInspect) self.onInspect(self.selectionSummary);
 }
 - (void)keyDown:(NSEvent *)event {
-    if (event.keyCode==53) { [self inspectDate:self.now]; return; }
+    if (event.keyCode==53) {
+        if (self.trafficTracks.selectedHexes.count) {
+            [self.trafficTracks clearSelections]; self.trafficTransient=@"Tracks cleared";
+            self.trafficTransientUntil=[NSDate dateWithTimeIntervalSinceNow:1.5]; self.needsDisplay=YES;
+            [self rebuildTrafficChips];
+        } else [self inspectDate:self.now];
+        return;
+    }
     if (event.keyCode==123 || event.keyCode==124) {
         NSArray *times=self.forecastTimes; if (!times.count) return;
         NSDate *date=[self.selectedDate dateByAddingTimeInterval:event.keyCode==123?-3600:3600];
@@ -529,6 +682,8 @@ static const double AFSectionTopFt=45000, AFSectionH0=5000;
 }
 - (void)setTrafficSnapshot:(NSDictionary *)snapshot {
     _trafficSnapshot=[snapshot copy];
+    [self.trafficTracks mergeSnapshot:_trafficSnapshot];
+    [self rebuildTrafficChips];
     NSString *hoveredAddress=self.hoveredAircraft[@"hex"];
     if (hoveredAddress) {
         self.hoveredAircraft=nil;
@@ -538,6 +693,8 @@ static const double AFSectionTopFt=45000, AFSectionH0=5000;
 }
 - (void)setTrafficEnabled:(BOOL)enabled {
     self.hoveredAircraft=nil; _trafficEnabled=enabled; _trafficButton.state=enabled?NSControlStateValueOn:NSControlStateValueOff;
+    if (!enabled) [self.trafficTracks clearSelections];
+    [self rebuildTrafficChips];
     [self refreshAnimation]; self.needsDisplay=YES;
 }
 - (void)toggleTraffic:(NSButton *)sender {

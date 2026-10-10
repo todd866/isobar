@@ -1054,31 +1054,56 @@ static int CheckPopoverMap(AcceptanceController *c, NSString *store) {
                 POPFAIL("pinch zooms about the pointer");
             }
             [gpu frameAustralia];
+            [(NSButton *)Find(gpu, @"gpumap.flat") performClick:nil];
             cam = gpu.camera;
             IsobarCameraUnproject(cam, mid.x * scale, mid.y * scale, &lat, &lon);
-            double scrollZoom = cam.zoom;
             [window sendEvent:Scroll(window, loc, NSEventPhaseBegan, 0)];
             [window sendEvent:Scroll(window, loc, NSEventPhaseChanged, -36)];
             [window sendEvent:Scroll(window, loc, NSEventPhaseEnded, 0)];
-            IsobarCameraProject(gpu.camera, lat, lon, &x, &y);
-            miss = hypot(x - mid.x * scale, y - mid.y * scale);
-            if (miss > 1 || fabs(gpu.camera.zoom - scrollZoom) < 1e-6) {
-                fprintf(stderr, "scroll anchor miss %.2f px zoom %.2f -> %.2f\n", miss, scrollZoom, gpu.camera.zoom);
-                POPFAIL("two-finger scroll zooms about the pointer");
-            }
+            if (!(gpu.camera.zoom > cam.zoom) || gpu.camera.pitch != 0 || gpu.camera.globe != 0)
+                POPFAIL("two-finger scroll zooms in 2D without tilting");
+            [gpu frameAustralia];
+            [(NSButton *)Find(gpu, @"gpumap.sphere") performClick:nil];
+            cam = gpu.camera;
+            [window sendEvent:Scroll(window, loc, NSEventPhaseBegan, 0)];
+            [window sendEvent:Scroll(window, loc, NSEventPhaseChanged, -36)];
+            [window sendEvent:Scroll(window, loc, NSEventPhaseEnded, 0)];
+            IsobarCamera tilted = gpu.camera;
+            if (!(tilted.pitch > cam.pitch + .05) || fabs(tilted.zoom - cam.zoom) > 1e-8 ||
+                fabs(tilted.centreLat - cam.centreLat) > 1e-8 || fabs(tilted.centreLon - cam.centreLon) > 1e-8)
+                POPFAIL("two-finger scroll tilts in selected 3D while retaining focus and scale");
+            if (fabs([[c selectedForecastDate] timeIntervalSinceDate:scrubbed]) > 1)
+                POPFAIL("tilt preserves forecast time");
             [gpu frameAustralia];
             loc = [gpu convertPoint:NSMakePoint(NSMidX(gpu.bounds), NSMidY(gpu.bounds)) toView:nil];
             [c inspectPopoverMovieFraction:0.7];
             NSDate *held = [c selectedForecastDate];
-            BOOL wasPlaying = gpu.timeline.playing;
             [window sendEvent:Mouse(NSEventTypeLeftMouseDown, window, loc, 4)];
             NSDate *holdStart = [c selectedForecastDate];
             [c advanceLiveTicks:1];
             if (fabs([[c selectedForecastDate] timeIntervalSinceDate:holdStart]) > 0.01)
                 POPFAIL("click-and-hold freezes the selected forecast time");
             [window sendEvent:Mouse(NSEventTypeLeftMouseUp, window, loc, 5)];
-            if (fabs([[c selectedForecastDate] timeIntervalSinceDate:held]) > 60) POPFAIL("click leaves the selected forecast time");
-            if (wasPlaying != gpu.timeline.playing) POPFAIL("click release preserves playback state");
+            if (fabs([[c selectedForecastDate] timeIntervalSinceDate:held]) > 1)
+                POPFAIL("click preserves the selected forecast time");
+            [c startLivePlaybackFromDate:held];
+            [window sendEvent:Mouse(NSEventTypeLeftMouseDown, window, loc, 6)];
+            NSDate *pointerHeld = [c selectedForecastDate];
+            [c advanceLiveTicks:8];
+            if (gpu.timeline.playing || fabs([[c selectedForecastDate] timeIntervalSinceDate:pointerHeld]) > .01)
+                POPFAIL("pointer hold freezes the real controller clock");
+            [window sendEvent:Mouse(NSEventTypeLeftMouseUp, window, loc, 7)];
+            if (!gpu.timeline.playing) POPFAIL("pointer release restores playing state");
+            // A seek can need one asynchronously prepared frame before advancing.
+            for (int tick = 0; tick < 60 && [[c selectedForecastDate] timeIntervalSinceDate:pointerHeld] <= 0; tick++) {
+                PumpMainRunLoop(.02);
+                [c advanceLiveTicks:1];
+            }
+            if ([[c selectedForecastDate] timeIntervalSinceDate:pointerHeld] <= 0) {
+                fprintf(stderr, "hold release playing=%d holding=%d advance=%.3f\n", gpu.timeline.playing,
+                    gpu.timeline.holding, [[c selectedForecastDate] timeIntervalSinceDate:pointerHeld]);
+                POPFAIL("pointer release resumes from the held forecast time");
+            }
             double samples[120], contours[120], labels[120], projects[120], geoms[120];
             NSTimeInterval origin = [gpu.timeline clockNow];
             for (int i = 0; i < 24; i++) [gpu displayAtTime:origin + i / 120.0];
@@ -1603,7 +1628,10 @@ int main(int argc, const char **argv) {
         for (NSNumber *temperature in @[@0,@1]) {
             [intent setValue:temperature forKey:@"tempLayer"]; [intent rebuildContent];
             TimelineStrip *strip=[intent valueForKey:@"popoverTimeline"];
-            strip.onPreview(.18); PumpMainRunLoop(.4);
+            // Arm the intentional hover before measuring continuous scrubbing.
+            // The 300 ms entry dwell is a control contract, not a dropped frame.
+            [strip mouseMoved:TimelineMouseEvent(NSEventTypeMouseMoved,strip,.18,499)];
+            PumpMainRunLoop(.4);
             NSUInteger frames=0,forward=0,backward=0; uint64_t prior=0;
             double priorFraction=NAN,lastWall=0,maxGap=0;
             for (NSUInteger tick=0;tick<120;tick++) {

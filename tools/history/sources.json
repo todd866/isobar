@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "priority": "Worldwide weather, curated events first",
+  "sources": [
+    {
+      "id": "era5-arco",
+      "kind": "weather",
+      "status": "adapter-active",
+      "coverage": "global, 1940 onward; verify archive valid_time_start/stop at ingestion",
+      "url": "https://github.com/google-research/arco-era5",
+      "access": "anonymous public surface Zarr chunks",
+      "license": "https://github.com/google-research/arco-era5#license",
+      "policy": "Cache compressed source chunks, limit bytes per run, publish only validated complete UTC days."
+    },
+    {
+      "id": "noaa-20crv3",
+      "kind": "weather",
+      "status": "planned",
+      "coverage": "global 1806\u20132015, variable confidence",
+      "url": "https://psl.noaa.gov/data/20thC_Rean/",
+      "access": "NOAA PSL subset/download",
+      "policy": "Preserve ensemble uncertainty; use for pre-1940 collections after adapter validation."
+    },
+    {
+      "id": "loc-vaghi",
+      "kind": "map",
+      "status": "facsimile-downloaded",
+      "url": "https://blogs.loc.gov/folklife/2023/06/vhp-collection-spotlight-joseph-vaghis-d-day-map/",
+      "coverage": "Omaha Beach, May 1944 chart used on D-Day",
+      "rights": "Library of Congress Joseph Vaghi collection. Item-level reuse assessment required before public deployment; local research facsimile only.",
+      "policy": "Keep facsimile separate until control points/projection and alignment residuals are verified."
+    },
+    {
+      "id": "usgs-htmc",
+      "kind": "map",
+      "status": "metadata-adapter-active",
+      "url": "https://www.usgs.gov/the-national-map-data-delivery/topographic-map-access-points",
+      "access": "https://tnmaccess.nationalmap.gov/api/v1/products",
+      "coverage": "US historical topographic maps",
+      "policy": "Index metadata and bounds first; queued map is not downloaded/render-ready. Fetch selected rasters by byte budget."
+    },
+    {
+      "id": "open-meteo-era5",
+      "kind": "weather",
+      "status": "prototype-only",
+      "url": "https://open-meteo.com/en/docs/historical-weather-api",
+      "policy": "Free endpoint is non-commercial. Direct ERA5 archive is the production/bulk path; do not mass-ingest through point API."
+    },
+    {
+      "id": "wwii-paper",
+      "kind": "generated-style",
+      "status": "asset-prepared",
+      "path": "/history/themes/wwii-paper.png",
+      "description": "AI-generated paper texture guided by the Omaha chart. Geographic shapes remain Natural Earth; weather remains ERA5. Theme provenance is in Sources."
+    },
+    {
+      "id": "icoads",
+      "kind": "observations",
+      "status": "source-verified",
+      "coverage": "Individual marine reports from 1662; monthly grids from 1800",
+      "url": "https://www.ncei.noaa.gov/products/international-comprehensive-ocean-atmosphere-data-set",
+      "policy": "Preserve individual report provenance. Not evidence for 1492."
+    },
+    {
+      "id": "uh-columbus-1248",
+      "kind": "documentary-observations",
+      "status": "11-observations-indexed",
+      "coverage": "Selected September\u2013October1492 entries; qualitative, route positions not yet reconstructed",
+      "url": "https://www.digitalhistory.uh.edu/disp_textbook_print.cfm?psid=1248&smtid=3",
+      "policy": "Store original brief factual paraphrases and entry locators, not full transcription. Preserve source-era calendar; never treat sailing speed as wind speed."
+    },
+    {
+      "id": "noaa-synoptic",
+      "kind": "map",
+      "status": "source-verified-download-unresolved",
+      "coverage": "Northern Hemisphere1899\u20131971",
+      "url": "https://library.noaa.gov/weather-climate/synoptic-map",
+      "policy": "Discovered date-based PDF endpoint, but attempted June61944 response was not PDF. No asset accepted."
+    },
+    {
+      "id": "nls-historic",
+      "kind": "map",
+      "status": "source-verified",
+      "coverage": "Great Britain1920s\u20131940s",
+      "url": "https://data.nls.uk/tools/maps-and-tools/",
+      "policy": "Verify layer-specific attribution/terms before tile acquisition; no bulk tiles fetched."
+    },
+    {
+      "id": "ekf400",
+      "kind": "monthly-reconstruction",
+      "status": "source-verified",
+      "coverage": "1600\u20132005 monthly; not daily1492 weather",
+      "url": "https://www.nature.com/articles/sdata201776",
+      "policy": "Monthly reconstruction can constrain background climate, not certify daily synoptic patterns."
+    }
+  ]
+}

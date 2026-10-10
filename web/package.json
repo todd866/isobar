@@ -1,0 +1,48 @@
+{
+  "name": "isobar-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && node scripts/write-release-stamp.mjs && next build",
+    "start": "next start",
+    "export-data": "tsx scripts/export-data.ts",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "postinstall": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "billing:setup": "tsx scripts/setup-stripe.ts"
+  },
+  "dependencies": {
+    "@auth/prisma-adapter": "2.11.3",
+    "@neondatabase/serverless": "1.0.2",
+    "@prisma/adapter-neon": "7.9.1",
+    "@prisma/client": "7.9.1",
+    "eslint-config-next": "15.5.27",
+    "next": "15.5.27",
+    "next-auth": "5.0.0-beta.32",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "resend": "6.14.0",
+    "satellite.js": "6.0.2",
+    "server-only": "0.0.1",
+    "three": "0.186.1",
+    "ws": "8.21.0",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.55.1",
+    "@prisma/adapter-pg": "7.9.1",
+    "@tailwindcss/postcss": "4.1.14",
+    "@types/node": "24.5.2",
+    "@types/react": "19.1.13",
+    "@types/react-dom": "19.1.9",
+    "@types/three": "0.186.0",
+    "@types/ws": "8.18.2",
+    "prisma": "7.9.1",
+    "tailwindcss": "4.1.14",
+    "tsx": "4.20.5",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}
