@@ -1,6 +1,6 @@
 # Isobar for Mac
 
-[Download the latest signed Mac release](https://github.com/todd866/isobar/releases/latest),
+[Download Isobar 1.11.0 for Mac](https://github.com/todd866/isobar/releases/download/v1.11.0/Isobar-1.11.0-macOS-arm64.dmg),
 or [use Isobar in your browser](https://isobar.md).
 
 **Apple silicon (M1 or newer) · macOS 15 or later**
