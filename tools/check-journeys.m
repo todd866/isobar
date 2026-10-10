@@ -229,10 +229,16 @@ static void Journeys(JourneyController *c, NSView *(^root)(void), NSString *surf
     EXPECT(barbs && barbs.enabled, "wind toggle is available on the GPU map");
     if (barbs.state != NSControlStateValueOn) [barbs performClick:nil];
     map = Map(c);
+    double focusLat=map.placeLatitude, focusLon=map.placeLongitude, focusX=0, focusY=0;
+    if (!IsobarCameraProject(vectorCamera,focusLat,focusLon,&focusX,&focusY) || focusX<0 || focusY<0 || focusX>vectorCamera.viewportW || focusY>vectorCamera.viewportH) {
+        focusLat=vectorCamera.centreLat; focusLon=vectorCamera.centreLon;
+        focusX=vectorCamera.viewportW*.5; focusY=vectorCamera.viewportH*.5;
+    }
     [map scrollByX:0 y:-150 atPoint:NSMakePoint(NSMidX(map.bounds),NSMidY(map.bounds)) precise:YES command:NO];
+    double afterX=0, afterY=0;
     EXPECT(map.camera.pitch > .2 && map.camera.zoom > vectorCamera.zoom &&
-        fabs(map.camera.centreLat-vectorCamera.centreLat)<1e-6 && fabs(map.camera.centreLon-vectorCamera.centreLon)<1e-6,
-        "tilting wind must dolly closer without moving geographic focus");
+        IsobarCameraProject(map.camera,focusLat,focusLon,&afterX,&afterY) && hypot(afterX-focusX,afterY-focusY)<=1,
+        "tilting wind must dolly closer while retaining the visible geographic anchor");
     EXPECT(fabs([[c selectedForecastDate] timeIntervalSinceDate:vectorTime])<1, "tilting wind changed forecast time");
     [map waitForUploads];
     NSString *dir = @"build/qa/journeys";
@@ -256,9 +262,12 @@ static void Journeys(JourneyController *c, NSView *(^root)(void), NSString *surf
         return [v isKindOfClass:NSButton.class] && [v.accessibilityIdentifier hasSuffix:@".flat"] && !v.hiddenOrHasHiddenAncestor;
     });
     EXPECT(mode2D && mode2D.enabled, "2D mode control is available");
+    IsobarCamera beforeFlat=map.camera;
     if (mode2D) [mode2D performClick:nil];
     [map advanceDisplay:1.0];
-    EXPECT(fabs(map.camera.pitch)<1e-9 && SameView(map.camera,vectorCamera), "returning flat lost the wind view");
+    EXPECT(fabs(map.camera.pitch)<1e-9 && fabs(map.camera.centreLat-beforeFlat.centreLat)<1e-6 &&
+        fabs(map.camera.centreLon-beforeFlat.centreLon)<1e-6 && fabs(log(map.camera.zoom/vectorCamera.zoom))<.01,
+        "returning flat must retain the current focus and remove only the tilt dolly");
     EXPECT(fabs([[c selectedForecastDate] timeIntervalSinceDate:vectorTime])<1, "returning flat changed forecast time");
     double flatZoom = map.camera.zoom;
     [map scrollByX:0 y:150 atPoint:NSMakePoint(NSMidX(map.bounds),NSMidY(map.bounds)) precise:YES command:NO];

@@ -284,6 +284,21 @@ function toScreen(
   return { x: (clipX + 1) * 0.5 * width, y: (1 - clipY) * 0.5 * height };
 }
 
+/** A surface can still be nearly flat (including rotated overhead). Its
+ * longitude wrap is discontinuous even though it has no flat world period.
+ * Keep source indices for terrain flags and break only the crossing edge. */
+function breakSurfaceSeams(points: (Point | null)[], lon: ArrayLike<number>, geo: Lambert, camera: Camera, closed: boolean): void {
+  if (!camera.surface || geo.projection !== 'equirectangular') return;
+  const centre=geo.lon0+camera.centerX/geo.F;
+  const relative=(value:number)=>((value-centre+180)%360+360)%360-180;
+  const broken:number[]=[];
+  for(let i=closed?0:1;i<lon.length;i++) {
+    const previous=(i+lon.length-1)%lon.length;
+    if(points[i]&&points[previous]&&Math.abs(relative(lon[i])-relative(lon[previous]))>180) broken.push(i);
+  }
+  for(const i of broken)points[i]=null;
+}
+
 /** Project a continuous geographic path and repeat only the world copies that
  * intersect this viewport. Wrapping each vertex independently creates a chord
  * through the whole map whenever the camera crosses a coastline or isobar. */
@@ -302,6 +317,7 @@ export function projectedPaths(
     points.push(point); previous = point;
     min = Math.min(min, point.x); max = Math.max(max, point.x);
   }
+  breakSurfaceSeams(points,lon,geo,camera,closed);
   if (!period || !Number.isFinite(min)) return [{ points, closed }];
   const first = points.find((p) => p !== null);
   let last: Point | undefined;
@@ -457,6 +473,7 @@ export function projectedStrokePaths(geo: Lambert, camera: Camera, width: number
         if (projected) points[i] = projected;
       }
     }
+    breakSurfaceSeams(points,lon,geo,camera,closed);
     if (visible) copies.push({ points, closed: closed && Math.abs(cache.unwrapLon[lon.length - 1] - cache.unwrapLon[0]) < 180 });
   }
   return copies;

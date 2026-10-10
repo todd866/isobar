@@ -34,6 +34,23 @@ export function withTilt(geo: Lambert, camera: Camera, pitch: number, elevation?
   } };
 }
 
+/** Translate the focus plane, not a near-horizon ray. Use the drag-start camera
+ * and total displacement: terrain picking cannot change gain during a drag. */
+export function panTilt(geo: Lambert, camera: Camera, pitch: number, dx: number, dy: number, frame: DataFrame): Camera {
+  if (![dx, dy, pitch].every(Number.isFinite)) return camera;
+  const bearing = camera.bearingRadians ?? 0;
+  const right = dx * camera.halfWidth;
+  const forward = dy * camera.halfHeight / Math.max(Math.cos(MAX_TILT), Math.cos(pitch));
+  const east = right * Math.cos(bearing) + forward * Math.sin(bearing);
+  const north = -right * Math.sin(bearing) + forward * Math.cos(bearing);
+  // The spherical longitude metric vanishes at the poles; bound navigation gain.
+  const t = Math.max(0, Math.min(1, pitch / (20 * Math.PI / 180)));
+  const curvature = t * t * (3 - 2 * t);
+  const longitudeScale = Math.max(.15, Math.cos(curvature * camera.centerY * Math.PI / 180));
+  return clampToData(geo, { ...camera, centerX: camera.centerX - east / longitudeScale,
+    centerY: camera.centerY - north }, frame);
+}
+
 /** Solve the geographic pointer anchor after zoom/pan. A ray over space cannot pan Earth. */
 export function anchorTilt(geo: Lambert, camera: Camera, pitch: number, point: {lat: number; lon: number}, x: number, y: number, frame: DataFrame, elevation?: ((lon: number, lat: number) => number | null) | null, terrainTarget = false): Camera {
   let next = camera;

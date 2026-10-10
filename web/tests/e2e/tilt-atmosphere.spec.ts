@@ -344,3 +344,72 @@ test('pinch can keep one finger stationary without becoming orbit',async({page})
   expect((await camera(page)).halfHeight).toBeLessThan(before.halfHeight);
   expect(Number(await stage(page).getAttribute('data-bearing'))).toBeCloseTo(yaw,4);
 });
+
+for (const scenario of ['Perth laptop', 'Everest laptop', 'Everest phone']) test(`maximum tilt: ${scenario} forward/back drag reverses without jumps or dead zones`, async ({page}, testInfo) => {
+  await page.setViewportSize(scenario.includes('phone') ? {width:390,height:844} : {width:1280,height:720});
+  await profileFixture(page);
+  if(scenario.startsWith('Everest')) {
+    await page.goto('/history?event=everest-1953&terrain=photo');
+    await page.waitForSelector('[data-map-ready=true]');
+    await page.getByRole('button',{name:'Pause',exact:true}).click();
+    await stage(page).evaluate(el=>(el as HTMLElement & {chartApi:Api}).chartApi.setView(27.9881,86.925,.02));
+    await expect(stage(page)).toHaveAttribute('data-terrain-imagery','ready',{timeout:30000});
+  } else await open(page);
+  await page.getByRole('button',{name:'3D map',exact:true}).click();
+  const map=stage(page), box=(await map.boundingBox())!;
+  await page.mouse.move(box.x+box.width*.5,box.y+box.height*.6);
+  for(let i=0;i<6;i++) await page.mouse.wheel(0,160);
+  await expect.poll(async()=>Number(await map.getAttribute('data-tilt'))).toBeCloseTo(75*Math.PI/180,3);
+  await page.waitForTimeout(500);
+  const initial=await camera(page), time=await map.getAttribute('data-valid-ms');
+  const beforeImage=await map.screenshot();
+  const samplePlate=()=>map.evaluate(async (el:any)=>{
+    const plate=await el.chartApi.readPlate(); if(!plate) return [];
+    const samples:number[]=[];
+    for(let y=0;y<32;y++)for(let x=0;x<64;x++){
+      const offset=(Math.floor((y+.5)*plate.height/32)*plate.width+Math.floor((x+.5)*plate.width/64))*4;
+      samples.push(plate.data[offset],plate.data[offset+1],plate.data[offset+2]);
+    }
+    return samples;
+  });
+  let lastPlate=await samplePlate(); expect(lastPlate.length).toBe(6144);
+  const renderedSteps:number[]=[];
+  const x=box.x+box.width*.5, y=box.y+box.height*.65, step=box.height*.025;
+  await page.mouse.move(x,y); await page.mouse.down();
+  let previous=initial;
+  for(const i of [...Array.from({length:21},(_,i)=>i+1),...Array.from({length:22},(_,i)=>20-i)]) {
+    await page.mouse.move(x,y-i*step);
+    const next=await camera(page);
+    const plate=await samplePlate(); expect(plate.length).toBe(lastPlate.length);
+    renderedSteps.push(plate.reduce((sum:number,value:number,index:number)=>sum+Math.abs(value-lastPlate[index]),0)/plate.length);
+    // A blank plate is a regression even if the camera properties are smooth.
+    expect(Math.max(...plate)-Math.min(...plate)).toBeGreaterThan(10);
+    lastPlate=plate;
+    const distance=Math.hypot((next.centerX-previous.centerX)*Math.cos(initial.centerY*Math.PI/180),next.centerY-previous.centerY);
+    expect(distance).toBeLessThan(initial.halfHeight*.25);
+    expect(next.halfHeight).toBe(initial.halfHeight);
+    if(i===0) { expect(next.centerX).toBeCloseTo(initial.centerX,8); expect(next.centerY).toBeCloseTo(initial.centerY,8); }
+    if(i===-1) expect(Math.abs(next.centerY-initial.centerY)).toBeGreaterThan(initial.halfHeight*.05);
+    if(i===21) {
+      expect(Math.abs(next.centerY-initial.centerY)).toBeGreaterThan(initial.halfHeight);
+      const movedImage=await map.screenshot();
+      expect(await pixelsChanged(beforeImage,movedImage)).toBeGreaterThan(.005);
+      await page.screenshot({path:testInfo.outputPath('max-tilt-forward.png')});
+    }
+    previous=next;
+  }
+  await page.mouse.move(x,y); await page.mouse.up();
+  expect((await camera(page)).centerY).toBeCloseTo(initial.centerY,8);
+  await expect(page.locator('[data-point-panel]')).toHaveCount(0);
+  expect(await map.getAttribute('data-valid-ms')).toBe(time);
+  const sorted=renderedSteps.toSorted((a,b)=>a-b), median=sorted[Math.floor(sorted.length/2)];
+  expect(Math.max(...renderedSteps)).toBeLessThan(Math.max(25,median*4));
+  await testInfo.attach('rendered-drag-steps',{body:JSON.stringify({scenario,renderedSteps,median}),contentType:'application/json'});
+  await page.screenshot({path:testInfo.outputPath('max-tilt-drag-return.png')});
+  // While dragging, a real trackpad pinch must keep its new scale on the next move.
+  await page.mouse.move(x,y); await page.mouse.down(); await page.mouse.move(x,y-20);
+  await page.keyboard.down('Control'); await page.mouse.wheel(0,-30); await page.keyboard.up('Control');
+  const pinched=await camera(page); expect(pinched.halfHeight).toBeLessThan(initial.halfHeight);
+  await page.mouse.move(x,y-25); expect((await camera(page)).halfHeight).toBe(pinched.halfHeight);
+  await page.mouse.up();
+});

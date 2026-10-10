@@ -459,7 +459,11 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
     OwnRun *_run;
     OwnRunField _source;
     IsobarFieldKind _fill;
-    double _downX, _downY, _grabLat, _grabLon;
+    double _downX, _downY, _dragLastX, _dragLastY, _grabLat, _grabLon;
+    IsobarCamera _dragStartCamera, _dragLastCamera;
+    BOOL _haveDragLastCamera;
+    BOOL _autoNorthArmed, _autoNorthAnimating;
+    double _autoNorthQuiet, _autoNorthElapsed, _autoNorthFrom;
     BOOL _grabbed, _dragging;
     BOOL _pointerHeld;
     BOOL _morphing;
@@ -468,6 +472,7 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
     NSButton *_flatButton;
     NSSlider *_globeSlider;
     NSButton *_globeButton;
+    NSButton *_northButton;
     NSButton *_recenterButton;
     NSVisualEffectView *_recenterBack;
     NSTextField *_plate;
@@ -898,6 +903,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _flatButton.contentTintColor = _threeDMode ? NSColor.labelColor : NSColor.controlAccentColor;
     _globeButton.contentTintColor = _threeDMode ? NSColor.controlAccentColor : NSColor.labelColor;
     _globeSlider.enabled = _threeDMode;
+    _northButton.hidden = !_threeDMode;
 }
 
 - (void)buildChrome {
@@ -914,6 +920,13 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     [_globeButton setButtonType:NSButtonTypeToggle];
     _globeButton.accessibilityLabel = @"3D map";
     _globeButton.toolTip = @"3D map (3) — two-finger swipe tilts";
+    _northButton = [self textButton:@"N" action:@selector(northUp:) identifier:@"gpumap.northup"];
+    _northButton.image = [NSImage imageWithSystemSymbolName:@"location.north.fill" accessibilityDescription:@"North up"];
+    _northButton.symbolConfiguration = [NSImageSymbolConfiguration configurationWithPointSize:13 weight:NSFontWeightMedium];
+    _northButton.imagePosition = NSImageLeading;
+    _northButton.imageScaling = NSImageScaleProportionallyDown;
+    _northButton.accessibilityLabel = @"North up";
+    _northButton.toolTip = @"North up (N)";
     // The map's own control: a location glyph on a material tile, top right,
     // as in Maps. The words live in the tooltip and accessibility label.
     _recenterButton = [self textButton:@"" action:@selector(recenter) identifier:@"gpumap.recenter"];
@@ -950,14 +963,14 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _marker = [GPUMapDot new];
     _marker.accessibilityIdentifier = @"gpumap.marker";
     _marker.hidden = YES;
-    for (NSView *view in @[_plate, _marker, _flatButton, _globeSlider, _globeButton, _recenterBack, _recenterButton])
+    for (NSView *view in @[_plate, _marker, _flatButton, _globeSlider, _globeButton, _northButton, _recenterBack, _recenterButton])
         [self addSubview:view];
     [self syncModeControls];
     [self layoutChrome];
 }
 
 - (void)bringChromeFront {
-    for (NSView *view in @[_windView, _hazardView, _placesView, _trafficOverlay, _atmosphereView, _marker, _flatButton, _globeSlider, _globeButton, _recenterBack, _recenterButton])
+    for (NSView *view in @[_windView, _hazardView, _placesView, _trafficOverlay, _atmosphereView, _marker, _flatButton, _globeSlider, _globeButton, _northButton, _recenterBack, _recenterButton])
         [self addSubview:view];
 }
 
@@ -977,9 +990,11 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _flatButton.frame = NSMakeRect(8, y, 32, 24);
     _globeSlider.frame = NSMakeRect(44, y, MIN(140, MAX(60, NSWidth(bounds) - 280)), 24);
     _globeButton.frame = NSMakeRect(NSMaxX(_globeSlider.frame) + 4, y, 32, 24);
+    _northButton.frame = NSMakeRect(NSMaxX(_globeButton.frame) + 4, y, 38, 24);
     if (_popoverChrome) {
         _flatButton.frame = NSMakeRect(8, y, 32, 24);
         _globeButton.frame = NSMakeRect(44, y, 32, 24);
+        _northButton.frame = NSMakeRect(80, y, 38, 24);
     }
     _recenterButton.hidden = _popoverChrome && !_userMoved;
     _recenterButton.frame = NSMakeRect(NSWidth(bounds) - 8 - 28, y, 28, 28);
@@ -1194,7 +1209,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     // The selected place's marker and the map's own controls, in pixels.
     double scale = [self pixelScale];
     NSMutableArray *rects = [NSMutableArray array];
-    for (NSView *view in @[_marker, _recenterButton, _flatButton, _globeSlider, _globeButton]) {
+    for (NSView *view in @[_marker, _recenterButton, _flatButton, _globeSlider, _globeButton, _northButton]) {
         if (!view || view.hidden) continue;
         NSRect f = view == _marker ? NSInsetRect(view.frame, 2, 2) : NSInsetRect(view.frame, -4, -4);
         [rects addObject:[NSValue valueWithRect:NSMakeRect(f.origin.x * scale, f.origin.y * scale,
@@ -1521,6 +1536,69 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     return YES;
 }
 
+- (void)northUp:(id)sender {
+    (void)sender;
+    if (!_threeDMode) return;
+    [self cancelAutoNorth];
+    _morphing = NO;
+    IsobarCamera next = _camera;
+    next.bearing = 0;
+    _last3DBearing = 0;
+    _dragStartCamera = next;
+    _dragLastCamera = next;
+    _downX = _dragLastX;
+    _downY = _dragLastY;
+    _haveDragLastCamera = YES;
+    [self commitKeyboardCamera:next];
+}
+
+- (void)cancelAutoNorth {
+    _autoNorthArmed = NO;
+    _autoNorthAnimating = NO;
+    _autoNorthQuiet = 0;
+    _autoNorthElapsed = 0;
+}
+
+- (void)armAutoNorth {
+    if (!_threeDMode || fabs(_camera.bearing) < 1e-9) {
+        [self cancelAutoNorth];
+        return;
+    }
+    _autoNorthArmed = YES;
+    _autoNorthAnimating = NO;
+    _autoNorthQuiet = 0;
+    _autoNorthElapsed = 0;
+}
+
+- (void)advanceAutoNorth:(double)dt {
+    if (!_autoNorthArmed || !_threeDMode || !(dt > 0) || !isfinite(dt)) return;
+    if (_pointerHeld) { _autoNorthQuiet = 0; return; }
+    _autoNorthQuiet += dt;
+    if (!_autoNorthAnimating && _autoNorthQuiet >= 0.45) {
+        if ([self reducedNow]) {
+            [self northUp:nil];
+            return;
+        }
+        _autoNorthAnimating = YES;
+        _autoNorthElapsed = 0;
+        _autoNorthFrom = _camera.bearing;
+    }
+    if (!_autoNorthAnimating) return;
+    _autoNorthElapsed += dt;
+    double t = fmin(1.0, _autoNorthElapsed / 0.6);
+    double eased = t * t * (3.0 - 2.0 * t);
+    IsobarCamera next = _camera;
+    next.bearing = _autoNorthFrom * (1.0 - eased);
+    [self commitKeyboardCamera:next];
+    if (t >= 1.0) {
+        _autoNorthArmed = NO;
+        _autoNorthAnimating = NO;
+        _autoNorthQuiet = 0;
+        _autoNorthElapsed = 0;
+        _last3DBearing = 0;
+    }
+}
+
 - (void)commitKeyboardCamera:(IsobarCamera)camera {
     _morphing = NO;
     _camera = IsobarCameraClamp(camera);
@@ -1535,6 +1613,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 
 - (void)moveGroundByForward:(double)forward right:(double)right {
     if (!_threeDMode || !isfinite(forward) || !isfinite(right)) return;
+    [self cancelAutoNorth];
     double zoom = fmax(1.0, _camera.zoom);
     double step = fmin(10.0, 6.0 / zoom);
     double bearing = _camera.bearing;
@@ -1547,10 +1626,12 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     next.centreLat = lat;
     next.centreLon = MapWrap180(_camera.centreLon + east * step / c);
     [self commitKeyboardCamera:next];
+    [self armAutoNorth];
 }
 
 - (void)stepBearingBy:(double)delta {
     if (!_threeDMode || !isfinite(delta)) return;
+    [self cancelAutoNorth];
     IsobarCamera next = _camera;
     if (next.pitch <= 1e-7) next.pitch = kKeyboardArrowTiltStep;
     next.globe = MIN(1.0, MAX(0.0, next.pitch / kFullTiltPitch));
@@ -1560,6 +1641,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 
 - (void)stepEyeHeightBy:(double)delta {
     if (!_threeDMode || !isfinite(delta)) return;
+    [self cancelAutoNorth];
     IsobarCamera next = _camera;
     if (!MapCameraAdjustEyeHeight(&next, delta)) return;
     [self commitKeyboardCamera:next];
@@ -1578,6 +1660,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
         default: break;
     }
     NSString *ch = event.charactersIgnoringModifiers.lowercaseString ?: @"";
+    if ([ch isEqualToString:@"n"] && !event.isARepeat) { [self northUp:nil]; return YES; }
     if ([ch isEqualToString:@"w"]) { [self moveGroundByForward:1 right:0]; return YES; }
     if ([ch isEqualToString:@"s"]) { [self moveGroundByForward:-1 right:0]; return YES; }
     if ([ch isEqualToString:@"a"]) { [self moveGroundByForward:0 right:-1]; return YES; }
@@ -1589,6 +1672,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 
 - (void)goFlat:(id)sender {
     (void)sender;
+    [self cancelAutoNorth];
     if (!_threeDMode) {
         if (fabs(_camera.globe) > 1e-9 || fabs(_camera.pitch) > 1e-9) {
             _morphing = NO;
@@ -1612,6 +1696,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 
 - (void)goGlobe:(id)sender {
     (void)sender;
+    [self cancelAutoNorth];
     if (_threeDMode) {
         [self syncModeControls];
         return;
@@ -1640,6 +1725,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 
 - (void)stepTiltBy:(double)delta {
     if (!_threeDMode || !isfinite(delta) || fabs(delta) < 1e-12) return;
+    [self cancelAutoNorth];
     IsobarCamera next = _camera;
     next.pitch = MIN(kMaxMapPitch, MAX(0.0, next.pitch + delta));
     next.globe = MIN(1.0, MAX(0.0, next.pitch / kFullTiltPitch));
@@ -1672,10 +1758,16 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 }
 
 - (void)pointerDown:(NSPoint)point {
+    [self cancelAutoNorth];
     [self syncViewport];
     NSPoint p = [self pixels:point];
     _downX = p.x;
     _downY = p.y;
+    _dragLastX = p.x;
+    _dragLastY = p.y;
+    _dragStartCamera = _camera;
+    _dragLastCamera = _camera;
+    _haveDragLastCamera = YES;
     _dragging = NO;
     _grabbed = IsobarCameraUnproject(_camera, p.x, p.y, &_grabLat, &_grabLon);
     if (!_pointerHeld) {
@@ -1687,9 +1779,60 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 - (void)pointerDrag:(NSPoint)point {
     [self syncViewport];
     NSPoint p = [self pixels:point];
+    _dragLastX = p.x;
+    _dragLastY = p.y;
     CGFloat slop = kClickPoints * [self pixelScale];
     if (!_dragging && MapPointerIsClick(p.x - _downX, p.y - _downY, slop)) return;
     _dragging = YES;
+
+    // At a steep view angle the ground under the pointer approaches the
+    // horizon. Solving that point again against the already-mutated camera
+    // makes a drag amplify and then snap as it crosses the horizon. Use one
+    // drag-start camera and move its local focal plane instead. The vertical
+    // component needs a small perspective compensation at the maximum tilt;
+    // cap it so a near-polar camera cannot turn a few pixels into an enormous
+    // longitude step. This path is deliberately 3D-only; overhead dragging
+    // retains the exact existing anchor behaviour.
+    if (_threeDMode) {
+        // A pinch/key update can arrive between drag samples. Rebase at the
+        // current sample so the next total displacement cannot undo it.
+        if (_haveDragLastCamera && memcmp(&_camera, &_dragLastCamera, sizeof(IsobarCamera)) != 0) {
+            _dragStartCamera = _camera;
+            _downX = p.x;
+            _downY = p.y;
+        }
+        IsobarCamera next = _dragStartCamera;
+        double fit = fmin(next.viewportW / 360.0, next.viewportH / 180.0);
+        double radius = next.zoom * fit / (M_PI / 180.0);
+        if (radius > 0 && isfinite(radius)) {
+            double dx = p.x - _downX;
+            double dy = p.y - _downY;
+            double pitchCos = fabs(cos(next.pitch));
+            double gain = 1.0 / fmax(cos(75.0 * M_PI / 180.0), pitchCos);
+            double eastScreen = -dx / radius;
+            double northScreen = dy / radius * gain;
+            double bearing = next.bearing;
+            double east = eastScreen * cos(bearing) + northScreen * sin(bearing);
+            double north = -eastScreen * sin(bearing) + northScreen * cos(bearing);
+            double lat = next.centreLat + north / (M_PI / 180.0);
+            double morph = next.pitch / (20.0 * M_PI / 180.0);
+            if (morph <= 0) morph = 0;
+            else if (morph >= 1) morph = 1;
+            else morph = morph * morph * (3.0 - 2.0 * morph);
+            double metricLat = next.centreLat * morph;
+            double metric = fmax(0.15, fabs(cos(metricLat * M_PI / 180.0)));
+            next.centreLat = lat;
+            next.centreLon = MapWrap180(next.centreLon + east / metric / (M_PI / 180.0));
+            _camera = IsobarCameraClamp(next);
+            _dragLastCamera = _camera;
+            _haveDragLastCamera = YES;
+            self.didPlaceCamera = YES;
+            [self noteUserMoved];
+            [self placeMarker];
+            if (self.onCameraChanged) self.onCameraChanged(_camera);
+            return;
+        }
+    }
     double lat = _grabLat, lon = _grabLon, ax = p.x, ay = p.y;
     if (!_grabbed) {
         double cx = _camera.viewportW * 0.5, cy = _camera.viewportH * 0.5;
@@ -1704,18 +1847,22 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     NSPoint p = [self pixels:point];
     CGFloat slop = kClickPoints * [self pixelScale];
     BOOL click = !_dragging && MapPointerIsClick(p.x - _downX, p.y - _downY, slop);
+    BOOL dragged = _dragging;
     _dragging = NO;
     [self cancelPointerHold];
+    if (dragged && !_pointerHeld) [self armAutoNorth];
     if (click && self.onPlainClick) self.onPlainClick();
 }
 
 - (void)cancelOperation:(id)sender {
     (void)sender;
     _dragging = NO;
+    [self cancelAutoNorth];
     [self cancelPointerHold];
 }
 
 - (BOOL)pinchFactor:(double)factor atPoint:(NSPoint)point {
+    [self cancelAutoNorth];
     if (!isfinite(factor) || factor <= 0 || !isfinite(point.x) || !isfinite(point.y) ||
         !isfinite(_camera.zoom) || !(_camera.zoom > 0)) return NO;
     [self syncViewport];
@@ -1742,10 +1889,12 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     [self noteUserMoved];
     [self placeMarker];
     if (self.onCameraChanged) self.onCameraChanged(_camera);
+    if (_threeDMode && !_pointerHeld) [self armAutoNorth];
     return YES;
 }
 
 - (void)scrollByX:(double)dx y:(double)dy atPoint:(NSPoint)point precise:(BOOL)precise command:(BOOL)command {
+    [self cancelAutoNorth];
     if (!isfinite(dx) || !isfinite(dy) || !isfinite(point.x) || !isfinite(point.y)) return;
     if (!_threeDMode && _morphing) {
         _morphing = NO;
@@ -2013,6 +2162,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
         [self syncModeControls];
         [self placeMarker];
     }
+    [self advanceAutoNorth:dt];
     if (self.unavailable) return;
     IsobarCamera overlayCamera = _camera;
     overlayCamera.viewportW = NSWidth(self.bounds); overlayCamera.viewportH = NSHeight(self.bounds);
@@ -2353,7 +2503,7 @@ static const NSUInteger kHazardFrameCache = 24;
         if (![_renderer centreAtIndex:i x:&x y:&y value:NULL high:NULL]) continue;
         [rects addObject:[NSValue valueWithRect:NSMakeRect(x - 16 * scale, y - 26 * scale, 32 * scale, 50 * scale)]];
     }
-    for (NSView *view in @[_recenterButton, _flatButton, _globeSlider, _globeButton]) {
+    for (NSView *view in @[_recenterButton, _flatButton, _globeSlider, _globeButton, _northButton]) {
         if (view.hidden) continue;
         NSRect f = NSInsetRect(view.frame, -4, -4);
         [rects addObject:[NSValue valueWithRect:NSMakeRect(f.origin.x * scale, f.origin.y * scale,

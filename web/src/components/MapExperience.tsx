@@ -1,5 +1,7 @@
 'use client';
 
+import { CameraRecovery } from '@/lib/camera-recovery';
+
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { terrainSliceBase, offsetAtmosphereSlice, slicePoint, type AtmosphereSlice } from '@/lib/atmosphere-slice';
 import { reportPoint } from '../lib/reports/deep-link';
@@ -12,7 +14,7 @@ import { australiaAspects, clampToData, frameData, insetBox, panBy, zoomWithinDa
 import { EVEREST_DETAILS, EVEREST_EVENTS, EVEREST_ROUTE, EVEREST_SOURCE, everestAtmosphere } from '@/lib/everest';
 import { drawEverestRoute } from '@/lib/everest-route';
 import { AtmosphereMap } from './AtmosphereMap';
-import { withTilt, zoomMountain, frameTerrainPin, anchorTilt, MAX_TILT, TiltFraming, liftCamera } from '@/lib/tilt-navigation';
+import { withTilt, zoomMountain, frameTerrainPin, anchorTilt, panTilt, MAX_TILT, TiltFraming, liftCamera } from '@/lib/tilt-navigation';
 import { mapUnproject, mapProject } from '@/lib/lambert';
 import { bindTrackpadPinch } from '@/lib/trackpad';
 import {
@@ -394,6 +396,8 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const hoverLatestXRef = useRef(0);
   const hoverRestorePlayingRef = useRef(true);
   const scrubRestorePlayingRef = useRef(true);
+  const recoveryRef = useRef(new CameraRecovery());
+  const panStartRef = useRef<{ camera: Camera; last: Camera; pitch: number; x: number; y: number; moving: boolean } | null>(null);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchRef = useRef(0);
   const dragRef = useRef({ moved: 0, multi: false, started: 0, x: 0, y: 0, kind: 'mouse', armed: false });
@@ -450,9 +454,11 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     const onScreen=anchor&&Math.abs(anchor.x)<1&&Math.abs(anchor.y)<1;
     const next=zoomMountain(GEO,camera,tiltRef.current,onScreen?anchor.x:x,onScreen?anchor.y:y,factor,frame,elevationAtRef.current,onScreen&&pin?pin:undefined);
     tiltRef.current=next.pitch;setTilt(next.pitch);
+    recoveryRef.current.travel(performance.now(), next.camera.bearingRadians ?? 0);
     return next.camera;
   }
   function changeOrientation(value: number, turn = 0) {
+    recoveryRef.current.cancel();
     if (!threeDRef.current || !glRef.current || GEO.projection !== 'equirectangular') return;
     cameraMoveRef.current=null;
     const next = Math.max(0, Math.min(MAX_TILT, value));
@@ -468,8 +474,17 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     setTilt(tiltRef.current);
     redrawRef.current?.();
   }
+  function northUp() {
+    recoveryRef.current.cancel();
+    if (!cameraRef.current || !threeDRef.current) return;
+    mapKeysRef.current.clear(); cameraMoveRef.current = null; panStartRef.current = null;
+    cameraRef.current = { ...cameraRef.current, bearingRadians: 0 };
+    savedBearingRef.current = 0;
+    redrawCamera();
+  }
   function changeTilt(value:number) { changeOrientation(value); }
   function changeMapMode(enabled: boolean) {
+    recoveryRef.current.cancel();
     if (!glRef.current || GEO.projection !== 'equirectangular' || threeDRef.current === enabled) return;
     mapKeysRef.current.clear();
     cameraMoveRef.current=null;
@@ -500,9 +515,11 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     if(rise){const lifted=liftCamera(next,pitch,rise*dt*next.halfHeight*Math.PI/180*6371000*.6);next=lifted.camera;pitch=lifted.pitch;tiltFramingRef.current.synchronize(next,pitch);}
     if((yaw||look||rise)&&pin&&anchor&&Math.abs(anchor.x)<1&&Math.abs(anchor.y)<1)next=frameTerrainPin(GEO,next,pitch,pin,anchor.x,anchor.y,frame,elevationAtRef.current);
     if(right||forward){
-      const n=Math.max(1,Math.hypot(right,forward)),focus=mapUnproject(GEO,withTilt(GEO,next,pitch,elevationAtRef.current,true),0,0);
-      if(focus)next=anchorTilt(GEO,next,pitch,focus,-right*dt*.7/n,-forward*dt*.7/n,frame,elevationAtRef.current,true);
+      const n=Math.max(1,Math.hypot(right,forward));
+      next=panTilt(GEO,next,pitch,-right*dt*.7/n,-forward*dt*.7/n,frame);
     }
+    if(yaw||look||rise) recoveryRef.current.cancel();
+    else recoveryRef.current.travel(performance.now(), next.bearingRadians ?? 0);
     cameraRef.current=next;
     if(pitch!==tiltRef.current){tiltRef.current=pitch;setTilt(pitch);}
     return true;
@@ -1543,6 +1560,10 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
         cameraMoved = true;
         if (now >= move.start + move.duration && !(move.restore && holdMapCentreRef.current)) cameraMoveRef.current = null;
       }
+      if(threeDRef.current && cameraRef.current) {
+        const heading=recoveryRef.current.sample(now,pointersRef.current.size>0||mapKeysRef.current.size>0||!!cameraMoveRef.current,reducedMotion);
+        if(heading!==null){cameraRef.current={...cameraRef.current,bearingRadians:heading};savedBearingRef.current=heading;cameraMoved=true;}
+      }
       paintGl(dt);
       const cameraNow = cameraRef.current ? renderCamera(cameraRef.current) : null;
       // A pan or zoom that carries the point off the map closes it. A resize
@@ -2478,6 +2499,9 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
 
   function releaseMapPointer(pointerId: number) {
     pointersRef.current.delete(pointerId);
+    const survivor = [...pointersRef.current.values()][0];
+    panStartRef.current = survivor && cameraRef.current
+      ? { camera: { ...cameraRef.current }, last: cameraRef.current, pitch: tiltRef.current, x: survivor.x, y: survivor.y, moving: true } : null;
     pinchRef.current = 0;
     if (pointersRef.current.size !== 0 || mapHeldPlayingRef.current === null) return;
     const restore = mapHeldPlayingRef.current;
@@ -2738,6 +2762,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
         if (teachingRef.current) return;
         clockRef.current = { ...clockRef.current, followNow: false, playing: !clockRef.current.playing };
         setPlaying(clockRef.current.playing);
+        setMinute(clockRef.current.minute);
       }}
       speed={speed}
       onSpeed={(value) => remember({ speed: value })}
@@ -2900,6 +2925,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                   if (event.button !== 0) return;
                   if (event.pointerType === 'touch') event.preventDefault();
                   cameraMoveRef.current = null;
+                  recoveryRef.current.cancel();
                   const canvas = event.currentTarget;
                   try { canvas.setPointerCapture(event.pointerId); } catch { /* a dispatched pointer has no browser id */ }
                   if (pointersRef.current.size === 0 && mapHeldPlayingRef.current === null) {
@@ -2913,6 +2939,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                   pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
                   if (pointersRef.current.size === 1) {
                     dragRef.current = { moved: 0, multi: false, started: performance.now(), x: event.clientX, y: event.clientY, kind: event.pointerType, armed: false };
+                    panStartRef.current = cameraRef.current ? { camera: { ...cameraRef.current }, last: cameraRef.current, pitch: tiltRef.current, x: event.clientX, y: event.clientY, moving: false } : null;
                     pinchRef.current = 0;
                   touchGestureRef.current = null;
                     window.clearTimeout(longTimerRef.current);
@@ -2924,6 +2951,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                       }, 450);
                     }
                   } else {
+                    panStartRef.current = null;
                     dragRef.current.multi = true;
                     dragRef.current.armed = false;
                     window.clearTimeout(longTimerRef.current);
@@ -2980,16 +3008,26 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                     return;
                   }
                   const travel = Math.hypot(event.clientX - dragRef.current.x, event.clientY - dragRef.current.y);
-                  dragRef.current.moved = travel;
-                  if (travel > 8) {
+                  dragRef.current.moved = Math.max(dragRef.current.moved, travel);
+                  if (travel > 8 || panStartRef.current?.moving) {
+                    if (panStartRef.current) panStartRef.current.moving = true;
                     dragRef.current.armed = false;
                     window.clearTimeout(longTimerRef.current);
                   } else return;
                   const dx = ((event.clientX - previous.x) / rect.width) * 2;
                   const dy = -((event.clientY - previous.y) / rect.height) * 2;
-                  if (tiltRef.current > 0) {
-                    const hit = mapUnproject(GEO, renderCamera(cameraRef.current), (previous.x - rect.left) / rect.width * 2 - 1, 1 - (previous.y - rect.top) / rect.height * 2);
-                    if (hit) cameraRef.current = anchorTilt(GEO, cameraRef.current, tiltRef.current, hit, (event.clientX - rect.left) / rect.width * 2 - 1, 1 - (event.clientY - rect.top) / rect.height * 2, homeRef.current, elevationAtRef.current, true);
+                  if (threeDRef.current) {
+                    // Restart after a multi-touch gesture using this event's prior
+                    // sample; a stale pre-pinch camera must never be restored.
+                    const active = panStartRef.current;
+                    const current = cameraRef.current;
+                    const pan = active && active.pitch === tiltRef.current && active.last === current
+                      ? active : { camera: { ...current }, last: current, pitch: tiltRef.current, x: previous.x, y: previous.y, moving: true };
+                    panStartRef.current = pan;
+                    cameraRef.current = panTilt(GEO, pan.camera, tiltRef.current,
+                      (event.clientX-pan.x)/rect.width*2, -(event.clientY-pan.y)/rect.height*2, homeRef.current);
+                    pan.last = cameraRef.current;
+                    recoveryRef.current.travel(performance.now(),cameraRef.current.bearingRadians??0);
                   } else cameraRef.current = clampToData(GEO, panBy(cameraRef.current, dx, dy), homeRef.current);
                   stage?.chartApi?.redraw();
                 }}
@@ -3021,6 +3059,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                 onKeyDown={(event) => {
                   if(event.metaKey||event.ctrlKey||event.altKey)return;
                   const key=event.key.startsWith('Arrow')?event.key:event.key.toLowerCase();
+                  if(threeDRef.current&&key==='n'){event.preventDefault();northUp();return;}
                   if(threeDRef.current&&['w','a','s','d','e','q','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(key)){
                     event.preventDefault();mapKeysRef.current.add(key);
                     if(!event.repeat){keyboardStepRef.current(1/60);redrawCamera();}
@@ -3087,6 +3126,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                 {renderer === 'webgl2' && GEO.projection === 'equirectangular' ? <div className="map-zoom">
                   <button type="button" aria-label="2D map" aria-pressed={!threeD} title="2D map · 2" onClick={() => changeMapMode(false)}>2D</button>
                   <button type="button" aria-label="3D map" aria-pressed={threeD} title="3D · WASD move · arrows look · E/Q height" onClick={() => changeMapMode(true)}>3D</button>
+                  {threeD ? <button type="button" aria-label="North up" title="North up · N" onClick={northUp}><span aria-hidden="true" style={{display:'inline-flex',alignItems:'center',whiteSpace:'nowrap'}}><span style={{transform:`rotate(${-(cameraRef.current?.bearingRadians??0)}rad)`}}>↑</span>N</span></button> : null}
                 </div> : null}
                 {threeD ? <div className="map-slice-control"><button type="button" className="map-slice" aria-label="Terrain and atmosphere slice" disabled={!sliced&&(cameraRef.current?.halfHeight??10)>1} aria-pressed={sliced} aria-busy={sliced&&!sliceReady} title={!sliced&&(cameraRef.current?.halfHeight??10)>1?"Zoom in for a terrain and atmosphere slice":sliced&&!sliceReady?"Preparing terrain slice · click to cancel":"Narrow terrain and atmosphere slice"} onClick={toggleSlice}>Slice</button>{sliced ? <input className="map-slice-position" type="range" min={-100} max={100} step={1} value={sliceOffset} aria-label="Slice position" aria-valuetext={`${Math.round(sliceOffset/100*(sliceOriginRef.current?.halfWidthM??0)*.6)} metres from centre`} title="Move the slice back and forth" onChange={event=>moveSlice(Number(event.target.value))} /> : null}</div> : null}
                 <span className="relative grid"><button type="button" aria-label="Recenter map" onClick={() => { clearSlice(); cameraMoveRef.current = null; cameraRef.current = homeRef.current ? { ...homeRef.current.home } : null; redrawCamera(); recenterNote.show('Recentered'); }}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.7" /><path fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" d="M12 3v3M12 18v3M3 12h3M18 12h3" /></svg></button><PressNote text={recenterNote.note} /></span>

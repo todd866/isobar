@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { frameData, type Camera } from '../../src/lib/camera';
-import { globalEquirectangular, mapUnproject } from '../../src/lib/lambert';
-import { TiltFraming, liftCamera, terrainEye, anchorTilt, MAX_TILT, withTilt, zoomTilt } from '../../src/lib/tilt-navigation';
+import { globalEquirectangular, mapUnproject, mapProject } from '../../src/lib/lambert';
+import { TiltFraming, panTilt, liftCamera, terrainEye, anchorTilt, MAX_TILT, withTilt, zoomTilt } from '../../src/lib/tilt-navigation';
 
 const GEO = globalEquirectangular();
 const BOX = { west: -180, east: 180, south: -90, north: 90 };
@@ -103,4 +103,44 @@ it('does not jump when a look follows vertical eye movement',()=>{
   expect(framing.apply(lifted.camera,lifted.pitch,lifted.pitch).halfHeight).toBeCloseTo(lifted.camera.halfHeight,10);
   const changed=framing.apply(lifted.camera,lifted.pitch,lifted.pitch+.001);
   expect(Math.abs(changed.halfHeight-lifted.camera.halfHeight)).toBeLessThan(.001);
+});
+
+describe('maximum-tilt drag navigation', () => {
+  for (const bearingRadians of [0, Math.PI / 2, -2.4]) {
+    it(`bounds each step and reverses without drift at bearing ${bearingRadians}`, () => {
+      const start = { centerX: 86.925, centerY: 27.9881, halfHeight: .02, halfWidth: .04, bearingRadians };
+      let last = start;
+      // This trajectory crosses the visible horizon and returns through the
+      // original click-slop area. It must not switch roots, stall or zoom.
+      for (const dy of [...Array.from({length:81},(_,i)=>i*.02), ...Array.from({length:81},(_,i)=>(80-i)*.02)]) {
+        const next = panTilt(GEO, start, MAX_TILT, 0, dy, FRAME);
+        expect(Math.hypot((next.centerX-last.centerX)*Math.cos(start.centerY*Math.PI/180),next.centerY-last.centerY)).toBeLessThanOrEqual(start.halfHeight*.02/Math.cos(MAX_TILT)+1e-10);
+        expect(next.halfHeight).toBe(start.halfHeight);
+        expect(next.bearingRadians).toBe(bearingRadians);
+        last=next;
+      }
+      expect(last.centerX).toBeCloseTo(start.centerX, 10);
+      expect(last.centerY).toBeCloseTo(start.centerY, 10);
+      expect(panTilt(GEO,start,MAX_TILT,0,.01,FRAME)).not.toEqual(start);
+    });
+  }
+});
+
+it('screen directions remain consistent through quarter and half turns',()=>{
+  for(const bearingRadians of [0,Math.PI/2,Math.PI]){
+    const start={centerX:86.925,centerY:27.9881,halfHeight:.02,halfWidth:.04,bearingRadians};
+    const moved=panTilt(GEO,start,MAX_TILT,.001,.001,FRAME);
+    const projected=mapProject(GEO,withTilt(GEO,moved,MAX_TILT),start.centerY,start.centerX)!;
+    expect(projected.x).toBeGreaterThan(0);expect(projected.y).toBeGreaterThan(0);
+    expect(projected.x).toBeCloseTo(.001,4);expect(projected.y).toBeCloseTo(.001,4);
+  }
+});
+it('polar and dateline edge motion stays bounded and reversing the same drag recovers its start',()=>{
+  for(const centerY of [-89,89]){
+    const start={centerX:179.9,centerY,halfHeight:.2,halfWidth:.4,bearingRadians:.7};
+    const moved=panTilt(GEO,start,MAX_TILT,2,2,FRAME);
+    expect(Number.isFinite(moved.centerX)).toBe(true);expect(Math.abs(moved.centerY)).toBeLessThanOrEqual(90);
+    const returned=panTilt(GEO,start,MAX_TILT,0,0,FRAME);
+    expect(returned.centerY).toBe(start.centerY);expect(returned.centerX).toBeCloseTo(start.centerX,8);
+  }
 });

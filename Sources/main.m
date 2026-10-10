@@ -3451,6 +3451,9 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     [_live playFromDate:date ?: (_chartNow ?: NSDate.date)];
     [self setTimelinePlaying:YES];
     [self startLiveTimer];
+    // A seek is immediate even when the throttled chrome clock ran just now.
+    // In a manual/offscreen clock there may be no following tick to repair it.
+    [self syncTimeLens:_live.playhead];
     [self applyLiveFrame];
     [self updatePopoverPlayControl];
 }

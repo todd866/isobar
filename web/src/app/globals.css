@@ -326,7 +326,7 @@ select {
 .map-tools button svg { width: 20px; height: 20px; }
 .map-zoom button { border: 0; border-radius: 0; }
 .map-zoom:has(button[aria-pressed]) { flex-direction: row; }
-.map-zoom button[aria-pressed] { width: auto; min-width: max(36px, 2em); height: auto; min-height: max(36px, 1.6em); }
+.map-zoom button[aria-pressed], .map-zoom button[aria-label="North up"] { width: auto; min-width: max(36px, 2em); height: auto; min-height: max(36px, 1.6em); }
 .map-zoom button[aria-pressed] + button { border-top: 0; border-left: 1px solid var(--md-outline-soft); }
 .map-zoom button[aria-pressed="true"] { background: var(--md-primary-container); color: var(--md-on-primary-container); font-weight: 700; }
 .map-zoom button + button { border-top: 1px solid var(--md-outline-soft); }

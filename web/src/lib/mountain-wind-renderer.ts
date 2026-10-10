@@ -41,23 +41,34 @@ export function createMountainWindRenderer(){
   }
   let flows=0;const heights=new Set<number>();ctx.save();ctx.lineCap='round';ctx.lineJoin='round';
   for(const path of projected){
+   if(path.duration<=0)continue;
    let shown=false;
-   for(let i=1;i<path.points.length;i++){
-    const a=path.points[i-1],b=path.points[i];if(!a.visible||!b.visible)continue;
-    const cloud=(a.source.cloudDensity+b.source.cloudDensity)/2;
-    ctx.globalAlpha=.6*(1-.55*cloud)*Math.min(a.weight,b.weight);ctx.strokeStyle=colour((a.source.w+b.source.w)/2,dark);ctx.lineWidth=1.45;
-    ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();shown=true;
-   }
-   if(!shown||path.duration<=0)continue;flows++;heights.add(Math.round(path.points[0].source.heightM/1000));
-   // Three arrowheads travel downstream at one consistent illustrative rate.
+   // Keep the physical path, but reveal only small advecting parcels. A pixel
+   // budget stops a close camera turning a short parcel into a screen-wide rod.
    for(let particle=0;particle<3;particle++){
     const t=((seconds*16/path.duration+path.phase+particle/3)%1)*path.duration;
     const index=path.points.findIndex(p=>p.time>=t);if(index<1)continue;
-    const a=path.points[index-1],b=path.points[index];if(!a.visible||!b.visible)continue;
-    const mix=(t-a.time)/Math.max(.001,b.time-a.time),x=a.x+(b.x-a.x)*mix,y=a.y+(b.y-a.y)*mix,angle=Math.atan2(b.y-a.y,b.x-a.x);
-    ctx.globalAlpha=.95*(1-.65*b.source.cloudDensity)*b.weight;ctx.strokeStyle=colour(b.source.w,dark);ctx.lineWidth=2;
-    ctx.beginPath();ctx.moveTo(x-5*Math.cos(angle-.55),y-5*Math.sin(angle-.55));ctx.lineTo(x,y);ctx.lineTo(x-5*Math.cos(angle+.55),y-5*Math.sin(angle+.55));ctx.stroke();
+    const a=path.points[index-1],b=path.points[index];if(!a.visible||!b.visible||Math.min(a.weight,b.weight)<=0)continue;
+    const mix=(t-a.time)/Math.max(.001,b.time-a.time);
+    let x=a.x+(b.x-a.x)*mix,y=a.y+(b.y-a.y)*mix,left=22;
+    // Fade at path boundaries; never draw a connection across the wrap.
+    const fade=Math.min(1,t/Math.min(8,path.duration*.12),(path.duration-t)/Math.min(8,path.duration*.12));
+    for(let j=index-1;j>=0&&left>0;j--){
+     const end=path.points[j];if(!end.visible||end.weight<=0)break;
+     const distance=Math.hypot(end.x-x,end.y-y);if(distance<.01)continue;
+     const length=Math.min(left,distance),ratio=length/distance;
+     const nx=x+(end.x-x)*ratio,ny=y+(end.y-y)*ratio;
+     const gradient=ctx.createLinearGradient(x,y,nx,ny);
+     const opacity=(remaining:number)=>.8*fade*(1-.65*b.source.cloudDensity)*Math.min(a.weight,b.weight,end.weight)*remaining/22;
+     const tint=colour(b.source.w,dark);
+     gradient.addColorStop(0,tint+Math.round(255*opacity(left)).toString(16).padStart(2,'0'));
+     gradient.addColorStop(1,tint+Math.round(255*opacity(left-length)).toString(16).padStart(2,'0'));
+     ctx.globalAlpha=1;ctx.strokeStyle=gradient;ctx.lineWidth=1.8;
+     ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(nx,ny);ctx.stroke();
+     shown=true;left-=length;x=nx;y=ny;
+    }
    }
+   if(shown){flows++;heights.add(Math.round(path.points[0].source.heightM/1000));}
   }ctx.restore();return{flows,layers:heights.size};
  };
 }

@@ -1065,13 +1065,24 @@ static int CheckPopoverMap(AcceptanceController *c, NSString *store) {
             [gpu frameAustralia];
             [(NSButton *)Find(gpu, @"gpumap.sphere") performClick:nil];
             cam = gpu.camera;
+            // Orbit/tilt preserves the selected place's screen anchor. The camera
+            // centre must move when that place is away from the viewport centre.
+            double focusLat = gpu.placeLatitude, focusLon = gpu.placeLongitude;
+            double focusX = 0, focusY = 0;
+            if (!IsobarCameraProject(cam, focusLat, focusLon, &focusX, &focusY) ||
+                focusX < 0 || focusX > cam.viewportW || focusY < 0 || focusY > cam.viewportH) {
+                focusLat = cam.centreLat; focusLon = cam.centreLon;
+                focusX = cam.viewportW * .5; focusY = cam.viewportH * .5;
+            }
             [window sendEvent:Scroll(window, loc, NSEventPhaseBegan, 0)];
             [window sendEvent:Scroll(window, loc, NSEventPhaseChanged, -36)];
             [window sendEvent:Scroll(window, loc, NSEventPhaseEnded, 0)];
             IsobarCamera tilted = gpu.camera;
+            double tiltedFocusX = 0, tiltedFocusY = 0;
             if (!(tilted.pitch > cam.pitch + .05) || !(tilted.zoom > cam.zoom) ||
-                fabs(tilted.centreLat - cam.centreLat) > 1e-8 || fabs(tilted.centreLon - cam.centreLon) > 1e-8)
-                POPFAIL("two-finger scroll tilts and frames the atmosphere while retaining geographic focus");
+                !IsobarCameraProject(tilted, focusLat, focusLon, &tiltedFocusX, &tiltedFocusY) ||
+                hypot(tiltedFocusX - focusX, tiltedFocusY - focusY) > 1)
+                POPFAIL("two-finger scroll tilts and frames the atmosphere while retaining the selected place anchor");
             if (fabs([[c selectedForecastDate] timeIntervalSinceDate:scrubbed]) > 1)
                 POPFAIL("tilt preserves forecast time");
             [gpu frameAustralia];

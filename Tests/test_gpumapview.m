@@ -38,6 +38,8 @@ static void Check(BOOL ok, NSString *message) {
 }
 
 static NSView *FindID(NSView *root, NSString *ident);
+static NSEvent *NavigationKey(unsigned short code, NSString *text);
+static NSUInteger SnapshotDifference(CGImageRef a, CGImageRef b);
 
 static float HalfFloat(uint16_t bits) {
     int sign = bits >> 15;
@@ -99,6 +101,33 @@ static void CheckPlayhead(GPUMapView *view) {
 static void CheckDragAndPinch(GPUMapView *view) {
     view.frame = NSMakeRect(0, 0, 480, 360);
     view.camera = MapCameraMake(-35, 140, 6, 0, 480, 360);
+    // This controller test also owns a real rendered field so the max-tilt
+    // oracle below cannot pass on camera properties while the frame is blank.
+    IsobarGeoGrid renderGrid = {0};
+    NSArray<NSData *> *renderSteps = nil;
+    NSString *renderFixture = NSProcessInfo.processInfo.environment[@"ISOBAR_FIELD_FIXTURE"] ?: @"Tests/fixtures/fieldrender";
+    BOOL loadedRenderFixture = LoadFixture(renderFixture, &renderGrid, &renderSteps) && renderSteps.count > 0;
+    Check(loadedRenderFixture, @"maximum-tilt drag fixture loads");
+    if (loadedRenderFixture) {
+        [view installGrid:renderGrid steps:renderSteps.count];
+        NSError *renderError = nil;
+        for (NSUInteger step = 0; step < renderSteps.count; step++)
+            Check([view uploadStep:(NSInteger)step kind:IsobarFieldPressure values:renderSteps[step].bytes error:&renderError],
+                renderError.localizedDescription ?: @"maximum-tilt field upload");
+        [view waitForUploads];
+    }
+    GPUMapView *renderView = [GPUMapView mapView];
+    renderView.frame = NSMakeRect(0, 0, 480, 360);
+    NSString *renderErrorText = nil;
+    NSString *renderStore = [[NSProcessInfo processInfo].environment[@"ISOBAR_FIXTURES"] ?: @"Tests/fixtures"
+        stringByAppendingPathComponent:@"store/ecmwf/20260925T18Z"];
+    OwnRun *renderRun = OwnRunLoad(renderStore,
+        NSProcessInfo.processInfo.environment[@"ISOBAR_COAST"], &renderErrorText);
+    Check(renderView != nil && renderRun != nil, [NSString stringWithFormat:@"maximum-tilt rendered run loads (%@)", renderErrorText ?: @""]);
+    if (renderView && renderRun) {
+        [renderView adoptRun:renderRun temperature:0 windFill:NO rain:NO];
+        [renderView waitForUploads];
+    }
     __block NSInteger clicks = 0;
     __block NSInteger holds = 0, releases = 0;
     view.onPlainClick = ^{ clicks++; };
@@ -150,6 +179,90 @@ static void CheckDragAndPinch(GPUMapView *view) {
     Check(IsobarCameraProject(view.camera, -34, 141, &afterSelectedX, &afterSelectedY) &&
         hypot(afterSelectedX - selectedX, afterSelectedY - selectedY) <= 1.0,
         @"a selected place remains pinned during a two-axis gesture");
+
+    // At maximum tilt a pointer drag must use the drag-start focal plane. A
+    // Newton solve against each intermediate camera amplifies forward/back
+    // motion near the horizon and can snap when the pointer briefly crosses
+    // sky. Check reversibility at several bearings, including the quarter
+    // turn where screen-down becomes eastward ground motion.
+    for (NSNumber *bearingNumber in @[@0.0, @(M_PI * 0.5), @M_PI]) {
+        double bearing = bearingNumber.doubleValue;
+        IsobarCamera maxTilt = MapCameraMake(-35, 120, 24, 1, 480, 360);
+        maxTilt.pitch = 1.30;
+        maxTilt.bearing = bearing;
+        view.camera = maxTilt;
+        renderView.camera = view.camera;
+        CGImageRef startShot = [renderView copySnapshot];
+        [view pointerDown:NSMakePoint(240, 180)];
+        [view pointerDrag:NSMakePoint(240, 230)];
+        IsobarCamera forward = view.camera;
+        renderView.camera = view.camera;
+        CGImageRef peakShot = [renderView copySnapshot];
+        double forwardDistance = hypot(forward.centreLat - maxTilt.centreLat,
+            MapWrap180(forward.centreLon - maxTilt.centreLon));
+        Check(forwardDistance > 1e-6 && forwardDistance < 20.0,
+            [NSString stringWithFormat:@"a small maximum-tilt drag produces bounded ground motion (%.3f°)", forwardDistance]);
+        if (fabs(bearing - M_PI * 0.5) < 1e-9)
+            Check(forward.centreLon > maxTilt.centreLon,
+                @"a maximum-tilt drag follows the local focal-plane bearing");
+        [view pointerDrag:NSMakePoint(240, 180)];
+        renderView.camera = view.camera;
+        CGImageRef originShot = [renderView copySnapshot];
+        Check(fabs(view.camera.centreLat - maxTilt.centreLat) < 1e-9 &&
+            fabs(view.camera.centreLon - maxTilt.centreLon) < 1e-9,
+            @"returning through the drag origin restores the start focus");
+        [view pointerDrag:NSMakePoint(240, 130)];
+        Check(fabs(view.camera.centreLat - maxTilt.centreLat) > 1e-6 ||
+            fabs(view.camera.centreLon - maxTilt.centreLon) > 1e-6,
+            @"motion past the drag origin remains bounded and reversible");
+        [view pointerUp:NSMakePoint(240, 130)];
+        NSUInteger peakDifference = SnapshotDifference(startShot, peakShot);
+        NSUInteger originDifference = SnapshotDifference(startShot, originShot);
+        NSUInteger closeLimit = startShot ? (CGImageGetWidth(startShot) * CGImageGetHeight(startShot)) / 50 : 0;
+        Check(startShot && peakShot && originShot && peakDifference > 30 && originDifference < closeLimit,
+            [NSString stringWithFormat:@"maximum-tilt drag changes the rendered field and returns its frame at the origin (images %d/%d/%d peak %lu origin %lu)",
+                startShot != NULL, peakShot != NULL, originShot != NULL,
+                (unsigned long)peakDifference, (unsigned long)originDifference]);
+        if (startShot) CGImageRelease(startShot);
+        if (peakShot) CGImageRelease(peakShot);
+        if (originShot) CGImageRelease(originShot);
+        Check(fabs(view.camera.zoom - maxTilt.zoom) < 1e-9 &&
+            fabs(view.camera.pitch - maxTilt.pitch) < 1e-9 &&
+            fabs(view.camera.bearing - maxTilt.bearing) < 1e-9,
+            @"maximum-tilt forward/back drag preserves zoom, tilt and bearing");
+        [view pointerDown:NSMakePoint(240, 40)];
+        [view pointerDrag:NSMakePoint(240, 400)];
+        [view pointerUp:NSMakePoint(240, 400)];
+        Check(isfinite(view.camera.centreLat) && isfinite(view.camera.centreLon) &&
+            fabs(view.camera.zoom - maxTilt.zoom) < 1e-9 &&
+            fabs(view.camera.pitch - maxTilt.pitch) < 1e-9 &&
+            fabs(view.camera.bearing - maxTilt.bearing) < 1e-9,
+            @"a large sky drag at maximum tilt stays finite and preserves view axes");
+    }
+    [renderView stopRendering];
+    IsobarCamera mixed = MapCameraMake(-35, 120, 24, 1, 480, 360);
+    mixed.pitch = 1.30; mixed.bearing = .7;
+    view.camera = mixed;
+    [view pointerDown:NSMakePoint(240, 180)];
+    [view pointerDrag:NSMakePoint(240, 220)];
+    double midDragZoom = view.camera.zoom;
+    Check([view pinchFactor:1.2 atPoint:NSMakePoint(240, 220)],
+        @"a pinch during a maximum-tilt drag is accepted");
+    double pinchedDuringDrag = view.camera.zoom;
+    [view pointerDrag:NSMakePoint(250, 220)];
+    [view pointerUp:NSMakePoint(250, 220)];
+    Check(fabs(view.camera.zoom - pinchedDuringDrag) < 1e-9 &&
+        view.camera.zoom > midDragZoom,
+        @"a following drag sample preserves an intervening pinch zoom");
+    view.camera = mixed;
+    [view pointerDown:NSMakePoint(240, 180)];
+    [view pointerDrag:NSMakePoint(240, 220)];
+    Check([view handle3DKeyEvent:NavigationKey(13, @"n")],
+        @"north-up can be invoked while a pointer drag is held");
+    [view pointerDrag:NSMakePoint(240, 230)];
+    [view pointerUp:NSMakePoint(240, 230)];
+    Check(fabs(view.camera.bearing) < 1e-9,
+        @"a held drag cannot restore the pre-recovery bearing");
     [view setPlaceLatitude:NAN longitude:NAN];
     view.camera = tiltStart;
     double horizontalZoom = view.camera.zoom;
@@ -1043,11 +1156,60 @@ static void CheckKeyboardNavigation(GPUMapView *view) {
     [view handleGlobeKey:@"3" repeat:NO];[view advanceDisplay:1];view.camera=eye;
     Check([view handle3DKeyEvent:NavigationKey(124,@"")],@"3D accepts right arrow with numeric-pad flag");
     Check(view.camera.bearing>eye.bearing,@"right arrow changes look bearing");
-    double heading=view.camera.bearing;
+    IsobarCamera beforeNorth = view.camera;
+    Check([view handle3DKeyEvent:NavigationKey(13,@"n")], @"3D accepts the N north-up shortcut");
+    Check(fabs(view.camera.bearing) < 1e-9 &&
+        fabs(view.camera.centreLat - beforeNorth.centreLat) < 1e-9 &&
+        fabs(view.camera.centreLon - beforeNorth.centreLon) < 1e-9 &&
+        fabs(view.camera.zoom - beforeNorth.zoom) < 1e-9 &&
+        fabs(view.camera.pitch - beforeNorth.pitch) < 1e-9,
+        @"north-up clears bearing while preserving focus, zoom and tilt");
+    NSButton *north = (NSButton *)FindID(view, @"gpumap.northup");
+    Check(north != nil && !north.hidden && [north.accessibilityLabel isEqualToString:@"North up"],
+        @"3D exposes a compact North up compass control");
+    view.camera = beforeNorth;
+    [north performClick:nil];
+    Check(fabs(view.camera.bearing) < 1e-9, @"the North up compass clears a rotated view");
     [view handleGlobeKey:@"2" repeat:NO];[view advanceDisplay:1];
     Check(fabs(view.camera.bearing)<1e-9&&! [view handle3DKeyEvent:NavigationKey(13,@"w")],@"2D remains north-up and does not capture WASD");
     [view handleGlobeKey:@"3" repeat:NO];[view advanceDisplay:1];
-    Check(fabs(view.camera.bearing-heading)<1e-9,@"returning to 3D restores heading");
+    Check(fabs(view.camera.bearing)<1e-9,@"north-up survives a 2D/3D mode round trip");
+    view.reducedMotionOverride = @NO;
+    view.camera = eye;
+    view.fractionalStep = 2.25;
+    [view pointerDown:NSMakePoint(240, 180)];
+    [view pointerDrag:NSMakePoint(260, 195)];
+    [view pointerUp:NSMakePoint(260, 195)];
+    IsobarCamera calmStart = view.camera;
+    double calmStep = view.fractionalStep;
+    [view advanceDisplay:.44];
+    Check(fabs(view.camera.bearing) > 1e-6, @"pan recovery waits through its quiet period");
+    [view advanceDisplay:.02];
+    Check(fabs(view.camera.bearing) < fabs(calmStart.bearing), @"pan recovery begins a smooth return to north");
+    [view advanceDisplay:.6];
+    Check(fabs(view.camera.bearing) < 1e-9 &&
+        fabs(view.camera.centreLat - calmStart.centreLat) < 1e-9 &&
+        fabs(view.camera.centreLon - calmStart.centreLon) < 1e-9 &&
+        fabs(view.camera.zoom - calmStart.zoom) < 1e-9 &&
+        fabs(view.camera.pitch - calmStart.pitch) < 1e-9 &&
+        view.fractionalStep == calmStep,
+        @"settled north recovery preserves centre, zoom, tilt and forecast time");
+    view.camera = eye;
+    [view pointerDown:NSMakePoint(240, 180)];
+    [view pointerDrag:NSMakePoint(260, 195)];
+    [view pointerUp:NSMakePoint(260, 195)];
+    [view advanceDisplay:.5];
+    double interruptedBearing = view.camera.bearing;
+    [view scrollByX:40 y:0 atPoint:NSMakePoint(240, 180) precise:YES command:NO];
+    double deliberateBearing = view.camera.bearing;
+    [view advanceDisplay:1.0];
+    Check(fabs(interruptedBearing) > 1e-6 && fabs(deliberateBearing) > 1e-6 &&
+        fabs(view.camera.bearing - deliberateBearing) < 1e-9,
+        @"deliberate orbit interrupts and suppresses automatic north recovery");
+    view.camera = eye;
+    Check([view handle3DKeyEvent:NavigationKey(13, @"w")], @"W movement arms quiet north recovery");
+    [view advanceDisplay:.5]; [view advanceDisplay:.6];
+    Check(fabs(view.camera.bearing) < 1e-9, @"keyboard ground travel settles back to north");
     IsobarCamera before=view.camera;
     [view handle3DKeyEvent:NavigationKey(13,@"w")];
     Check(view.camera.centreLat!=before.centreLat||view.camera.centreLon!=before.centreLon,@"W moves across the ground");
