@@ -9,7 +9,7 @@ type Icon = ComponentType<{ className?: string }>;
 
 const ITEMS: { href: string; label: string; icon: Icon }[] = [
   { href: '/', label: 'Map', icon: MapIcon },
-  { href: '/historical', label: 'Historical', icon: HistoricalIcon },
+  { href: '/history', label: 'Historical', icon: HistoricalIcon },
   { href: '/e6b', label: 'E6-B', icon: E6BIcon },
   { href: '/train', label: 'Train', icon: TrainIcon },
   { href: '/download', label: 'Download', icon: DownloadIcon },
@@ -17,6 +17,7 @@ const ITEMS: { href: string; label: string; icon: Icon }[] = [
 
 function active(pathname: string, href: string): boolean {
   if (href === '/') return pathname === '/';
+  if (href === '/history') return pathname === '/history' || pathname === '/historical' || pathname.startsWith('/history/');
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 

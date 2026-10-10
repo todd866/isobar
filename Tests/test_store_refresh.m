@@ -3727,6 +3727,7 @@ int main(void) {
                 if (isfinite(fraction)) [weakScrub removeFromSuperview];
             };
             [scrub mouseMoved:TimelineEventAtY(scrub,.7,8,NSEventTypeMouseMoved,614)];
+            Pump(.34); // A new hover must pass the intent dwell before preview.
             Check(!scrub.superview && !scrub.pointerScrubbing,
                 @"a preview callback may replace its timeline during pointer movement");
             scrub.onPreview=nil;

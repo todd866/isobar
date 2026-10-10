@@ -68,7 +68,7 @@ export function MapMenu({ run, wind, onOpen, phone, graticule, onGraticule }: {
         <LearnLevelValue />
       </div>
       <Link href="/e6b">E6-B</Link>
-      <Link href="/historical">Historical</Link>
+      <Link href="/history">Historical</Link>
       <button type="button" data-account-button={user ? 'in' : 'out'} aria-label={user ? `Account: ${user.email ?? ''}` : 'Sign in'} aria-haspopup="dialog" onClick={() => { setOpen(false); openAccount(true); }}>{user ? 'Account' : 'Sign in'}</button>
       <div className="map-menu-setting"><span>Units</span><UnitsControl /></div>
       <div className="map-menu-setting"><span>Theme</span><ThemeToggle /></div>
