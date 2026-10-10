@@ -966,7 +966,7 @@ static void CheckVectorSnapshots(void) {
         view.testScale = scale;
         view.frame = NSMakeRect(0, 0, 480, 360);
         [view adoptRun:run temperature:0 windFill:NO rain:NO]; [view waitForUploads];
-        IsobarCamera camera = MapCameraMake(-31.94, 115.97, 12, 1, 480 * scale, 360 * scale);
+        IsobarCamera camera = MapCameraMake(-31.94, 115.97, 48, 1, 480 * scale, 360 * scale);
         camera.pitch = .6; view.camera = camera;
         CGImageRef plain = [view copySnapshot];
         view.windBarbs = YES;
@@ -986,7 +986,7 @@ static void CheckVectorSnapshots(void) {
                 @"wind_direction_deg":@[@250], @"vertical_velocity_ms":@[@.2]}}};
         CGImageRef atmosphere = [view copySnapshot];
         Check(SnapshotDifference(plain, atmosphere) > 30,
-            [NSString stringWithFormat:@"%dx snapshot contains the atmospheric column", scale]);
+            [NSString stringWithFormat:@"%dx regional snapshot contains layered atmospheric vectors", scale]);
         Check(atmosphere && SnapshotDifference(plain, atmosphere) < CGImageGetWidth(atmosphere)*CGImageGetHeight(atmosphere)*.4,
             @"atmospheric overlay preserves the underlying map plate");
         if (plain) CGImageRelease(plain); if (wind) CGImageRelease(wind);
