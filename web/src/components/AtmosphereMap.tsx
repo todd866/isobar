@@ -1,7 +1,7 @@
 'use client';
 import {atmosphereDisplayCamera} from '@/lib/atmosphere-display';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { buildAtmosphereProfile } from '@/lib/atmosphere-profile';
 import { syntheticAtmosphereProfile, syntheticAtmosphereVectors, drawAtmosphereFlow } from '@/lib/atmosphere-flow';
 import { type TeachingAtmosphereContext, type TeachingScenario } from '@/lib/atmosphere-teaching';
@@ -17,13 +17,14 @@ import type { LoadedChart } from '@/lib/chart-store';
 import type { ElevationAt } from '@/lib/map-generalise';
 import styles from './AtmosphereMap.module.css';
 
-export function AtmosphereMap({ camera, geo, lat, lon, validMs, width, height, active, reconstruction, elevation, terrainEpoch, onInspection, origin, onFrame }: {
+export function AtmosphereMap({ compact = false, camera, geo, lat, lon, validMs, width, height, active, reconstruction, elevation, terrainEpoch, onInspection, origin, onFrame }: {
+  compact?: boolean;
   onFrame?: (topM:number,anchor?:{lat:number;lon:number},radiusM?:number)=>void;
   origin?: {lat:number;lon:number};
   onInspection?: (strength:number)=>void;
   elevation?: ElevationAt | null;
   terrainEpoch?: number;
-  reconstruction?: {chart: LoadedChart; elevation: ElevationAt | null};
+  reconstruction?: {chart: LoadedChart; elevation: ElevationAt | null; historical?: boolean};
   camera: TiltedCamera; geo: Lambert; lat: number; lon: number; validMs: number; width: number; height: number; active: boolean;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -45,6 +46,7 @@ export function AtmosphereMap({ camera, geo, lat, lon, validMs, width, height, a
   const [streamlines,setStreamlines]=useState<MountainStreamline[]>([]);
   const windRenderer=useMemo(()=>createMountainWindRenderer(),[]);
   const [cloudData,setCloudData]=useState<CloudDensityTexture|null>(null);
+  const latestCloudData=useRef(cloudData);latestCloudData.current=cloudData;
   useEffect(() => { try { setClouds(sessionStorage.getItem('isobar.clouds') === 'on'); } catch {} }, []);
   const toggleClouds = (enabled:boolean) => {setClouds(enabled);try {sessionStorage.setItem('isobar.clouds',enabled?'on':'off');} catch {}};
   const [aircraftFt, setAircraftFt] = useState(5000);
@@ -52,7 +54,7 @@ export function AtmosphereMap({ camera, geo, lat, lon, validMs, width, height, a
   const vectorTime = Math.floor(validMs / (reconstruction?60000:300000)) * (reconstruction?60000:300000);
   const anchorGround = elevation?.(anchor.lon,anchor.lat) ?? 0;
   const teaching = useMemo<TeachingAtmosphereContext | undefined>(() => reconstruction ? undefined : ({kind:scenario,...anchor,groundM:Number.isFinite(anchorGround)?anchorGround:0,timeMs:vectorTime}), [reconstruction,scenario,anchor,anchorGround,vectorTime]);
-  const reconstructed = useMemo(() => reconstruction ? everestAtmosphere(reconstruction.chart, vectorTime, reconstruction.elevation) : null, [reconstruction?.chart, reconstruction?.elevation, vectorTime, terrainEpoch]);
+  const reconstructed = useMemo(() => reconstruction ? everestAtmosphere(reconstruction.chart, vectorTime, reconstruction.elevation, vectorTime, reconstruction.historical !== false) : null, [reconstruction?.chart, reconstruction?.elevation, reconstruction?.historical, vectorTime, terrainEpoch]);
   const vectors = useMemo(() => reconstructed ? reconstructed.vectors(lat, lon, camera.halfHeight, width / Math.max(1, height)) : syntheticAtmosphereVectors(lat, lon, camera.halfHeight, width / Math.max(1, height), vectorTime, camera.slice, elevation ?? undefined, teaching), [teaching, reconstructed, lat, lon, camera.halfHeight, camera.slice, width, height, vectorTime, elevation, terrainEpoch]);
   const cloudVectors = useMemo(() => vectors.map(v => ({...v, cloudPct: reconstructed ? (v as EverestVector).cloudPct : v.cloudPct ?? 0})), [clouds, vectors, reconstructed]);
   const cloudInput=useRef({vectors:cloudVectors,lat,lon,halfHeight:camera.halfHeight,aspect:width/Math.max(1,height),elevation:elevation ?? reconstruction?.elevation,vectorTime,teaching,slice:camera.slice,mode:`${clouds}:${lenticular}:${!!reconstruction}`,sliceKey:JSON.stringify(camera.slice??null),run:reconstruction?.chart.manifest.run});
@@ -98,10 +100,20 @@ export function AtmosphereMap({ camera, geo, lat, lon, validMs, width, height, a
   useLayoutEffect(()=>{
     if(!active||!clouds||!cloudCanvas.current)return;
     const node=cloudCanvas.current;
-    const lost=(event:Event)=>{event.preventDefault();setCloudRenderFailed(true);};
+    const recreate=()=>{
+      cloudLayer.current?.destroy();cloudLayer.current=null;
+      try {
+        cloudLayer.current=createCloudVolumeLayer(node);
+        const data=latestCloudData.current;
+        if(data)cloudLayer.current?.setData(data);
+        setCloudRenderFailed(!cloudLayer.current);
+      } catch {setCloudRenderFailed(true);}
+    };
+    const lost=(event:Event)=>{event.preventDefault();cloudLayer.current?.destroy();cloudLayer.current=null;setCloudRenderFailed(true);};
     node.addEventListener('webglcontextlost',lost);
-    try {cloudLayer.current=createCloudVolumeLayer(node);setCloudRenderFailed(!cloudLayer.current);}catch{setCloudRenderFailed(true);}
-    return()=>{node.removeEventListener('webglcontextlost',lost);cloudLayer.current?.destroy();cloudLayer.current=null;};
+    node.addEventListener('webglcontextrestored',recreate);
+    recreate();
+    return()=>{node.removeEventListener('webglcontextlost',lost);node.removeEventListener('webglcontextrestored',recreate);cloudLayer.current?.destroy();cloudLayer.current=null;};
   },[active,clouds]);
   useEffect(()=>{if(cloudData)cloudLayer.current?.setData(cloudData);},[cloudData,clouds,active]);
   const model = useMemo(() => reconstructed ? reconstructed.profile(lat, lon) : syntheticAtmosphereProfile(lat, lon, vectorTime, elevation ?? undefined, teaching), [teaching, reconstructed, lat, lon, selectedLat, selectedLon, vectorTime, elevation, terrainEpoch]);
@@ -111,12 +123,19 @@ export function AtmosphereMap({ camera, geo, lat, lon, validMs, width, height, a
   const ceiling = Math.max(teaching?.kind==='sea-breeze'?(teaching.groundM+2700):12000, Math.min(aircraftM + 500,teaching?.kind==='sea-breeze'?teaching.groundM+2700:Infinity), ...(profile?.layers.map(l => l.topM + 500) ?? []));
   const inspection=section&&active?Math.min(1,.35+Math.max(0,aircraftM-(ground??0))/2500):0;
   useEffect(()=>{onInspection?.(inspection);return()=>onInspection?.(0);},[inspection,onInspection]);
+  const closeSection = useCallback(() => {
+    setSection(false);
+    const control = compact ? sectionButton.current?.closest('[data-map-page]')?.querySelector<HTMLButtonElement>('[aria-label="Map tools"]') : sectionButton.current;
+    // The compact launcher can disappear when Tools was closed outside the panel.
+    // Focus the persistent disclosure after React restores its visibility.
+    requestAnimationFrame(() => control?.focus({ preventScroll: true }));
+  }, [compact]);
   useEffect(() => {
     if (!section) return;
-    const close = (e: KeyboardEvent) => { if (e.key === 'Escape') { setSection(false); sectionButton.current?.focus(); e.preventDefault(); } };
+    const close = (e: KeyboardEvent) => { if (e.key === 'Escape') { closeSection(); e.preventDefault(); } };
     window.addEventListener('keydown', close);
     return () => window.removeEventListener('keydown', close);
-  }, [section]);
+  }, [section, closeSection]);
   useLayoutEffect(() => {
     const node = canvas.current, ctx = node?.getContext('2d');
     if (!node || !ctx) return;
@@ -154,29 +173,37 @@ export function AtmosphereMap({ camera, geo, lat, lon, validMs, width, height, a
   const knownCloud = !!profile?.levels.some(l => l.cloudFractionPct != null);
   const verticalKnown = !!profile?.levels.some(l => l.verticalVelocityMs != null);
   const status = camera.halfHeight >= 6 ? 'distant' : 'ready';
+  let lastLabelY = Infinity;
+  const shownLevels = profile?.levels.filter((level, i, levels) => {
+    if (!compact) return i===0 || Math.abs(y(level.heightM)-y(levels[i-1].heightM))>=24;
+    const position = y(level.heightM);
+    if (Math.abs(position-lastLabelY)<40) return false;
+    lastLabelY = position;
+    return true;
+  });
   return <>
     <canvas ref={cloudCanvas} data-cloud-volume className={styles.canvas} aria-hidden="true" style={{display:clouds?undefined:'none'}} />
     <canvas ref={canvas} data-atmosphere-layer data-source="synthetic" data-field-time={vectorTime} data-profile-time={profile?.timeMs} data-profile-state={status} className={styles.canvas} aria-hidden="true" />
-    <div className={styles.instrument} data-atmosphere-instrument>
+    <div className={styles.instrument} data-atmosphere-instrument data-atmosphere-section-open={section ? 'true' : 'false'}>
       <div className={styles.row}>
-        <button ref={sectionButton} aria-expanded={section} aria-label="Atmospheric section" onClick={() => setSection(v => !v)}>▱ <span>Atmosphere</span></button>
+        <button ref={sectionButton} aria-expanded={section} aria-label="Atmospheric section" onClick={() => section ? closeSection() : setSection(true)}>▱ <span>Atmosphere</span></button>
         <span className={styles.state} title="Synthetic airflow: amber rises, blue sinks. Open Atmosphere to choose a teaching model." aria-label="Synthetic airflow: amber rises, blue sinks; illustrative pressure-level flow">≈</span>
       </div>
       {section ? <div className={styles.section} data-atmosphere-section>
-        <div className={styles.row}>{teaching ? <select aria-label="Atmosphere model" title={scenario==='sea-breeze'?'Sea-breeze height shown at 3×; labels retain actual altitude':'Idealised teaching fields at this location'} value={scenario} onChange={e=>{setScenario(e.target.value as TeachingScenario);setAnchor({lat,lon});onFrame?.(e.target.value==='sea-breeze'?7500:e.target.value==='mountain-wave'?12000:10000,{lat,lon},e.target.value==='sea-breeze'?8000:0);}}><option value="circulation">Convection</option><option value="sea-breeze">Sea breeze</option><option value="thunderstorm">Thunderstorm</option><option value="mountain-wave">Mountain wave</option></select> : <span>{lenticular&&clouds?"Base wind profile":"Illustrative profile"}</span>}<button aria-label="Frame atmosphere" title="Fit the atmospheric column" onClick={()=>onFrame?.(teaching?.kind==='sea-breeze'?7500:teaching?.kind==='mountain-wave'?12000:10000,teaching??{lat,lon},teaching?.kind==='sea-breeze'?8000:0)}>⤢</button><button aria-label="Close atmospheric section" onClick={() => { setSection(false); sectionButton.current?.focus(); }}>×</button></div>
+        <div className={styles.row}>{teaching ? <select aria-label="Atmosphere model" title={scenario==='sea-breeze'?'Sea-breeze height shown at 3×; labels retain actual altitude':'Idealised teaching fields at this location'} value={scenario} onChange={e=>{setScenario(e.target.value as TeachingScenario);setAnchor({lat,lon});onFrame?.(e.target.value==='sea-breeze'?7500:e.target.value==='mountain-wave'?12000:10000,{lat,lon},e.target.value==='sea-breeze'?8000:0);}}><option value="circulation">Convection</option><option value="sea-breeze">Sea breeze</option><option value="thunderstorm">Thunderstorm</option><option value="mountain-wave">Mountain wave</option></select> : <span>{lenticular&&clouds?"Base wind profile":"Illustrative profile"}</span>}<button aria-label="Frame atmosphere" title="Fit the atmospheric column" onClick={()=>onFrame?.(teaching?.kind==='sea-breeze'?7500:teaching?.kind==='mountain-wave'?12000:10000,teaching??{lat,lon},teaching?.kind==='sea-breeze'?8000:0)}>⤢</button><button aria-label="Close atmospheric section" onClick={closeSection}>×</button></div>
         <div className={styles.cloudControls}><label className={styles.cloudToggle} title={cloudFailed||cloudRenderFailed?'Cloud texture unavailable; switch off and on to retry':'Synthetic clouds at the selected weather time'}><input type="checkbox" checked={clouds} onChange={event=>toggleClouds(event.target.checked)} />Clouds</label>
-        {clouds&&reconstruction?<select aria-label="Cloud model" title="Lenticular is a synthetic moist-layer experiment" value={lenticular?"lenticular":"reconstructed"} onChange={e=>setLenticular(e.target.value==="lenticular")}><option value="reconstructed">Reconstructed</option><option value="lenticular">Lenticular</option></select>:null}</div>
-        <svg viewBox="0 0 260 205" role="img" aria-label={profile ? `Synthetic column at ${selectedLat}, ${selectedLon}. Heights in feet above mean sea level. Horizontal shape is illustrative.` : 'Atmospheric profile unavailable'}>
-          {(teaching?.kind==='sea-breeze'?[0,500,1000,1500,2000,2500].map(z=>z+teaching.groundM):[0, 3000, 6000, 9000, 12000]).filter(m => m <= ceiling).map(m => <g key={m}><path d={`M42 ${y(m)}H246`} className={styles.grid} /><text x="36" y={y(m) + 4} textAnchor="end">{Math.round(m / .3048 / 1000)}k</text></g>)}
-          {!(lenticular&&clouds)&&profile?.layers.map(l => <g key={l.id}><rect x="80" width="130" y={y(l.topM)} height={Math.max(2, y(l.baseM) - y(l.topM))} rx="7" className={styles.cloud}/><text x="145" y={(y(l.baseM) + y(l.topM)) / 2 + 4} textAnchor="middle">{Math.round(l.cloudFractionPct)}%</text></g>)}
+        {clouds&&reconstruction?<select aria-label="Cloud model" title="Lenticular is a synthetic moist-layer experiment" value={lenticular?"lenticular":"reconstructed"} onChange={e=>setLenticular(e.target.value==="lenticular")}><option value="reconstructed">Reconstructed</option><option value="lenticular">Lenticular</option></select>:null}{compact&&(!profile||!knownCloud||profile.layers.length===0)?<span data-cloud-status>{!profile||!knownCloud?'No profile':'No layers'}</span>:null}</div>
+        <svg viewBox={compact ? "0 0 260 235" : "0 0 260 205"} role="img" aria-label={profile ? `Synthetic column at ${selectedLat}, ${selectedLon}. Heights in feet above mean sea level. Horizontal shape is illustrative. ${!knownCloud ? "Cloud profile unavailable." : profile.layers.length===0 ? "No sampled cloud layer." : ""}` : 'Atmospheric profile unavailable'}>
+          {(teaching?.kind==='sea-breeze'?[0,500,1000,1500,2000,2500].map(z=>z+teaching.groundM):[0, 3000, 6000, 9000, 12000]).filter(m => m <= ceiling).filter((_, i, rows) => !compact || i===0 || i===rows.length-1 || i===Math.floor(rows.length/2)).map(m => <g key={m}><path d={`M42 ${y(m)}H246`} className={styles.grid} /><text x="36" y={y(m) + 4} textAnchor="end">{Math.round(m / .3048 / 1000)}k</text></g>)}
+          {!(lenticular&&clouds)&&profile?.layers.map(l => <g key={l.id}><rect x="80" width="130" y={y(l.topM)} height={Math.max(2, y(l.baseM) - y(l.topM))} rx="7" className={styles.cloud}/>{compact ? <title>{Math.round(l.cloudFractionPct)}% cloud</title> : <text x="145" y={(y(l.baseM) + y(l.topM)) / 2 + 4} textAnchor="middle">{Math.round(l.cloudFractionPct)}%</text>}</g>)}
           {ground != null ? <path d={`M42 ${y(ground)}H246V180H42Z`} className={styles.ground}/> : null}
-          {profile?.levels.filter((l, i, levels) => i===0 || Math.abs(y(l.heightM)-y(levels[i-1].heightM))>=24).map((l, i) => <g key={i}>
+          {shownLevels?.map((l, i) => <g key={i}>
             {l.windKt != null && l.windFromDeg != null ? <text x="240" y={y(l.heightM) + 4} textAnchor="end">{Math.round(l.windKt)}</text> : null}
             {l.verticalVelocityMs != null ? <text x="50" y={y(l.heightM) + 4} fill={l.verticalVelocityMs > 0 ? '#ad6726' : '#287b9e'}>{Math.abs(l.verticalVelocityMs)>.05 ? `${l.verticalVelocityMs>0?'↑':'↓'}${Math.abs(l.verticalVelocityMs).toFixed(1)}` : '·'}</text> : null}
           </g>)}
           <path d={`M42 ${y(aircraftM)}H246`} className={styles.aircraftLine}/><text x="65" y={y(aircraftM) - 4}>✈</text>
-          <text x="8" y="201">ft AMSL</text><text x="244" y="201" textAnchor="end">wind kt</text>
-          {lenticular&&clouds ? null : !profile || !knownCloud ? <text x="145" y="95" textAnchor="middle">{status === 'distant' ? 'Zoom in for atmosphere' : 'Cloud profile unavailable'}</text> : profile.layers.length === 0 ? <text x="145" y="95" textAnchor="middle">No sampled cloud layer</text> : null}
+          <text x="8" y={compact?228:201}>ft AMSL</text><text x="244" y={compact?228:201} textAnchor="end">wind kt</text>
+          {compact || lenticular&&clouds ? null : !profile || !knownCloud ? <text x="145" y="95" textAnchor="middle">{status === 'distant' ? 'Zoom in for atmosphere' : 'Cloud profile unavailable'}</text> : profile.layers.length === 0 ? <text x="145" y="95" textAnchor="middle">No sampled cloud layer</text> : null}
         </svg>
         <label className={styles.altitude}><span>✈</span><input type="range" aria-label="Reference aircraft altitude" min={Math.ceil(((ground ?? 0) + 100) / .3048 / 500) * 500} max={Math.floor(ceiling/.3048/500)*500} step="500" value={Math.round(aircraftM / .3048)} onChange={e => setAircraftFt(Number(e.target.value))}/><output>{Math.round(aircraftM / .3048 / 100) * 100} ft</output></label>
         <div className={styles.meta} title={profile ? `${profile.source.source} · ${profile.source.model} · ${profile.source.cycleKnown ? 'Run' : 'Retrieved'} ${profile.source.run}. ${verticalKnown ? 'Geometric vertical velocity, m/s positive up.' : 'Vertical velocity unavailable; horizontal wind is not an inferred updraft.'} Aircraft icon is an altitude marker at distant scale.` : 'Missing data is not clear sky.'}>

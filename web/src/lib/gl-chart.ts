@@ -1,3 +1,4 @@
+import { buildSurfaceMesh, surfaceMeshSpacing } from './terrain/surface-mesh';
 import { mosaicElevation } from './terrain/elevation';
 import { buildTerrainSliceMesh, atmosphereSliceKey, type AtmosphereSlice } from './atmosphere-slice';
 import {CYCLONE_GLSL,cycloneProfile,DEFAULT_CYCLONE_PROFILE,type CycloneState} from './historical-cyclone';
@@ -136,6 +137,7 @@ uniform sampler2D uTerrain;
 uniform vec4 uTerrainBox;
 uniform vec2 uTerrainTexel;
 uniform float uRelief;
+uniform int uTerrainMesh;
 uniform int uHasTerrain;
 uniform int uTilt;
 uniform vec4 uTiltCam;
@@ -173,11 +175,11 @@ bool tiltedGeo(vec2 clip, float h, out float lat, out float lon) {
   return variableGeo(clip, uTiltCam, uHalf.x/uHalf.y, uCurvature, uEye, uForward, uUp, h, lat, lon);
 }
 bool geoOf(vec2 clip, out float lat, out float lon) {
-  if(uSlicePass==1){lat=vSliceGeo.y;lon=vSliceGeo.x;return true;}
+  if(uSlicePass==1||uSlicePass==2){lat=vSliceGeo.y;lon=vSliceGeo.x;return true;}
   if (uTilt == 1) {
     if (!tiltedGeo(clip, 0.0, lat, lon)) return false;
     // A bounded height-field intersection. Elevation stays at physical scale.
-    if (uHasTerrain == 1 && uCurvature > 0.05) {
+    if (uHasTerrain == 1 && uTerrainMesh == 0 && uCurvature > 0.05) {
       for (int i = 0; i < 4; i++) {
         vec2 uv = vec2(mod(degrees(lon)-uTerrainBox.x+720.0,360.0)/(uTerrainBox.z-uTerrainBox.x), (degrees(lat)-uTerrainBox.y)/(uTerrainBox.w-uTerrainBox.y));
         if (any(lessThan(uv,vec2(0))) || any(greaterThan(uv,vec2(1)))) break;
@@ -322,7 +324,7 @@ void main() {
   float fieldNeutral = (uField == 1 || uField == 2) ? uFieldAlpha : 0.0;
   SEA = mix(SEA, mix(FIELD_SEA_DAY, FIELD_SEA_NIGHT, uDark), fieldNeutral);
   LANDC = mix(LANDC, mix(FIELD_LAND_DAY, FIELD_LAND_NIGHT, uDark), fieldNeutral);
-  if(uSlicePass==1&&vSliceCoverage<.999)discard;
+  if((uSlicePass==1||uSlicePass==2)&&vSliceCoverage<.999)discard;
   if ((uSliceEnabled==1&&uSlicePass==0) || !geoOf(vClip, lat, lon)) {
     vec3 sky = uTilt==1?skyColour(vClip):SEA;
     oColor = vec4(uTilt == 1 ? sky : SEA, 1.0);
@@ -342,24 +344,29 @@ void main() {
     float tu = mod(mod(lon - uTerrainBox.x, 360.0) + 360.0, 360.0) / (uTerrainBox.z - uTerrainBox.x);
     float tv = (lat - uTerrainBox.y) / (uTerrainBox.w - uTerrainBox.y);
     if (tu >= 0.0 && tu <= 1.0 && tv >= 0.0 && tv <= 1.0) {
-      vec2 uv = vec2(tu, tv);
-      vec2 here = terrainAt(uv);
+        vec2 uv = vec2(tu, tv);
+        vec2 here = terrainAt(uv);
       if (here.y > 0.001) {
         // Land and sea from the DEM where it has data (sea is 0 m; land below
         // sea level is still land), the coastline mask elsewhere.
         float demLand = smoothstep(0.25, 1.0, abs(here.x));
         landF = mix(landF, demLand, here.y * clamp(uRelief * 3.0, 0.0, 1.0));
-        vec2 e = terrainAt(uv + vec2(uTerrainTexel.x, 0.0));
-        vec2 w = terrainAt(uv - vec2(uTerrainTexel.x, 0.0));
-        vec2 n = terrainAt(uv + vec2(0.0, uTerrainTexel.y));
-        vec2 s = terrainAt(uv - vec2(0.0, uTerrainTexel.y));
+        // Match the slope kernel to the projected pixel footprint. At close
+        // scale this is one texel; farther out it averages a bounded wider
+        // neighbourhood instead of sharpening alternating coarse samples.
+        float footprint=max(length(dFdx(uv)/uTerrainTexel),length(dFdy(uv)/uTerrainTexel));
+        float stride=clamp(footprint,1.0,8.0);
+        vec2 slopeStep=uTerrainTexel*stride;
+        vec2 e = terrainAt(uv + vec2(slopeStep.x, 0.0));
+        vec2 w = terrainAt(uv - vec2(slopeStep.x, 0.0));
+        vec2 n = terrainAt(uv + vec2(0.0, slopeStep.y));
+        vec2 s = terrainAt(uv - vec2(0.0, slopeStep.y));
         float cover = min(min(e.y, w.y), min(n.y, s.y));
         float dx = uTerrainTexel.x * (uTerrainBox.z - uTerrainBox.x) * 111320.0 * max(cos(radians(lat)), 0.05);
         float dy = uTerrainTexel.y * (uTerrainBox.w - uTerrainBox.y) * 110574.0;
-        // Coarse texels flatten slopes; exaggerate with texel size so relief reads at every zoom.
-        float exaggeration = clamp(sqrt(dy / 100.0), 1.5, 8.0);
-        float gx = (e.x - w.x) / (2.0 * dx) * exaggeration;
-        float gy = (n.x - s.x) / (2.0 * dy) * exaggeration;
+        float exaggeration = clamp(sqrt(max(dy * stride, 1.0) / 100.0), 1.0, uTilt == 1 ? 1.5 : 8.0);
+        float gx = (e.x - w.x) / (2.0 * dx * stride) * exaggeration;
+        float gy = (n.x - s.x) / (2.0 * dy * stride) * exaggeration;
         vec3 normal = normalize(vec3(-gx, -gy, 1.0));
         // Multi-directional light (azimuth 225/270/315/360°, 45° up): soft, no single harsh shadow side.
         float shade = 0.15 * max(dot(normal, vec3(-0.5, -0.5, 0.7071)), 0.0)
@@ -368,7 +375,6 @@ void main() {
           + 0.20 * max(dot(normal, vec3(0.0, 0.7071, 0.7071)), 0.0);
         // Oblique distant pixels can span many DEM texels. Fade unresolved
         // relief contrast instead of amplifying alternating slope samples.
-        float footprint=max(length(dFdx(uv)/uTerrainTexel),length(dFdy(uv)/uTerrainTexel));
         float resolved=uTilt==1?1.0-smoothstep(2.0,10.0,footprint):1.0;
         float delta = (shade - 0.7071) * uRelief * cover * mix(1.0, 0.45, fieldNeutral) * resolved;
         vec3 tinted = mix(LANDC, hypsometric(LANDC, here.x), uRelief * here.y * mix(1.0, 0.25, fieldNeutral));
@@ -454,6 +460,8 @@ export interface GlChart {
   requestPlate(): void;
   takePlate(): { width: number; height: number; data: Uint8ClampedArray } | null;
   resize(width: number, height: number): void;
+  /** Current WebGL lifecycle state; useful to keep the owning render loop quiet during loss. */
+  contextState(): 'ready' | 'lost' | 'restoring' | 'failed' | 'destroyed';
   destroy(): void;
 }
 
@@ -466,7 +474,143 @@ export function createGlChart(canvas: HTMLCanvasElement): GlChart | null {
     premultipliedAlpha: false,
   });
   if (!gl) return null;
-  return mountChart(gl, canvas);
+  const initial = mountChart(gl, canvas);
+  if (!initial) return null;
+
+  type ImageSource = ImageBitmap | HTMLCanvasElement | OffscreenCanvas;
+  type StoredTerrain = TerrainTexture | null;
+  const mappingCopy = (mapping?: ImageryMapping): ImageryMapping | undefined => mapping && ({
+    origin: [...mapping.origin] as [number, number],
+    u: [...mapping.u] as ImageryMapping['u'],
+    v: [...mapping.v] as ImageryMapping['v'],
+    edgeUv: [...mapping.edgeUv] as [number, number],
+  });
+  const terrainCopy = (terrain: TerrainTexture | null): StoredTerrain => terrain && ({
+    data: terrain.data.slice(), width: terrain.width, height: terrain.height, box: { ...terrain.box },
+  });
+  const state: {
+    land: { pixels: Uint8Array; width: number; height: number; box: LandBox } | null;
+    water: { pixels: Uint8Array | null; width: number; height: number; box: LandBox } | null;
+    frames: { a: Uint16Array | null; b: Uint16Array | null; nx: number; ny: number } | null;
+    terrain: StoredTerrain;
+    imagery: { source: ImageSource | null; mapping?: ImageryMapping };
+    size: { width: number; height: number } | null;
+    view: GlView | null;
+    plateRequested: boolean;
+  } = { land: null, water: null, frames: null, terrain: null, imagery: { source: null }, size: null, view: null, plateRequested: false };
+  let chart: GlChart | null = initial;
+  let lifecycle: 'ready' | 'lost' | 'restoring' | 'failed' | 'destroyed' = 'ready';
+  const setLifecycle = (value: typeof lifecycle) => {
+    lifecycle = value;
+    canvas.dataset.contextState = value;
+  };
+  setLifecycle('ready');
+  let generation = 0;
+  let terrainEpochOffset = 0;
+
+  // ImageBitmap is closed by MapExperience after setImagery. Keep a synchronous
+  // canvas copy so a later context restore never relies on that closed bitmap.
+  const backupImage = (image: ImageBitmap | null): ImageSource | null => {
+    if (!image || typeof document === 'undefined') return image;
+    const backup = document.createElement('canvas');
+    backup.width = image.width; backup.height = image.height;
+    const context = backup.getContext('2d');
+    // A closed ImageBitmap cannot be replayed. If a 2D backup is unavailable,
+    // clear imagery rather than retaining a source that will throw on restore.
+    if (!context) return null;
+    context.drawImage(image, 0, 0);
+    return backup;
+  };
+  const replay = (next: GlChart): void => {
+    if (state.size) next.resize(state.size.width, state.size.height);
+    if (state.land) next.setLand(state.land.pixels, state.land.width, state.land.height, state.land.box);
+    if (state.water) next.setWater(state.water.pixels, state.water.width, state.water.height, state.water.box);
+    if (state.frames) next.setFrames(state.frames.a, state.frames.b, state.frames.nx, state.frames.ny);
+    next.setTerrain(state.terrain);
+    next.setImagery(state.imagery.source as ImageBitmap | null, state.imagery.mapping);
+    if (state.plateRequested) next.requestPlate();
+    if (state.view) next.draw(state.view);
+    state.plateRequested = false;
+  };
+  const onContextLost = (event: Event): void => {
+    event.preventDefault();
+    terrainEpochOffset += chart?.terrainEpoch() ?? 0;
+    setLifecycle(lifecycle === 'destroyed' ? lifecycle : 'lost');
+    chart = null;
+  };
+  const onContextRestored = (): void => {
+    if (lifecycle === 'destroyed') return;
+    setLifecycle('restoring');
+    const restoreGeneration = ++generation;
+    let next: GlChart | null = null;
+    try { next = mountChart(gl, canvas); } catch { next = null; }
+    if (restoreGeneration !== generation) {
+      next?.destroy();
+      return;
+    }
+    if (!next) { setLifecycle('failed'); return; }
+    try {
+      replay(next);
+      chart = next;
+      // A restored texture mosaic may need several bounded upload slices.
+      // Keep reporting restoration until its first complete surface is drawn.
+      if (!state.terrain || next.terrainEpoch() > 0) setLifecycle('ready');
+    } catch {
+      next.destroy(); chart = null; setLifecycle('failed');
+    }
+  };
+  canvas.addEventListener('webglcontextlost', onContextLost, false);
+  canvas.addEventListener('webglcontextrestored', onContextRestored, false);
+
+  return {
+    resize(width, height) {
+      state.size = { width, height };
+      if (chart) chart.resize(width, height);
+    },
+    setLand(pixels, width, height, box) {
+      state.land = { pixels: pixels.slice(), width, height, box: { ...box } };
+      if (chart) chart.setLand(pixels, width, height, box);
+    },
+    setWater(pixels, width, height, box) {
+      state.water = { pixels: pixels ? pixels.slice() : null, width, height, box: { ...box } };
+      if (chart) chart.setWater(pixels, width, height, box);
+    },
+    setFrames(a, b, nx, ny) {
+      state.frames = { a: a?.slice() ?? null, b: b?.slice() ?? null, nx, ny };
+      if (chart) chart.setFrames(a, b, nx, ny);
+    },
+    setTerrain(next) {
+      state.terrain = terrainCopy(next);
+      if (chart) chart.setTerrain(next);
+    },
+    setImagery(image, mapping) {
+      state.imagery = { source: backupImage(image), mapping: mappingCopy(mapping) };
+      if (chart) chart.setImagery(image, mapping);
+    },
+    terrainEpoch() { return terrainEpochOffset + (chart?.terrainEpoch() ?? 0); },
+    sliceReady(slice) { return chart?.sliceReady(slice) ?? false; },
+    requestPlate() { state.plateRequested = true; if (chart) chart.requestPlate(); },
+    takePlate() { return chart?.takePlate() ?? null; },
+    draw(view) {
+      state.view = view;
+      if (chart && (lifecycle === 'ready' || lifecycle === 'restoring')) {
+        chart.draw(view);
+        if (lifecycle === 'restoring' && (!state.terrain || chart.terrainEpoch() > 0)) setLifecycle('ready');
+        if (state.plateRequested) state.plateRequested = false;
+      }
+    },
+    contextState() { return lifecycle; },
+    destroy() {
+      if (lifecycle === 'destroyed') return;
+      setLifecycle('destroyed'); ++generation;
+      canvas.removeEventListener('webglcontextlost', onContextLost);
+      canvas.removeEventListener('webglcontextrestored', onContextRestored);
+      chart?.destroy(); chart = null;
+      state.land = null; state.water = null; state.frames = null; state.terrain = null;
+      state.imagery = { source: null }; state.view = null; state.size = null;
+      state.plateRequested = false;
+    },
+  };
 }
 
 function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlChart | null {
@@ -494,7 +638,38 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
   gl.bindVertexArray(sliceVao);gl.bindBuffer(gl.ARRAY_BUFFER,sliceBuffer);
   gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,4,gl.FLOAT,false,0,0);
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,sliceIndices);
+  const terrainVao=gl.createVertexArray(),terrainBuffer=gl.createBuffer(),terrainIndices=gl.createBuffer();
+  gl.bindVertexArray(terrainVao);gl.bindBuffer(gl.ARRAY_BUFFER,terrainBuffer);
+  gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,4,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,terrainIndices);
   let lastSliceKey="",sliceCount=0;
+  let terrainMeshCount=0;
+  let terrainMeshSpacing = 0;
+  let terrainMeshFocus: { lat: number; lon: number } | null = null;
+  function updateTerrainSurfaceMesh(camera: TiltCamera) {
+    if (!terrain) return;
+    const box = terrain.box;
+    const centerLon = (box.west + box.east) / 2;
+    const lon = camera.lon + 360 * Math.round((centerLon - camera.lon) / 360);
+    // Keep the tessellation stable during orbit/tilt and small drags. A bounded
+    // world-space anchor rebuilds only after a meaningful change of destination.
+    const focus = {
+      lat: Math.max(box.south, Math.min(box.north, Math.round(camera.lat / .02) * .02)),
+      lon: Math.max(box.west, Math.min(box.east, Math.round(lon / .02) * .02)),
+    };
+    const spacing = surfaceMeshSpacing(camera.halfHeightDeg);
+    if (terrainMeshFocus?.lat === focus.lat && terrainMeshFocus.lon === focus.lon && terrainMeshSpacing === spacing) return;
+    terrainMeshSpacing = spacing;
+    const surface = buildSurfaceMesh({ box, focus, halfHeightDeg: camera.halfHeightDeg });
+    terrainMeshFocus = focus;
+    terrainMeshCount = surface?.indices.length ?? 0;
+    if (!surface) return;
+    gl.bindVertexArray(terrainVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, terrainBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, surface.vertices, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrainIndices);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, surface.indices, gl.STATIC_DRAW);
+  }
   const texA = gl.createTexture();
   const texB = gl.createTexture();
   const texLand = gl.createTexture();
@@ -579,6 +754,8 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
     if (next.row < next.height) return;
     [texTerrain, texTerrainBack] = [texTerrainBack, texTerrain];
     terrain = { box: { ...next.box }, width: next.width, height: next.height };
+    terrainMeshFocus = null;
+    terrainMeshCount = 0;
     uploadedElevation=mosaicElevation({...next,z:0,covered:1});
     pending = null;
     terrainEpoch += 1;
@@ -665,6 +842,11 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
     },
     draw(view: GlView) {
       uploadTerrainSlice();
+      if (view.tiltCamera && view.tiltCamera.halfHeightDeg < 2 && view.tiltCamera.geometry.curvature > .05 && !view.slice) updateTerrainSurfaceMesh(view.tiltCamera);
+      const relief = terrain ? Math.max(0, Math.min(1, view.relief ?? 0)) : 0;
+      // A close tilted view gets a depth-tested DEM surface. The flat backdrop
+      // remains behind it, but must not run the inverse DEM relief pass as well.
+      const closeTerrain = !!terrain && terrainMeshCount > 0 && !!view.tiltCamera && view.tiltCamera.geometry.curvature > 0.05 && view.tiltCamera.halfHeightDeg < 2 && !view.slice;
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.useProgram(program);
       gl.bindVertexArray(vao);
@@ -699,7 +881,8 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       }
       gl.uniform4f(loc('uWaterBox'), waterBox.west, waterBox.south, waterBox.east, waterBox.north);
       gl.uniform1i(loc('uHasTerrain'), terrain ? 1 : 0);
-      gl.uniform1f(loc('uRelief'), terrain ? Math.max(0, Math.min(1, view.relief ?? 0)) : 0);
+      gl.uniform1i(loc('uTerrainMesh'), closeTerrain ? 1 : 0);
+      gl.uniform1f(loc('uRelief'), closeTerrain ? 0 : relief);
       if (terrain) {
         gl.uniform4f(loc('uTerrainBox'), terrain.box.west, terrain.box.south, terrain.box.east, terrain.box.north);
         gl.uniform2f(loc('uTerrainTexel'), 1 / terrain.width, 1 / terrain.height);
@@ -737,6 +920,17 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       gl.uniform1i(loc('uProjection'), view.lambert.projection === 'equirectangular' ? 1 : 0);
       gl.uniform1i(loc('uWrap'), view.wrapsLongitude ? 1 : 0);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
+      if (closeTerrain) {
+        gl.bindVertexArray(terrainVao);
+        const eye = view.tiltCamera!.geometry.cameraPositionM;
+        gl.uniform1f(loc('uSliceFar'), Math.max(100000, Math.hypot(...eye) + view.tiltCamera!.halfWidthRadians * 6371000 * 8));
+        gl.uniform1i(loc('uSlicePass'), 2);
+        gl.uniform1f(loc('uRelief'), relief);
+        gl.uniform1f(loc('uCutaway'), 0);
+        gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
+        gl.drawElements(gl.TRIANGLES, terrainMeshCount, gl.UNSIGNED_INT, 0);
+        gl.disable(gl.DEPTH_TEST); gl.uniform1i(loc('uSlicePass'), 0);
+      }
       if(slice&&view.tiltCamera){
         gl.bindVertexArray(sliceVao);
         const sliceKey=atmosphereSliceKey(slice);
@@ -774,8 +968,10 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       plate = null;
       return shot;
     },
+    contextState() { return 'ready' as const; },
     destroy() {
       gl.deleteVertexArray(sliceVao);gl.deleteBuffer(sliceBuffer);gl.deleteBuffer(sliceIndices);
+      gl.deleteVertexArray(terrainVao);gl.deleteBuffer(terrainBuffer);gl.deleteBuffer(terrainIndices);
       gl.deleteVertexArray(vao);
       gl.deleteBuffer(buffer);
       gl.deleteProgram(program);

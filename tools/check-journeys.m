@@ -11,6 +11,7 @@
 #pragma clang diagnostic pop
 
 #import <objc/runtime.h>
+#import "../Sources/windmapview.h"
 
 @interface JourneyController : Controller
 @end
@@ -227,8 +228,23 @@ static void Journeys(JourneyController *c, NSView *(^root)(void), NSString *surf
         return [v isKindOfClass:NSButton.class] && [v.accessibilityIdentifier hasSuffix:@".barbs"] && !v.hiddenOrHasHiddenAncestor;
     });
     EXPECT(barbs && barbs.enabled, "wind toggle is available on the GPU map");
+    // Default flow is independent of the optional meteorological barbs.
+    if (barbs.state == NSControlStateValueOn) [barbs performClick:nil];
+    WindMapView *surfaceWind=[map valueForKey:@"windView"];
+    EXPECT(!surfaceWind.hidden&&!surfaceWind.barbs,"default wind flow disappears when barbs are off");
+    for(int frame=0;frame<100;frame++) { @autoreleasepool {
+        [map advanceDisplay:1.0/60.0];
+        CGImageRef shot=[map copySnapshot];if(shot)CGImageRelease(shot);
+    }}
+    EXPECT(surfaceWind.drawnCount>10,"default rendered wind is missing without barbs");
+    EXPECT(surfaceWind.time>1,"map display link did not advance wind independently of forecast");
+    EXPECT(fabs([[c selectedForecastDate] timeIntervalSinceDate:vectorTime])<1,"wind animation changed held forecast time");
     if (barbs.state != NSControlStateValueOn) [barbs performClick:nil];
     map = Map(c);
+    // Warmup finishes the mode-transition animation. Restore the known
+    // overhead starting view before testing a new tilt gesture; the snapshot
+    // taken before warmup is otherwise stale. Use renderer pixels consistently.
+    map.camera = vectorCamera;
     double focusLat=map.placeLatitude, focusLon=map.placeLongitude, focusX=0, focusY=0;
     if (!IsobarCameraProject(vectorCamera,focusLat,focusLon,&focusX,&focusY) || focusX<0 || focusY<0 || focusX>vectorCamera.viewportW || focusY>vectorCamera.viewportH) {
         focusLat=vectorCamera.centreLat; focusLon=vectorCamera.centreLon;

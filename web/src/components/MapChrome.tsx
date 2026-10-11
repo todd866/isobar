@@ -151,8 +151,8 @@ export function UvFigure({
 export function WindArrow({ from, className }: { from: number | null; className?: string }) {
   if (from == null) return null;
   return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" style={{ transform: `rotate(${from}deg)` }}>
-      <path fill="currentColor" d="M12 21 7.5 9.5h3.2V3h2.6v6.5h3.2z" />
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <path transform={`rotate(${from} 12 12)`} fill="currentColor" d="M12 21 7.5 9.5h3.2V3h2.6v6.5h3.2z" />
     </svg>
   );
 }
@@ -201,32 +201,6 @@ export function MapHeader({
   onGraticule: () => void;
 }) {
   const { units } = useUnits();
-  const header = useRef<HTMLElement>(null);
-  const [compactWind, setCompactWind] = useState(false);
-  useLayoutEffect(() => {
-    const node = header.current;
-    if (!node) return;
-    const measure = () => {
-      const place = node.querySelector<HTMLElement>('[data-place-cluster]') ?? node.querySelector<HTMLElement>('[data-place-field]');
-      const reading = node.querySelector<HTMLElement>('[data-reading]');
-      const wind = node.querySelector<HTMLElement>('[data-wind-words]');
-      if (!place || !reading || !wind) return;
-      const learn = node.querySelector<HTMLElement>('.map-header-learn');
-      const menu = node.querySelector<HTMLElement>('.map-menu-button');
-      const clock = node.querySelector<HTMLElement>('.when-long');
-      const learnWidth = learn && getComputedStyle(learn).display !== 'none' ? learn.offsetWidth : 0;
-      const clockWidth = clock && getComputedStyle(clock).display !== 'none' ? clock.offsetWidth + 8 : 0;
-      const available = node.clientWidth - 24 - (menu?.offsetWidth ?? 40) - learnWidth - clockWidth - 16;
-      const temperature = reading.firstElementChild as HTMLElement | null;
-      const uvNode = reading.querySelector<HTMLElement>('[data-uv]');
-      const needed = place.offsetWidth + (temperature?.offsetWidth ?? 0) + (uvNode?.offsetWidth ?? 0) + 16 + wind.scrollWidth + 12;
-      setCompactWind(needed > available);
-    };
-    const observer = new ResizeObserver(measure);
-    observer.observe(node);
-    measure();
-    return () => observer.disconnect();
-  }, [placeName, reading?.tempC, reading?.windKt, reading?.windFrom, units, uv?.index, validMs, zone]);
   const ageH = Math.max(0, Math.floor((nowMs - runMs) / 3_600_000));
   const runHour = new Date(runMs).getUTCHours();
   const stale = ageH > 18;
@@ -237,7 +211,7 @@ export function MapHeader({
     : null;
   const forecastTitle = forecast ? readingTitle(forecast, forecast.valid) : 'Model 2 m temperature';
   return (
-    <header ref={header} data-compact-wind={compactWind} className="map-header relative z-20 flex h-12 shrink-0 items-center gap-2 px-3 md:gap-3 md:px-4">
+    <header className="map-header relative z-20 flex h-12 shrink-0 items-center gap-2 px-3 md:gap-3 md:px-4">
       {leading}
       {place}
       {!historical ? <span
@@ -250,7 +224,7 @@ export function MapHeader({
         <span title={wind ? `${forecastTitle} · ${wind}` : forecastTitle}>{reading?.tempC == null ? '—' : formatTempC(reading.tempC, units)}</span>
         {uv ? <UvFigure index={uv.index} category={uv.category} protection={uv.protection} /> : null}
         <WindArrow from={reading?.windFrom ?? null} className="header-wind h-4 w-4" />
-        <span data-wind-words className="header-wind-words font-medium">{wind}</span>
+        <span data-wind-words className="header-wind-words font-medium">{phone && reading?.windKt != null ? `${Math.round(reading.windKt)} kt` : wind}</span>
         <span className="when-long max-md:hidden">
           {wind ? <span aria-hidden="true"> · </span> : null}
           {validMs != null ? <ClockFace ms={validMs} zone={zone} zulu /> : '—'}
@@ -311,6 +285,7 @@ export function Transport({
         <span className="sr-only">Speed</span>
         <select
           id="playback-speed"
+          style={{ width: undefined, ['--speed-label-ch' as string]: speedLabel(speed).length }}
           title="Real time, or forecast minutes per second"
           value={speed}
           onChange={(event) => {
@@ -326,7 +301,7 @@ export function Transport({
         <UpDown className="pointer-events-none absolute right-1.5 h-4 w-4" />
         <PressNote text={speedNote.note} />
       </label>
-      {compact ? null : <button type="button" onClick={onNow} className="flex h-9 items-center gap-1 rounded-md px-2 text-[15px] font-semibold text-[var(--md-primary)] hover:bg-[var(--md-surface-container-high)]">
+      {compact ? null : <button type="button" onClick={onNow} data-time-reset className="flex h-9 items-center gap-1 rounded-md px-2 text-[15px] font-semibold text-[var(--md-primary)] hover:bg-[var(--md-surface-container-high)]">
         <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true"><path fill="currentColor" d="M5 5h2.2v14H5zM12 12l7.5-6v12zM7.5 12 12 8.4v7.2z" /></svg>
         {nowLabel}
       </button>}
@@ -598,6 +573,7 @@ export function LensBar({
   section = false,
   onSection,
   sectionAvailable = false,
+  compact = false,
   phone = false,
 }: {
   lens: Lens;
@@ -616,6 +592,8 @@ export function LensBar({
   section?: boolean;
   onSection?: () => void;
   sectionAvailable?: boolean;
+  /** Enlarged text mode uses a labelled picker to keep every lens reachable without a crowded strip. */
+  compact?: boolean;
   /** Phones carry Satellite/Traffic in the compact map-tools cluster instead; render one control per viewport. */
   phone?: boolean;
 }) {
@@ -657,6 +635,12 @@ export function LensBar({
   ];
   return (
     <>
+    {compact ? <label className="map-lens-picker">
+      <span className="sr-only">Weather lens</span>
+      <select aria-label="Weather lens" value={lens} onChange={(event) => onLens(event.target.value as Lens)}>
+        {items.filter(item => !availableLenses || availableLenses.includes(item.id)).map(item => <option key={item.id} value={item.id} disabled={!item.enabled}>{item.label}</option>)}
+      </select>
+    </label> : null}
     <nav ref={nav} aria-label="Map lens" className="flex h-12 min-w-0 flex-1 items-center gap-2" data-lens-bar>
       <div role="radiogroup" aria-label="Lens" className="flex min-w-0 flex-1 items-center rounded-lg bg-[var(--md-surface-container)] p-0.5 md:flex-none">
         {items.filter(item => !availableLenses || availableLenses.includes(item.id)).map((item) => {

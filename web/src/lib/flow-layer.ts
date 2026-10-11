@@ -5,7 +5,7 @@ import { type LoadedChart } from './chart-store';
 import { createWindSampler, type WindSampler, type WindDisplaySource } from './flow-wind';
 import {
   advectInto, ageFade, cameraBounds, FLOW_FADE_SECONDS, FLOW_LIFE_SECONDS, hash01,
-  MIN_STREAK_SPEED_MS, particleCount, smoothFade, stepParticle, streakInk,
+  MAX_FLOW_SCREEN_SPEED, FLOW_VISUAL_SCALE, MIN_STREAK_SPEED_MS, particleCount, smoothFade, stepParticle, streakInk,
   type GeoPoint, type Particle,
 } from './flow';
 import { project, unproject, type Camera, type Lambert } from './lambert';
@@ -169,7 +169,15 @@ export function createFlowLayer(canvas: HTMLCanvasElement): FlowLayer | null {
         const wind = sample(p.lon, p.lat);
         if (!wind) { p.age = FLOW_LIFE_SECONDS; return; }
         const beforeLon = p.lon, beforeLat = p.lat;
-        const retiredForTurn = stepParticle(p, wind.u, wind.v, dt, input.reduced);
+        // Limit only visual displacement, not lifetime or the sampled wind value.
+        // Use a short physical probe so close views do not lose the far end.
+        const origin = screen(p), probe = { lon: p.lon, lat: p.lat };
+        advectInto(probe, p.lon, p.lat, wind.u, wind.v, 1);
+        const nextScreen = screen(probe);
+        const pixelsPerSecond = origin && nextScreen
+          ? Math.hypot(nextScreen.x - origin.x, nextScreen.y - origin.y) * FLOW_VISUAL_SCALE : 0;
+        const advectionScale = pixelsPerSecond > MAX_FLOW_SCREEN_SPEED ? MAX_FLOW_SCREEN_SPEED / pixelsPerSecond : 1;
+        const retiredForTurn = stepParticle(p, wind.u, wind.v, dt, input.reduced, advectionScale);
         if (index === 0) { probeLon = p.lon; probeLat = p.lat; }
         if (retiredForTurn) return;
         if (p.retiring === null) {
@@ -212,7 +220,7 @@ export function createFlowLayer(canvas: HTMLCanvasElement): FlowLayer | null {
           // 3D, choose one world-space scale for the whole frame instead, so
           // the same physical streak naturally foreshortens with perspective.
           const segmentSeconds = metresPerPixel > 0
-            ? Math.max(0.25, length * metresPerPixel / 3 / Math.max(MIN_STREAK_SPEED_MS, Math.hypot(vector.u, vector.v)))
+            ? Math.min(60 * length / 3 / projectedSpeed, Math.max(0.25, length * metresPerPixel / 3 / Math.max(MIN_STREAK_SPEED_MS, Math.hypot(vector.u, vector.v))))
             : 60 * length / 3 / projectedSpeed;
           advectInto(tail, tail.lon, tail.lat, vector.u, vector.v, -segmentSeconds);
           const end = screen(tail);

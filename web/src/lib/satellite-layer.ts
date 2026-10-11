@@ -1,3 +1,4 @@
+import type {HistoricalSatellite} from './historical-marine';
 import { mapUnproject } from './lambert';
 /**
  * Translucent geostationary infrared under the isobars. Cold tops are the
@@ -21,6 +22,8 @@ import {
 
 export interface SatelliteDraw {
   enabled: boolean;
+  historicalMode?: boolean;
+  historicalPicture?: HistoricalSatellite|null;
   chart: LoadedChart;
   minute: number;
   nowMs: number;
@@ -45,7 +48,7 @@ export function legendLabel(gate: SatellitePicture): string | null {
   return gate.legend;
 }
 
-export function createSatelliteLayer(canvas: HTMLCanvasElement): SatelliteLayer {
+export function createSatelliteLayer(canvas: HTMLCanvasElement, pictures:HistoricalSatellite[]=[]): SatelliteLayer {
   let gl: WebGL2RenderingContext | null = null;
   let program: WebGLProgram | null = null;
   let buffer: WebGLBuffer | null = null;
@@ -61,6 +64,11 @@ export function createSatelliteLayer(canvas: HTMLCanvasElement): SatelliteLayer 
   let atlasKey = '';
   let modelKey = '';
   let showing = false;
+  let disposed=false;
+  const prepared=new Map<string,HTMLCanvasElement>();
+  const failed=new Set<string>();
+  for(const picture of pictures){const img=new Image();img.onload=()=>{void img.decode().then(()=>{if(!disposed){const surface=document.createElement('canvas');surface.width=img.naturalWidth;surface.height=img.naturalHeight;const ctx=surface.getContext('2d')!;ctx.drawImage(img,0,0);const pixels=ctx.getImageData(0,0,surface.width,surface.height);for(let i=0;i<pixels.data.length;i+=4){if(pixels.data[i]===0&&pixels.data[i+1]===0&&pixels.data[i+2]===0)pixels.data[i+3]=0;}ctx.putImageData(pixels,0,0);prepared.set(picture.url,surface);}}).catch(()=>{failed.add(picture.url);});};img.onerror=()=>{failed.add(picture.url);};img.src=picture.url;}
+  let historicalKey='';
   const verts = new Float32Array((COLS + 1) * (ROWS + 1) * 4);
   const index = buildIndex();
 
@@ -151,6 +159,7 @@ export function createSatelliteLayer(canvas: HTMLCanvasElement): SatelliteLayer 
 
   return {
     destroy() {
+      disposed=true;prepared.clear();
       if (!gl) return;
       if (program) gl.deleteProgram(program);
       if (buffer) gl.deleteBuffer(buffer);
@@ -189,6 +198,14 @@ export function createSatelliteLayer(canvas: HTMLCanvasElement): SatelliteLayer 
       rendering.clear(rendering.COLOR_BUFFER_BIT);
       rendering.useProgram(program);
 
+      if(input.historicalMode){
+        const picture=input.historicalPicture,image=picture?prepared.get(picture.url):null;
+        if(!picture||!image)return picture?(failed.has(picture.url)?'Satellite unavailable':'Satellite loading'):null;
+        if(historicalKey!==picture.url){uploadCanvas(rendering,satTex,image);historicalKey=picture.url;atlasKey='';}
+        drawMesh(rendering,program,buffer,input,picture.bounds,satTex,1,2);
+        return `MODIS · ${picture.date} · daily image`;
+      }
+      historicalKey='';
       if (gate.request && gate.timeIso && gate.satelliteAlpha > 0.02) {
         const tiles = tilesCovering(bounds, gate.timeIso);
         ensureTiles(tiles);
@@ -315,7 +332,7 @@ function blank(gl: WebGL2RenderingContext, texture: WebGLTexture | null) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 }
 
-function uploadCanvas(gl: WebGL2RenderingContext, texture: WebGLTexture, source: HTMLCanvasElement) {
+function uploadCanvas(gl: WebGL2RenderingContext, texture: WebGLTexture, source: HTMLCanvasElement|HTMLImageElement) {
   gl.bindTexture(gl.TEXTURE_2D, texture);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
@@ -348,7 +365,11 @@ void main() {
   vec4 t = texture(uTex, vUv);
   float a;
   vec3 rgb;
-  if (uModel == 1) {
+  if(uModel == 2){
+    // Exact source fill is masked before filtering, so swath edges have no black fringe.
+    float edge=min(min(vUv.x,1.0-vUv.x),min(vUv.y,1.0-vUv.y));
+    a=t.a*uAlpha*smoothstep(0.0,0.02,edge);rgb=t.rgb;
+  } else if (uModel == 1) {
     a = t.a * uAlpha;
     rgb = vec3(0.93, 0.95, 0.97);
   } else {

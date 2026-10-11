@@ -32,14 +32,15 @@ export function cycloneScalar(s:CycloneState|null,lon:number,lat:number,backgrou
  const value=field==='wind'?p.speed:s.pressureHpa+(background-s.pressureHpa)*p.pressureFraction;
  return background+(value-background)*p.weight;
 }
+/** Physical vector in m/s; the source best-track windKt is converted here. */
 export function cycloneWind(s:CycloneState|null,lon:number,lat:number,bg:{u:number;v:number}|null){
  if(!s||!bg)return bg;
  const p=cycloneShape(s,lon,lat);if(!p.weight)return bg;
  // Hemisphere-dependent circulation, with an assumed 15-degree surface inflow.
  const sign=s.lat<0?1:-1,r=Math.max(.0001,p.r),inflow=Math.sin(Math.PI/12),tangent=Math.cos(Math.PI/12);
  const u=(sign*p.y*tangent-p.x*inflow)/r,v=(-sign*p.x*tangent-p.y*inflow)/r;
- const speed=cycloneScalar(s,lon,lat,Math.hypot(bg.u,bg.v),'wind')!;
- const bx=bg.u*(1-p.weight)+u*p.speed*p.weight,by=bg.v*(1-p.weight)+v*p.speed*p.weight,n=Math.hypot(bx,by);
+ const speed=cycloneScalar(s,lon,lat,Math.hypot(bg.u,bg.v)/.514444,'wind')!*.514444;
+ const bx=bg.u*(1-p.weight)+u*p.speed*.514444*p.weight,by=bg.v*(1-p.weight)+v*p.speed*.514444*p.weight,n=Math.hypot(bx,by);
  return n>1e-9?{u:bx/n*speed,v:by/n*speed}:{u:0,v:0};
 }
 /** Same radial speed profile as CPU point/vector sampling, evaluated per pixel. */

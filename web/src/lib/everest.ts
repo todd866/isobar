@@ -23,7 +23,7 @@ export interface EverestVector extends AtmosphereVector { cloudPct: number; temp
 const clamp = (v:number,a:number,b:number) => Math.max(a,Math.min(b,v));
 const TAU = Math.PI * 2;
 
-export function everestAtmosphere(chart: LoadedChart, validMs: number, elevation: ElevationAt | null, windTimeMs=validMs) {
+export function everestAtmosphere(chart: LoadedChart, validMs: number, elevation: ElevationAt | null, windTimeMs=validMs, historicalBaseline=true) {
   const minute = (windTimeMs-Date.parse(chart.manifest.run))/60000-chart.manifest.forecastHours[0]*60;
   const horizon=(chart.manifest.forecastHours.at(-1)!-chart.manifest.forecastHours[0])*60;
   const sample = Number.isFinite(minute)&&minute>=0&&minute<=horizon ? createWindSampler(chart,minute) : null;
@@ -32,8 +32,8 @@ export function everestAtmosphere(chart: LoadedChart, validMs: number, elevation
     const terrain=ground(lat,lon), wind=sample?.(lon,lat);
     if(terrain==null||!wind||z<terrain+minimumClearanceM) return null;
     const agl=z-terrain, shear=1+Math.log1p(agl/100)*.22;
-    // Surface sampler is knots; vector renderer uses metres per second.
-    const u=wind.u*.514444*shear, v=wind.v*.514444*shear;
+    // The physical sampler normalizes archived knots and current m/s.
+    const u=wind.u*shear, v=wind.v*shear;
     const d=.003, east=ground(lat,lon+d),west=ground(lat,lon-d),north=ground(lat+d,lon),south=ground(lat-d,lon);
     const dx=east!=null&&west!=null?(east-west)/(2*d*111320*Math.cos(lat*Math.PI/180)):0;
     const dy=north!=null&&south!=null?(north-south)/(2*d*111132):0;
@@ -59,7 +59,7 @@ export function everestAtmosphere(chart: LoadedChart, validMs: number, elevation
     const w=clamp(((u2*dx+v2*dy)+0.04*flow*curvatureSignal)*Math.exp(-agl/1800),-3,3);
     // Published reading anchors the vertical baseline, not a falsely timed observation.
     const phase=TAU*((validMs/3600000+lon/15)%24)/24;
-    const temperature=-27.2+(8503.92-z)*.006+2*Math.cos(phase-Math.PI);
+    const temperature=(historicalBaseline?-27.2+(8503.92-z)*.006:15-z*.0065)+2*Math.cos(phase-Math.PI);
     const rh=clamp(55+20*Math.sin(phase)+w*8-(agl/1000)*3,15,98);
     return {u:u2,v:v2,w,temperature,rh,cloud:clamp((rh-75)*4,0,90),pressure:1013.25*Math.exp(-z/8000)};
   }
@@ -72,7 +72,7 @@ export function everestAtmosphere(chart: LoadedChart, validMs: number, elevation
       return {hPa:a.pressure,z:[z,z],t:[a.temperature,a.temperature],rh:[a.rh,a.rh],cc:[a.cloud,a.cloud],ws:[ws,ws],wd:[wd,wd],w:[a.w,a.w]};
     }).filter((v):v is NonNullable<typeof v>=>v!==null);
     if(!levels.length)return null;
-    return {latitude:lat,longitude:lon,elevationM:terrain,surface:[],provenance:{source:'Reconstruction',model:EVEREST_METHOD,run,cycle:false},series:{icao:'EVEREST',lat,lon,elevationFt:terrain/.3048,coastKm:null,source:'Reconstruction',model:EVEREST_METHOD,run,runKnown:false,time:[validMs-3600000,validMs+3600000],levels}};
+    return {latitude:lat,longitude:lon,elevationM:terrain,surface:[],provenance:{source:'Reconstruction',model:historicalBaseline?EVEREST_METHOD:'Terrain-following wind; synthetic upper air',run,cycle:false},series:{icao:historicalBaseline?'EVEREST':'POINT',lat,lon,elevationFt:terrain/.3048,coastKm:null,source:'Reconstruction',model:historicalBaseline?EVEREST_METHOD:'Terrain-following wind; synthetic upper air',run,runKnown:false,time:[validMs-3600000,validMs+3600000],levels}};
   }
   function vectors(lat:number,lon:number,halfHeight:number,aspect:number):EverestVector[] {
     if(halfHeight<=0||halfHeight>=1||aspect<=0)return [];

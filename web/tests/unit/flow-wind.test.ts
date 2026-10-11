@@ -30,6 +30,18 @@ function chart(options: { u?: boolean; v?: boolean; states?: number[]; values?: 
 afterEach(() => vi.restoreAllMocks());
 
 describe('wind source and sampler', () => {
+  it('normalizes historical knots and current metres per second to the same physical vector', () => {
+    const current = chart({ u: true, v: true, values: Array(12).fill(10) });
+    const archived = chart({ u: true, v: true, values: Array(12).fill(10) });
+    for (const key of ['u10','v10']) {
+      archived.manifest.variables[key].units = 'knots';
+      archived.manifest.variables[key].scale = 1 / .514444;
+    }
+    const a = createWindSampler(current, 0)!(111,-33)!;
+    const b = createWindSampler(archived, 0)!(111,-33)!;
+    expect(a.u).toBeCloseTo(b.u, 8); expect(a.v).toBeCloseTo(b.v, 8);
+  });
+
   it('uses divergent model u/v rather than pressure fallback', () => {
     const spy = vi.spyOn(flow, 'surfaceWindFromPressure');
     const sampler = createWindSampler(chart({ u: true, v: true, values: [8, 8, 8, 8, 20, 20, 20, 20, 40, 40, 40, 40] }), 90);
@@ -59,6 +71,26 @@ describe('wind source and sampler', () => {
     expect(flowWindLegend('model')).toBe('Wind streaks: model 10 m wind');
     expect(flowWindLegend('to-model')).toContain('isobar estimate → model');
     expect(flowWindLegend('to-estimate')).toContain('model wind → isobar estimate');
+  });
+
+  it('keeps cyclone circulation in m/s while model wind falls back to pressure', () => {
+    const c = chart({ u: true, v: true });
+    c.manifest.run = '1974-12-24T00:00:00Z';
+    c.cyclone = { method: 'compact-vortex-v1', rmwKm: 20, source: 'fixture', track: [
+      { time: c.manifest.run, lat: -33, lon: 111, windKt: 95, pressureHpa: 950 },
+      { time: '1974-12-25T00:00:00Z', lat: -33, lon: 111, windKt: 95, pressureHpa: 950 },
+    ] };
+    const samplePoint = [111, -33 + 20 / 111.132] as const;
+    const model = createWindSampler(c, 0)!;
+    const expected = model(...samplePoint)!;
+    expect(Math.hypot(expected.u, expected.v)).toBeCloseTo(95 * .514444, 6);
+    c.state.u10[0] = FRAME_PENDING;
+    const estimate = vi.spyOn(flow, 'surfaceWindFromPressure').mockReturnValue({ u: 10, v: 0 });
+    const pending = createWindSampler(c, 0)!;
+    expect(pending.source).toBe('estimate');
+    expect(pending(...samplePoint)).toEqual(expected);
+    estimate.mockReturnValue(null);
+    expect(pending(...samplePoint)).toBeNull();
   });
 
   it('keeps missing cells missing within an otherwise ready model blend', () => {

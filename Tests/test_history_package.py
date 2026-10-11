@@ -14,13 +14,15 @@ from test_history_catalog import weather
 class PackageTests(unittest.TestCase):
     image=b'verified terrain image'
     receipt={'sha256':hashlib.sha256(image).hexdigest(),'bytes':len(image)}
+    satellite={'url':'/history/satellite.png','bytes':len(image),'sha256':hashlib.sha256(image).hexdigest()}
     def package(self,root,destination):
-        return package(root,destination,imagery_receipt=self.receipt)
+        return package(root,destination,imagery_receipt=self.receipt,marine_receipt={'satellites':[self.satellite]})
 
     def setup_assets(self,base):
         root=base/'assets';src=base/'weather.json';src.write_text(json.dumps(weather()))
         publish(src,root,[{'url':'/history/private-scan.jpg','source':'https://example.com'}])
         (root/'world-coast.bin').write_bytes(b'coast')
+        (root/'satellite.png').write_bytes(self.image)
         (root/'themes').mkdir();(root/'themes/wwii-paper.png').write_bytes(b'paper')
         (root/'imagery').mkdir();(root/'imagery'/f"{self.receipt['sha256']}.png").write_bytes(self.image)
         (root/'orphan.json').write_text('unused')
@@ -37,6 +39,13 @@ class PackageTests(unittest.TestCase):
             c=json.loads((dest/'history/catalog.json').read_text())['collections'][0]
             m=json.loads((dest/c['manifest'].lstrip('/')).read_text());self.assertEqual(m['maps'],[])
             with self.assertRaises(ValueError):self.package(root,dest)
+    def test_tampered_satellite_is_rejected(self):
+        with tempfile.TemporaryDirectory() as t:
+            base=Path(t);root=self.setup_assets(base)
+            (root/'satellite.png').write_bytes(b'tampered')
+            with self.assertRaisesRegex(ValueError,'satellite'):
+                self.package(root,base/'bundle')
+
     def test_inconsistent_catalog_fails_before_output(self):
         with tempfile.TemporaryDirectory() as t:
             base=Path(t);root=self.setup_assets(base);p=root/'catalog.json';c=json.loads(p.read_text());c['collections'][0]['days']=[];p.write_text(json.dumps(c))

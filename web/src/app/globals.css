@@ -245,6 +245,10 @@ select {
   [data-map-page] [aria-label="Forecast days"] svg { display: none; }
   [data-map-page] [aria-label="Forecast days"] button { flex-direction: row; align-items: center; height: 28px; gap: 4px; padding: 0 2px; }
   [data-map-page] [aria-label="Forecast days"] button > span { flex-direction: row; align-items: baseline; gap: 4px; }
+  /* The day strip is secondary in a short working surface. At enlarged text it
+     consumes the map's only spare row and makes the essential camera controls
+     compete with the lens strip. Timeline and transport remain in flow. */
+  [data-map-page] .forecast-days { display: none; }
   .map-deck { grid-template-columns: 1fr !important; }
   .transport-side { display: none !important; }
   .transport-inline { display: flex !important; }
@@ -326,6 +330,8 @@ select {
 .map-zoom { display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--md-outline-soft); border-radius: 8px; background: var(--md-surface); }
 .map-tools button { display: grid; width: 36px; height: 36px; min-height: 36px; place-items: center; padding: 0; border: 1px solid var(--md-outline-soft); border-radius: 8px; background: var(--md-surface); color: var(--md-on-surface); box-shadow: none; }
 .map-tools button svg { width: 20px; height: 20px; }
+.map-tools .map-tools-toggle { height: auto; min-height: max(36px, 1.6em); display: inline-flex; width: auto !important; min-width: 0; padding: 0 10px !important; gap: 6px; font-size: inherit; font-weight: 650; }
+.map-tools-toggle svg { width: 18px; height: 18px; }
 .map-zoom button { border: 0; border-radius: 0; }
 .map-zoom:has(button[aria-pressed]) { flex-direction: row; }
 .map-zoom button[aria-pressed], .map-zoom button[aria-label="North up"] { width: auto; min-width: max(36px, 2em); height: auto; min-height: max(36px, 1.6em); }
@@ -402,15 +408,22 @@ select {
 .map-chip-float { position: absolute; z-index: 12; transform: translate(8px, 8px); padding: 2px 8px; border-radius: 4px; background: var(--md-on-surface); color: var(--md-surface); white-space: nowrap; pointer-events: none; }
 @media (max-width: 767px) {
   [data-map-shell="true"] { height: 100dvh; }
-  .map-header { gap: 8px; }
+  .map-header { gap: 8px; padding-inline: 12px; }
   .chart-fixture-note { right: 68px; }
   .map-menu-phone { display: block; }
   .map-menu-setting { display: flex; }
   .map-reading { flex: 0 0 auto; overflow: visible; }
   .map-reading .header-wind { display: block; flex-shrink: 0; }
-  .map-header[data-compact-wind="true"] .header-wind-words { position: absolute; visibility: hidden; width: max-content; }
-  [data-place-cluster] { max-width: 58%; }
-  .place-field { flex: 0 1 auto; overflow: hidden; }
+  /* Give the essential place control the flexible column. At enlarged text
+     sizes the old 58% cap let the flex row squeeze its left edge offscreen. */
+  .map-header [data-place-cluster] { flex: 1 1 0; max-width: none; min-width: 0; }
+  .map-header [data-place-cluster] > div { width: 100%; min-width: 0; }
+  .map-header .place-field { flex: 1 1 auto; width: 100%; overflow: hidden; }
+  .map-header .map-reading { flex: 0 0 auto; }
+  /* Icon-only actions keep their touch targets without stealing the place
+     name's width when text is enlarged. Text labels retain their own scale. */
+  .map-header [data-locate], .map-header [data-save-place] { width: 40px; height: 40px; padding: 0; }
+  .map-header [data-locate] svg, .map-header [data-save-place] svg { width: 20px; height: 20px; }
   .place-name, .place-field > input { overflow: hidden; text-overflow: ellipsis; }
   .place-field > input, .place-name, .place-field > [data-place-sizing] { font-size: 16px; }
   .map-header .map-menu-root { margin-left: auto; }
@@ -461,6 +474,23 @@ select {
   .place-field > [data-place-sizing] { font-size: 16px; }
 }
 .map-menu > button[aria-pressed="true"] { background: var(--md-primary-container); color: var(--md-on-primary-container); }
+
+/* Enlarged text keeps the primary map instrument in view while secondary
+ * controls open from one labelled disclosure. This is density, not smaller
+ * type: the controls retain their touch targets and the selected lens remains
+ * an ordinary, reversible select. */
+[data-map-density="compact"] .map-lens-picker { display: inline-flex; min-width: 0; flex: 0 1 12rem; }
+[data-map-density="compact"] .map-lens-picker select { width: 100%; min-height: 40px; min-width: 0; padding: 0 2.25rem 0 .75rem; border: 1px solid var(--md-outline-soft); border-radius: 8px; background: var(--md-surface-container); color: var(--md-on-surface); font: inherit; font-weight: 650; }
+[data-map-density="compact"] [data-lens-bar] { display: none; }
+[data-map-density="compact"] [data-map-tools] .map-tool-buttons { display: flex; }
+[data-map-density="compact"] [data-map-tools][data-tools-open="false"] [data-secondary-control]:not([data-active="true"]) { display: none; }
+[data-map-density="compact"] [data-map-tools] { gap: 6px; }
+[data-map-density="compact"] .map-primary-mode { display: flex; flex-direction: row; overflow: hidden; border: 1px solid var(--md-outline-soft); border-radius: 8px; background: var(--md-surface); }
+[data-map-density="compact"] .map-primary-mode button { border: 0; border-radius: 0; width: auto; min-width: max(36px, 2em); min-height: max(36px, 1.6em); }
+[data-map-density="compact"] .map-primary-mode button + button { border-left: 1px solid var(--md-outline-soft); }
+[data-map-density="compact"] .map-primary-mode button[aria-pressed="true"] { background: var(--md-primary-container); color: var(--md-on-primary-container); font-weight: 700; }
+[data-map-density="compact"][data-map-tools-open="false"] [data-atmosphere-instrument][data-atmosphere-section-open="false"] { display: none; }
+
 
 /* A press names what it did, beside the control, then fades. */
 .map-press-label {
@@ -600,3 +630,51 @@ html:has(.map-shell), body:has(.map-shell) { overscroll-behavior: none; }
 /* Empty space around a camera control is still draggable map. */
 .map-tools { pointer-events: none; }
 .map-tools .map-sources { pointer-events: auto; }
+
+/* Large text removes secondary rows and excess control padding, not type. */
+[data-map-density="compact"] .map-header { height:auto; min-height:44px; gap:8px; padding-inline:12px; }
+[data-map-density="compact"] .place-field > input { height:44px; padding-right:4px; }
+[data-map-density="compact"] .place-field > [data-place-sizing] { line-height:44px; }
+[data-map-density="compact"] .map-header [data-locate],
+[data-map-density="compact"] .map-header [data-save-place] { width:40px; height:40px; }
+[data-map-density="compact"] .map-header [data-locate] svg,
+[data-map-density="compact"] .map-header [data-save-place] svg { width:20px; height:20px; }
+[data-map-density="compact"] .map-header-learn { display:none; }
+[data-map-density="compact"] .map-menu-phone { display:block; }
+[data-map-density="compact"] .map-transport button,
+[data-map-density="compact"] .map-transport select { height:auto; min-height:max(36px,1.6em); }
+[data-map-density="compact"] .map-transport button[aria-label="Play"],
+[data-map-density="compact"] .map-transport button[aria-label="Pause"] { width:40px; }
+[data-map-density="compact"] .map-transport button[aria-label="Play"] svg,
+[data-map-density="compact"] .map-transport button[aria-label="Pause"] svg { width:24px; height:24px; }
+[data-map-density="compact"]:has([data-atmosphere-section]) [data-map-tools] { display:none; }
+[data-map-density="compact"] [data-atmosphere-instrument]:has([data-atmosphere-section]) { width:calc(100% - 20px); max-width:360px; }
+@media (max-height:500px) {
+  [data-map-density="compact"] .time-block { flex-wrap:nowrap; }
+  [data-map-density="compact"] .forecast-days { display:flex; }
+}
+
+[data-map-density="compact"] .map-lens-wrap [data-chat-button] { width:44px; height:44px; min-width:44px; padding:0; }
+[data-map-density="compact"] .map-lens-wrap [data-chat-button] svg { width:24px; height:24px; }
+[data-map-density="compact"] .map-lens-wrap [data-chat-button] > span { display:none; }
+[data-map-density="compact"] [data-atmosphere-section] svg { max-height:260px; }
+
+[data-map-density="compact"] .map-lens-extras button { height:44px; min-height:44px; }
+[data-map-density="compact"] .map-lens-extras button svg { width:24px; height:24px; }
+
+/* A selected slice remains adjustable while its atmospheric section is open. */
+[data-map-density="compact"]:has([data-atmosphere-section]) [data-map-tools]:has([data-active="true"]) { display:flex; top:auto; bottom:36px; }
+[data-map-density="compact"]:has([data-atmosphere-section]) [data-map-tools] > .map-tools-toggle,
+[data-map-density="compact"]:has([data-atmosphere-section]) .map-tool-buttons > :not([data-active="true"]) { display:none; }
+[data-map-density="compact"]:has([data-map-tools] [data-active="true"]) [data-atmosphere-instrument]:has([data-atmosphere-section]) { top:10px; bottom:auto; max-height:calc(100% - 140px); }
+[data-map-density="compact"] [data-cloud-status] { margin-left:auto; padding-right:10px; font-size:.65rem; color:var(--md-on-surface-variant); }
+
+/* Size the rate to its selected value, not the longest item in the menu. */
+[data-map-density="compact"] .map-transport { gap:4px; }
+[data-map-density="compact"] .map-transport select { box-sizing:border-box; width:calc(var(--speed-label-ch) * 1ch + 24px); min-width:0; padding-left:6px; padding-right:18px; }
+[data-map-density="compact"] .map-transport label > svg { width:16px; height:16px; right:2px; }
+[data-map-density="compact"] [data-time-reset] { padding-inline:6px; }
+[data-map-density="compact"] [data-time-reset] > svg { display:none; }
+
+[data-map-density="compact"]:has([data-atmosphere-section]) [data-point-panel] { display:none; }
+[data-map-density="compact"]:has([data-atmosphere-section]) .map-slice-control { position:static; }

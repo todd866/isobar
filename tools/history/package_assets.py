@@ -33,7 +33,7 @@ def weather_asset(root,url,event_id,expected_days):
     return weather
 
 
-def package(root,destination,imagery_receipt=None):
+def package(root,destination,imagery_receipt=None,marine_receipt=None):
     if destination.exists():raise ValueError('destination already exists; bundles are immutable')
     # This receipt is also imported by the terrain renderer, including present-day
     # Everest. Treat its image as a required runtime asset, not a catalog extra.
@@ -45,6 +45,12 @@ def package(root,destination,imagery_receipt=None):
         raise ValueError('terrain imagery does not match the renderer receipt')
     catalog=json.loads((root/'catalog.json').read_text())
     payloads={image_name:image}
+    marine=marine_receipt if marine_receipt is not None else json.loads((Path(__file__).parent/'katrina-marine-sources.json').read_text())
+    for satellite in marine['satellites']:
+        asset=local_asset(root,satellite['url']).read_bytes()
+        if len(asset)!=satellite['bytes'] or hashlib.sha256(asset).hexdigest()!=satellite['sha256']:
+            raise ValueError('historical satellite does not match its source receipt')
+        payloads[satellite['url'].removeprefix('/history/')]=asset
     collections=[]
     weather_sources={}
     for item in catalog['collections']:
@@ -99,6 +105,8 @@ def package(root,destination,imagery_receipt=None):
         'total_bytes':sum(f['bytes'] for f in files),'files':files,
         'omitted':'Local Omaha facsimile omitted; original source remains linked in the UI.',
         'attribution':{'weather':weather_sources,
+                       'historical_satellite':[{k:s[k] for k in ('date','source_url','license','time_basis','bounds','sha256') if k in s} for s in marine['satellites']],
+                       'marine':{'stations':[{k:s[k] for k in ('id','source_url','data_url','position_source_url','sha256') if k in s} for s in marine.get('stations',[])], 'surge':marine.get('surge',[])},
                        'terrain_imagery':{key:imagery_receipt[key] for key in ('source','license','attribution','historical_relevance') if key in imagery_receipt},
                        'geography':'Natural Earth (public domain)','paper':'AI-generated chart-style paper'}}
     destination.parent.mkdir(parents=True,exist_ok=True)

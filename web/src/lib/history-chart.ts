@@ -20,8 +20,8 @@ const MAX_CELLS = 4_000_000;
 
 const scales: Record<string, VariableSpec> = {
   mslp: { file: null, frames: null, encoding: 'raw', units: 'hPa', scale: 0.1, offset: 0, fill: 65535 },
-  u10: { file: null, frames: null, encoding: 'raw', units: 'knots', scale: 0.1, offset: -3276.8, fill: 65535 },
-  v10: { file: null, frames: null, encoding: 'raw', units: 'knots', scale: 0.1, offset: -3276.8, fill: 65535 },
+  u10: { file: null, frames: null, encoding: 'raw', units: 'm/s', scale: 0.01, offset: -327.68, fill: 65535 },
+  v10: { file: null, frames: null, encoding: 'raw', units: 'm/s', scale: 0.01, offset: -327.68, fill: 65535 },
   wind: { file: null, frames: null, encoding: 'raw', units: 'knots', scale: 0.1, offset: 0, fill: 65535 },
   t2m: { file: null, frames: null, encoding: 'raw', units: '°C', scale: 0.1, offset: -300, fill: 65535 },
 };
@@ -70,8 +70,8 @@ export function historicalToChart(weather: HistoricalWeather, coast: Coast, even
     if (frame.time !== weather.times[index]) throw new Error('Historical frame time does not match times');
     const offset = index * cells;
     packed.mslp.set(encode(frame.pressure_msl, scales.mslp), offset);
-    packed.u10.set(encode(frame.u, scales.u10), offset);
-    packed.v10.set(encode(frame.v, scales.v10), offset);
+    packed.u10.set(encode(frame.u.map(value => value * .514444), scales.u10), offset);
+    packed.v10.set(encode(frame.v.map(value => value * .514444), scales.v10), offset);
     packed.wind.set(encode(frame.u.map((u, cell) => Math.hypot(finite(u, 'wind'), finite(frame.v[cell]!, 'wind'))), scales.wind), offset);
     if (hasTemperature) packed.t2m!.set(encode(frame.temperature!, scales.t2m), offset);
   });

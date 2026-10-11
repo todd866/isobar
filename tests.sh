@@ -10,8 +10,8 @@ fi
 
 SHORT=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
 BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist)
-if [[ "$SHORT" != "1.11.3" || "$BUILD" != "39" ]]; then
-    echo "tests.sh: Info.plist version is ${SHORT} (${BUILD}); expected 1.11.3 (39)." >&2
+if [[ "$SHORT" != "1.11.4" || "$BUILD" != "40" ]]; then
+    echo "tests.sh: Info.plist version is ${SHORT} (${BUILD}); expected 1.11.4 (40)." >&2
     exit 1
 fi
 

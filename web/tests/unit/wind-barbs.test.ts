@@ -90,3 +90,25 @@ describe('world wind barbs', () => {
     }
   });
 });
+
+
+describe('knots at the display boundary', () => {
+  it.each(['m/s', 'knots', 'kt'])('draws two ten-knot feathers for 10 m/s input encoded in %s', (units) => {
+    const factor = units === 'm/s' ? 1 : 1 / .514444;
+    const chart = {
+      manifest: { west: -180, east: 179.5, north: 90, south: -90, step: .5,
+        nx: 720, ny: 361, wrapsLongitude: true, forecastHours: [0],
+        variables: { u10: { units, scale: factor, offset: 0, fill: 65535 }, v10: { units, scale: factor, offset: 0, fill: 65535 } } },
+      packed: { u10: new Uint16Array(720 * 361).fill(10), v10: new Uint16Array(720 * 361) },
+      state: { u10: new Uint8Array([1]), v10: new Uint8Array([1]) },
+    } as unknown as LoadedChart;
+    const segments: number[][] = [];
+    const ctx = new Proxy({ lineTo: (x: number, y: number) => segments.push([x,y]) }, {
+      get: (object, key) => object[key as keyof typeof object] ?? (() => {}),
+    }) as unknown as CanvasRenderingContext2D;
+    // This viewport has exactly one barb: shaft plus two full 10 kt feathers.
+    drawWindBarbs(ctx, chart, globalEquirectangular(),
+      { centerX: 0, centerY: 0, halfWidth: 10, halfHeight: 10 }, 100, 100, 1, 0, false);
+    expect(segments).toEqual([[23,0], [26,-8], [22,-8]]);
+  });
+});

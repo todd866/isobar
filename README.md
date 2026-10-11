@@ -32,6 +32,10 @@ for the activity you are planning:
   and visibility horizontally. Open the atmosphere view to explore why the
   weather is happening.
 
+Surface wind uses the same curved-trail density, lifetime and motion rules on
+web and Mac. Wind calculations use metres per second internally; the primary
+readouts and wind barbs use knots.
+
 ## Web and Mac
 
 The **[web app](https://isobar.md)** runs in a browser with no account or
@@ -43,7 +47,8 @@ local wind and sea forecasts, while Fly adds an atmospheric cross-section.
 **Historical** opens D-Day, Everest 1953, Cyclone Tracy, Gallipoli, Shackleton,
 the 1998 Sydney–Hobart race and Katrina in the shared map.
 D-Day adds dated forces and estimated ship movements; Everest includes the ascent
-and detailed terrain. Tracy combines coarse reanalysis with a compact cyclone
+and detailed terrain. Katrina adds dated satellite imagery and marine observations.
+Tracy combines coarse reanalysis with a compact cyclone
 reconstructed from best-track positions and intensity. Assumptions and sources
 are available in Data sources. **Present day** returns to current weather. The
 web history views use the same map, timeline and lens vocabulary as the present

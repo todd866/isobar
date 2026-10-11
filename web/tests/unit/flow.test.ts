@@ -20,6 +20,16 @@ function particle(lon: number, lat: number): Particle {
 }
 
 describe('flow advection', () => {
+  it('crosses both poles instead of sticking at 85 degrees', () => {
+    const north = advect(20, 89.99, 0, 20, 120);
+    expect(north.lat).toBeLessThan(90);
+    expect(north.lat).toBeGreaterThan(89.9);
+    expect(north.lon).toBe(200);
+    const south = advect(20, -89.99, 0, -20, 120);
+    expect(south.lat).toBeCloseTo(-north.lat, 8);
+    expect(south.lon).toBe(200);
+  });
+
   it('moves a westerly streak east', () => {
     const next = advect(115, -32, 10, 0, 3600);
     expect(next.lon).toBeGreaterThan(115.3);

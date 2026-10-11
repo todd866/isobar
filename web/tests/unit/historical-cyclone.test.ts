@@ -17,7 +17,7 @@ describe('compact cyclone reconstruction',()=>{
  it('turns clockwise in the southern hemisphere with inward surface flow',()=>{
   const north=cycloneWind(s,s.lon,s.lat+11/111.132,{u:3,v:4})!;
   expect(north.u).toBeGreaterThan(0);expect(north.v).toBeLessThan(0);
-  expect(Math.hypot(north.u,north.v)).toBeCloseTo(cycloneScalar(s,s.lon,s.lat+11/111.132,5,'wind')!,8);
+  expect(Math.hypot(north.u,north.v)).toBeCloseTo(cycloneScalar(s,s.lon,s.lat+11/111.132,5/.514444,'wind')!*.514444,8);
  });
  it('moves and decays continuously; does not hold outside dated coverage',()=>{
   const half=cycloneAt(data,Date.parse(data.track[0].time)+6*3600000)!;
@@ -60,6 +60,21 @@ describe('broad northern hurricane profile',()=>{
   const outside=clipCycloneLines([line],state,false);expect(outside).toHaveLength(2);
   for(const l of outside)for(let i=0;i<l.lon.length;i++)expect(cycloneShape(state,l.lon[i],l.lat[i]).r).toBeGreaterThan(599.99);
   expect(cycloneContours({lines:[],centres:[]},state,()=>1002).lines.some(l=>l.closed&&l.level===940)).toBe(true);
+ });
+ it('uses a fine sampled overlap before handing contours back to the coarse field',()=>{
+  const baseLine={level:1000,closed:false,lon:Float32Array.from([state.lon-9,state.lon+9]),lat:Float32Array.from([state.lat,state.lat])};
+  const result=cycloneContours({lines:[baseLine],centres:[]},state,()=>1002);
+  const joinRadius=state.profile!.blendEndKm*1.15;
+  const outside=result.lines.filter(line=>line.level===1000 && !line.closed);
+  expect(outside.length).toBeGreaterThanOrEqual(2);
+  for(const line of outside){
+   for(let i=0;i<line.lon.length;i++){
+    expect(cycloneShape(state,line.lon[i],line.lat[i]).r).toBeGreaterThan(joinRadius-1);
+   }
+  }
+  // The outer handoff is deliberately beyond the physical vortex blend edge;
+  // this prevents a coarse environmental corner from being visible at r=600 km.
+  expect(joinRadius).toBeGreaterThan(state.profile!.blendEndKm);
  });
  it('rejects nonphysical and unbounded profile inputs',()=>{
   for(const profile of [null,false,0,{exponent:NaN,blendStartKm:90,blendEndKm:320},{exponent:1.25,blendStartKm:30,blendEndKm:320},{exponent:1.25,blendStartKm:90,blendEndKm:90},{exponent:1.25,blendStartKm:90,blendEndKm:1001}])expect(()=>validateCyclone({...large,profile})).toThrow();

@@ -1,5 +1,6 @@
 /**
- * Display units. Stored weather stays in hPa, °C, knots, metres and millimetres.
+ * Display units. Wind physics uses m/s; legacy display DTOs explicitly carry knots.
+ * Pressure, temperature, distance and rain inputs use hPa, °C, metres and millimetres.
  * Everything a person reads is converted here. Missing stays missing.
  */
 

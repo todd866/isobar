@@ -72,6 +72,14 @@ describe('conversions', () => {
 });
 
 describe('regions', () => {
+  it('keeps knots as the wind display in every regional mode', () => {
+    for (const mode of ['aus', 'us', 'local'] as const) {
+      for (const [lat, lon] of [[-31.95, 115.86], [27.99, 86.93], [40, -74]]) {
+        expect(resolveUnits(mode, lat, lon).wind).toBe('kt');
+        expect(unitsSystemLine(resolveUnits(mode, lat, lon))).toContain('wind knots');
+      }
+    }
+  });
   it('follows the country at a point and falls back to ICAO defaults', () => {
     expect(regionAt(39.74, -104.99).id).toBe('us');
     expect(regionAt(39.74, -104.99).pressure).toBe('inHg');

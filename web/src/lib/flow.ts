@@ -12,6 +12,8 @@ export const METRES_PER_DEG_LON_EQUATOR = 111_320;
 /** One hour of real wind per wall-clock second, so circulation is visible. */
 export const FLOW_VISUAL_SCALE = 3600;
 export const FLOW_LIFE_SECONDS = 12;
+/** Keep close mountain views legible instead of firing tracers across the screen. */
+export const MAX_FLOW_SCREEN_SPEED = 60;
 export const FLOW_FADE_SECONDS = 1.5;
 /** Calm air is deliberately left unmarked: a zero-length streak still reads as noise. */
 export const MIN_STREAK_SPEED_MS = 2.5;
@@ -58,9 +60,10 @@ export function advect(lon: number, lat: number, u: number, v: number, seconds: 
 export function advectInto(out: GeoPoint, lon: number, lat: number, u: number, v: number, seconds: number): void {
   const metresLon = Math.max(METRES_PER_DEG_LON_EQUATOR * Math.cos((lat * Math.PI) / 180), 1);
   let nextLat = lat + (v * seconds) / METRES_PER_DEG_LAT;
-  const nextLon = lon + (u * seconds) / metresLon;
-  if (nextLat > 85) nextLat = 85;
-  if (nextLat < -85) nextLat = -85;
+  let nextLon = lon + (u * seconds) / metresLon;
+  // Continue over the pole instead of accumulating tracers on an artificial 85° rim.
+  if (nextLat > 90) { nextLat = 180 - nextLat; nextLon += 180; }
+  if (nextLat < -90) { nextLat = -180 - nextLat; nextLon += 180; }
   out.lon = nextLon;
   out.lat = nextLat;
 }
@@ -92,7 +95,7 @@ function headingDelta(a: number, b: number): number {
 }
 
 /** Advance a particle, retiring it when its path has turned too far. */
-export function stepParticle(particle: Particle, u: number, v: number, dt: number, reduced: boolean): boolean {
+export function stepParticle(particle: Particle, u: number, v: number, dt: number, reduced: boolean, advectionScale = 1): boolean {
   if (reduced) {
     particle.age = 0;
     particle.headingRadians = undefined;
@@ -116,7 +119,7 @@ export function stepParticle(particle: Particle, u: number, v: number, dt: numbe
     }
   }
   const beforeAge = particle.age;
-  advectInto(particle, particle.lon, particle.lat, u, v, dt * FLOW_VISUAL_SCALE);
+  advectInto(particle, particle.lon, particle.lat, u, v, dt * FLOW_VISUAL_SCALE * advectionScale);
   particle.age = beforeAge + dt;
   if (particle.age >= FLOW_LIFE_SECONDS) {
     particle.lon = particle.seedLon;

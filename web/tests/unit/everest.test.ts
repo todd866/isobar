@@ -6,6 +6,13 @@ const weather:HistoricalWeather={schema_version:1,product:'isobar-historical-wea
 const chart=historicalToChart(weather,{rings:[]},'everest-1953');
 const time=Date.parse(weather.times[0]);
 describe('Everest reconstructed atmosphere',()=>{
+ it('uses present-day provenance and a distinct temperature baseline outside the expedition',()=>{
+   const current=everestAtmosphere(chart,time,()=>5000,time,false).profile(28,87)!;
+   const history=everestAtmosphere(chart,time,()=>5000).profile(28,87)!;
+   expect(current.provenance.model).toBe('Terrain-following wind; synthetic upper air');
+   expect(current.series.levels[0].t).not.toEqual(history.series.levels[0].t);
+ });
+
  it('uses historical wind and changes with selected hour',()=>{
    const a=everestAtmosphere(chart,time,()=>5000).at(28,87,6000)!;
    const b=everestAtmosphere(chart,time+3600000,()=>5000).at(28,87,6000)!;

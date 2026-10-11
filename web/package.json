@@ -12,7 +12,8 @@
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "billing:setup": "tsx scripts/setup-stripe.ts",
-    "test:release": "npm test && npm run build && playwright test --workers=1"
+    "test:release": "npm test && npm run test:parity && npm run build && playwright test --workers=1",
+    "test:parity": "../tools/check-wind-parity.sh"
   },
   "dependencies": {
     "@auth/prisma-adapter": "2.11.3",

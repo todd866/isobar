@@ -6,6 +6,7 @@ import { type ScalarGrid } from './flow';
 
 export type WindSource = 'model' | 'estimate';
 export type WindDisplaySource = WindSource | 'to-model' | 'to-estimate' | 'unavailable';
+/** Canonical east/north wind components in metres per second. */
 export type WindSampler = ((lon: number, lat: number) => { u: number; v: number } | null) & { source: WindSource };
 
 export function flowWindLegend(source: WindDisplaySource): string {
@@ -55,6 +56,7 @@ export function createWindSampler(
   // At an exact forecast instant only that frame contributes. A pending
   // following frame must not blank the valid current vector.
   if (blend.t === 0) blend.i1 = blend.i0;
+  const cyclone = cycloneAt(chart.cyclone, Date.parse(manifest.run) + (manifest.forecastHours[0] * 60 + minute) * 60000);
   const uGrid = gridOf(chart, 'u10');
   const vGrid = gridOf(chart, 'v10');
   if (uGrid && vGrid
@@ -64,10 +66,14 @@ export function createWindSampler(
     const u1 = chartFrame(chart, 'u10', blend.i1);
     const v0 = chartFrame(chart, 'v10', blend.i0);
     const v1 = chartFrame(chart, 'v10', blend.i1);
+    const uFactor = /^(kt|knots)$/i.test(manifest.variables.u10.units) ? .514444 : 1;
+    const vFactor = /^(kt|knots)$/i.test(manifest.variables.v10.units) ? .514444 : 1;
     return Object.assign((lon: number, lat: number) => {
-      const u = flow.sampleBlended(u0, u1, blend.t, lon, lat, uGrid);
-      const v = flow.sampleBlended(v0, v1, blend.t, lon, lat, vGrid);
-      return cycloneWind(cycloneAt(chart.cyclone,Date.parse(manifest.run)+(manifest.forecastHours[0]*60+minute)*60000),lon,lat,u == null || v == null ? null : { u, v });
+      const rawU = flow.sampleBlended(u0, u1, blend.t, lon, lat, uGrid);
+      const u = rawU == null ? null : rawU * uFactor;
+      const rawV = flow.sampleBlended(v0, v1, blend.t, lon, lat, vGrid);
+      const v = rawV == null ? null : rawV * vFactor;
+      return cycloneWind(cyclone,lon,lat,u == null || v == null ? null : { u, v });
     }, { source: 'model' as const });
   }
 
@@ -76,6 +82,7 @@ export function createWindSampler(
   const p0 = chartFrame(chart, 'mslp', blend.i0);
   const p1 = chartFrame(chart, 'mslp', blend.i1);
   const pressure = (lon: number, lat: number) => flow.sampleBlended(p0, p1, blend.t, lon, lat, pressureGrid);
-  return Object.assign((lon: number, lat: number) => flow.surfaceWindFromPressure(pressure, lon, lat, Math.max(pressureGrid.dlat, 0.5)),
+  return Object.assign((lon: number, lat: number) => cycloneWind(cyclone, lon, lat,
+    flow.surfaceWindFromPressure(pressure, lon, lat, Math.max(pressureGrid.dlat, 0.5))),
     { source: 'estimate' as const });
 }

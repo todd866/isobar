@@ -2601,7 +2601,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
         [[defaults stringForKey:@"chartSource"] isEqual:@"ecmwf"];
     // Every launch opens on the pressure chart. Saved field keys from older builds are ignored.
     _tempLayer = 0;
-    _barbs = fixture ? NO : ([defaults objectForKey:@"chartBarbs"] ? [defaults boolForKey:@"chartBarbs"] : YES);
+    _barbs = fixture ? NO : ([defaults objectForKey:@"chartBarbs"] ? [defaults boolForKey:@"chartBarbs"] : NO);
     _newMap = GPUMapEnabledInDefaults(defaults);
     _glanceBarbs = [defaults objectForKey:@"glanceBarbs"] ? [defaults boolForKey:@"glanceBarbs"] : NO;
     _kiteSpots = fixture ? NO : [defaults boolForKey:@"kiteSpots"];

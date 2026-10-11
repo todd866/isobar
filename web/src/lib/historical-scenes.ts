@@ -6,7 +6,7 @@ export interface HistoryFeature {
  id:string;kind:string;title:string;label?:string;layer?:HistoryLayer;geometry:{type:string;coordinates:unknown};
  date_validity:{date_start:string;date_end:string;time_basis:string};
  source_refs:string[];status:string;precision_m:number;detail_zoom:number;
- geometry_method:string;note?:string;
+ geometry_method:string;note?:string;max_zoom?:number;
  track?:{time:string;coordinates:number[]}[];
 }
 export interface HistorySource {id:string;title:string;url:string}
@@ -33,7 +33,7 @@ export function historyLayer(f:HistoryFeature):HistoryLayer{
 export function featureVisible(f:HistoryFeature,time:number,zoom:number){
  if(!Number.isFinite(time))return false;
  const date=new Date(time).toISOString().slice(0,10);
- return date>=f.date_validity.date_start&&date<=f.date_validity.date_end&&zoom>=(f.detail_zoom??(historyLayer(f)==='political'?2:7));
+ return date>=f.date_validity.date_start&&date<=f.date_validity.date_end&&zoom<=(f.max_zoom??Infinity)&&zoom>=(f.detail_zoom??(historyLayer(f)==='political'?2:7));
 }
 /** Continuous synthetic vessel positions; no extrapolation outside the dated track. */
 export function featurePosition(f:HistoryFeature,time:number):number[]|null{

@@ -1,7 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { australiaLambert, cameraProject, project, type Camera } from '../../src/lib/lambert';
 import { chartRoutes, tapPoint } from './map-fixture';
 
@@ -61,7 +60,7 @@ async function assertPhoneContract(page: Page) {
   expect(geometry.headerHeight).toBeLessThanOrEqual(49);
   expect(geometry.ordered).toBe(true);
   expect(geometry.bottom).toBeLessThanOrEqual(1);
-  expect(geometry.readingClipped).toBe(false);
+  expect(geometry.readingClipped, JSON.stringify(geometry)).toBe(false);
   const clockFits = await page.locator('.timeline').evaluate((timeline) => {
     const bounds = timeline.getBoundingClientRect();
     return [...timeline.querySelectorAll('.map-clock > span')].every((node) => {
@@ -73,7 +72,9 @@ async function assertPhoneContract(page: Page) {
 
   // The reading has a complete place and wind unit. A fixture reading may use
   // a different compass point, but it must never end halfway through a word.
-  await expect(page.locator('[data-reading]')).toContainText(/\d+.*(?:kt|km\/h|mph)/);
+  await expect(page.locator('[data-reading]')).toContainText(/\d+.*kt/);
+  await expect(page.locator('[data-wind-words]')).toBeVisible();
+  await expect(page.locator('[data-wind-words]')).toHaveText('13 kt');
   await expect(page.locator('input[data-place]')).toHaveValue('Perth');
 
   const expectedLenses = ['Pressure', 'Rain', 'Wind', 'Temp', 'Kite', 'Surf', 'Fly'];
@@ -162,11 +163,8 @@ async function assertPhoneContract(page: Page) {
     const y = map.y + (1 - clip.y) * map.height / 2;
     return x > map.x + 8 && x < map.x + map.width - 48 && y > map.y + 8 && y < sheet.y - 8;
   }).toBe(true);
-  const helper = process.env.ISOBAR_VIEWPORT_HELPER ?? '';
-  if (fs.existsSync(helper)) {
-    const { assertViewport } = await import(pathToFileURL(helper).href);
-    await assertViewport(page, { primary: [{ selector: '[data-chat-panel]', minWidth: 280, minHeight: 120 }], controls: [{ selector: '[aria-label="Close chat"]', minWidth: 36, minHeight: 36 }, { selector: '[aria-label="Message"]', minWidth: 100, minHeight: 32 }] });
-  }
+  const { assertViewport } = await import('../../../tools/viewport-fit.mjs');
+  await assertViewport(page, { primary: [{ selector: '[data-chat-panel]', minWidth: 280, minHeight: 120 }], controls: [{ selector: '[aria-label="Close chat"]', minWidth: 36, minHeight: 36 }, { selector: '[aria-label="Message"]', minWidth: 100, minHeight: 32 }] });
   const emptyHeight = panelBox!.height;
   await chatPanel.getByRole('textbox', { name: 'Message' }).fill('How is the wind around Perth?');
   await chatPanel.getByRole('button', { name: 'Send' }).click();

@@ -1,4 +1,6 @@
 'use client';
+import {sampleMonotoneBicubic} from '@/lib/cyclone-environment';
+import {marineForEvent,drawHistoricalMarine,satelliteForDate,type MarineMode} from '@/lib/historical-marine';
 import {cyclonePoint} from '@/lib/cyclone-point';
 import {cycloneAt} from '@/lib/historical-cyclone';
 import {cycloneContours} from '@/lib/cyclone-contours';
@@ -276,6 +278,8 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const trafficCanvasRef = useRef<HTMLCanvasElement>(null);
   const windRef = useRef(false);
   const satelliteRef = useRef(false);
+  const [marineMode,setMarineMode]=useState<MarineMode>('off');
+  const marineModeRef=useRef<MarineMode>('off');
   const trafficRef = useRef(false);
   const teachingRef = useRef(false);
   const heldPlayingRef = useRef(true);
@@ -305,6 +309,11 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const [cloudLegend, setCloudLegend] = useState<string | null>(null);
   const [teaching, setTeaching] = useState(false);
   const [stageSize, setStageSize] = useState({ width: 1, height: 1 });
+  const [decluttered, setDecluttered] = useState(false);
+  const [mapToolsOpen, setMapToolsOpen] = useState(false);
+  const [compactForecastOpen, setCompactForecastOpen] = useState(false);
+  const mapToolsToggleRef = useRef<HTMLButtonElement>(null);
+  const mapToolsRef = useRef<HTMLDivElement>(null);
   const [historyLayers, setHistoryLayers] = useState<Record<HistoryLayer,boolean>>({political:true,military:true,ships:true,routes:true});
   const historyLayersRef=useRef(historyLayers);historyLayersRef.current=historyLayers;
   const [showSources, setShowSources] = useState(false);
@@ -362,6 +371,47 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     graticuleRef.current = on;
     setGraticule(on);
   }, []);
+  useLayoutEffect(() => {
+    const update = () => {
+      const rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const smallSurface = window.innerWidth < 700 || window.innerHeight < 620;
+      const inheritedPx = probe ? Math.max(parseFloat(getComputedStyle(probe).fontSize) || 0, probe.getBoundingClientRect().height) : 0;
+      setDecluttered(Math.max(rootPx, inheritedPx) >= 24 && smallSurface);
+    };
+    const probe = document.createElement('span');
+    probe.textContent = 'Aa';
+    probe.dataset.mapTextProbe = 'true';
+    probe.style.cssText = 'position:fixed;left:0;top:0;pointer-events:none;visibility:hidden;white-space:nowrap;font:inherit;font-size:1em;line-height:1;';
+    document.body.appendChild(probe);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(probe);
+    const mutations = new MutationObserver(update);
+    mutations.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'class'] });
+    window.addEventListener('resize', update);
+    return () => { observer.disconnect(); mutations.disconnect(); probe.remove(); window.removeEventListener('resize', update); };
+  }, []);
+  useEffect(() => {
+    if (!mapToolsOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if ((event.target as HTMLElement | null)?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [data-atmosphere-instrument]')) return;
+      event.preventDefault();
+      setMapToolsOpen(false);
+      setShowSources(false);
+      mapToolsToggleRef.current?.focus({ preventScroll: true });
+    };
+    window.addEventListener('keydown', onKey);
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && (mapToolsRef.current?.contains(target) || (target as HTMLElement).closest?.('[data-atmosphere-instrument]'))) return;
+      setMapToolsOpen(false);
+      setShowSources(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => { window.removeEventListener('keydown', onKey); document.removeEventListener('pointerdown', onPointerDown, true); };
+  }, [mapToolsOpen]);
+  useEffect(() => { if (!decluttered) { setMapToolsOpen(false); setShowSources(false); } }, [decluttered]);
   useEffect(() => { redrawRef.current?.(); }, [graticule]);
   useEffect(() => {
     let dead = false;
@@ -427,7 +477,14 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const renderCamera = (camera: Camera) => ({...withTilt(GEO, camera, tiltRef.current, elevationAtRef.current, true), slice: threeDRef.current && displayedSliceRef.current && glRef.current?.sliceReady(displayedSliceRef.current) ? displayedSliceRef.current : undefined});
   function clearSlice() { sliceRef.current=undefined;sliceOriginRef.current=undefined;displayedSliceRef.current=undefined;sliceOffsetRef.current=0;setSliceOffset(0);setSliced(false);sliceReadyRef.current=false;setSliceReady(false); }
   function toggleSlice() {
-    if(sliceRef.current){clearSlice();redrawRef.current?.();return;}
+    if(sliceRef.current){
+      clearSlice();redrawRef.current?.();
+      if(decluttered) requestAnimationFrame(()=>{
+        const section=mapToolsRef.current?.closest('[data-map-page]')?.querySelector('[data-atmosphere-section]');
+        if(section) section.closest('[data-atmosphere-instrument]')?.querySelector<HTMLButtonElement>('[aria-label="Atmospheric section"]')?.focus();
+      });
+      return;
+    }
     const camera=cameraRef.current;
     if(!camera||!threeDRef.current)return;
     const centre=unproject(GEO,camera.centerX,camera.centerY);
@@ -637,10 +694,14 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   }, []);
 
   const autoChrome = (fly && flyDetail) || selectedTraffic.length > 0 || (!!point && !fly && !teaching);
-  const chromeCollapsed = autoChrome ? !chromeLifted : userCollapsed;
+  // Enlarged text keeps the full header, place search and menu in flow even
+  // when a point or traffic sheet is active. The normal auto-collapse remains
+  // unchanged when density returns to the ordinary layout.
+  const chromeCollapsed = decluttered ? false : autoChrome ? !chromeLifted : userCollapsed;
   const focusToggleRef = useRef(false);
   const collapseToRef = useRef<(next: boolean) => void>(() => {});
   collapseToRef.current = (next: boolean) => {
+    if (decluttered) { setCompactForecastOpen(!next); return; }
     focusToggleRef.current = true;
     setUserCollapsed(next);
     setChromeLifted(!next);
@@ -1212,7 +1273,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const borderSet = historical ? null : Math.min(lonSpan, latSpan) <= 12 && bordersCloseRef.current ? bordersCloseRef.current : bordersRegionalRef.current;
       const sceneTime=Date.parse(manifest.run)+(manifest.forecastHours[0]*60+clockRef.current.minute)*60000;
       const sceneDefinition=sceneForPlace(manifest.places[0]?.id);
-      const sceneKey=sceneDefinition?`${Math.floor(sceneTime/1000)}:${Object.values(historyLayersRef.current).join(',')}`:'';
+      const sceneKey=sceneDefinition?`${marineModeRef.current}:${Math.floor(sceneTime/1000)}:${Object.values(historyLayersRef.current).join(',')}`:'';
       const key = `${sceneKey}:${width.toFixed(1)}:${height.toFixed(1)}:${camera.centerX.toFixed(4)}:${camera.centerY.toFixed(4)}:${camera.halfWidth.toFixed(4)}:${camera.halfHeight.toFixed(4)}:${tiltRef.current}:${camera.bearingRadians??0}:${camera.focusHeightM??0}:${contoursRef.current.lines.length}:${contourId}:${terrainRevision}:${darkRef.current}:${fieldRef.current}:${placeRows ? placeRows.length : -1}:${uiAvoid.map((box) => `${Math.round(box.x)},${Math.round(box.y)},${Math.round(box.w)},${Math.round(box.h)}`).join(';')}:${unitKey(unitsRef.current)}:${graticuleRef.current ? 1 : 0}:${borderEpochRef.current}:${atmosphereInspectionRef.current}:${sliced}:${sliceRef.current?JSON.stringify(sliceRef.current):""}:${borderSet === bordersCloseRef.current ? 1 : 0}:${manifest.places[0]?.id==='h.everest'?Math.floor(clockRef.current.minute):''}`;
       if (key === overlayKey) return;
       overlayKey = key;
@@ -1235,8 +1296,10 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const peaks = paintPeaks(ctx, width, height, camera, [...uiAvoid, ...avoid, ...anchor,...shipBoxes]);
       const camps = manifest.places[0]?.id==='h.everest' ? drawEverestRoute(ctx, GEO, camera, elevationAt ?? null, width, height, [...uiAvoid, ...avoid, ...peaks, ...anchor, toolsBox ?? {x:width-56,y:0,w:56,h:168}, {x:0,y:height-36,w:width,h:36}], darkRef.current ? NIGHT_PLACES : DAY_PLACES, {timeMs:Date.parse(manifest.run)+(manifest.forecastHours[0]*60+clockRef.current.minute)*60000,chart:loaded}) : [];
       const scene=sceneDefinition?drawHistoricalScene(ctx,sceneDefinition,GEO,camera,elevationAt??null,width,height,sceneTime,historyLayersRef.current,[...uiAvoid,...avoid,...peaks,...camps],darkRef.current?NIGHT_PLACES:DAY_PLACES):{labels:[],markers:[]};
-      const places = paintPlaces(ctx, width, height, camera, [...uiAvoid, ...avoid, ...peaks, ...camps,...scene.labels,...scene.markers]);
-      labelRecords = [...avoid, ...peaks, ...camps,...scene.labels, ...places];
+      const marine=marineForEvent(sceneDefinition?.id);
+      const seaLabels=marine?drawHistoricalMarine(ctx,marine,marineModeRef.current,sceneTime,GEO,camera,width,height,[...uiAvoid,...avoid,...peaks,...scene.labels],darkRef.current):[];
+      const places = paintPlaces(ctx, width, height, camera, [...uiAvoid, ...avoid, ...peaks, ...camps,...scene.labels,...scene.markers,...seaLabels]);
+      labelRecords = [...avoid, ...peaks, ...camps,...scene.labels,...seaLabels, ...places];
       drawAdminNames(ctx, historical ? [] : adminNamesRef.current, GEO, camera, width, height, labelRecords, darkRef.current ? NIGHT_PLACES : DAY_PLACES);
       if(atmosphereInspectionRef.current>0&&tiltRef.current>0){
         ctx.save();ctx.globalCompositeOperation='destination-out';
@@ -1253,7 +1316,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const name = FIELD_VARIABLE[field];
       const cycloneSample=loaded.cyclone?createWindSampler(loaded,minute):null;
       return (lat, lon) => {
-        if(field==='wind'&&cycloneSample){const w=cycloneSample(lon,lat);return w?readingText(field,Math.hypot(w.u,w.v),compassFrom(w.u,w.v),unitsRef.current):null;}
+        if(field==='wind'&&cycloneSample){const w=cycloneSample(lon,lat);return w?readingText(field,Math.hypot(w.u,w.v)/.514444,compassFrom(w.u,w.v),unitsRef.current):null;}
         const column = Math.round((lon - manifest.west) / manifest.step);
         const i = manifest.wrapsLongitude ? ((column % manifest.nx) + manifest.nx) % manifest.nx : column;
         const j = Math.round((manifest.north - lat) / manifest.step);
@@ -1425,7 +1488,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       if (!worker) {
         let result = contourPressure(blended, manifest.nx, manifest.ny, manifest.west, manifest.north, dlon, dlat, 4);
         const storm=cycloneAt(loaded.cyclone,Date.parse(manifest.run)+absolute*60000);
-        if(storm){const environment=smoothGrid(smoothGrid(blended,manifest.nx,manifest.ny,manifest.wrapsLongitude),manifest.nx,manifest.ny,manifest.wrapsLongitude);result=cycloneContours(result,storm,(lon,lat)=>sampleFrame(environment,manifest,lon,lat));}
+        if(storm){const environment=smoothGrid(smoothGrid(blended,manifest.nx,manifest.ny,manifest.wrapsLongitude),manifest.nx,manifest.ny,manifest.wrapsLongitude);result=cycloneContours(result,storm,(lon,lat)=>sampleMonotoneBicubic({...manifest,values:environment},lon,lat),{...manifest,values:environment});}
         contoursRef.current = result;
         busy = false;
         overlayKey = '';
@@ -1466,7 +1529,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     }
 
     const flowLayer: FlowLayer | null = flowCanvasRef.current ? createFlowLayer(flowCanvasRef.current) : null;
-    const satLayer: SatelliteLayer | null = satCanvasRef.current ? createSatelliteLayer(satCanvasRef.current) : null;
+    const satLayer: SatelliteLayer | null = satCanvasRef.current ? createSatelliteLayer(satCanvasRef.current,marineForEvent(sceneForPlace(manifest.places[0]?.id)?.id)?.satellites??[]) : null;
     const reduceQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     let reducedMotion = reduceQuery.matches;
     const onReduce = () => { reducedMotion = reduceQuery.matches; };
@@ -1675,6 +1738,8 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       if (satLayer && cameraNow) {
         const word = satLayer.draw({
           enabled: satelliteRef.current,
+          historicalMode:historical,
+          historicalPicture:satelliteForDate(marineForEvent(sceneForPlace(manifest.places[0]?.id)?.id),Date.parse(manifest.run)+(manifest.forecastHours[0]*60+clockRef.current.minute)*60000),
           chart: loaded,
           minute: clockRef.current.minute,
           nowMs: Date.now(),
@@ -1827,7 +1892,8 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
         });
       },
       redraw() {
-        cameraMoveRef.current = null;
+        // Data/overlay invalidation must not interrupt a deliberate camera
+        // glide. Pointer/keyboard/setView actions cancel their own moves.
         placesToken += 1;
         cameraMoved = true;
       },
@@ -2021,7 +2087,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     if (!host || !stage || !phone) return;
     let raf = 0;
     const measure = () => {
-      const sheet = host.querySelector<HTMLElement>('[data-chat-panel], [data-point-panel], [data-fly-panel], [data-coastal-panel]');
+      const sheet = [...host.querySelectorAll<HTMLElement>('[data-chat-panel], [data-point-panel], [data-fly-panel], [data-coastal-panel]')].find(node => node.getClientRects().length > 0);
       const map = stage.getBoundingClientRect();
       const exposed = sheet ? Math.max(0, sheet.getBoundingClientRect().top - map.top) : map.height;
       // On the host: the chat float (inside the stage) and the archive notice
@@ -2665,7 +2731,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     setWindBarbs(value); windRef.current = value;
   }
   function toggleSatellite(value: boolean) {
-    if(historical&&value){notifyMap('Satellite unavailable for this date');return;}
+    if(historical&&value&&!marineForEvent(historyEvent)){notifyMap('Satellite unavailable for this date');return;}
     if (value) useOptional('satellite', 'Satellite on'); else { disableOptional('satellite'); notifyMap('Satellite off'); }
     satelliteRef.current = value; setSatellite(value);
   }
@@ -2864,7 +2930,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const heldTraffic = !playing && heldTrafficRef.current && Math.abs(validMs - heldTrafficRef.current.selectedMs) < 1 ? heldTrafficRef.current : null;
   const trafficLive = liveTrafficAtTime(clockRef.current.followNow, playing, validMs, nowMs);
   return (
-    <div className="flex min-h-0 flex-1 flex-col" data-map-page data-history-mode={historical?'true':undefined}>
+    <div className="flex min-h-0 flex-1 flex-col" data-map-page data-map-density={decluttered ? 'compact' : 'normal'} data-map-tools-open={mapToolsOpen ? 'true' : 'false'} data-history-mode={historical?'true':undefined}>
       <div ref={chromeRef} data-map-chrome data-collapsed={chromeCollapsed ? 'true' : 'false'} className="map-chrome shrink-0">
         <PressNote text={chromeNote.note} />
         <div ref={chromeBodyRef} className="map-chrome-body">
@@ -2933,7 +2999,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
               {chart ? (
                 <div className="map-deck grid shrink-0 grid-cols-1 gap-x-4 px-3 md:grid-cols-[minmax(176px,auto)_1fr] md:px-4">
                   <div className="transport-side flex items-center max-md:hidden md:row-span-2 md:pt-6">{transportNode(false)}</div>
-                  {historical ? <select className="history-day rounded-md bg-[var(--md-surface-container-high)] px-2" aria-label="Historical day" value={selectedKey ?? days[0]?.key} onChange={event=>{const day=days.find(d=>d.key===event.target.value);if(day&&!teachingRef.current){const version=++historySelectionVersion.current;setHistoryError('');if(day.dayStart<forecastStartMs||day.dayStart>forecastEndMs)setHistoryRequest({event:historyEvent,date:day.key,version});else seek((day.dayStart-runMs)/60000-chart.manifest.forecastHours[0]*60,false);if(day.event)notifyMap(day.event.detail);}}}>{days.map(day=><option key={day.key} value={day.key}>{day.weekday}{day.event?` · ${day.event.title}`:''}</option>)}</select> : <DayTiles
+                  {historical ? <select className="history-day rounded-md bg-[var(--md-surface-container-high)] px-2" aria-label="Historical day" value={selectedKey ?? days[0]?.key} onChange={event=>{const day=days.find(d=>d.key===event.target.value);if(day&&!teachingRef.current){const version=++historySelectionVersion.current;setHistoryError('');if(day.dayStart<forecastStartMs||day.dayStart>forecastEndMs)setHistoryRequest({event:historyEvent,date:day.key,version});else seek((day.dayStart-runMs)/60000-chart.manifest.forecastHours[0]*60,false);if(day.event)notifyMap(day.event.detail);}}}>{days.map(day=><option key={day.key} value={day.key}>{day.weekday}{day.event?` · ${day.event.title}`:''}</option>)}</select> : decluttered && !compactForecastOpen ? null : <DayTiles
                     days={days}
                     todayKey={todayKey}
                     selectedKey={selectedKey}
@@ -2948,7 +3014,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                   <div className="time-block flex min-w-0 items-center gap-2 pt-1">
                     <div className="transport-inline shrink-0 md:hidden">{transportNode(false)}</div>
                     <div className="min-w-0 flex-1">{timelineNode(false)}</div>
-                    <ChromeToggle collapsed={false} onToggle={() => collapseToRef.current(true)} />
+                    <ChromeToggle collapsed={decluttered ? !compactForecastOpen : false} onToggle={() => decluttered ? setCompactForecastOpen(value => !value) : collapseToRef.current(true)} />
                   </div>
                 </div>
               ) : null}
@@ -3158,9 +3224,9 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
               />
               <canvas data-wind-barbs ref={windCanvasRef} className="pointer-events-none absolute" aria-hidden="true" />
               <canvas ref={trafficCanvasRef} data-traffic-layer className="pointer-events-none absolute" aria-hidden="true" />
-              {cameraRef.current && GEO.projection === 'equirectangular' && Number.isFinite(validMs) ? <AtmosphereMap onFrame={fitAtmosphere} origin={place?{lat:place.lat,lon:place.lon}:undefined} camera={renderCamera(cameraRef.current)} geo={GEO} elevation={elevationAtRef.current} terrainEpoch={terrainEpoch}
+              {cameraRef.current && GEO.projection === 'equirectangular' && Number.isFinite(validMs) ? <AtmosphereMap compact={decluttered} onFrame={fitAtmosphere} origin={place?{lat:place.lat,lon:place.lon}:undefined} camera={renderCamera(cameraRef.current)} geo={GEO} elevation={elevationAtRef.current} terrainEpoch={terrainEpoch}
                 lat={cameraRef.current.centerY} lon={((cameraRef.current.centerX / GEO.F + GEO.lon0 + 540) % 360) - 180}
-                validMs={validMs} width={stageSize.width} height={stageSize.height} active={tilt > .02} onInspection={inspectAtmosphere} reconstruction={historical&&historyEvent==='everest-1953'?{chart,elevation:elevationAtRef.current}:undefined} /> : null}
+                validMs={validMs} width={stageSize.width} height={stageSize.height} active={tilt > .02} onInspection={inspectAtmosphere} reconstruction={(historical&&historyEvent==='everest-1953')||(!historical&&cameraRef.current.centerY>26&&cameraRef.current.centerY<30&&cameraRef.current.centerX/GEO.F+GEO.lon0>84&&cameraRef.current.centerX/GEO.F+GEO.lon0<89&&cameraRef.current.halfHeight<1)?{chart,elevation:elevationAtRef.current,historical}:undefined} /> : null}
               {trafficOn && trafficReplay ? <span className="traffic-replay-status" data-traffic-replay={trafficReplay} title="Recorded during this viewing session. Earlier history and gaps are unavailable.">{trafficReplay === 'replay' ? 'Replay · session' : 'No recorded traffic'}</span> : null}
               {trafficOn && selectedTraffic.length ? <TrafficCards selected={selectedTraffic} trails={heldTraffic?.trails ?? trailsRef.current} routes={heldTraffic?.routes ?? routesRef.current} zone={displayZone} nowMs={heldTraffic?.epoch ?? nowMs} replayMs={trafficLive || heldTraffic ? undefined : validMs} onRemove={selectTraffic} /> : null}
               {mapNotice ? <div className="map-notice" role="status" aria-live="polite">{mapNotice}</div> : null}
@@ -3189,25 +3255,26 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                   onClose={() => { chipRef.current = null; setChip(null); }} />;
               })() : null}
               {ghost ? <span className="map-chip-float" style={{ left: `${ghost.left}%`, top: `${ghost.top}%` }} role="status">{ghost.note}</span> : null}
-              {!teaching ? <div className="map-tools" aria-label="Map camera">
+              {!teaching ? <div ref={mapToolsRef} className="map-tools" data-map-tools data-tools-open={mapToolsOpen ? 'true' : 'false'} aria-label="Map camera">
+                {decluttered ? <button ref={mapToolsToggleRef} type="button" className="map-tools-toggle" aria-label="Map tools" aria-expanded={mapToolsOpen} onClick={() => { setMapToolsOpen(value => !value); setShowSources(false); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg><span>Tools</span></button> : null}
                 <div className="map-tool-buttons">
-                <div className="map-zoom">
+                <div className="map-zoom" data-secondary-control="zoom">
                   <button type="button" aria-label="Zoom in" onClick={() => zoomCamera(1 / 1.25)}><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" d="M12 7v10M7 12h10" /></svg></button>
                   <button type="button" aria-label="Zoom out" onClick={() => zoomCamera(1.25)}><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" d="M7 12h10" /></svg></button>
                 </div>
-                {renderer === 'webgl2' && GEO.projection === 'equirectangular' ? <div className="map-zoom">
+                {renderer === 'webgl2' && GEO.projection === 'equirectangular' ? <div className="map-zoom map-primary-mode">
                   <button type="button" aria-label="2D map" aria-pressed={!threeD} title="2D map · 2" onClick={() => changeMapMode(false)}>2D</button>
                   <button type="button" aria-label="3D map" aria-pressed={threeD} title="3D · WASD move · arrows look · E/Q height" onClick={() => changeMapMode(true)}>3D</button>
                   {threeD ? <button type="button" aria-label="North up" title="North up · N" onClick={northUp}><span aria-hidden="true" style={{display:'inline-flex',alignItems:'center',whiteSpace:'nowrap'}}><span style={{transform:`rotate(${-(cameraRef.current?.bearingRadians??0)}rad)`}}>↑</span>N</span></button> : null}
                 </div> : null}
-                {threeD ? <div className="map-slice-control"><button type="button" className="map-slice" aria-label="Terrain and atmosphere slice" disabled={!sliced&&(cameraRef.current?.halfHeight??10)>1} aria-pressed={sliced} aria-busy={sliced&&!sliceReady} title={!sliced&&(cameraRef.current?.halfHeight??10)>1?"Zoom in for a terrain and atmosphere slice":sliced&&!sliceReady?"Preparing terrain slice · click to cancel":"Narrow terrain and atmosphere slice"} onClick={toggleSlice}>Slice</button>{sliced ? <input className="map-slice-position" type="range" min={-100} max={100} step={1} value={sliceOffset} aria-label="Slice position" aria-valuetext={`${Math.round(sliceOffset/100*(sliceOriginRef.current?.halfWidthM??0)*.6)} metres from centre`} title="Move the slice back and forth" onChange={event=>moveSlice(Number(event.target.value))} /> : null}</div> : null}
-                <span className="relative grid"><button type="button" aria-label="Recenter map" title={place?.name ? `Return to ${place.name}` : 'Recenter map'} className="map-return" onClick={recenterMap}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.7" /><path fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" d="M12 3v3M12 18v3M3 12h3M18 12h3" /></svg><span>{place?.name ?? 'Home'}</span></button><PressNote text={recenterNote.note} /></span>
+                {threeD ? <div className="map-slice-control" data-secondary-control="slice" data-active={sliced ? 'true' : 'false'}><button type="button" className="map-slice" aria-label="Terrain and atmosphere slice" disabled={!sliced&&(cameraRef.current?.halfHeight??10)>1} aria-pressed={sliced} aria-busy={sliced&&!sliceReady} title={!sliced&&(cameraRef.current?.halfHeight??10)>1?"Zoom in for a terrain and atmosphere slice":sliced&&!sliceReady?"Preparing terrain slice · click to cancel":"Narrow terrain and atmosphere slice"} onClick={toggleSlice}>Slice</button>{sliced ? <input className="map-slice-position" type="range" min={-100} max={100} step={1} value={sliceOffset} aria-label="Slice position" aria-valuetext={`${Math.round(sliceOffset/100*(sliceOriginRef.current?.halfWidthM??0)*.6)} metres from centre`} title="Move the slice back and forth" onChange={event=>moveSlice(Number(event.target.value))} /> : null}</div> : null}
+                <span className="relative grid" data-secondary-control="recenter"><button type="button" aria-label="Recenter map" title={place?.name ? `Return to ${place.name}` : 'Recenter map'} className="map-return" onClick={recenterMap}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.7" /><path fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" d="M12 3v3M12 18v3M3 12h3M18 12h3" /></svg><span>{place?.name ?? 'Home'}</span></button><PressNote text={recenterNote.note} /></span>
                 {/* One control per viewport: phones carry the lens-scoped overlay toggles here; wider surfaces keep them in the lens row. */}
-                {phone && !historical && ['pressure', 'rain', 'temp'].includes(lens) ? <span className="relative grid"><button type="button" aria-label="Satellite" aria-pressed={satellite} onClick={() => { satelliteNote.show(satellite ? 'Satellite off' : 'Satellite on'); toggleSatellite(!satellite); }}><SatelliteIcon /></button><PressNote text={satelliteNote.note} /></span> : null}
-                {phone && lens === 'fly' ? <span className="relative grid"><button type="button" aria-label="Traffic" aria-pressed={trafficOn} onClick={() => { trafficNote.show(trafficOn ? 'Traffic off' : 'Traffic on'); toggleTraffic(!trafficOn); }}><TrafficIcon /></button><PressNote text={trafficNote.note} /></span> : null}
-                <button type="button" aria-label="Data sources" title="Data sources" aria-expanded={showSources} onClick={() => setShowSources((v) => !v)}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.7" /><path fill="currentColor" d="M11.2 10.2h1.6V16h-1.6zM11.2 7.4h1.6V9h-1.6z" /></svg></button>
+                {phone && (!historical || !!marineForEvent(historyEvent)?.satellites.length) && ['pressure', 'rain', 'temp'].includes(lens) ? <span className="relative grid" data-secondary-control="satellite"><button type="button" aria-label="Satellite" aria-pressed={satellite} onClick={() => { satelliteNote.show(satellite ? 'Satellite off' : 'Satellite on'); toggleSatellite(!satellite); }}><SatelliteIcon /></button><PressNote text={satelliteNote.note} /></span> : null}
+                {phone && lens === 'fly' ? <span className="relative grid" data-secondary-control="traffic"><button type="button" aria-label="Traffic" aria-pressed={trafficOn} onClick={() => { trafficNote.show(trafficOn ? 'Traffic off' : 'Traffic on'); toggleTraffic(!trafficOn); }}><TrafficIcon /></button><PressNote text={trafficNote.note} /></span> : null}
+                <button type="button" data-secondary-control="sources" aria-label="Data sources" title="Data sources" aria-expanded={showSources} onClick={() => setShowSources((v) => !v)}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.7" /><path fill="currentColor" d="M11.2 10.2h1.6V16h-1.6zM11.2 7.4h1.6V9h-1.6z" /></svg></button>
                 </div>
-                {showSources ? <div className="map-sources" style={{maxWidth:'calc(100vw - 7rem)'}}><label className="flex items-center gap-2 px-2 py-1"><input type="checkbox" checked={photoTerrain} onChange={togglePhotoTerrain} />Photo terrain</label>{photoTerrain?<p>Everest · {EVEREST_IMAGERY.acquisition_datetime.slice(0,10)} · {EVEREST_IMAGERY.attribution} Modern surface imagery; historical weather retains its selected date.{photoStatus==='unavailable'?' Imagery unavailable; switch off and on to retry.':''}</p>:null}{historyEvent==='everest-1953'?<p>{EVEREST_DETAILS} <a href={EVEREST_SOURCE} target="_blank" rel="noreferrer">Expedition observations</a> · <a href="https://teara.govt.nz/en/interactive/28428/final-ascent-of-everest" target="_blank" rel="noreferrer">Ascent route</a></p>:null}{chart.cyclone?<p>Best-track cyclone reconstruction over ERA5. The {chart.cyclone.rmwKm} km maximum-wind radius, radial profile and 15° inflow are synthetic; track and intensity follow the linked best-track records. <a href={chart.cyclone.source} target="_blank" rel="noreferrer">Best track</a></p>:null}{historicalScene(historyEvent)?<HistoricalSceneControls scene={historicalScene(historyEvent)!} layers={historyLayers} onToggle={layer=>setHistoryLayers(v=>({...v,[layer]:!v[layer]}))}/>:null}<div ref={setExplainHost} /><p role="note">{flowWindLegend(flowSource)}. {threeD ? 'Atmospheric layers use synthetic data with scale-adapted height and emphasised vertical motion. ' : ''}{historical?chart.manifest.attribution.map(a=>`${a.source} · ${a.licence}`).join('; '):ATTRIBUTION}</p></div> : null}
+                {showSources ? <div className="map-sources" style={{maxWidth:'calc(100vw - 7rem)',maxHeight:Math.max(80,(stageRef.current?.clientHeight??panel.height)-24),overflowY:'auto'}}><label className="flex items-center gap-2 px-2 py-1"><input type="checkbox" checked={photoTerrain} onChange={togglePhotoTerrain} />Photo terrain</label>{photoTerrain?<p>Everest · {EVEREST_IMAGERY.acquisition_datetime.slice(0,10)} · {EVEREST_IMAGERY.attribution} Modern surface imagery; historical weather retains its selected date.{photoStatus==='unavailable'?' Imagery unavailable; switch off and on to retry.':''}</p>:null}{historyEvent==='everest-1953'?<p>{EVEREST_DETAILS} <a href={EVEREST_SOURCE} target="_blank" rel="noreferrer">Expedition observations</a> · <a href="https://teara.govt.nz/en/interactive/28428/final-ascent-of-everest" target="_blank" rel="noreferrer">Ascent route</a></p>:null}{marineForEvent(historyEvent)?<details className="px-2 py-1"><summary>Sea &amp; satellite sources</summary><p>Wave height is significant wave height at the buoy, with dominant period and observation time. Surge marks are event maxima above normal astronomical tide, at approximate named locations.</p>{marineForEvent(historyEvent)!.stations.map(station=><p key={station.id}><a href={station.source_url} target="_blank" rel="noreferrer">NDBC {station.id}</a></p>)}{marineForEvent(historyEvent)!.satellites.map(picture=><p key={picture.date}><a href={picture.source_url} target="_blank" rel="noreferrer">NASA MODIS · {picture.date}</a> · daily composite</p>)}{marineForEvent(historyEvent)!.surge.map(mark=><p key={mark.id}><a href={mark.source_url} target="_blank" rel="noreferrer">{mark.name}</a> · {mark.value_m.toFixed(1)} m · {mark.datum}</p>)}</details>:null}{chart.cyclone?<p>Best-track cyclone reconstruction over ERA5. The {chart.cyclone.rmwKm} km maximum-wind radius, radial profile and 15° inflow are synthetic; track and intensity follow the linked best-track records. <a href={chart.cyclone.source} target="_blank" rel="noreferrer">Best track</a></p>:null}{historicalScene(historyEvent)?<HistoricalSceneControls scene={historicalScene(historyEvent)!} layers={historyLayers} onToggle={layer=>setHistoryLayers(v=>({...v,[layer]:!v[layer]}))}/>:null}<div ref={setExplainHost} /><p role="note">{flowWindLegend(flowSource)}. {threeD ? 'Atmospheric layers use synthetic data with scale-adapted height and emphasised vertical motion. ' : ''}{historical?chart.manifest.attribution.map(a=>`${a.source} · ${a.licence}`).join('; '):ATTRIBUTION}</p></div> : null}
               </div> : null}
               {teachHere || teaching ? <MapTeaching geo={GEO} chart={chart} complete={complete} minute={minute} camera={cameraRef.current} width={stageSize.width} height={stageSize.height}
                 onActive={(active, at) => {
@@ -3221,7 +3288,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                   if (active) closeChat(false);
                 }}
                 onFocus={focusFeature} onField={(f) => remember({ field: f })} explainHost={explainHost} autoTour={autoTour} onStarted={() => setShowSources(false)} /> : null}
-              {phone && !teaching ? <div className="map-chat-float"><ChatButton open={chatOpen} onClick={toggleChat} /></div> : null}
+              {phone && !decluttered && !teaching ? <div className="map-chat-float"><ChatButton open={chatOpen} onClick={toggleChat} /></div> : null}
               <PhoneHoldNames active={phone} />
               {windBarbs ? <span className="pointer-events-none absolute bottom-16 right-2 rounded bg-[var(--md-surface)]/90 px-2 py-1 text-[10px] sm:bottom-6">10 m wind · barb = 10 kt · half = 5</span> : null}
               <div className="map-legend pointer-events-none absolute bottom-2 left-2 flex items-center gap-2 px-2 py-0.5 text-[11px] tabular-nums" data-pressure-legend={units.pressure} data-pressure-state={pressureLegend} aria-busy={!!pendingField}>
@@ -3237,7 +3304,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                   </>
                 )) : null}
                 {legend === 'error' || pressureLegend === 'error' ? <button type="button" className="pointer-events-auto underline" onClick={() => chart.retry?.(clockRef.current.minute, [field === 'none' ? 'mslp' : FIELD_VARIABLE[field], 'u10', 'v10', ...(satellite ? ['tcc'] : [])])} aria-label="Retry weather for selected time">Retry ↻</button> : null}
-                {cloudLegend ? <span data-cloud-legend={cloudLegend === 'model' ? 'model' : 'satellite'}>{cloudLegend}</span> : null}
+                {cloudLegend ? <span title={cloudLegend} style={{minWidth:0,overflow:'hidden',textOverflow:'ellipsis'}} data-cloud-legend={cloudLegend === 'model' ? 'model' : 'satellite'}>{phone&&cloudLegend.startsWith('MODIS')?'MODIS · daily':cloudLegend}</span> : null}
               </div>
               {/* Sources are credited in the page footer; only a synthetic test chart is marked on the map. */}
               {chart.manifest.attribution.some((a) => a.source.startsWith('Synthetic')) ? <span className="chart-fixture-note pointer-events-none text-[10px] font-medium text-[var(--md-on-surface-variant)]">Synthetic chart · test data</span> : null}
@@ -3300,12 +3367,13 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
           <LensBar
             lens={lens}
             availableLenses={historical ? ['pressure', 'wind', ...(chart.manifest.variables.rain24 ? ['rain' as const] : []), ...(chart.manifest.variables.t2m ? ['temp' as const] : [])] : undefined}
-            satelliteAvailable={!historical}
+            satelliteAvailable={!historical || !!marineForEvent(historyEvent)?.satellites.length}
             onLens={changeLens}
             phone={phone}
             section={flyDetail}
             onSection={() => toggleSection(!flyDetail)}
             sectionAvailable={!!airport}
+            compact={decluttered}
             windBarbs={windBarbs}
             windAvailable={!!chart.manifest.variables.u10 && !!chart.manifest.variables.v10}
             onWindBarbs={toggleWindBarbs}
@@ -3314,7 +3382,8 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
             traffic={trafficOn}
             onTraffic={toggleTraffic}
           />
-          {!phone ? <ChatButton open={chatOpen} onClick={toggleChat} /> : null}
+          {marineForEvent(historyEvent)?<select aria-label="Sea layer" title="Historical sea observations" className="h-9 max-w-[8rem] rounded-md bg-[var(--md-surface-container)] px-2 text-sm" value={marineMode} onChange={e=>{const mode=e.target.value as MarineMode;setMarineMode(mode);marineModeRef.current=mode;redrawCamera();}}><option value="off">Sea</option><option value="waves">Wave height</option>{marineForEvent(historyEvent)!.surge.length?<option value="surge">Surge · peak</option>:null}</select>:null}
+          {!phone || decluttered ? <ChatButton open={chatOpen} onClick={toggleChat} /> : null}
           </div>
           </div>
         </>

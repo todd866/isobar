@@ -120,3 +120,33 @@ test('teaching flow survives the detailed-worker zoom boundary with clouds off',
  await info.attach('GPU renderer',{body:JSON.stringify(renderers),contentType:'application/json'});
  expect(renderers.some(name=>/Metal/.test(name))).toBe(true);
 });
+
+
+test('a background redraw during Frame atmosphere cannot strand the camera mid-glide', async ({page}, info) => {
+  await page.goto('/');
+  const stage=page.locator('[data-api="1"]');
+  await expect(stage).toBeVisible();
+  await page.getByRole('button',{name:'Pause',exact:true}).click();
+  await stage.evaluate((e:any)=>e.chartApi.setView(-31.95,115.86,.12));
+  await page.getByRole('button',{name:'3D map',exact:true}).click();
+  await page.getByRole('button',{name:'Atmospheric section',exact:true}).click();
+  await page.getByRole('combobox',{name:'Atmosphere model',exact:true}).selectOption('thunderstorm');
+  const flow=page.locator('[data-atmosphere-layer]');
+  await expect(flow).toHaveAttribute('data-scenario','thunderstorm');
+  // Start close enough that the unframed column does not fit. This exercises
+  // the actual visible Frame control, not the pure camera solver alone.
+  await stage.evaluate((e:any)=>e.chartApi.setView(-31.95,115.86,.025));
+  await page.getByRole('button',{name:'Frame atmosphere',exact:true}).click();
+  await stage.evaluate(async(e:any)=>{
+    // Repeated invalidations model asynchronous terrain and overlay arrivals.
+    for(let i=0;i<12;i++){
+      await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
+      e.chartApi.redraw();
+    }
+  });
+  await expect.poll(async()=>{
+    const points=JSON.parse(await flow.getAttribute('data-column-projection')||'[]');
+    return points.length===2&&points.every((p:any)=>p&&Math.abs(p.x)<.7&&Math.abs(p.y)<.73);
+  }).toBe(true);
+  await page.screenshot({path:info.outputPath('framed-after-background-redraw.png')});
+});

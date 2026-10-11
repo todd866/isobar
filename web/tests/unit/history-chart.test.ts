@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { cyclonePoint } from '../../src/lib/cyclone-point';
+import { createWindSampler } from '../../src/lib/flow-wind';
 import { chartFrame, decodeFrame } from '../../src/lib/chart-store';
 import { historicalToChart, loadHistoricalChart } from '../../src/lib/history-chart';
 import { normalizeWeather, type HistoricalWeather } from '../../src/lib/history';
@@ -11,10 +13,23 @@ describe('historical shared chart adapter', () => {
     const chart = historicalToChart(weather, { rings: [] });
     expect(chart.manifest.forecastHours).toHaveLength(24);
     expect(decodeFrame(chartFrame(chart, 'mslp', 0), chart.manifest.variables.mslp)[0]).toBeCloseTo(1000, 1);
-    expect(decodeFrame(chartFrame(chart, 'u10', 0), chart.manifest.variables.u10)[0]).toBeCloseTo(-5, 1);
+    expect(decodeFrame(chartFrame(chart, 'u10', 0), chart.manifest.variables.u10)[0]).toBeCloseTo(-5*.514444, 2);
     expect(decodeFrame(chartFrame(chart, 'wind', 0), chart.manifest.variables.wind)[0]).toBeCloseTo(5, 1);
     expect(chart.aviation).toBeNull();
     expect(chart.points).toBeNull();
+  });
+
+  it('keeps a 95-knot cyclone at 48.87218 m/s internally and 95 knots in point readings', () => {
+    const chart = historicalToChart(weather, { rings: [] });
+    chart.cyclone = { method: 'compact-vortex-v1', rmwKm: 11, source: 'fixture', track: [
+      { time: times[0], lat: 1.5, lon: 10.5, windKt: 95, pressureHpa: 950 },
+      { time: times[23], lat: 1.5, lon: 10.5, windKt: 95, pressureHpa: 950 },
+    ] };
+    const lat = 1.5 + 11 / 111.132, lon = 10.5;
+    const wind = createWindSampler(chart, 0)!(lon, lat)!;
+    expect(Math.hypot(wind.u, wind.v)).toBeCloseTo(95 * .514444, 5);
+    const point = cyclonePoint(chart, Date.parse(times[0]), lat, lon)!;
+    expect(point.model.surface[0].windSpeed10mKt).toBeCloseTo(95, 4);
   });
 
   it('loads the default D-Day collection and selected hour without live fallback', async () => {

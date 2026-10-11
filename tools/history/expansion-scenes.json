@@ -397,6 +397,74 @@
           },
           "status": "estimated",
           "label": "Cape Helles"
+        },
+        {
+          "id": "gallipoli-campaign-context",
+          "kind": "campaign-anchor",
+          "title": "Gallipoli campaign · Anzac approach context",
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              26.3,
+              40.2
+            ]
+          },
+          "source_refs": [
+            "awm-landing",
+            "awm-loutit-map"
+          ],
+          "synthetic": true,
+          "precision_m": 15000,
+          "detail_zoom": 0,
+          "geometry_method": "Approximate campaign-area anchor from AWM landing account and annotated relief map; not a headquarters or unit fix",
+          "note": "Provides wider first-day context when the map is zoomed out.",
+          "layer": "military",
+          "date_validity": {
+            "date_start": "1915-04-25",
+            "date_end": "1915-04-25",
+            "time_basis": "date-only; source accounts use local/event times"
+          },
+          "status": "estimated",
+          "label": "Gallipoli · 25 Apr",
+          "max_zoom": 6.9
+        },
+        {
+          "id": "gallipoli-anzac-approach-area",
+          "kind": "landing-approach-area",
+          "title": "Anzac landing · approach area",
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                26.02,
+                40.2
+              ],
+              [
+                26.16,
+                40.23
+              ],
+              [
+                26.28,
+                40.25
+              ]
+            ]
+          },
+          "source_refs": [
+            "awm-landing",
+            "awm-loutit-map"
+          ],
+          "synthetic": true,
+          "precision_m": 20000,
+          "detail_zoom": 5,
+          "geometry_method": "Authored offshore approach-area waypoints terminating at the documented Anzac landing anchor; not an individual vessel or fleet track",
+          "note": "Coarse visual corridor for landing context; no timing or ship identity asserted.",
+          "layer": "routes",
+          "date_validity": {
+            "date_start": "1915-04-25",
+            "date_end": "1915-04-25",
+            "time_basis": "date-only; route timing unavailable in cited page"
+          },
+          "status": "estimated"
         }
       ]
     },

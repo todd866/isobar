@@ -12,7 +12,8 @@ export function windComponent(chart: LoadedChart, name: string, cell: number, mi
   if (!spec || !blend || !blendReady(chart, name, blend.i0, blend.i1)) return null;
   const a = chartFrame(chart, name, blend.i0)[cell], b = chartFrame(chart, name, blend.i1)[cell];
   if (a == null || b == null || a === spec.fill || b === spec.fill) return null;
-  return (a + (b - a) * blend.t) * spec.scale + spec.offset;
+  const value = (a + (b - a) * blend.t) * spec.scale + spec.offset;
+  return value * (/^(kt|knots)$/i.test(spec.units) ? .514444 : 1);
 }
 
 const WIND_HEIGHT_M = 10;
@@ -125,7 +126,7 @@ export function drawWindBarbs(ctx: CanvasRenderingContext2D, chart: LoadedChart,
     const reconstructed=cycloneSample?.(ll.lon,ll.lat);
     const u = reconstructed?.u??windComponent(chart, 'u10', j * m.nx + i, minute), v = reconstructed?.v??windComponent(chart, 'v10', j * m.nx + i, minute);
     if (u == null || v == null) continue;
-    const kt = Math.hypot(u, v) * (reconstructed?1:1.943844);
+    const kt = Math.hypot(u, v) * 1.943844;
     if (kt < 2.5) { ctx.beginPath(); ctx.arc(x, y, 2, 0, 2 * Math.PI); ctx.stroke(); continue; }
     if (camera.surface) {
       drawProjectedBarb(ctx, geo, camera, ll, u, v, kt, width, height);

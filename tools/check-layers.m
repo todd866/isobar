@@ -187,6 +187,13 @@ int main(int argc, const char **argv) {
         Check([[seeded valueForKey:@"liveSpeed"] integerValue] == 8, @"invalid speed falls back to 8x");
         Check([[seeded valueForKey:@"mapDetailModes"] count] == 0 && [SeededDefaults objectForKey:@"mapDetailModes"] == nil,
               @"a new launch does not restore lens chips");
+        Check(![[seeded valueForKey:@"barbs"] boolValue], @"new installation leaves optional wind barbs off");
+        [SeededDefaults setBool:YES forKey:@"chartBarbs"];
+        seeded = [SeededLayerController new];
+        Check([[seeded valueForKey:@"barbs"] boolValue], @"saved wind barbs remain on after relaunch");
+        [SeededDefaults setBool:NO forKey:@"chartBarbs"];
+        seeded = [SeededLayerController new];
+        Check(![[seeded valueForKey:@"barbs"] boolValue], @"saved wind barbs remain off after relaunch");
         [SeededDefaults setInteger:2 forKey:@"chartTemperature"];
         [SeededDefaults setBool:YES forKey:@"chartRain"];
         [SeededDefaults setBool:YES forKey:@"chartWindFill"];
@@ -198,7 +205,7 @@ int main(int argc, const char **argv) {
         NSString *suite = [@"com.isobar.layer-test." stringByAppendingString:NSUUID.UUID.UUIDString];
         LayerController *c = [LayerController new];
         [c useManualLiveClock];
-        Check([[c valueForKey:@"barbs"] boolValue], @"new installation starts with quiet wind hints on the model map");
+        Check(![[c valueForKey:@"barbs"] boolValue], @"default wind trails do not enable optional barbs");
         c.testPreferences = [[NSUserDefaults alloc] initWithSuiteName:suite];
         TestLayerPopover *popover = [TestLayerPopover new];
         popover.contentViewController = [NSViewController new];

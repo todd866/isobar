@@ -2,6 +2,10 @@ import { defineConfig, devices, type Project } from '@playwright/test';
 
 const port = Number(process.env.ISOBAR_E2E_PORT ?? 4173);
 const baseURL = `http://127.0.0.1:${port}`;
+// This macOS WebKit runtime stalls after HTTP 200 on numeric loopback; the
+// same pages load normally through localhost. Keep browser identity explicit.
+const webkitURL = `http://localhost:${port}`;
+const webkitFiles = [/mobile-shell\.spec\.ts$/, /e6b-iphone\.spec\.ts$/, /map-enlarged-text\.spec\.ts$/];
 
 // Headless on the Mac's GPU (Metal via ANGLE). SwiftShader mis-composites the
 // WebGL plate under overlapping panels and is far slower than any real browser.
@@ -38,9 +42,10 @@ export default defineConfig({
     timeout: 120_000,
   },
   projects: [
-    { name: 'chromium', testIgnore: frameTime, use: chromium },
-    { name: 'webkit-phone', testMatch: /mobile-shell\.spec\.ts$/, dependencies: ['chromium'], workers: 1,
-      use: { ...devices['iPhone 13'], browserName: 'webkit' } },
+    { name: 'chromium', testIgnore: [...frameTime, /e6b-iphone\.spec\.ts$/], use: chromium },
+    { name: 'webkit-phone', testMatch: webkitFiles, dependencies: ['chromium'], workers: 1,
+      use: { ...devices['iPhone 13'], browserName: 'webkit', baseURL: webkitURL,
+        storageState: { cookies: [{ name: 'isobar-test', value: '1', domain: 'localhost', path: '/', expires: -1, httpOnly: false, secure: false, sameSite: 'Lax' }], origins: [] } } },
     { name: 'frame-time', testMatch: frameTime, dependencies: ['chromium'], workers: 1, retries: 1, use: chromium },
     {
       name: 'canvas-lakes',

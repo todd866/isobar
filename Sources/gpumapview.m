@@ -616,7 +616,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     };
     _windView = [[WindMapView alloc] initWithFrame:self.bounds];
     _windView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    _windView.hidden = YES;
+    _windView.hidden = NO;
     [self addSubview:_windView];
     [self buildChrome];
     return self;
@@ -862,13 +862,15 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _windView.camera = _camera;
     _windView.fractionalStep = _fractionalStep;
     _windView.chartDark = [self mapIsDark];
+    _windView.barbs = _windBarbs;
+    _windView.reducedMotion = [self reducedNow];
     [_windView setNeedsDisplay:YES];
     [_atmosphereView setNeedsDisplay:YES];
 }
 
 - (void)setWindBarbs:(BOOL)value {
     _windBarbs = value;
-    _windView.hidden = !value;
+    _windView.barbs = value;
     [self syncVectorOverlays];
 }
 
@@ -1471,6 +1473,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     if (run && run == _run && source == _source && fill == _fill && _gridReady) return;
     _run = run;
     _windView.run = run;
+    _windView.windLens = windFill;
     [self syncVectorOverlays];
     _source = source;
     _fill = fill;
@@ -2181,6 +2184,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
         [self placeMarker];
     }
     [self advanceAutoNorth:dt];
+    [_windView advanceBy:dt];
     if (self.unavailable) return;
     IsobarCamera overlayCamera = _camera;
     overlayCamera.viewportW = NSWidth(self.bounds); overlayCamera.viewportH = NSHeight(self.bounds);
@@ -2222,7 +2226,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _renderer.synchronousContours = sync;
     [_lock unlock];
     if (image) _renderedStep = _fractionalStep;
-    if (image && _windBarbs) {
+    if (image) {
         CGImageRef vectors = [self copyImageWithVectorOverlays:image wind:YES atmosphere:NO];
         if (vectors) { CGImageRelease(image); image = vectors; }
     }
@@ -2245,7 +2249,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 }
 
 - (CGImageRef)copyImageWithVectorOverlays:(CGImageRef)image wind:(BOOL)wind atmosphere:(BOOL)atmosphere {
-    if (!image || (!(wind && _windBarbs) && !(atmosphere && (self.atmosphereDate || self.timeline.playhead)))) return nil;
+    if (!image || (!wind && !(atmosphere && (self.atmosphereDate || self.timeline.playhead)))) return nil;
     [self syncVectorOverlays];
     size_t width = CGImageGetWidth(image), height = CGImageGetHeight(image);
     if (!(NSWidth(self.bounds) > 0) || !(NSHeight(self.bounds) > 0)) return nil;
@@ -2258,7 +2262,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     CGContextScaleCTM(context, width / NSWidth(self.bounds), -(double)height / NSHeight(self.bounds));
     NSGraphicsContext *previous = NSGraphicsContext.currentContext;
     NSGraphicsContext.currentContext = [NSGraphicsContext graphicsContextWithCGContext:context flipped:YES];
-    if (wind && _windBarbs) [_windView drawRect:_windView.bounds];
+    if (wind) [_windView drawRect:_windView.bounds];
     if (atmosphere && (self.atmosphereDate || self.timeline.playhead)) [_atmosphereView drawRect:_atmosphereView.bounds];
     NSGraphicsContext.currentContext = previous;
     CGImageRef output = CGBitmapContextCreateImage(context);
