@@ -62,7 +62,7 @@ should start with the supported Macs and these instructions:
 
 Download the published assets and compare their checksums. Only then replace the
 preparation text at the top of `README.md` and `docs/install.md` with the direct
-DMG download link. Update `site/release.json` with that same URL and a short
+DMG download link. Update both `site/release.json` and `web/release.json` with that same URL and a short
 compatibility label; see [hosting](hosting.md). Keep the ZIP on the release page
 as a secondary download. Never label an arm64-only build as universal.
 
