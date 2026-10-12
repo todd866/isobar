@@ -36,6 +36,9 @@ Surface wind uses the same curved-trail density, lifetime and motion rules on
 web and Mac. Wind calculations use metres per second internally; the primary
 readouts and wind barbs use knots.
 
+With enlarged phone text, secondary map tools and daily forecasts open on demand.
+The timeline keeps its playback controls in one compact row, with more room to scrub.
+
 ## Web and Mac
 
 The **[web app](https://isobar.md)** runs in a browser with no account or

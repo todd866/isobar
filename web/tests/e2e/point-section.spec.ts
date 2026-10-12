@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const fixture = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'tests/unit/fixtures/openmeteo-point.json'), 'utf8'));
-import { globalEquirectangular, project, type Camera } from '../../src/lib/lambert';
+import { project, type Camera } from '../../src/lib/lambert';
 import { choosePlace } from './place-field';
 
 const RUN = '2026-10-08T00:00:00Z';
@@ -308,19 +308,15 @@ test('point camera is restored on close, place changes clear it, and landscape u
 
 test('nearest catalogue place names the point, with coordinate fallback', async ({ page }) => {
   await open(page, 1280, 720, 'light', true); await fixedTime(page);
-  const canberra = project(globalEquirectangular(), -35.2809, 149.13)!;
-  await page.locator('[data-map-ready]').evaluate((e, p) => {
-    const api = (e as HTMLElement & { chartApi: { camera: () => Camera; redraw: () => void } }).chartApi;
-    Object.assign(api.camera(), { centerX: p.x, centerY: p.y, halfWidth: 12, halfHeight: 8 }); api.redraw();
-  }, canberra);
+  await page.locator('[data-map-ready]').evaluate((e) => {
+    (e as HTMLElement & { chartApi: { setView: (lat:number,lon:number,height:number)=>void } }).chartApi.setView(-35.2809,149.13,16);
+  });
   await tapMap(page, .5, .5); await expect(panel(page).locator('strong')).toHaveText('Canberra');
   await choosePlace(page, 'Sydney', 'sydney'); await expect(panel(page)).toHaveCount(0);
   await expect(page.locator('[data-point-marker]')).toHaveCount(0);
-  const p = project(globalEquirectangular(), -25, 75)!;
-  await page.locator('[data-map-ready]').evaluate((e, point) => {
-    const api = (e as HTMLElement & { chartApi: { camera: () => Camera; redraw: () => void } }).chartApi;
-    Object.assign(api.camera(), { centerX: point.x, centerY: point.y, halfWidth: 12, halfHeight: 8 }); api.redraw();
-  }, p);
+  await page.locator('[data-map-ready]').evaluate((e) => {
+    (e as HTMLElement & { chartApi: { setView: (lat:number,lon:number,height:number)=>void } }).chartApi.setView(-25,75,16);
+  });
   await tapMap(page, .5, .5); await expect(panel(page).locator('strong')).toHaveText('Indian Ocean');
   await expect(panel(page).locator('[data-point-coords]')).toHaveText('25.00°S 75.00°E');
 });
@@ -355,12 +351,11 @@ test('geographic Perth, mid-ocean and Rockies taps replace one marker', async ({
   await open(page, 1280, 720, 'light', true); await fixedTime(page);
   for (const point of [{ lat: -31.95, lon: 115.86, name: 'Perth' }, { lat: -25, lon: 75, name: 'Indian Ocean' }, { lat: 40, lon: -106, name: '40.00°N 106.00°W' }]) {
     if (await panel(page).count()) { await page.getByRole('button', { name: 'Close point' }).click(); await expect(panel(page)).toHaveCount(0); }
-    const p = project(globalEquirectangular(), point.lat, point.lon)!;
-    // Prepare a geographic camera view, then use the real pointer hit testing.
-    await page.locator('[data-map-ready]').evaluate((e, p) => {
-      const api = (e as HTMLElement & { chartApi: { camera: () => Camera; redraw: () => void } }).chartApi;
-      Object.assign(api.camera(), { centerX: p.x, centerY: p.y, halfWidth: 30, halfHeight: 20 }); api.redraw();
-    }, p);
+    // Use the controller's camera action so an in-flight place transition is
+    // cancelled, then exercise real pointer hit testing at that location.
+    await page.locator('[data-map-ready]').evaluate((e, point) => {
+      (e as HTMLElement & { chartApi: { setView: (lat:number,lon:number,height:number)=>void } }).chartApi.setView(point.lat,point.lon,40);
+    }, point);
     await tapMap(page, .5, .5); await expect(panel(page).locator('strong')).toHaveText(point.name);
     const sea = panel(page).locator('[data-sea-row]');
     if (point.lon === 75) {

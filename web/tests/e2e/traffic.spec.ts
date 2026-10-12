@@ -1,7 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { chartRoutes } from './map-fixture';
 import { installTrainingFiles } from './training-files';
 
@@ -99,12 +98,10 @@ async function chooseTheme(page: Page, mode: 'light' | 'dark') {
 }
 
 async function checkViewport(page: Page, screenshotPath: string) {
-  const helper = process.env.ISOBAR_VIEWPORT_HELPER;
-  if (!helper) return;
-  const { assertViewport } = await import(pathToFileURL(helper).href);
+  const { assertViewport } = await import('../../../tools/viewport-fit.mjs');
   await assertViewport(page, {
     primary: [{ selector: '[data-map-ready]', label: 'map', minWidth: 240, minHeight: 120 }],
-    controls: [{ selector: '[data-lens-bar]', label: 'lens bar', minHeight: 36 }, { selector: '[data-timeline]', label: 'timeline', minHeight: 30 }],
+    controls: [{ selector: '[data-map-density="compact"] [aria-label="Weather lens"], [data-map-density="normal"] [data-lens-bar]', label: 'weather lens', minHeight: 36 }, { selector: '[data-timeline]', label: 'timeline', minHeight: 30 }],
     documentY: 'forbid',
     screenshotPath,
   });

@@ -205,13 +205,14 @@ test('keyboard navigation and enlarged section remain usable after resize',async
   const utc=await map.getAttribute('data-valid-ms');
   await page.addStyleTag({content:'html{font-size:200% !important}'});
   await page.setViewportSize({width:1024,height:600});
+  await page.getByRole('button',{name:'Map tools',exact:true}).click();
   await page.getByRole('button',{name:'Atmospheric section',exact:true}).click();
   const altitude=page.getByRole('slider',{name:'Reference aircraft altitude'});
   await altitude.scrollIntoViewIfNeeded();await altitude.focus();await page.keyboard.press('ArrowRight');
   expect(Number(await altitude.inputValue())).toBeGreaterThan(5000);
   await page.keyboard.press('Escape');
   await expect(page.locator('[data-atmosphere-section]')).toHaveCount(0);
-  await expect(page.getByRole('button',{name:'Atmospheric section',exact:true})).toBeFocused();
+  await expect(page.getByRole('button',{name:'Map tools',exact:true})).toBeFocused();
   expect(await map.getAttribute('data-valid-ms')).toBe(utc);
 });
 

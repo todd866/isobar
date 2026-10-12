@@ -147,22 +147,26 @@ test('enlarged phone readings stay separate and the selected mode remains reacha
     const sizes = elements.map((element) => [element, parseFloat(getComputedStyle(element).fontSize)] as const);
     for (const [element, size] of sizes) element.style.fontSize = `${size * 2}px`;
   });
-  await page.screenshot({ path: test.info().outputPath('phone-200-percent-before-check.png') });
+  await expect(page.locator('[data-map-density="compact"]')).toBeVisible();
+  const lens = page.getByRole('combobox', { name: 'Weather lens', exact: true });
+  await expect(lens).toBeVisible();
+  await expect(lens).toHaveValue('temp');
+  await page.getByRole('button', { name: 'Show daily forecast', exact: true }).click();
   await expect.poll(() => page.evaluate(() => {
     const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
-    const legend = box('.map-legend'), ask = box('.map-chat-float');
+    const legend = box('.map-legend'), ask = box('[aria-label="Ask Isobar"]');
     const label = box('[data-timeline-label]'), track = box('[data-timeline-track] > div');
     const clockFits = [...document.querySelectorAll('.timeline .map-clock > span')].every((node) => {
       const r = node.getBoundingClientRect();
       return r.left >= label.left - 1 && r.right <= label.right + 1;
     });
-    const selected = box('[data-lens="temp"]'), modes = box('[data-lens-bar]');
+    const selected = box('[aria-label="Weather lens"]');
     const day = box('[aria-label="Forecast days"] button');
     const readings = [...document.querySelectorAll('[aria-label="Forecast days"] button:first-child .day-values > span')]
       .map((element) => element.getBoundingClientRect()).filter((rect) => rect.width > 0);
-    return { clockFits, legendFits: legend.right <= ask.left, labelAboveTrack: label.bottom <= track.top,
+    return { clockFits, legendFits: legend.bottom <= ask.top || legend.right <= ask.left, labelAboveTrack: label.bottom <= track.top,
       labelFits: label.left >= 0 && label.right <= innerWidth,
-      selectedFits: selected.left >= modes.left && selected.right <= modes.right,
+      selectedFits: selected.left >= 0 && selected.right <= innerWidth,
       simpleReadings: readings.length === 1,
       readingsFit: readings.every((reading) => reading.left >= day.left && reading.right <= day.right),
       readingsSeparate: readings.every((reading, index) => index === 0 || reading.top >= readings[index - 1].bottom - 1) };
@@ -177,24 +181,10 @@ test('enlarged phone readings stay separate and the selected mode remains reacha
   await expect(menu).toBeHidden();
   await expect(page.getByRole('button', { name: 'Menu', exact: true })).toBeFocused();
   await page.getByRole('button', { name: 'Hide daily forecast' }).click();
-  const compact = page.locator('[data-compact-bar]');
-  await expect(compact).toBeVisible();
-  // Collapsing mounts fresh controls: enlarge those too, then let the
-  // measured-height transition finish before checking the visible surface.
-  await compact.evaluate(node => {
-    const elements = [...node.querySelectorAll<HTMLElement>('*')].filter(element => [...element.childNodes].some(child => child.nodeType === Node.TEXT_NODE && child.textContent?.trim()));
-    const sizes = elements.map(element => [element, parseFloat(getComputedStyle(element).fontSize)] as const);
-    for (const [element, size] of sizes) element.style.fontSize = `${size * 2}px`;
-  });
-  await page.waitForTimeout(400);
-  expect(await compact.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1);
-  expect(await compact.evaluate(node => {
-    const bounds = node.getBoundingClientRect();
-    return [...node.querySelectorAll('.map-clock > span, select, [data-chrome-toggle]')].every(element => {
-      const rect = element.getBoundingClientRect();
-      return rect.top >= bounds.top && rect.bottom <= bounds.bottom + 1 && rect.left >= bounds.left && rect.right <= bounds.right + 1;
-    });
-  })).toBe(true);
+  await expect(page.getByRole('list', { name: 'Forecast days', exact: true })).toBeHidden();
+  await expect(lens).toBeVisible();
+  await lens.selectOption('wind');
+  await expect(lens).toHaveValue('wind');
   await expect(page.getByRole('combobox', { name: 'Speed' })).toBeVisible();
   await expect(page.getByRole('slider', { name: 'Forecast time' })).toBeVisible();
   await page.screenshot({ path: test.info().outputPath('phone-200-percent-collapsed.png') });

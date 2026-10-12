@@ -146,6 +146,10 @@ for (const theme of ['light', 'dark'] as const) for (const viewport of [
       await expect(page.locator('[data-map-density="compact"]')).toBeVisible();
       if (viewport.name === 'phone' && theme === 'light') {
         await stage.evaluate((element: any) => element.chartApi.setView(-31.95, 115.86, .12));
+        await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+        const bounds = (await stage.boundingBox())!;
+        await stage.locator('canvas[tabindex="0"]').click({ position: { x: bounds.width * .5, y: bounds.height * .45 } });
+        await expect(page.locator('[data-point-panel]')).toBeVisible();
         await page.getByRole('button', { name: 'Map tools', exact: true }).click();
         const slice = page.getByRole('button', { name: 'Terrain and atmosphere slice', exact: true });
         await expect(slice).toBeEnabled();
@@ -173,8 +177,12 @@ for (const theme of ['light', 'dark'] as const) for (const viewport of [
         await slice.click();
         await expect(slider).toHaveCount(0);
         await expect(atmosphere).toBeFocused();
-        await page.getByRole('button', { name: 'Close atmospheric section', exact: true }).click();
-
+        const selectedPoint = await page.locator('[data-point-panel]').getAttribute('data-point-location');
+        await page.keyboard.press('Escape');
+        await expect(page.locator('[data-atmosphere-section]')).toHaveCount(0);
+        await expect(page.locator('[data-point-panel]')).toBeVisible();
+        await expect(page.locator('[data-point-panel]')).toHaveAttribute('data-point-location', selectedPoint!);
+        await expect(page.getByRole('button', { name: 'Map tools', exact: true })).toBeFocused();
       }
       await page.goto('/history?event=everest-1953');
       await page.evaluate(() => { document.documentElement.style.fontSize = '32px'; });

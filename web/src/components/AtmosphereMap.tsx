@@ -132,9 +132,10 @@ export function AtmosphereMap({ compact = false, camera, geo, lat, lon, validMs,
   }, [compact]);
   useEffect(() => {
     if (!section) return;
-    const close = (e: KeyboardEvent) => { if (e.key === 'Escape') { closeSection(); e.preventDefault(); } };
-    window.addEventListener('keydown', close);
-    return () => window.removeEventListener('keydown', close);
+    const close = (e: KeyboardEvent) => { if (e.key === 'Escape') { closeSection(); e.preventDefault(); e.stopPropagation(); } };
+    // The open instrument owns Escape before a temporarily hidden point sheet.
+    window.addEventListener('keydown', close, true);
+    return () => window.removeEventListener('keydown', close, true);
   }, [section, closeSection]);
   useLayoutEffect(() => {
     const node = canvas.current, ctx = node?.getContext('2d');
