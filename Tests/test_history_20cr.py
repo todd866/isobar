@@ -3,6 +3,7 @@ import io
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 import numpy as np
 import sys
@@ -157,7 +158,11 @@ class TwentyCRTests(unittest.TestCase):
             try:
                 out = root / 'out.json'
                 args = type('Args', (), {'date':'1915-04-25','event_id':'fixture','label':'fixture','step':90.,'input_dir':root,'max_mb':20.,'output':out})()
-                result = import_20cr.import_data(args)
+                # This pipeline uses only the temporary HDF5 fixtures above.
+                # Keep the real download admission guard intact outside this test.
+                with patch.object(import_20cr, "admit") as admission:
+                    result = import_20cr.import_data(args)
+                self.assertEqual(admission.call_count, len(specs))
             finally:
                 import_20cr.RangeFile = original
             self.assertEqual(len(result['frames']), 24)

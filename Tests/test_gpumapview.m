@@ -14,6 +14,17 @@
 - (CGFloat)pixelScale { return _testScale > 0 ? _testScale : 1; }
 @end
 
+// Camera reversibility compares the geographic field, not particle history.
+// Real wind motion and complete composites have separate renderer acceptance.
+@interface CameraFieldSnapshotView : GPUMapView
+@end
+@implementation CameraFieldSnapshotView
+- (CGImageRef)copyImageWithVectorOverlays:(CGImageRef)image wind:(BOOL)wind atmosphere:(BOOL)atmosphere {
+    (void)image; (void)wind; (void)atmosphere;
+    return nil;
+}
+@end
+
 static int failures = 0;
 
 @interface GPUMapView (GestureTestEvents)
@@ -181,7 +192,10 @@ static void CheckDragAndPinch(GPUMapView *view) {
                 renderError.localizedDescription ?: @"maximum-tilt field upload");
         [view waitForUploads];
     }
-    GPUMapView *renderView = [GPUMapView mapView];
+    GPUMapView *renderView = [CameraFieldSnapshotView mapView];
+    // Animated contour-label retention is also independent of camera recovery.
+    IsobarFieldRenderer *cameraRenderer = [renderView valueForKey:@"renderer"];
+    cameraRenderer.motion = nil;
     renderView.frame = NSMakeRect(0, 0, 480, 360);
     NSString *renderErrorText = nil;
     NSString *renderStore = [[NSProcessInfo processInfo].environment[@"ISOBAR_FIXTURES"] ?: @"Tests/fixtures"
