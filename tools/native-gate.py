@@ -33,7 +33,9 @@ COMMANDS = [["sh", "tools/prepare-local-python.sh"],
             ["build/ci-python/bin/python", "-m", "pytest", "wall", "-q", "--timeout=90", "--timeout-method=signal"],
             ["./build.sh"],
             ["python3", "tools/check-native-build.py"], ["./tools/sanitize.sh"]]
-TIMEOUTS = [720, 360, 360, 1800, 60, 900]
+# The full offscreen renderer/controller suite can exceed 30 minutes on current macOS.
+# Keep a bounded watchdog without truncating the later journey checks.
+TIMEOUTS = [720, 360, 360, 2700, 60, 900]
 MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 RECEIPT_PATH = ".ci/native-gate-receipt.json"
 FIXED_ENV = {"ISOBAR_ADHOC": "1", "ISOBAR_BUNDLE_COLLECTOR": "0", "ISOBAR_CI_SLOW": "1",

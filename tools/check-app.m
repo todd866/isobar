@@ -153,9 +153,13 @@ static NSUInteger BureauLandPixels(NSView *view) {
     NSBitmapImageRep *rep=[view bitmapImageRepForCachingDisplayInRect:view.bounds];
     [view cacheDisplayInRect:view.bounds toBitmapImageRep:rep];
     NSUInteger count=0;
-    for(NSInteger y=0;y<rep.pixelsHigh;y+=3) for(NSInteger x=0;x<rep.pixelsWide;x+=3) {
-        NSColor *c=[[rep colorAtX:x y:y] colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
-        if(fabs(c.redComponent-244.0/255)<.035 && fabs(c.greenComponent-238.0/255)<.035 && fabs(c.blueComponent-175.0/255)<.035) count++;
+    for(NSInteger y=0;y<rep.pixelsHigh;y+=3) {
+        @autoreleasepool {
+            for(NSInteger x=0;x<rep.pixelsWide;x+=3) {
+                NSColor *c=[[rep colorAtX:x y:y] colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
+                if(fabs(c.redComponent-244.0/255)<.035 && fabs(c.greenComponent-238.0/255)<.035 && fabs(c.blueComponent-175.0/255)<.035) count++;
+            }
+        }
     }
     return count;
 }
@@ -242,13 +246,15 @@ static BOOL MapBottomHasNoCoverage(NSBitmapImageRep *rep, NSRect mapFrame, CGFlo
     // A plate band is many pixels wide. One antialiased isobar sample can
     // land on the same beige as the light uncovered colour; a run cannot.
     for (NSInteger y = top; y < bottom; y++) {
-        NSInteger run = 0;
-        for (NSInteger x = x0; x < x1; x++) {
-            if (!IsNoCoverageColour([rep colorAtX:x y:y])) { run = 0; continue; }
-            if (++run < 8) continue;
-            if (hitX) *hitX = (int)x;
-            if (hitY) *hitY = (int)y;
-            return YES;
+        @autoreleasepool {
+            NSInteger run = 0;
+            for (NSInteger x = x0; x < x1; x++) {
+                if (!IsNoCoverageColour([rep colorAtX:x y:y])) { run = 0; continue; }
+                if (++run < 8) continue;
+                if (hitX) *hitX = (int)x;
+                if (hitY) *hitY = (int)y;
+                return YES;
+            }
         }
     }
     return NO;
@@ -263,12 +269,14 @@ static void CountInk(NSBitmapImageRep *rep, NSRect pixelRect, NSUInteger *ink, N
     NSInteger maxX = MIN(rep.pixelsWide, (NSInteger)ceil(NSMaxX(pixelRect)));
     NSInteger maxY = MIN(rep.pixelsHigh, (NSInteger)ceil(NSMaxY(pixelRect)));
     for (NSInteger y = minY; y < maxY; y += 2) {
-        for (NSInteger x = minX; x < maxX; x += 2) {
-            NSColor *c = [rep colorAtX:x y:y];
-            if (ColorNear(c, light.isobar.r, light.isobar.g, light.isobar.b, 0.09) ||
-                ColorNear(c, dark.isobar.r, dark.isobar.g, dark.isobar.b, 0.09)) (*ink)++;
-            if (ColorNear(c, light.coast.r, light.coast.g, light.coast.b, 0.08) ||
-                ColorNear(c, dark.coast.r, dark.coast.g, dark.coast.b, 0.06)) (*coast)++;
+        @autoreleasepool {
+            for (NSInteger x = minX; x < maxX; x += 2) {
+                NSColor *c = [rep colorAtX:x y:y];
+                if (ColorNear(c, light.isobar.r, light.isobar.g, light.isobar.b, 0.09) ||
+                    ColorNear(c, dark.isobar.r, dark.isobar.g, dark.isobar.b, 0.09)) (*ink)++;
+                if (ColorNear(c, light.coast.r, light.coast.g, light.coast.b, 0.08) ||
+                    ColorNear(c, dark.coast.r, dark.coast.g, dark.coast.b, 0.06)) (*coast)++;
+            }
         }
     }
 }
