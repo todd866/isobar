@@ -1,4 +1,5 @@
 'use client';
+import {pressureTextureSample} from '@/lib/pressure-label';
 import {sampleMonotoneBicubic} from '@/lib/cyclone-environment';
 import {marineForEvent,drawHistoricalMarine,satelliteForDate,type MarineMode} from '@/lib/historical-marine';
 import {cyclonePoint} from '@/lib/cyclone-point';
@@ -28,6 +29,7 @@ import { mapUnproject, mapProject } from '@/lib/lambert';
 import { bindTrackpadPinch } from '@/lib/trackpad';
 import {
   blendFrame,
+  decodeFrame,
   blendReady,
   FRAME_READY,
   chartFrame,
@@ -57,7 +59,7 @@ import { chartScalarAt, orographyMetresAt, orographyVariable } from '@/lib/point
 import { loadTerrainSection, elevationsAlong, type SectionSample } from '@/lib/point/terrain-section';
 import { drawPeaks, snapToSummit, SUMMITS, type PlacedSummit } from '@/lib/peaks';
 import { createElevationCoverage } from '@/lib/terrain/elevation';
-import type { ElevationAt } from '@/lib/map-generalise';
+import { latitudeSpan, type ElevationAt } from '@/lib/map-generalise';
 import { createTerrainLayer, viewGeoBox, type TerrainLayer } from '@/lib/terrain/terrain-layer';
 import { createWaterLayer, type WaterLayer } from '@/lib/water-layer';
 import { lakeContains, withLakes } from '@/lib/water';
@@ -1135,8 +1137,23 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     let busy = false;
     let queued = false;
     let lastKey = '';
+    let lastContourAt = -Infinity;
     let pairKey = '';
     let overlayKey = '';
+    const pressurePairs = new Map<string, Float32Array>();
+    const pressurePending = new Set<string>();
+    let uploadedPressure = '';
+    let gpuPressure = false;
+    let pressureWanted = new Set<string>();
+    const preparePressure = (i0: number, i1: number) => {
+      const key = `${i0}:${i1}`;
+      if (!gl || !worker || pressurePending.size >= 2 || pressurePairs.has(key) || pressurePending.has(key)
+        || !blendReady(loaded, 'mslp', i0, i1)) return;
+      const a = decodeFrame(chartFrame(loaded, 'mslp', i0), manifest.variables.mslp);
+      const b = decodeFrame(chartFrame(loaded, 'mslp', i1), manifest.variables.mslp);
+      pressurePending.add(key);
+      worker.postMessage({ type: 'pressure', key, a, b, nx: manifest.nx, ny: manifest.ny, wraps: manifest.wrapsLongitude }, [a.buffer, b.buffer]);
+    };
     let cameraUiDirty = false;
     let lastUi = 0;
     let lastStamp = performance.now();
@@ -1274,7 +1291,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const sceneTime=Date.parse(manifest.run)+(manifest.forecastHours[0]*60+clockRef.current.minute)*60000;
       const sceneDefinition=sceneForPlace(manifest.places[0]?.id);
       const sceneKey=sceneDefinition?`${marineModeRef.current}:${Math.floor(sceneTime/1000)}:${Object.values(historyLayersRef.current).join(',')}`:'';
-      const key = `${sceneKey}:${width.toFixed(1)}:${height.toFixed(1)}:${camera.centerX.toFixed(4)}:${camera.centerY.toFixed(4)}:${camera.halfWidth.toFixed(4)}:${camera.halfHeight.toFixed(4)}:${tiltRef.current}:${camera.bearingRadians??0}:${camera.focusHeightM??0}:${contoursRef.current.lines.length}:${contourId}:${terrainRevision}:${darkRef.current}:${fieldRef.current}:${placeRows ? placeRows.length : -1}:${uiAvoid.map((box) => `${Math.round(box.x)},${Math.round(box.y)},${Math.round(box.w)},${Math.round(box.h)}`).join(';')}:${unitKey(unitsRef.current)}:${graticuleRef.current ? 1 : 0}:${borderEpochRef.current}:${atmosphereInspectionRef.current}:${sliced}:${sliceRef.current?JSON.stringify(sliceRef.current):""}:${borderSet === bordersCloseRef.current ? 1 : 0}:${manifest.places[0]?.id==='h.everest'?Math.floor(clockRef.current.minute):''}`;
+      const key = `${sceneKey}:${width.toFixed(1)}:${height.toFixed(1)}:${camera.centerX.toFixed(4)}:${camera.centerY.toFixed(4)}:${camera.halfWidth.toFixed(4)}:${camera.halfHeight.toFixed(4)}:${tiltRef.current}:${camera.bearingRadians??0}:${camera.focusHeightM??0}:${contoursRef.current.lines.length}:${contourId}:${terrainRevision}:${darkRef.current}:${fieldRef.current}:${placeRows ? placeRows.length : -1}:${uiAvoid.map((box) => `${Math.round(box.x)},${Math.round(box.y)},${Math.round(box.w)},${Math.round(box.h)}`).join(';')}:${unitKey(unitsRef.current)}:${graticuleRef.current ? 1 : 0}:${borderEpochRef.current}:${atmosphereInspectionRef.current}:${sliced}:${sliceRef.current?JSON.stringify(sliceRef.current):""}:${borderSet === bordersCloseRef.current ? 1 : 0}:${manifest.places[0]?.id==='h.everest'?Math.floor(clockRef.current.minute):''}:${gpuPressure}:${gpuPressure?Math.floor(clockRef.current.minute*60):''}`;
       if (key === overlayKey) return;
       overlayKey = key;
       const degPerPixel = (camera.halfWidth * 2) / Math.max(1, width);
@@ -1289,7 +1306,11 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const stormBox=centre?[{x:(centre.x+1)*width/2-28,y:(1-centre.y)*height/2-30,w:56,h:64}]:[];
       const shipBoxes=sceneDefinition?historicalShipBoxes(sceneDefinition,GEO,camera,elevationAt??null,width,height,sceneTime,historyLayersRef.current):[];
       const anchor = paintPlaces(ctx, width, height, camera, [...uiAvoid,...stormBox,...shipBoxes], true).slice(0, 1);
-      const avoid = drawOverlay(ctx, width, height, dpr, GEO, camera, loaded.coastLod[lod] ?? loaded.coast, contoursRef.current.lines, contoursRef.current.centres, !gl && !canvasChart?.usable(), manifest, darkRef.current ? NIGHT_INK : DAY_INK, [...uiAvoid, ...anchor,...shipBoxes], unitsRef.current, elevationAt, graticuleRef.current, borderSet, loaded.water,loaded.cyclone?10:0);
+      const labelBlend = frameBlend(manifest.forecastHours, manifest.forecastHours[0]*60+clockRef.current.minute);
+      const labelPressure = labelBlend && pressurePairs.get(`${labelBlend.i0}:${labelBlend.i1}`);
+      const pressureSample = gpuPressure && labelPressure && labelBlend
+        ? (lon:number,lat:number) => pressureTextureSample(labelPressure, manifest, labelBlend.t, lon, lat, storm) : undefined;
+      const avoid = drawOverlay(ctx, width, height, dpr, GEO, camera, loaded.coastLod[lod] ?? loaded.coast, contoursRef.current.lines, contoursRef.current.centres, !gl && !canvasChart?.usable(), manifest, darkRef.current ? NIGHT_INK : DAY_INK, [...uiAvoid, ...anchor,...shipBoxes], unitsRef.current, elevationAt, graticuleRef.current, borderSet, loaded.water,loaded.cyclone?10:0,gpuPressure,pressureSample);
       // Town names keep clear of the map's own controls too, not just the
       // chart labels: drawOverlay returns only what it drew, so the UI boxes
       // must be carried into the place pass explicitly.
@@ -1391,6 +1412,20 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const absolute = manifest.forecastHours[0] * 60 + clockRef.current.minute;
       const blend = frameBlend(manifest.forecastHours, absolute);
       if (!blend) return;
+      const pressureKey = `${blend.i0}:${blend.i1}`;
+      const nextPressure = Math.min(manifest.forecastHours.length - 1, blend.i1 + 1);
+      pressureWanted = new Set([pressureKey, `${blend.i1}:${nextPressure}`]);
+      for (const key of pressurePairs.keys()) if (!pressureWanted.has(key)) pressurePairs.delete(key);
+      preparePressure(blend.i0, blend.i1);
+      preparePressure(blend.i1, nextPressure);
+      const pressure = pressurePairs.get(pressureKey);
+      if (gl && pressure && uploadedPressure !== pressureKey) {
+        gl.setPressure(pressure, manifest.nx, manifest.ny);
+        uploadedPressure = pressureKey;
+      }
+      const readyPressure = !!gl && uploadedPressure === pressureKey;
+      if (readyPressure !== gpuPressure) { gpuPressure = readyPressure; overlayKey = ''; cameraMoved = true; }
+      stage.dataset.pressureRenderer = gpuPressure ? 'gpu' : 'contours';
       const active = fieldRef.current === 'none' ? 'mslp' : FIELD_VARIABLE[fieldRef.current];
       loaded.prepare?.(clockRef.current.minute, [active, 'u10', 'v10', ...(satelliteRef.current ? ['tcc'] : [])]);
       const spec = manifest.variables[active];
@@ -1424,6 +1459,9 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const drawSpec = drawField === 'none' ? spec : manifest.variables[FIELD_VARIABLE[drawField]];
       const view = {
         cyclone:cycloneAt(loaded.cyclone,Date.parse(manifest.run)+absolute*60000),
+        pressure: gpuPressure,
+        pressureSpan: latitudeSpan(GEO, camera),
+        pressureDpr: Math.min(2, window.devicePixelRatio || 1),
         camera,
         ...camera,
         tiltCamera: renderCamera(camera).tiltCamera,
@@ -1474,6 +1512,8 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
         queued = true;
         return;
       }
+      if (gpuPressure && performance.now() - lastContourAt < 250) return;
+      lastContourAt = performance.now();
       lastKey = key;
       queued = false;
       busy = true;
@@ -1511,9 +1551,14 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     };
 
     if (worker) {
-      worker.onmessage = (event: MessageEvent<{ id: number; lines: Polyline[]; centres: PressureCentre[] }>) => {
-        busy = false;
+      worker.onmessage = (event: MessageEvent<{ type?: string; key: string; values: Float32Array; id: number; lines: Polyline[]; centres: PressureCentre[] }>) => {
         if (dead) return;
+        if (event.data.type === 'pressure') {
+          pressurePending.delete(event.data.key);
+          if (pressureWanted.has(event.data.key)) pressurePairs.set(event.data.key, event.data.values);
+          return;
+        }
+        busy = false;
         if (event.data.id === contourId) {
           contoursRef.current = { lines: event.data.lines, centres: event.data.centres };
           overlayKey = '';

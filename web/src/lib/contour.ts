@@ -51,8 +51,7 @@ function cellSegments(
   se: number,
   sw: number,
 ): Segment[] {
-  const bit = (value: number) => (value >= level ? 1 : 0);
-  let mask = bit(sw) | (bit(se) << 1) | (bit(ne) << 2) | (bit(nw) << 3);
+  const mask = (sw >= level ? 1 : 0) | (se >= level ? 2 : 0) | (ne >= level ? 4 : 0) | (nw >= level ? 8 : 0);
   if (mask === 0 || mask === 15) return [];
   const bottom = () => edgePoint(level, i, j + 1, sw, i + 1, j + 1, se);
   const right = () => edgePoint(level, i + 1, j + 1, se, i + 1, j, ne);
@@ -86,15 +85,18 @@ function cellSegments(
   return [seg(pair[0](), pair[1]())];
 }
 
-function keyOf(x: number, y: number): string {
-  return `${Math.round(x * 1000)}:${Math.round(y * 1000)}`;
+function keyOf(x: number, y: number): number {
+  // Cantor pairing preserves the same 0.001-cell stitching tolerance without
+  // allocating two strings per edge. Cell coordinates are non-negative.
+  const a = Math.round(x * 1000), b = Math.round(y * 1000), sum = a + b;
+  return sum * (sum + 1) / 2 + b;
 }
 
 function stitch(segments: Segment[]): { points: { x: number; y: number }[]; closed: boolean }[] {
   const unused = new Set<number>(segments.map((_, index) => index));
-  const starts = new Map<string, number[]>();
-  const ends = new Map<string, number[]>();
-  const push = (map: Map<string, number[]>, key: string, index: number) => {
+  const starts = new Map<number, number[]>();
+  const ends = new Map<number, number[]>();
+  const push = (map: Map<number, number[]>, key: number, index: number) => {
     const list = map.get(key);
     if (list) list.push(index);
     else map.set(key, [index]);
@@ -104,7 +106,7 @@ function stitch(segments: Segment[]): { points: { x: number; y: number }[]; clos
     push(ends, keyOf(segment.bx, segment.by), index);
   });
 
-  const take = (map: Map<string, number[]>, key: string): number | null => {
+  const take = (map: Map<number, number[]>, key: number): number | null => {
     const list = map.get(key);
     if (!list) return null;
     while (list.length) {
@@ -119,7 +121,7 @@ function stitch(segments: Segment[]): { points: { x: number; y: number }[]; clos
     const first = unused.values().next().value as number;
     unused.delete(first);
     const segment = segments[first];
-    const points = [{ x: segment.ax, y: segment.ay }, { x: segment.bx, y: segment.by }];
+    let points = [{ x: segment.ax, y: segment.ay }, { x: segment.bx, y: segment.by }];
     let guard = 0;
     while (guard < segments.length + 2) {
       guard += 1;
@@ -139,25 +141,27 @@ function stitch(segments: Segment[]): { points: { x: number; y: number }[]; clos
       }
       break;
     }
+    const prefix: { x: number; y: number }[] = [];
     guard = 0;
     while (guard < segments.length + 2) {
       guard += 1;
-      const head = points[0];
+      const head = prefix.length ? prefix[prefix.length - 1] : points[0];
       const headKey = keyOf(head.x, head.y);
       const into = take(ends, headKey);
       if (into != null) {
         unused.delete(into);
-        points.unshift({ x: segments[into].ax, y: segments[into].ay });
+        prefix.push({ x: segments[into].ax, y: segments[into].ay });
         continue;
       }
       const out = take(starts, headKey);
       if (out != null) {
         unused.delete(out);
-        points.unshift({ x: segments[out].bx, y: segments[out].by });
+        prefix.push({ x: segments[out].bx, y: segments[out].by });
         continue;
       }
       break;
     }
+    if (prefix.length) points = prefix.reverse().concat(points);
     const closed = points.length > 2 && keyOf(points[0].x, points[0].y) === keyOf(points[points.length - 1].x, points[points.length - 1].y);
     if (points.length >= 2) lines.push({ points, closed });
   }
@@ -257,13 +261,44 @@ export function contourPressure(
     if (value > max) max = value;
   }
   const lines: Polyline[] = [];
-  // Trace the 2 hPa ladder once. The overlay fades intermediate levels for
-  // the 8/4/2 hPa display bands without retracing when the camera moves.
+  // Visit each cell once and trace only levels crossing its value range. A
+  // full global grid otherwise gets rescanned for every level, even though
+  // most half-degree cells cross none. Each bucket retains the original
+  // row/column order, so saddle resolution and stitching remain identical.
   const step = interval / 2;
-  if (Number.isFinite(min) && Number.isFinite(max)) {
+  if (Number.isFinite(min) && Number.isFinite(max) && step > 0) {
     const start = Math.ceil(min / step) * step;
-    for (let level = start; level <= max; level += step) {
-      lines.push(...marchIsobars(traced, columns, ny, level, west, north, dlon, dlat).filter((line) => line.lon.length >= 4));
+    const levels: number[] = [];
+    for (let level = start; level <= max; level += step) levels.push(level);
+    const buckets: Segment[][] = levels.map(() => []);
+    for (let j = 0; j < ny - 1; j++) {
+      const row = j * columns;
+      for (let i = 0; i < columns - 1; i++) {
+        const nw = traced[row + i], ne = traced[row + i + 1];
+        const sw = traced[row + columns + i], se = traced[row + columns + i + 1];
+        if (!Number.isFinite(nw) || !Number.isFinite(ne) || !Number.isFinite(sw) || !Number.isFinite(se)) continue;
+        const lo = Math.min(nw, ne, sw, se), hi = Math.max(nw, ne, sw, se);
+        // Include one neighbouring bucket at each end to tolerate arithmetic
+        // rounding for non-integer intervals; the exact comparison is below.
+        const first = Math.max(0, Math.floor((lo - start) / step));
+        const last = Math.min(levels.length - 1, Math.ceil((hi - start) / step));
+        for (let k = first; k <= last; k++) {
+          const level = levels[k];
+          if (level <= lo || level > hi) continue;
+          buckets[k].push(...cellSegments(level, i, j, nw, ne, se, sw));
+        }
+      }
+    }
+    for (let k = 0; k < levels.length; k++) {
+      for (const line of stitch(buckets[k])) {
+        if (line.points.length < 4) continue;
+        const lon = new Float32Array(line.points.length), lat = new Float32Array(line.points.length);
+        for (let p = 0; p < line.points.length; p++) {
+          lon[p] = west + line.points[p].x * dlon;
+          lat[p] = north + line.points[p].y * dlat;
+        }
+        lines.push({ level: levels[k], closed: line.closed, lon, lat });
+      }
     }
   }
   return {

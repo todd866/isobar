@@ -69,11 +69,15 @@ function quant(value: number, scale: number, offset: number): number {
   return raw;
 }
 
-export function installChart(page: Page, components = true) {
+export function installChart(page: Page, components = true, globalMotion = false) {
+  const NX = globalMotion ? 720 : 48, NY = globalMotion ? 361 : 37;
+  const WEST = globalMotion ? -180 : 110, NORTH = globalMotion ? 90 : -8;
+  const STEP = globalMotion ? .5 : 1;
+  const EAST = WEST + (NX - 1) * STEP, SOUTH = NORTH - (NY - 1) * STEP;
   const runMs = Date.now() - 6 * 3600 * 1000;
   const run = new Date(runMs).toISOString().replace(/\.\d{3}Z$/, 'Z');
-  const hours = Array.from({ length: 33 }, (_, i) => i * 3);
-  const grid = { nx: NX, ny: NY, west: WEST, east: EAST, north: NORTH, south: SOUTH, step: STEP, dtype: 'uint16' };
+  const hours = globalMotion ? [...Array.from({length:49},(_,i)=>i*3),150,156,162,168] : Array.from({ length: 33 }, (_, i) => i * 3);
+  const grid = { nx: NX, ny: NY, west: WEST, east: EAST, north: NORTH, south: SOUTH, step: STEP, wraps_longitude: globalMotion, dtype: 'uint16' };
   const spec = (units: string, scale: number, offset: number) => ({
     frames: hours.map(() => ''), units, scale, offset, fill: 65535,
   });
@@ -120,6 +124,17 @@ export function installChart(page: Page, components = true) {
       }
     }
     frames.set(name, body);
+  }
+  if (globalMotion) {
+    variables.mslp.frames = hours.map((_, i) => `mslp-${i % 2}.bin`);
+    for (let frame = 0; frame < 2; frame++) {
+      const body = Buffer.alloc(NX * NY * 2);
+      for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
+        const value = 1012 + 18 * Math.sin(i / NX * Math.PI * 6) * Math.cos(j / NY * Math.PI) + frame * 12;
+        body.writeUInt16LE(quant(value, .1, 900), (j * NX + i) * 2);
+      }
+      frames.set(`mslp-${frame}`, body);
+    }
   }
   const coast = Buffer.alloc(26);
   coast.write('OCST');

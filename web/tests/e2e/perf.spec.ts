@@ -7,7 +7,8 @@ import { installChart } from './flow-fixture';
  * First chart (manifest + coast + MSLP at now, isobars drawn) on a cold and a
  * warm cache, and requestAnimationFrame intervals over 5 s while playing.
  * Budgets: warm first chart ≤ 1.5 s; p95 rAF interval ≤ 16.7 ms.
- * rAF reports presented-frame cadence, not GPU execution time. Keep raw timings
+ * rAF measures callback cadence, not changing isobar pixels or GPU execution.
+ * isobar-motion-perf.spec.ts separately checks the actual pressure plate. Keep raw timings
  * for diagnosis and enforce the same budget with barbs and the tour open.
  *
  * These budgets run in the frame-time Playwright project (one worker, one retry,

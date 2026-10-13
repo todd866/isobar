@@ -640,6 +640,10 @@ html:has(.map-shell), body:has(.map-shell) { overscroll-behavior: none; }
 [data-map-density="compact"] .map-header [data-locate] svg,
 [data-map-density="compact"] .map-header [data-save-place] svg { width:20px; height:20px; }
 [data-map-density="compact"] .map-header-learn { display:none; }
+/* At enlarged text sizes the place, locate, saved-place and menu controls are
+ * the header's primary row. Give the place field priority over secondary
+ * weather readings rather than truncating the selected city to an ellipsis. */
+[data-map-density="compact"] .map-header .map-reading { display:none; }
 [data-map-density="compact"] .map-menu-phone { display:block; }
 [data-map-density="compact"] .map-transport button,
 [data-map-density="compact"] .map-transport select { height:auto; min-height:max(36px,1.6em); }

@@ -1,3 +1,4 @@
+import { PRESSURE_ISOBARS_GLSL } from './pressure-isobars';
 import { buildSurfaceMesh, surfaceMeshSpacing } from './terrain/surface-mesh';
 import { mosaicElevation } from './terrain/elevation';
 import { buildTerrainSliceMesh, atmosphereSliceKey, type AtmosphereSlice } from './atmosphere-slice';
@@ -12,6 +13,9 @@ import type { Lambert } from './lambert';
 
 export interface GlView {
   cyclone?: CycloneState|null;
+  pressure?: boolean;
+  pressureSpan?: number;
+  pressureDpr?: number;
   tiltCamera?: TiltCamera;
   slice?: AtmosphereSlice;
   centerX: number;
@@ -287,6 +291,8 @@ vec2 terrainAt(vec2 uv) {
   return vec2(t.g > 0.001 ? t.r / t.g : 0.0, t.g);
 }
 
+${PRESSURE_ISOBARS_GLSL}
+
 vec4 tint(int field, float value) {
   if (value < -1e20) return vec4(0.0);
 ${fieldStopsToGlsl('rain', 1)}
@@ -422,6 +428,7 @@ void main() {
       base = mix(base, colour.rgb, colour.a * cover * uFieldAlpha);
     }
   }
+  if(uHasPressure==1)base=pressureInk(base,sampleLon,lat);
   // A soft foreground window reveals overlaid air; DEM sampling stays intact.
   float window = (1.0-smoothstep(-0.85, 0.2, vClip.y)) * exp(-vClip.x*vClip.x*1.5) * uCutaway;
   base = mix(base, mix(vec3(.83,.89,.93),vec3(.035,.065,.10),uDark), window*.96);
@@ -450,6 +457,7 @@ export interface GlChart {
   /** Water mask, row 0 at the south. Null clears it. Lakes force sea after the DEM. */
   setWater(pixels: Uint8Array | null, width: number, height: number, box: LandBox): void;
   setFrames(a: Uint16Array | null, b: Uint16Array | null, nx: number, ny: number): void;
+  setPressure(values: Float32Array, nx: number, ny: number): void;
   /** Elevation mosaic for relief; null clears it (flat plate). */
   setTerrain(terrain: TerrainTexture | null): void;
   setImagery(image: ImageBitmap | null, mapping?: ImageryMapping): void;
@@ -492,12 +500,13 @@ export function createGlChart(canvas: HTMLCanvasElement): GlChart | null {
     land: { pixels: Uint8Array; width: number; height: number; box: LandBox } | null;
     water: { pixels: Uint8Array | null; width: number; height: number; box: LandBox } | null;
     frames: { a: Uint16Array | null; b: Uint16Array | null; nx: number; ny: number } | null;
+    pressure: { values: Float32Array; nx: number; ny: number } | null;
     terrain: StoredTerrain;
     imagery: { source: ImageSource | null; mapping?: ImageryMapping };
     size: { width: number; height: number } | null;
     view: GlView | null;
     plateRequested: boolean;
-  } = { land: null, water: null, frames: null, terrain: null, imagery: { source: null }, size: null, view: null, plateRequested: false };
+  } = { land: null, water: null, frames: null, pressure: null, terrain: null, imagery: { source: null }, size: null, view: null, plateRequested: false };
   let chart: GlChart | null = initial;
   let lifecycle: 'ready' | 'lost' | 'restoring' | 'failed' | 'destroyed' = 'ready';
   const setLifecycle = (value: typeof lifecycle) => {
@@ -526,6 +535,7 @@ export function createGlChart(canvas: HTMLCanvasElement): GlChart | null {
     if (state.land) next.setLand(state.land.pixels, state.land.width, state.land.height, state.land.box);
     if (state.water) next.setWater(state.water.pixels, state.water.width, state.water.height, state.water.box);
     if (state.frames) next.setFrames(state.frames.a, state.frames.b, state.frames.nx, state.frames.ny);
+    if (state.pressure) next.setPressure(state.pressure.values, state.pressure.nx, state.pressure.ny);
     next.setTerrain(state.terrain);
     next.setImagery(state.imagery.source as ImageBitmap | null, state.imagery.mapping);
     if (state.plateRequested) next.requestPlate();
@@ -579,6 +589,10 @@ export function createGlChart(canvas: HTMLCanvasElement): GlChart | null {
       state.frames = { a: a?.slice() ?? null, b: b?.slice() ?? null, nx, ny };
       if (chart) chart.setFrames(a, b, nx, ny);
     },
+    setPressure(values, nx, ny) {
+      state.pressure = { values, nx, ny };
+      if (chart) chart.setPressure(values, nx, ny);
+    },
     setTerrain(next) {
       state.terrain = terrainCopy(next);
       if (chart) chart.setTerrain(next);
@@ -606,7 +620,7 @@ export function createGlChart(canvas: HTMLCanvasElement): GlChart | null {
       canvas.removeEventListener('webglcontextlost', onContextLost);
       canvas.removeEventListener('webglcontextrestored', onContextRestored);
       chart?.destroy(); chart = null;
-      state.land = null; state.water = null; state.frames = null; state.terrain = null;
+      state.land = null; state.water = null; state.frames = null; state.pressure = null; state.terrain = null;
       state.imagery = { source: null }; state.view = null; state.size = null;
       state.plateRequested = false;
     },
@@ -670,6 +684,8 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrainIndices);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, surface.indices, gl.STATIC_DRAW);
   }
+  const texPressure = gl.createTexture();
+  let hasPressure = false;
   const texA = gl.createTexture();
   const texB = gl.createTexture();
   const texLand = gl.createTexture();
@@ -700,6 +716,15 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   }
 
+  const uploadPressure = (values: Float32Array, nx: number, ny: number) => {
+    gl.bindTexture(gl.TEXTURE_2D, texPressure);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG32F, nx, ny, 0, gl.RG, gl.FLOAT, values);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  };
+  uploadPressure(new Float32Array([NaN, NaN]), 1, 1);
   uploadField(texA, null, 1, 1);
   uploadField(texB, null, 1, 1);
   gl.bindTexture(gl.TEXTURE_2D, texLand);
@@ -834,6 +859,9 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       pending = { ...next, row: 0 };
       uploadTerrainSlice();
     },
+    setPressure(values, nx, ny) {
+      uploadPressure(values, nx, ny); hasPressure = true;
+    },
     setFrames(a: Uint16Array | null, b: Uint16Array | null, nx: number, ny: number) {
       size = { nx, ny };
       hasField = a && b ? 1 : 0;
@@ -853,6 +881,13 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       gl.disable(gl.DEPTH_TEST);gl.clear(gl.DEPTH_BUFFER_BIT);
       const slice=view.tiltCamera&&view.slice?view.slice:undefined;
       gl.uniform1i(loc('uSliceEnabled'),slice?1:0);gl.uniform1i(loc('uSlicePass'),0);
+      gl.activeTexture(gl.TEXTURE6);
+      gl.bindTexture(gl.TEXTURE_2D, texPressure);
+      gl.uniform1i(loc('uPressure'), 6);
+      gl.uniform1i(loc('uHasPressure'), hasPressure && view.pressure ? 1 : 0);
+      gl.uniform1f(loc('uPressureSpan'), view.pressureSpan ?? 72);
+      gl.uniform1f(loc('uPressureDpr'), view.pressureDpr ?? 1);
+      gl.uniform1f(loc('uCyclonePressure'), view.cyclone?.pressureHpa ?? 1013);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, texA);
       gl.activeTexture(gl.TEXTURE1);
@@ -897,7 +932,7 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       gl.uniform1f(loc('uFieldAlpha'), view.fieldAlpha == null ? 1 : Math.max(0, Math.min(1, view.fieldAlpha)));
       gl.uniform2f(loc('uOrigin'), view.west, view.north);
       gl.uniform2f(loc('uStep'), view.dlon, view.dlat);
-      gl.uniform2f(loc('uSize'), size.nx, size.ny);
+      gl.uniform2f(loc('uSize'), view.nx, view.ny);
       gl.uniform3f(loc('uQuant'), view.scale, view.offset, view.fill);
       gl.uniform4f(loc('uLandBox'), landBox.west, landBox.south, landBox.east, landBox.north);
       gl.uniform1i(loc('uTilt'), view.tiltCamera ? 1 : 0);
@@ -975,6 +1010,7 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       gl.deleteVertexArray(vao);
       gl.deleteBuffer(buffer);
       gl.deleteProgram(program);
+      gl.deleteTexture(texPressure);
       gl.deleteTexture(texA);
       gl.deleteTexture(texB);
       gl.deleteTexture(texLand);

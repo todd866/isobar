@@ -23,6 +23,8 @@ it.each([false, true])('worker and synchronous reconstruction agree (global=%s)'
   const grid = { values, nx, ny, west, north, step: 2.5, wrapsLongitude: global };
   const base = contourPressure(data.mslp, nx, ny, west, north, 2.5, -2.5, 4);
   const expected = cycloneContours(base, data.cyclone, (lon, lat) => sampleMonotoneBicubic(grid, lon, lat), grid);
-  expect(worker.postMessage).toHaveBeenCalledWith({ id: 7, ...expected });
+  expect(worker.postMessage).toHaveBeenCalledWith({ id: 7, ...expected }, expect.any(Array));
+  const sent = worker.postMessage.mock.calls[0];
+  expect(sent[1]).toEqual(sent[0].lines.flatMap((line: any) => [line.lon.buffer, line.lat.buffer]));
   expect(expected.lines.length).toBeGreaterThan(0);
 });

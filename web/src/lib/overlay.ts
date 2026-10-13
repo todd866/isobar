@@ -1,3 +1,4 @@
+import {pressureLabelPoint} from './pressure-label';
 import { visibleTerrainBounds, type TiltCamera } from './tilt-camera';
 import { mapProject, mapUnproject } from './lambert';
 import { project, unproject, type Camera, type Lambert } from './lambert';
@@ -831,6 +832,8 @@ export function drawOverlay(
   borders: Borders | null = null,
   water?: Water | null,
   labelGap = 0,
+  pressureOnPlate = false,
+  pressureSample?: (lon: number, lat: number) => number | null,
 ): DrawnLabel[] {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
@@ -965,8 +968,14 @@ export function drawOverlay(
       const target = item.length * fraction;
       let i = cumulative.findIndex((value) => value >= target);
       if (i < 0) i = item.points.length - 1;
-      const point = item.points[i];
+      let point = item.points[i];
       if (!point) continue;
+      if (pressureSample) {
+        const geo = mapUnproject(lambert, camera, point.x / width * 2 - 1, 1 - point.y / height * 2);
+        const aligned = geo && pressureLabelPoint(geo.lon, geo.lat, item.line.level, pressureSample);
+        point = aligned ? screen(aligned.lon, aligned.lat) : null;
+        if (!point) continue;
+      }
       if (item.high[i]) continue;
       // Only candidate labels need the grid-edge test, not every global vertex.
       if (!periodicWorld && grid && gridEdgeDistance(grid, item.line.lon[i], item.line.lat[i]) <= EDGE_FADE_DEG + 1) continue;
@@ -983,7 +992,7 @@ export function drawOverlay(
     }
   }
 
-  for (const item of projected) {
+  for (const item of pressureOnPlate ? [] : projected) {
     const gaps = [
       ...labels.filter((label) => label.text === isobarText(item.line.level, units, true)).map((label) => label.box),
       ...centreBoxes,
