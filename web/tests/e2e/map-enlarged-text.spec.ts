@@ -146,6 +146,11 @@ for (const theme of ['light', 'dark'] as const) for (const viewport of [
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await expect(page.locator('[data-map-density="compact"]')).toBeVisible();
       if (viewport.name === 'phone' && theme === 'light') {
+        // The earlier outside-tools map click selected a point. Close its sheet
+        // before selecting another point; enlarged WebKit sheets cover this tap.
+        const closePoint = page.getByRole('button', { name: 'Close point', exact: true });
+        if (await closePoint.isVisible()) await closePoint.click();
+        await expect(page.locator('[data-point-panel]')).toHaveCount(0);
         await stage.evaluate((element: any) => element.chartApi.setView(-31.95, 115.86, .12));
         await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
         const bounds = (await stage.boundingBox())!;
