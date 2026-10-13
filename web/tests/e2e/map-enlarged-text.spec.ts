@@ -107,7 +107,8 @@ for (const theme of ['light', 'dark'] as const) for (const viewport of [
         await expect(page.locator('[data-atmosphere-section]')).toBeVisible();
         await expect(page.locator('[data-map-tools]')).toBeHidden();
         await page.screenshot({ path: info.outputPath('atmosphere-open.png') });
-        await page.locator('[data-reading]').click();
+        // Neutral header padding remains available when compact mode omits weather readings.
+        await page.locator('.map-header').click({ position: { x: 2, y: 2 } });
         await expect(page.locator('[data-map-page]')).toHaveAttribute('data-map-tools-open', 'false');
         await expect(page.locator('[data-atmosphere-section]')).toBeVisible();
         await page.getByRole('button', { name: 'Close atmospheric section', exact: true }).click();
