@@ -168,6 +168,6 @@ export function daySummaries(points: PointsFile, placeId: string, zone: string):
 
 /** "21", "2.9", "0.4": one decimal under 10 mm, none above; null when dry (< 0.2 mm). */
 export function rainLabel(mm: number | null): string | null {
-  if (mm == null || mm < 0.2) return null;
+  if (mm == null || !Number.isFinite(mm) || mm < 1) return null;
   return mm >= 10 ? String(Math.round(mm)) : mm.toFixed(1);
 }

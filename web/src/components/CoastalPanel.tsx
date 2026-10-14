@@ -29,8 +29,8 @@ function Shore({ from, normal, kite }: { from: number | null; normal: number | n
   </span>;
 }
 
-export function CoastalPanel({ lens, point, name, detail, isPlace, onMakePlace, coast, nowMs, zone: placeZone, clockZone = null, band, onBand, onClose, anchorRef, panelRef }: {
-  lens: 'kite' | 'surf'; point: MapPoint; name: string; detail: string; isPlace: boolean; onMakePlace: () => 'set' | 'restored' | 'same'; coast: Coast; nowMs: number; zone: string;
+export function CoastalPanel({ lens, point, name, detail, isPlace, onMakePlace, coast, nowMs, validMs, onSeek, zone: placeZone, clockZone = null, band, onBand, onClose, anchorRef, panelRef }: {
+  lens: 'kite' | 'surf'; point: MapPoint; name: string; detail: string; isPlace: boolean; onMakePlace: () => 'set' | 'restored' | 'same'; coast: Coast; nowMs: number; validMs?: number; onSeek?: (timeMs: number) => void; zone: string;
   /** UTC or device zone; null uses place local. */
   clockZone?: string | null;
   band: KiteBand; onBand: (band: KiteBand) => void; onClose: () => void;
@@ -80,6 +80,35 @@ export function CoastalPanel({ lens, point, name, detail, isPlace, onMakePlace, 
   const secondary = lens === 'surf' && shown.some((row) => row.secondaryHeightM != null || row.secondaryPeriodS != null || row.secondaryFrom != null);
   const normal = spot?.seawardDeg ?? null;
   const best = bestCoastalWindow(rows, lens, band, normal);
+  const stepTol = lens === 'kite' ? 5_400_000 : 10_800_000;
+  const activeTime = useMemo(() => {
+    if (validMs == null || !shown.length) return null;
+    let closest: number | null = null;
+    let bestDiff = stepTol;
+    for (const row of shown) {
+      const diff = Math.abs(row.time - validMs);
+      if (diff <= bestDiff) {
+        bestDiff = diff;
+        closest = row.time;
+      }
+    }
+    return closest;
+  }, [shown, validMs, stepTol]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const initialValidRef = useRef(validMs);
+  useEffect(() => {
+    if (validMs == null || activeTime == null) return;
+    if (initialValidRef.current != null && Math.abs(validMs - initialValidRef.current) < 60_000) return;
+    initialValidRef.current = undefined;
+    const container = scrollRef.current;
+    const rowEl = container?.querySelector<HTMLElement>(`[data-hour="${activeTime}"]`);
+    if (!container || !rowEl) return;
+    const headerH = container.querySelector<HTMLElement>('[data-coastal-columns]')?.offsetHeight ?? 20;
+    const top = rowEl.offsetTop - headerH;
+    const bottom = rowEl.offsetTop + rowEl.offsetHeight;
+    if (top < container.scrollTop) container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+    else if (bottom > container.scrollTop + container.clientHeight) container.scrollTo({ top: bottom - container.clientHeight, behavior: 'smooth' });
+  }, [activeTime, validMs]);
   const failed = !!active && (lens === 'kite' ? active.windDone && !active.wind : active.marineDone && !active.marine);
   const partial = lens === 'surf' && !!active?.marine && active.windDone && !active.wind;
   const done = lens === 'kite' ? active?.windDone : active?.marineDone;
@@ -155,14 +184,14 @@ export function CoastalPanel({ lens, point, name, detail, isPlace, onMakePlace, 
     </div> : null}
     {!spot ? <p className={styles.status} data-coastal-status>no coast within 50 km</p> : <>
       <div className={styles.best} data-coastal-best-row title={lens === 'kite' ? 'Longest daylight window: wind in band, gusts no higher than the upper limit, no offshore component' : 'Longest daylight window: swell ≥10 s, wind offshore or ≤8 kt'}>
-        <span data-coastal-best>{bestLabel(best, zone, lens, band)}</span>
+        <span data-coastal-best className={best && onSeek ? styles.bestInteractive : undefined} onClick={best && onSeek ? () => { initialValidRef.current = undefined; onSeek(best.start); } : undefined}>{bestLabel(best, zone, lens, band)}</span>
         {failed || partial ? <button type="button" aria-label="Retry forecast" title="Forecast unavailable · retry" onClick={() => setRetry((v) => v + 1)}>⟳</button> : null}
       </div>
       {!done ? <p className={styles.status} data-coastal-status role="status">…</p> : failed ? <p className={styles.status} data-coastal-status role="status">Forecast unavailable</p> : !shown.length ? <p className={styles.status} data-coastal-status>No daylight forecast</p> :
-        <div className={styles.scroll} data-coastal-scroll tabIndex={0} aria-label="Forecast rows">
+        <div ref={scrollRef} className={styles.scroll} data-coastal-scroll tabIndex={0} aria-label="Forecast rows">
           <div role="table" aria-label={`${lens} forecast rows`} className={lens === 'kite' ? styles.kite : styles.surf} data-secondary={secondary}>
             <div role="row" className={styles.columns} data-coastal-columns><span role="columnheader" title={zone}>local</span>{lens === 'kite' ? <><span role="columnheader">wind / gust kt</span><span role="columnheader">shore</span></> : <><span role="columnheader" title="Significant wave height, metres">wave</span><span role="columnheader" title="Primary swell: metres / seconds; down-wave arrow">swell m/s</span>{secondary ? <span role="columnheader" title="Secondary swell: metres / seconds">② m/s</span> : null}<span role="columnheader">wind kt</span><span role="columnheader" title="Sea surface temperature, Celsius">sea °C</span></>}</div>
-            {shown.map((row) => <div role="row" key={row.time} data-coastal-row data-hour={row.time} data-daylight={row.daylight ?? 'missing'} className={styles.row}>
+            {shown.map((row) => <div role="row" key={row.time} data-coastal-row data-hour={row.time} data-active={row.time === activeTime ? 'true' : undefined} data-daylight={row.daylight ?? 'missing'} className={`${styles.row}${onSeek ? ` ${styles.rowInteractive}` : ''}`} onClick={onSeek ? () => onSeek(row.time) : undefined}>
               {timeCell(row)}
               {lens === 'kite' ? <>
                 <span role="cell" className={styles.wind} title={`Wind from ${number(row.windFrom)}°`}><WindArrow from={row.windFrom} className={styles.arrow} /><span data-band={kiteBandState(row.windKt, band)}>{number(row.windKt)}</span><span>/</span><span data-band={kiteBandState(row.gustKt, band)}>{number(row.gustKt)}</span></span>

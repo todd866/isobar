@@ -4,10 +4,24 @@
 #import <zlib.h>
 #import <ctype.h>
 
+// The store reload hands one station body to three parsers in a row; the
+// last body parsed on this thread is remembered by identity (the memo holds
+// it, so the address cannot be reused) and the immutable result is shared.
 static NSDictionary *JSONObject(NSData *data) {
     if (!data.length) return nil;
+    // Mutable data can change under the same identity: never remembered.
+    NSMutableDictionary *memo = [data isKindOfClass:NSMutableData.class] ? nil : NSThread.currentThread.threadDictionary;
+    if (memo && memo[@"isobar.json.data"] == data) {
+        id cached = memo[@"isobar.json.object"];
+        return cached == NSNull.null ? nil : cached;
+    }
     id obj = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-    return [obj isKindOfClass:NSDictionary.class] ? obj : nil;
+    NSDictionary *result = [obj isKindOfClass:NSDictionary.class] ? obj : nil;
+    if (memo) {
+        memo[@"isobar.json.data"] = data;
+        memo[@"isobar.json.object"] = result ?: NSNull.null;
+    }
+    return result;
 }
 
 static NSArray *JSONArray(id obj) {
@@ -149,6 +163,71 @@ static id ThreadCached(NSString *key, id (^make)(void)) {
         cache[key] = value;
     }
     return value;
+}
+
+static NSString *MapClockZoneAbbreviation(NSDate *date, NSTimeZone *tz) {
+    NSTimeZone *zone = tz ?: [NSTimeZone timeZoneWithName:@"UTC"];
+    NSInteger minutes = [zone secondsFromGMTForDate:date] / 60;
+    // ICU's abbreviation is correct for less common Australian zones (for
+    // example Lord Howe, whose half-hour DST offset is distinct). Keep the
+    // stable Bureau names only for the mainland zones used by place data.
+    if ([zone.name isEqualToString:@"Australia/Perth"]
+        || [zone.name isEqualToString:@"Australia/Brisbane"]
+        || [zone.name isEqualToString:@"Australia/Darwin"]
+        || [zone.name isEqualToString:@"Australia/Adelaide"]
+        || [zone.name isEqualToString:@"Australia/Sydney"]
+        || [zone.name isEqualToString:@"Australia/Melbourne"]
+        || [zone.name isEqualToString:@"Australia/Hobart"]
+        || [zone.name isEqualToString:@"Australia/Canberra"]) {
+        NSDictionary *australian = @{
+            @480: @"AWST", @525: @"ACWST", @570: @"ACST",
+            @600: @"AEST", @630: @"ACDT", @660: @"AEDT",
+        };
+        NSString *known = australian[@(minutes)];
+        if (known.length) return known;
+    }
+    if (minutes == 0) return @"UTC";
+    return [zone abbreviationForDate:date] ?: zone.name ?: @"UTC";
+}
+
+NSString *MapPlayheadClockText(NSDate *valid, NSDate *now, NSTimeZone *tz) {
+    if (!valid) return @"—";
+    NSTimeZone *zone = tz ?: [NSTimeZone timeZoneWithName:@"UTC"];
+    NSString *key = [NSString stringWithFormat:@"isobar.map-clock-day.%@", zone.name ?: @"UTC"];
+    NSDateFormatter *weekday = ThreadCached(key, ^id{
+        NSDateFormatter *made = [NSDateFormatter new];
+        made.locale = [NSLocale localeWithLocaleIdentifier:@"en_AU_POSIX"];
+        made.timeZone = zone;
+        made.dateFormat = @"EEE";
+        return made;
+    });
+    NSCalendar *cal = ThreadCached([NSString stringWithFormat:@"isobar.map-clock-cal.%@", zone.name ?: @"UTC"], ^id{
+        NSCalendar *made = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+        made.timeZone = zone;
+        return made;
+    });
+    NSDateComponents *parts = [cal components:NSCalendarUnitHour | NSCalendarUnitMinute fromDate:valid];
+    NSInteger hour = parts.hour % 12;
+    if (hour == 0) hour = 12;
+    NSString *period = parts.hour >= 12 ? @"pm" : @"am";
+    NSString *local = [NSString stringWithFormat:@"%@ %ld:%02ld %@ %@",
+        [weekday stringFromDate:valid], (long)hour, (long)parts.minute, period,
+        MapClockZoneAbbreviation(valid, zone)];
+
+    NSString *state = @"FORECAST";
+    if (now) {
+        NSTimeInterval delta = [valid timeIntervalSinceDate:now];
+        if (fabs(delta) < 90.0) state = @"NOW";
+        else if (delta < 0) state = @"PAST";
+    }
+    NSCalendar *utc = ThreadCached(@"isobar.map-clock-utc-cal", ^id{
+        NSCalendar *made = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+        made.timeZone = [NSTimeZone timeZoneWithName:@"UTC"];
+        return made;
+    });
+    NSDateComponents *zulu = [utc components:NSCalendarUnitHour | NSCalendarUnitMinute fromDate:valid];
+    return [NSString stringWithFormat:@"%@ · %@ · %02ld%02ldZ", state, local,
+        (long)zulu.hour, (long)zulu.minute];
 }
 
 // Bureau civil stamps are local wall time. A missing or unknown state, or a

@@ -33,7 +33,7 @@ static NSUInteger Render(WindMapView *view, NSString *name) {
     [NSGraphicsContext setCurrentContext:[NSGraphicsContext graphicsContextWithBitmapImageRep:rep]];
     CGContextTranslateCTM(NSGraphicsContext.currentContext.CGContext,0,NSHeight(view.bounds));
     CGContextScaleCTM(NSGraphicsContext.currentContext.CGContext,1,-1);
-    CGContextClearRect(NSGraphicsContext.currentContext.CGContext,NSRectToCGRect(view.bounds));[view drawRect:view.bounds];
+    CGContextClearRect(NSGraphicsContext.currentContext.CGContext,NSRectToCGRect(view.bounds));[view drawSnapshotInCurrentContext];
     [NSGraphicsContext restoreGraphicsState];
     NSUInteger ink=0;
     for(NSInteger y=0;y<rep.pixelsHigh;y++)for(NSInteger x=0;x<rep.pixelsWide;x++) {
@@ -57,7 +57,7 @@ static NSBitmapImageRep *Capture(WindMapView *view, NSString *name) {
     NSBitmapImageRep *rep=[[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:NSWidth(view.bounds) pixelsHigh:NSHeight(view.bounds) bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
     [NSGraphicsContext saveGraphicsState]; [NSGraphicsContext setCurrentContext:[NSGraphicsContext graphicsContextWithBitmapImageRep:rep]];
     CGContextTranslateCTM(NSGraphicsContext.currentContext.CGContext,0,NSHeight(view.bounds));
-    CGContextScaleCTM(NSGraphicsContext.currentContext.CGContext,1,-1); CGContextClearRect(NSGraphicsContext.currentContext.CGContext,NSRectToCGRect(view.bounds));[view drawRect:view.bounds]; [NSGraphicsContext restoreGraphicsState];
+    CGContextScaleCTM(NSGraphicsContext.currentContext.CGContext,1,-1); CGContextClearRect(NSGraphicsContext.currentContext.CGContext,NSRectToCGRect(view.bounds));[view drawSnapshotInCurrentContext]; [NSGraphicsContext restoreGraphicsState];
     NSString *dir= @"build/qa/wind"; [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:NULL]; [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}]; [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:[dir stringByAppendingPathComponent:name] atomically:YES]; return rep;
 }
 static void AdvanceAndDraw(WindMapView *view,double seconds,double dt) {
@@ -68,7 +68,7 @@ static void AdvanceAndDraw(WindMapView *view,double seconds,double dt) {
     CGContextScaleCTM(NSGraphicsContext.currentContext.CGContext,1,-1);
     for(int i=0;i<(int)llround(seconds/dt);i++) { @autoreleasepool {
         CGContextClearRect(NSGraphicsContext.currentContext.CGContext,NSRectToCGRect(view.bounds));
-        [view advanceBy:dt];CGContextClearRect(NSGraphicsContext.currentContext.CGContext,NSRectToCGRect(view.bounds));[view drawRect:view.bounds];
+        [view advanceBy:dt];CGContextClearRect(NSGraphicsContext.currentContext.CGContext,NSRectToCGRect(view.bounds));[view drawSnapshotInCurrentContext];
     }}
     [NSGraphicsContext restoreGraphicsState];
 }
@@ -93,6 +93,17 @@ int main(void) { @autoreleasepool {
         run.speed=speed.doubleValue;
         NSUInteger ink=Render(view,[NSString stringWithFormat:@"tilted-%@.png",speed]);
         if(view.drawnCount<10||ink<150){fprintf(stderr,"FAIL real wind barbs not visible at %.0f kt (%lu, %lu pixels)\n",run.speed,(unsigned long)view.drawnCount,(unsigned long)ink);failures++;}
+    }
+    // Barbs ride the model grid: a pan keeps the same points under barbs.
+    {
+        IsobarCamera flat=c;flat.pitch=0;flat.globe=0;view.camera=flat;run.speed=25;
+        Render(view,@"barbs-before-pan.png");
+        NSSet *before=view.barbCells;
+        IsobarCamera moved=flat;moved.centreLon+=0.6;moved.centreLat+=0.4;view.camera=moved;
+        Render(view,@"barbs-after-pan.png");
+        NSMutableSet *kept=[before mutableCopy];[kept intersectSet:view.barbCells];
+        if(before.count<10||kept.count<before.count*0.6){fprintf(stderr,"FAIL barbs stay on their grid points through a pan (%lu of %lu)\n",(unsigned long)kept.count,(unsigned long)before.count);failures++;}
+        view.camera=c;
     }
     run.missing=YES;
     if(Render(view,@"missing.png")!=0||view.drawnCount){fprintf(stderr,"FAIL missing wind must stay blank\n");failures++;}

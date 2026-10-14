@@ -2,9 +2,14 @@
 // from the shared player. The view does not keep a second clock.
 #import "gpumapview.h"
 #import "ownchart.h"
+#import "mapdetail.h"
 #import "mapcamera.h"
 #import "atmospheremapview.h"
 #import "hazard.h"
+#import "terrain.h"
+#import "terrainmap.h"
+#import "terrainscene.h"
+#import "starlink.h"
 #import <QuartzCore/QuartzCore.h>
 #import <math.h>
 #import <string.h>
@@ -325,6 +330,64 @@ static void GMGreatCircle(double aLat,double aLon,double bLat,double bLon,double
 }
 @end
 
+// Starlink satellites in a y-down pixel context; returns how many were in view.
+static NSUInteger DrawStarlink(CGContextRef c, IsobarCamera cam, double scale, BOOL dark, NSData *sky,
+    NSInteger serving, BOOL current) {
+    const StarlinkSkyPoint *pts = sky.bytes;
+    NSUInteger n = sky.length / sizeof *pts, drawn = 0;
+    double w = cam.viewportW, h = cam.viewportH;
+    CGFloat ink = dark ? 0.95 : 0.1;
+    NSInteger servingAt = -1;
+    for (NSUInteger i = 0; i < n; i++) {
+        if ((NSInteger)pts[i].index == serving) { servingAt = (NSInteger)i; continue; }
+        double x, y;
+        if (!IsobarCameraProject(cam, pts[i].latitude, pts[i].longitude, &x, &y) || x < 0 || y < 0 || x > w || y > h) continue;
+        BOOL high = pts[i].elevation >= 25;
+        double r = (high ? 1.7 : 1.1) * scale;
+        CGContextSetRGBFillColor(c, ink, ink, ink, high ? 0.85 : 0.45);
+        CGContextFillEllipseInRect(c, CGRectMake(x - r, y - r, 2 * r, 2 * r));
+        drawn++;
+    }
+    double x, y;
+    if (servingAt >= 0 && IsobarCameraProject(cam, pts[servingAt].latitude, pts[servingAt].longitude, &x, &y)) {
+        CGFloat r = 0x1F / 255.0, g = 0x6F / 255.0, b = 0xB2 / 255.0, a = 1;
+        if (dark) { r = 0x7C / 255.0; g = 0xC4 / 255.0; b = 1; }
+        if (!current) { r = g = b = dark ? 0.7 : 0.45; a = 0.8; }
+        CGContextSetRGBFillColor(c, r, g, b, a);
+        CGContextSetRGBStrokeColor(c, r, g, b, a);
+        CGContextFillEllipseInRect(c, CGRectMake(x - 2.4 * scale, y - 2.4 * scale, 4.8 * scale, 4.8 * scale));
+        CGContextSetLineWidth(c, 2 * scale);
+        CGContextStrokeEllipseInRect(c, CGRectMake(x - 5.5 * scale, y - 5.5 * scale, 11 * scale, 11 * scale));
+        drawn++;
+    }
+    return drawn;
+}
+
+@interface GPUMapStarlinkView : NSView
+@property (nonatomic, copy) NSData *sky;
+@property (nonatomic) NSInteger serving;
+@property (nonatomic) BOOL current;
+@property (nonatomic) IsobarCamera camera;
+@property (nonatomic) double pixelScale;
+@property (nonatomic) BOOL dark;
+@property (nonatomic) NSUInteger drawn;
+@end
+@implementation GPUMapStarlinkView
+- (BOOL)isFlipped { return YES; }
+- (BOOL)isOpaque { return NO; }
+- (NSView *)hitTest:(NSPoint)point { (void)point; return nil; }
+- (void)drawRect:(NSRect)dirty {
+    (void)dirty;
+    if (!self.sky.length) { self.drawn = 0; return; }
+    CGContextRef c = NSGraphicsContext.currentContext.CGContext;
+    double scale = self.pixelScale > 0 ? self.pixelScale : 1;
+    CGContextSaveGState(c);
+    CGContextScaleCTM(c, 1.0 / scale, 1.0 / scale);
+    self.drawn = DrawStarlink(c, self.camera, scale, self.dark, self.sky, self.serving, self.current);
+    CGContextRestoreGState(c);
+}
+@end
+
 // ---- Place names --------------------------------------------------------
 // Natural Earth populated places (Resources/world-places.json, public domain),
 // most important first. A regional view names the towns around it, so a
@@ -351,6 +414,21 @@ typedef NSString *(^PlaceReading)(double latitude, double longitude);
 static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, double scale, BOOL dark,
     NSArray<NSValue *> *avoid, PlaceReading reading) {
     double w = cam.viewportW, h = cam.viewportH;
+    // One source line, shared by live AppKit overlays and offscreen captures.
+    NSString *credit = [@"ECMWF · CC BY 4.0 · " stringByAppendingString:IsobarTerrainCredit()];
+    NSString *relief = TerrainReliefLabel(cam);
+    if (relief) credit = [NSString stringWithFormat:@"%@ · %@", relief, credit];
+    NSDictionary *creditAttrs = @{NSFontAttributeName:[NSFont systemFontOfSize:9 * scale],
+        NSForegroundColorAttributeName:dark ? [NSColor colorWithWhite:.9 alpha:1] : [NSColor colorWithWhite:.2 alpha:1]};
+    NSSize creditSize = [credit sizeWithAttributes:creditAttrs];
+    NSRect creditBox = NSMakeRect(MAX(4 * scale, w - creditSize.width - 8 * scale),
+        h - creditSize.height - 4 * scale, creditSize.width, creditSize.height);
+    NSGraphicsContext *creditPrevious = NSGraphicsContext.currentContext;
+    NSGraphicsContext.currentContext = [NSGraphicsContext graphicsContextWithCGContext:c flipped:YES];
+    [(dark ? [NSColor colorWithWhite:.1 alpha:.8] : [NSColor colorWithWhite:1 alpha:.8]) setFill];
+    NSRectFill(NSInsetRect(creditBox, -3 * scale, -2 * scale));
+    [credit drawAtPoint:creditBox.origin withAttributes:creditAttrs];
+    NSGraphicsContext.currentContext = creditPrevious;
     double lat0 = 0, lonL = 0, lat1 = 0, lonR = 0;
     if (!IsobarCameraUnproject(cam, 0, h * 0.5, &lat0, &lonL) ||
         !IsobarCameraUnproject(cam, w, h * 0.5, &lat1, &lonR)) return @[];
@@ -359,6 +437,7 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
     if (!(span > 0) || span > 45) return @[];
     double rankLimit = log2(360.0 / span) + 1.5;
     NSMutableArray<NSValue *> *taken = [avoid mutableCopy] ?: [NSMutableArray array];
+    [taken addObject:[NSValue valueWithRect:NSInsetRect(creditBox, -4 * scale, -3 * scale)]];
     NSMutableArray<NSString *> *drawn = [NSMutableArray array];
     NSMutableSet<NSString *> *shownNames = [NSMutableSet set];
     NSFont *major = [NSFont systemFontOfSize:12 * scale weight:NSFontWeightSemibold];
@@ -443,6 +522,8 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
 @end
 
 @implementation GPUMapView {
+    IsobarTerrainMap *_terrainMap;
+    IsobarTerrainSceneController *_terrainScene;
     id<MTLDevice> _device;
     id<MTLCommandQueue> _queue;
     IsobarFieldRenderer *_renderer;
@@ -477,6 +558,9 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
     NSVisualEffectView *_recenterBack;
     NSTextField *_plate;
     GPUMapDot *_marker;
+    GPUMapDot *_pointMarker;
+    MapPointCard *_pointCard;
+    double _pointLat, _pointLon;
     id<MTLTexture> _scratch;
     id<MTLCommandBuffer> _scratchBuffer;
     NSUInteger _timelineEpoch;
@@ -485,6 +569,7 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
     double _dissolveFrom, _dissolveTo;
     NSTimeInterval _lastSample;
     double _lastFrameMilliseconds;
+    CGContextRef _overlayScratch;
     double _lastQueueWaitMilliseconds;
     BOOL _popoverChrome;
     BOOL _userMoved;
@@ -508,6 +593,14 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
     NSDictionary *_sigmetProduct;
     NSArray<IsobarSigmet *> *_sigmets;
     GPUMapHazardView *_hazardView;
+    GPUMapStarlinkView *_starlinkView;
+    // The run whose smoothed pressure is fully resident on the current grid.
+    // A lens change on that run uploads only its colour field.
+    OwnRun *_pressureRun;
+    NSData *_starlinkSky;
+    NSInteger _starlinkServing;
+    BOOL _starlinkServingCurrent;
+    NSUInteger _starlinkSnapshotDrawn;
     GPUMapPlacesView *_placesView;
     NSArray<NSString *> *_snapshotPlaceNames;
     double _namesStep;
@@ -600,6 +693,8 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     // renderTime snapshots still look fine.
     self.layerContentsRedrawPolicy = NSViewLayerContentsRedrawNever;
     self.accessibilityIdentifier = @"gpumap.surface";
+    self.toolTip = IsobarTerrainAttribution();
+    self.accessibilityHelp = IsobarTerrainAttribution();
     _trafficOverlay=[GPUMapTrafficOverlay new]; _trafficOverlay.owner=self;
     _trafficOverlay.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
     _trafficOverlay.frame=self.bounds; [self addSubview:_trafficOverlay];
@@ -616,7 +711,8 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     };
     _windView = [[WindMapView alloc] initWithFrame:self.bounds];
     _windView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    _windView.hidden = NO;
+    _windView.flow = NO;
+    _windView.hidden = YES;
     [self addSubview:_windView];
     [self buildChrome];
     return self;
@@ -790,6 +886,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 - (void)dealloc {
     [self cancelPointerHold];
     [_link invalidate];
+    if (_overlayScratch) CGContextRelease(_overlayScratch);
 }
 
 - (void)updateLink {
@@ -864,14 +961,65 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _windView.chartDark = [self mapIsDark];
     _windView.barbs = _windBarbs;
     _windView.reducedMotion = [self reducedNow];
-    [_windView setNeedsDisplay:YES];
+    [self syncWindVisibility];
+    [_windView requestDisplay];
     [_atmosphereView setNeedsDisplay:YES];
+}
+
+- (void)syncWindVisibility {
+    BOOL hidden = !(_windView.flow || _windBarbs);
+    if (_windView.hidden != hidden) _windView.hidden = hidden;
+    // The popover is small and always on screen; a few hundred trails read
+    // the same as a thousand and cost a third as much.
+    _windView.maxParticles = _popoverChrome ? 300 : 0;
 }
 
 - (void)setWindBarbs:(BOOL)value {
     _windBarbs = value;
     _windView.barbs = value;
     [self syncVectorOverlays];
+}
+
+- (void)setWindFlow:(BOOL)value {
+    _windView.flow = value;
+    [self syncVectorOverlays];
+}
+
+- (BOOL)windFlow { return _windView.flow; }
+
+- (double)drawPendingOverlays {
+    NSTimeInterval began = CACurrentMediaTime();
+    NSSize size = self.bounds.size;
+    CGFloat scale = [self pixelScale];
+    if (!(size.width >= 1) || !(size.height >= 1)) return 0;
+    size_t w = (size_t)ceil(size.width * scale), h = (size_t)ceil(size.height * scale);
+    if (!_overlayScratch || CGBitmapContextGetWidth(_overlayScratch) != w || CGBitmapContextGetHeight(_overlayScratch) != h) {
+        if (_overlayScratch) CGContextRelease(_overlayScratch);
+        CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        _overlayScratch = CGBitmapContextCreate(NULL, w, h, 8, 0, space, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+        CGColorSpaceRelease(space);
+        if (!_overlayScratch) return 0;
+        CGContextScaleCTM(_overlayScratch, scale, scale);
+        began = CACurrentMediaTime();
+    }
+    NSGraphicsContext *previous = NSGraphicsContext.currentContext;
+    for (NSView *view in self.subviews) {
+        // The trail view keeps its own throttled ledger; AppKit's flag is
+        // also set by unrelated hierarchy changes.
+        BOOL pending = view == _windView ? _windView.displayPending : view.needsDisplay;
+        if (view.hidden || !pending || [view isKindOfClass:NSControl.class]) continue;
+        CGContextSaveGState(_overlayScratch);
+        CGContextClearRect(_overlayScratch, CGRectMake(0, 0, size.width, size.height));
+        if (view.isFlipped) {
+            CGContextTranslateCTM(_overlayScratch, 0, NSHeight(view.bounds));
+            CGContextScaleCTM(_overlayScratch, 1, -1);
+        }
+        NSGraphicsContext.currentContext = [NSGraphicsContext graphicsContextWithCGContext:_overlayScratch flipped:view.isFlipped];
+        [view drawRect:view.bounds];
+        CGContextRestoreGState(_overlayScratch);
+    }
+    NSGraphicsContext.currentContext = previous;
+    return (CACurrentMediaTime() - began) * 1000.0;
 }
 
 - (void)setAtmosphereProduct:(NSDictionary *)product {
@@ -970,6 +1118,12 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _hazardView.wantsLayer = YES;
     _hazardView.accessibilityIdentifier = @"gpumap.hazards";
     [self addSubview:_hazardView];
+    _starlinkView = [[GPUMapStarlinkView alloc] initWithFrame:self.bounds];
+    _starlinkView.hidden = YES;
+    _starlinkView.wantsLayer = YES;
+    _starlinkView.accessibilityIdentifier = @"gpumap.starlink";
+    _starlinkServing = -1;
+    [self addSubview:_starlinkView];
     _marker = [GPUMapDot new];
     _marker.accessibilityIdentifier = @"gpumap.marker";
     _marker.hidden = YES;
@@ -982,6 +1136,9 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 - (void)bringChromeFront {
     for (NSView *view in @[_windView, _hazardView, _placesView, _trafficOverlay, _atmosphereView, _marker, _flatButton, _globeSlider, _globeButton, _northButton, _recenterBack, _recenterButton])
         [self addSubview:view];
+    // Point weather stays interactive above the full-map traffic hit target.
+    if (_pointMarker) [self addSubview:_pointMarker];
+    if (_pointCard) [self addSubview:_pointCard];
 }
 
 - (void)layoutChrome {
@@ -991,6 +1148,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _windView.frame = bounds;
     _plate.frame = bounds;
     _hazardView.frame = bounds;
+    _starlinkView.frame = bounds;
     _placesView.frame = bounds;
     CGFloat y = 8;
     BOOL globe = YES;
@@ -1016,6 +1174,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 
 - (void)setPopoverChrome:(BOOL)popoverChrome {
     _popoverChrome = popoverChrome;
+    [self syncWindVisibility];
     _metal.cornerRadius = popoverChrome ? 10 : 0;
     _metal.masksToBounds = popoverChrome;
     [self layoutChrome];
@@ -1206,7 +1365,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     // A hidden plate must not keep the failure words, or a readable chart
     // still looks unavailable to the popover's text search.
     _plate.stringValue = unavailable ? @"Chart unavailable" : @"";
-    if (unavailable) _hazardView.hidden = YES;
+    if (unavailable) { _hazardView.hidden = YES; _starlinkView.hidden = YES; [self closePointDetail]; }
     if (unavailable) [self bringChromeFront];
 }
 
@@ -1256,9 +1415,59 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     };
 }
 
+- (NSDictionary *)pointSample { return _pointCard.sample; }
+
+- (void)selectPointLatitude:(double)latitude longitude:(double)longitude {
+    if (!isfinite(latitude) || !isfinite(longitude) || self.unavailable) return;
+    _pointLat = latitude; _pointLon = longitude;
+    if (!_pointCard) {
+        _pointMarker = [[GPUMapDot alloc] initWithFrame:NSMakeRect(0,0,14,14)];
+        [self addSubview:_pointMarker];
+        _pointCard = [[MapPointCard alloc] initWithFrame:NSMakeRect(8,8,250,82)];
+        __weak GPUMapView *weak = self;
+        _pointCard.onClose = ^{ [weak closePointDetail]; };
+        [self addSubview:_pointCard];
+    }
+    [self updatePointDetail];
+}
+
+- (BOOL)closePointDetail {
+    if (!_pointCard) return NO;
+    [_pointCard removeFromSuperview]; _pointCard = nil;
+    [_pointMarker removeFromSuperview]; _pointMarker = nil;
+    return YES;
+}
+
+- (void)updatePointDetail {
+    if (!_pointCard) return;
+    if (self.unavailable || !_run) { [self closePointDetail]; return; }
+    OwnRunGeo g = _run.geo;
+    double col = (_pointLon-g.west)/g.step, row = (g.north-_pointLat)/g.step;
+    if (g.wrapsLongitude) col = fmod(fmod(col,g.nLon)+g.nLon,g.nLon);
+    NSInteger index = -1;
+    if (isfinite(col) && isfinite(row) && row >= 0 && row <= g.nLat-1 &&
+        (g.wrapsLongitude || (col >= 0 && col <= g.nLon-1)))
+        index = (NSInteger)llround(row)*g.nLon + ((NSInteger)llround(col)%g.nLon);
+    NSMutableDictionary *sample = [@{@"latitude":@(_pointLat), @"longitude":@(_pointLon), @"step":@(_fractionalStep),
+        @"title":[NSString stringWithFormat:@"%.2f°%@  %.2f°%@",fabs(_pointLat),_pointLat<0?@"S":@"N",fabs(_pointLon),_pointLon<0?@"W":@"E"]} mutableCopy];
+    NSArray *keys = @[@"temperature", @"direction", @"wind", @"pressure"];
+    OwnRunField fields[] = {OwnRunFieldT2M, OwnRunFieldWindDirection, OwnRunFieldWindSpeed, OwnRunFieldMSLP};
+    for (NSUInteger i=0;i<keys.count;i++) {
+        double v = [_run valueAtPointIndex:index field:fields[i] fractionalHour:_fractionalStep];
+        sample[keys[i]] = isfinite(v) ? @(v) : (id)NSNull.null;
+    }
+    _pointCard.sample = sample;
+    _pointCard.dark = [self mapIsDark];
+    _pointCard.frame = NSMakeRect(8,MAX(8,NSHeight(self.bounds)-90),MAX(1,MIN(250,NSWidth(self.bounds)-16)),82);
+    double x,y;
+    _pointMarker.hidden = !IsobarCameraProject(_camera,_pointLat,_pointLon,&x,&y);
+    if (!_pointMarker.hidden) _pointMarker.frame = NSMakeRect(x/[self pixelScale]-7,y/[self pixelScale]-7,14,14);
+}
+
 - (void)setFractionalStep:(double)fractionalStep {
     _fractionalStep = fractionalStep;
     [self syncVectorOverlays];
+    [self updatePointDetail];
     _dissolveMix = 0;
     // Scrubbing and paused seeks set the step here, not through the timeline.
     if (_source != OwnRunFieldMSLP && _placesView && !_placesView.hidden && fabs(fractionalStep - _namesStep) > 0.06)
@@ -1279,7 +1488,51 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 
 - (NSArray<NSString *> *)placeNamesShown { return _placesView.drawnNames ?: @[]; }
 
+- (void)updateStarlink {
+    BOOL show = _starlinkSky.length && !self.unavailable;
+    _starlinkView.hidden = !show;
+    if (!show) return;
+    [self syncViewport];
+    _starlinkView.sky = _starlinkSky;
+    _starlinkView.serving = _starlinkServing;
+    _starlinkView.current = _starlinkServingCurrent;
+    _starlinkView.camera = _camera;
+    _starlinkView.pixelScale = [self pixelScale];
+    _starlinkView.dark = [self mapIsDark];
+    _starlinkView.needsDisplay = YES;
+}
+
+- (NSData *)starlinkSky { return _starlinkSky; }
+- (NSInteger)starlinkServing { return _starlinkServing; }
+- (BOOL)starlinkServingCurrent { return _starlinkServingCurrent; }
+- (NSUInteger)starlinkDrawn { return _starlinkView.hidden ? _starlinkSnapshotDrawn : MAX(_starlinkView.drawn, _starlinkSnapshotDrawn); }
+- (void)setStarlinkSky:(NSData *)sky { _starlinkSky = [sky copy]; [self updateStarlink]; }
+- (void)setStarlinkServing:(NSInteger)serving { _starlinkServing = serving; [self updateStarlink]; }
+- (void)setStarlinkServingCurrent:(BOOL)current { _starlinkServingCurrent = current; [self updateStarlink]; }
+
+- (CGImageRef)copyImageWithStarlink:(CGImageRef)image CF_RETURNS_RETAINED {
+    size_t w = CGImageGetWidth(image), h = CGImageGetHeight(image);
+    if (w < 2 || h < 2 || !_starlinkSky.length) return NULL;
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGContextRef c = CGBitmapContextCreate(NULL, w, h, 8, 0, space, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+    CGColorSpaceRelease(space);
+    if (!c) return NULL;
+    CGContextDrawImage(c, CGRectMake(0, 0, w, h), image);
+    CGContextTranslateCTM(c, 0, h);
+    CGContextScaleCTM(c, 1, -1);
+    IsobarCamera camera = _camera;
+    camera.viewportW = w;
+    camera.viewportH = h;
+    _starlinkSnapshotDrawn = DrawStarlink(c, camera, [self pixelScale], [self mapIsDark], _starlinkSky,
+        _starlinkServing, _starlinkServingCurrent);
+    CGImageRef out = CGBitmapContextCreateImage(c);
+    CGContextRelease(c);
+    return out;
+}
+
 - (void)placeMarker {
+    [self updateStarlink];
+    [self updatePointDetail];
     [self updatePlaceNames];
     if (!isfinite(_placeLatitude) || !isfinite(_placeLongitude)) {
         _marker.hidden = YES;
@@ -1358,6 +1611,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 }
 
 - (void)installGrid:(IsobarGeoGrid)grid steps:(NSInteger)steps {
+    _pressureRun = nil;
     [_lock lock];
     [_renderer setGrid:grid];
     _grid = grid;
@@ -1408,7 +1662,15 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
            source:(OwnRunField)source fill:(IsobarFieldKind)fill generation:(NSInteger)generation {
     [_lock lock];
     BOOL current = generation == _generation;
-    if (current) {
+    BOOL resident = current && run == _pressureRun && _gridReady && _steps == steps &&
+        _grid.west == grid.west && _grid.north == grid.north && _grid.step == grid.step &&
+        _grid.nLon == grid.nLon && _grid.nLat == grid.nLat && _grid.wrapsLongitude == grid.wrapsLongitude;
+    if (current && resident) {
+        _fill = fill;
+        [_renderer dropColourFieldsExcept:fill];
+        [self applyBudget];
+    } else if (current) {
+        _pressureRun = nil;
         [_renderer setGrid:grid];
         _grid = grid;
         _steps = steps;
@@ -1427,30 +1689,33 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
         current = generation == _generation;
         [_lock unlock];
         if (!current) return;
-        float *pressure = malloc(n * sizeof(float));
-        if (!pressure) return;
-        [self copySamples:pressure count:n run:run field:OwnRunFieldMSLP step:step];
-        if (_smoothDegrees > 0) IsobarSmoothPressure(pressure, grid, [self pressureSmoothSigma]);
-        [_lock lock];
-        NSError *error = nil;
-        BOOL ok = generation == _generation &&
-            [_renderer uploadStep:step kind:IsobarFieldPressure values:pressure error:&error];
-        [_lock unlock];
-        free(pressure);
-        if (!ok) return;
+        if (!resident) {
+            float *pressure = malloc(n * sizeof(float));
+            if (!pressure) return;
+            [self copySamples:pressure count:n run:run field:OwnRunFieldMSLP step:step];
+            if (_smoothDegrees > 0) IsobarSmoothPressure(pressure, grid, [self pressureSmoothSigma]);
+            [_lock lock];
+            NSError *error = nil;
+            BOOL ok = generation == _generation &&
+                [_renderer uploadStep:step kind:IsobarFieldPressure values:pressure error:&error];
+            [_lock unlock];
+            free(pressure);
+            if (!ok) return;
+        }
         if (fill == IsobarFieldPressure) continue;
         float *colour = malloc(n * sizeof(float));
         if (!colour) return;
         [self copySamples:colour count:n run:run field:source step:step];
         [_lock lock];
-        ok = generation == _generation &&
+        NSError *error = nil;
+        BOOL ok = generation == _generation &&
             [_renderer uploadStep:step kind:fill values:colour error:&error];
         [_lock unlock];
         free(colour);
         if (!ok) return;
     }
     [_lock lock];
-    if (generation == _generation) _hasField = YES;
+    if (generation == _generation) { _hasField = YES; _pressureRun = run; }
     [_lock unlock];
 }
 
@@ -1474,6 +1739,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _run = run;
     _windView.run = run;
     _windView.windLens = windFill;
+    _windView.flow = windFill;
     [self syncVectorOverlays];
     _source = source;
     _fill = fill;
@@ -1872,11 +2138,14 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _dragging = NO;
     [self cancelPointerHold];
     if (dragged && !_pointerHeld) [self armAutoNorth];
-    if (click && self.onPlainClick) self.onPlainClick();
+    double lat, lon;
+    if (click && self.onPlainClick && IsobarCameraUnproject(_camera, p.x, p.y, &lat, &lon))
+        self.onPlainClick(lat, lon);
 }
 
 - (void)cancelOperation:(id)sender {
     (void)sender;
+    [self closePointDetail];
     _dragging = NO;
     [self cancelAutoNorth];
     [self cancelPointerHold];
@@ -2064,6 +2333,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     }
     [_lock lock];
     _renderer.pixelsPerPoint = [self pixelScale];
+    [self syncTerrain];
     NSError *error = nil;
     [self applyEndpointMix];
     BOOL ok = [_renderer encodeTime:_fractionalStep fill:_fill isobars:YES camera:_camera
@@ -2129,6 +2399,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 - (void)displayAtTime:(NSTimeInterval)time {
     NSTimeInterval began = CACurrentMediaTime();
     [self sampleTimelineAtTime:time];
+    [self updatePointDetail];
     double dt = 1.0 / 60.0;
     if (_lastSample > 0) {
         double elapsed = time - _lastSample;
@@ -2184,7 +2455,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
         [self placeMarker];
     }
     [self advanceAutoNorth:dt];
-    [_windView advanceBy:dt];
+    if (!_windView.hidden) [_windView advanceBy:dt];
     if (self.unavailable) return;
     IsobarCamera overlayCamera = _camera;
     overlayCamera.viewportW = NSWidth(self.bounds); overlayCamera.viewportH = NSHeight(self.bounds);
@@ -2220,6 +2491,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     BOOL sync = _renderer.synchronousContours;
     _renderer.synchronousContours = YES;
     _renderer.pixelsPerPoint = [self pixelScale];
+    [self syncTerrain];
     NSError *error = nil;
     [self applyEndpointMix];
     CGImageRef image = [_renderer renderTime:_fractionalStep fill:_fill isobars:YES camera:_camera error:&error];
@@ -2234,6 +2506,10 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
         CGImageRef named = [self copyImageWithPlaces:image];
         if (named) { CGImageRelease(image); image = named; }
     }
+    if (image && _starlinkSky.length) {
+        CGImageRef composed = [self copyImageWithStarlink:image];
+        if (composed) { CGImageRelease(image); image = composed; }
+    }
     if (image && _hazards) {
         CGImageRef composed = [self copyImageWithHazards:image];
         if (composed) {
@@ -2245,12 +2521,66 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
         CGImageRef vectors = [self copyImageWithVectorOverlays:image wind:NO atmosphere:YES];
         if (vectors) { CGImageRelease(image); image = vectors; }
     }
+    [self updatePointDetail];
+    if (image && _pointCard) {
+        size_t w = CGImageGetWidth(image), h = CGImageGetHeight(image);
+        CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        CGContextRef context = CGBitmapContextCreate(NULL,w,h,8,0,space,(CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+        CGColorSpaceRelease(space);
+        if (context) {
+            CGContextDrawImage(context,CGRectMake(0,0,w,h),image);
+            CGContextTranslateCTM(context,0,h);
+            CGContextScaleCTM(context,w/NSWidth(self.bounds),-(double)h/NSHeight(self.bounds));
+            NSGraphicsContext *old = NSGraphicsContext.currentContext;
+            NSGraphicsContext.currentContext = [NSGraphicsContext graphicsContextWithCGContext:context flipped:YES];
+            for (NSView *view in @[_pointMarker,_pointCard]) if (!view.hidden) {
+                CGContextSaveGState(context);
+                CGContextTranslateCTM(context,NSMinX(view.frame),NSMinY(view.frame));
+                [view drawRect:view.bounds];
+                CGContextRestoreGState(context);
+            }
+            NSGraphicsContext.currentContext = old;
+            CGImageRelease(image); image = CGBitmapContextCreateImage(context);
+            CGContextRelease(context);
+        }
+    }
     return image;
 }
 
+- (void)syncTerrain {
+    if (!_terrainMap && _device) _terrainMap = [[IsobarTerrainMap alloc] initWithDevice:_device];
+    // Tilted: the 3D scene token rides on the camera, so every projection
+    // (renderer, overlays, picking) shares one terrain transform. The depth
+    // probe starts first so its GPU work overlaps the rest of the frame.
+    if (!_terrainScene && _device) _terrainScene = [[IsobarTerrainSceneController alloc] initWithDevice:_device];
+    _camera.terrain = [_terrainScene updateCamera:_camera];
+    [_renderer publishTerrainProbeForCamera:_camera];
+    // The 2D relief mosaic plans from the sea-level view, as before.
+    IsobarCamera flat = _camera;
+    flat.terrain = 0;
+    [_terrainMap updateCamera:flat];
+    TerrainBox view; double density;
+    float relief=TerrainViewForCamera(flat,&view,&density) ? (float)TerrainReliefStrength(view.north-view.south) : 0;
+    [_renderer setTerrainMosaic:_terrainMap.mosaic relief:relief];
+}
+
+- (BOOL)waitForTerrain {
+    [self syncViewport];
+    [self syncTerrain];
+    BOOL flat = [_terrainMap waitUntilSettled:30];
+    BOOL scene = !_terrainScene || [_terrainScene waitUntilSettled:30];
+    [self syncTerrain];
+    scene = (!_terrainScene || [_terrainScene waitUntilSettled:30]) && scene;
+    [self syncTerrain];
+    return flat && scene;
+}
+
+- (NSUInteger)terrainCoveredTexels { return _terrainMap.mosaic.covered; }
+
 - (CGImageRef)copyImageWithVectorOverlays:(CGImageRef)image wind:(BOOL)wind atmosphere:(BOOL)atmosphere {
-    if (!image || (!wind && !(atmosphere && (self.atmosphereDate || self.timeline.playhead)))) return nil;
     [self syncVectorOverlays];
+    wind = wind && !_windView.hidden;
+    if (!image || (!wind && !(atmosphere && (self.atmosphereDate || self.timeline.playhead)))) return nil;
     size_t width = CGImageGetWidth(image), height = CGImageGetHeight(image);
     if (!(NSWidth(self.bounds) > 0) || !(NSHeight(self.bounds) > 0)) return nil;
     CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
@@ -2262,7 +2592,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     CGContextScaleCTM(context, width / NSWidth(self.bounds), -(double)height / NSHeight(self.bounds));
     NSGraphicsContext *previous = NSGraphicsContext.currentContext;
     NSGraphicsContext.currentContext = [NSGraphicsContext graphicsContextWithCGContext:context flipped:YES];
-    if (wind) [_windView drawRect:_windView.bounds];
+    if (wind) [_windView drawSnapshotInCurrentContext];
     if (atmosphere && (self.atmosphereDate || self.timeline.playhead)) [_atmosphereView drawRect:_atmosphereView.bounds];
     NSGraphicsContext.currentContext = previous;
     CGImageRef output = CGBitmapContextCreateImage(context);
@@ -2288,7 +2618,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
         _hazardView.hidden = YES;
         _hazardView.hazardFrame = nil;
         _lastHazardMilliseconds = 0;
-        self.toolTip = nil;
+        self.toolTip = IsobarTerrainAttribution();
     }
     [self loadHazardsIfNeeded];
     [self updateTrackingAreas];
@@ -2610,6 +2940,7 @@ static const NSUInteger kHazardFrameCache = 24;
     [super mouseMoved:event];
     if (!_hazards) return;
     NSString *tip = [self hazardTooltipAtPoint:[self pointFromEvent:event]];
+    if (!tip.length) tip = IsobarTerrainAttribution();
     if (tip != self.toolTip && ![tip isEqualToString:self.toolTip]) self.toolTip = tip;
 }
 

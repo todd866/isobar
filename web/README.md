@@ -71,7 +71,7 @@ gradients, CAPE or NOTAMs; those stay unavailable in the shared live view/cards.
 
 Optional sign-in syncs settings (theme, place, speed), Train progress and E6-B
 progress across devices. Auth.js v5, database sessions, Prisma 7 on Neon
-Postgres (through the serverless driver adapter). Only
+Postgres (`isobar`, ap-southeast-2) through the serverless driver adapter. Only
 `/api/auth/*`, `/api/account*` are dynamic.
 
 - Sign-in is an emailed 6-digit code (10 minutes, newest code only). The same
@@ -89,7 +89,7 @@ Postgres (through the serverless driver adapter). Only
 - `DELETE /api/account` removes the user, sessions and documents.
   Progress on the device stays.
 
-Env (Vercel production, and `~/.config/isobar/isobar.env` locally,
+Env (Vercel production, and `~/.local/state/isobar-auth/isobar.env` locally,
 never in the repo): `DATABASE_URL` (pooled), `DATABASE_URL_UNPOOLED`
 (migrations), `AUTH_SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`.
 
@@ -106,6 +106,8 @@ deletes every account it makes.
 US$5/month or US$50/year, with Stripe-hosted Checkout and Customer Portal.
 With no Stripe configuration the app retains its existing free/self-host behavior.
 The Account sheet is the only upgrade surface, apart from a daily free-limit link.
+See [billing setup, lifecycle and verification](../docs/billing.md). The setup
+script and additive migration are manual operations; neither runs in a build.
 
 ## Deploy
 
@@ -115,13 +117,14 @@ From `web/`, after a fresh export:
 vercel deploy --prod
 ```
 
-Configure deployment project and domain settings in the hosting provider. Deployment
-is a separate step from this tree and requires maintainer approval.
+The Vercel project is `isobar` on the `ian-todds-projects` team. The domain is
+isobar.md. Deployment is a separate step from this tree: do not deploy from an
+agent session unless the owner asked for that deploy.
 
 `release.json` in this directory, when it contains an `https` `url`, turns the
 Download button into that link. Without it the button stays **Coming soon**.
-Changing the file needs a new deploy. The Mac download stays held until a
-maintainer approves a notarised build.
+Changing the file needs a new deploy. The Mac download stays held until the
+owner approves a notarised build.
 
 ## Tests
 
@@ -147,7 +150,7 @@ npx playwright test train.spec.ts
 This writes desktop (1440×900) and phone (390×844) light/dark card, worksheet,
 and Lab previews to `test-results/train/web-train-*.png`. It also checks delayed
 snapshot arrival, offline section navigation, remount persistence, short laptop,
-landscape phone, and enlarged text. `VIEWPORT_HELPER` can point to a local
+landscape phone, and enlarged text. `VIEWPORT_HELPER` can point to the owner's
 `viewport-fit.mjs` for the additional geometry checks.
 
 In a sandbox without listening sockets, `ISOBAR_E2E_FILES=1` makes this spec
@@ -204,7 +207,7 @@ npm run test:e2e
 
 `ISOBAR_FIXTURE_DATE=2026-10-07` pins a fixture date for unit work. Leave it unset
 for browser tests of Today’s tour. The fixture is 15.38 MB on a 241×161 grid;
-the map visibly identifies it as synthetic. It never reads a maintainer archive.
+the map visibly identifies it as synthetic. It never reads the owner's archive.
 
 `tests/e2e/teaching.spec.ts` covers the tour, wrong-answer support, feature cards,
 offline Next/Back, camera input, and the 1440×900 / 390×844 light/dark screenshot

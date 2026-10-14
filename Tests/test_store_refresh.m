@@ -737,6 +737,24 @@ static void WithTestReduceMotion(BOOL reduceMotion, void (^body)(void)) {
 
 static BOOL LockIntendedFrameSpacing(IsobarLivePlayer *player);
 
+// The map the viewer sees when New map is on: one display-link sample of the
+// shared player, then the GPU map's own composited snapshot. The classic
+// chart is hidden behind it and is not what is on screen.
+static NSImage *SnapshotDisplayedGPUMap(TestController *c) {
+    GPUMapView *gpu = [c valueForKey:@"gpuMap"];
+    if (!gpu || gpu.hiddenOrHasHiddenAncestor || !gpu.superview || NSIsEmptyRect(gpu.bounds)) return nil;
+    [gpu displayAtTime:gpu.timeline ? [gpu.timeline clockNow] : CACurrentMediaTime()];
+    CGImageRef image = [gpu copySnapshot];
+    if (getenv("ISOBAR_QA_GPU_TRACE"))
+        fprintf(stderr, "qa gpu timeline %d step %.4f clock %.3f lines %ld size %.0fx%.0f\n", gpu.timeline != nil,
+            gpu.renderedStep, gpu.timeline ? [gpu.timeline clockNow] : -1.0, (long)gpu.contourLineCount,
+            gpu.bounds.size.width, gpu.bounds.size.height);
+    if (!image) return nil;
+    NSImage *frame = [[NSImage alloc] initWithCGImage:image size:gpu.bounds.size];
+    CGImageRelease(image);
+    return frame;
+}
+
 // On-screen smoothness: drive a real popover open with no input, record the
 // displayed map for ten seconds of ambient play, then a hover sweep, and
 // write both as movies for tools/measure-jank.py (run by tests.sh). Set
@@ -747,6 +765,12 @@ static void RecordDisplayedPlayback(TestController *c, NSString *root) {
     if (qa && qa[0]) [c reloadStoreAtPath:[NSString stringWithUTF8String:qa]];
     NSString *dir = getenv("ISOBAR_QA_DIR") ? [NSString stringWithUTF8String:getenv("ISOBAR_QA_DIR")] : @"build/qa";
     [c useManualLiveClock];
+    // Score the owner's default 8x. An earlier check leaves Real time, which
+    // moves 0.003 h in ten seconds: a still picture that scored "smooth".
+    NSInteger openingSpeed = [[c valueForKey:@"liveSpeed"] integerValue];
+    [c applyPlaybackSpeed:IsobarLiveSpeed8x];
+    Check([c gpuMapWanted], @"the displayed-playback recording runs on the new map");
+    [c rebuildContent];
     NSPopover *original = c.popover;
     ShownPlaybackPopover *shown = [ShownPlaybackPopover new];
     shown.contentViewController = original.contentViewController;
@@ -754,14 +778,16 @@ static void RecordDisplayedPlayback(TestController *c, NSString *root) {
     [c popoverWillClose:[NSNotification notificationWithName:NSPopoverWillCloseNotification object:shown]];
     [c popoverDidShow:[NSNotification notificationWithName:NSPopoverDidShowNotification object:shown]];
     __block IsobarLivePlayer *live = [c valueForKey:@"live"];
-    WaitUntil(^BOOL { return live.baseImage != nil && live.rendersInFlight == 0; }, kLiveRenderCeiling);
+    Check(live.clockOnly, @"with the GPU map on screen the shared player is only its clock");
+    WaitUntil(^BOOL { return (live.clockOnly || live.baseImage != nil) && live.rendersInFlight == 0; }, kLiveRenderCeiling);
     Check([[c valueForKey:@"timelinePlaying"] boolValue], @"opening the popover starts ambient play with no input");
+    Check(fabs(live.hoursPerSecond - IsobarLiveHoursPerSecond(IsobarLiveSpeed8x)) < 1e-9, @"recorded autoplay runs at 8x");
     NSMutableArray<NSImage *> *frames = [NSMutableArray array];
     for (NSInteger i = 0; i < 300; i++) { @autoreleasepool {
         [c advanceLiveTicks:1];
         WaitUntil(^BOOL { return live.rendersInFlight == 0; }, kLiveRenderCeiling);
         SettleController(c);
-        NSImage *frame = SnapshotDisplayedMap([c timelineChart]);
+        NSImage *frame = SnapshotDisplayedGPUMap(c);
         if (frame) [frames addObject:frame];
         if (getenv("ISOBAR_QA_TRACE")) {
             NSImage *b = live.baseImage, *n = live.nextImage;
@@ -771,6 +797,7 @@ static void RecordDisplayedPlayback(TestController *c, NSString *root) {
                 live.playing, live.holding, live.seaming);
         }
     }}
+    Check(frames.count == 300, [NSString stringWithFormat:@"the GPU map was on screen for every autoplay frame (%lu)", (unsigned long)frames.count]);
     Check(frames.count == 300 && WritePlaybackMovie(frames, [dir stringByAppendingPathComponent:@"autoplay.mov"]),
         @"ten seconds of displayed autoplay are recorded for the jank score");
     [frames removeAllObjects];
@@ -779,7 +806,7 @@ static void RecordDisplayedPlayback(TestController *c, NSString *root) {
         WaitUntil(^BOOL { return [[c valueForKey:@"scrubRenderer"] renderCount] > 0; }, 2);
         SettleController(c);
         [NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:1.0/30.0]];
-        NSImage *frame = SnapshotDisplayedMap([c timelineChart]);
+        NSImage *frame = SnapshotDisplayedGPUMap(c);
         if (frame) [frames addObject:frame];
     }}
     [c previewPopoverMovieFraction:NAN];
@@ -799,7 +826,7 @@ static void RecordDisplayedPlayback(TestController *c, NSString *root) {
     live = [c valueForKey:@"live"];
     Check(fabs(live.hoursPerSecond - IsobarLiveHoursPerSecond(IsobarLiveSpeed256x)) < 1e-9,
         @"256x autoplay keeps the fast rate");
-    WaitUntil(^BOOL { return live.baseImage != nil && live.rendersInFlight == 0; }, kLiveRenderCeiling);
+    WaitUntil(^BOOL { return (live.clockOnly || live.baseImage != nil) && live.rendersInFlight == 0; }, kLiveRenderCeiling);
     NSArray *loopTimes = [c valueForKey:@"sequenceTimes"];
     double spanHours = loopTimes.count >= 2
         ? [loopTimes.lastObject timeIntervalSinceDate:loopTimes.firstObject] / 3600.0 : 0;
@@ -807,11 +834,12 @@ static void RecordDisplayedPlayback(TestController *c, NSString *root) {
         ? spanHours / live.hoursPerSecond + kIsobarLiveSeamDuration + 1 : 30;
     NSInteger loopCap = (NSInteger)ceil(3 * loopSeconds / kIsobarLiveDisplayTick);
     SeamMovie *fast = [SeamMovie new];
-    NSImage *firstFast = SnapshotDisplayedMap([c timelineChart]);
+    NSImage *firstFast = SnapshotDisplayedGPUMap(c);
     BOOL fastOpen = firstFast && [fast openPath:[dir stringByAppendingPathComponent:@"fastplay.mov"] image:firstFast];
     double previousHours = [live forecastHoursAtTime:[live clockNow]];
     int fastSeams = 0, fastDrops = 0;
     BOOL fastForward = YES, wasSeaming = live.seaming;
+    NSInteger seamStart = 0;
     NSMutableString *seamLog = [NSMutableString string];
     for (NSInteger i = 0; fastOpen && fastSeams < 2 && i < loopCap; i++) { @autoreleasepool {
         [c advanceLiveTicks:1];
@@ -823,11 +851,15 @@ static void RecordDisplayedPlayback(TestController *c, NSString *root) {
         else if (hours + 1e-3 < previousHours) fastForward = NO;
         previousHours = hours;
         // The frame about to be appended is timestamped at the current count.
-        if (live.seaming && !wasSeaming)
-            [seamLog appendFormat:@"%.3f,%.3f\n", fast.frames / 30.0, kIsobarLiveSeamDuration];
+        // The window runs from the first seaming frame through the frame on
+        // which the dissolve lands on now (the first frame after the seam).
+        if (live.seaming && !wasSeaming) seamStart = fast.frames;
         if (live.seaming) wasSeaming = YES;
-        else if (wasSeaming) { wasSeaming = NO; fastSeams++; }
-        NSImage *frame = SnapshotDisplayedMap([c timelineChart]);
+        else if (wasSeaming) {
+            wasSeaming = NO; fastSeams++;
+            [seamLog appendFormat:@"%.3f,%.3f\n", seamStart / 30.0, (fast.frames - seamStart + 1) / 30.0];
+        }
+        NSImage *frame = SnapshotDisplayedGPUMap(c);
         if (!frame || ![fast add:frame]) fastOpen = NO;
         if (i > 0 && i % 200 == 0)
             fprintf(stderr, "fastplay tick %ld seams %d hours %.2f\n", (long)i, fastSeams, hours);
@@ -841,6 +873,7 @@ static void RecordDisplayedPlayback(TestController *c, NSString *root) {
         @"256x autoplay spanning two loops dissolves back to now without playing backwards");
     [c setValue:@(savedSpeed) forKey:@"liveSpeed"];
     live.hoursPerSecond = IsobarLiveHoursPerSecond((IsobarLiveSpeed)savedSpeed);
+    [c applyPlaybackSpeed:openingSpeed];
     [c stopPopoverPlayback];
     [c popoverWillClose:[NSNotification notificationWithName:NSPopoverWillCloseNotification object:shown]];
     c.popover = original;
@@ -898,6 +931,10 @@ static void CheckLivePlayback(TestController *c, NSString *root, NSFileManager *
         @"the wall clock is process uptime and ignores harness steps");
     IsobarTestSetReduceMotion(NO);
     [c useManualLiveClock];
+    // These checks are of the classic frame player, the surface when New map
+    // is off. With the GPU map on, the player is only its clock.
+    BOOL newMap = [[c valueForKey:@"newMap"] boolValue];
+    [c setValue:@NO forKey:@"newMap"];
     NSPopover *original = c.popover;
     ShownPlaybackPopover *shown = [ShownPlaybackPopover new];
     shown.contentViewController = original.contentViewController;
@@ -1199,6 +1236,8 @@ static void CheckLivePlayback(TestController *c, NSString *root, NSFileManager *
     original.contentViewController = shown.contentViewController;
     c.popover = original;
     [c setValue:@0 forKey:@"tempLayer"];
+    [c setValue:@(newMap) forKey:@"newMap"];
+    [c rebuildContent];
     IsobarTestRestoreReduceMotion();
     (void)fm;
 }
@@ -2119,6 +2158,9 @@ static NSImage *TickShown(TestController *c) {
 }
 
 static void ShowPlayingPopover(TestController *c) {
+    // Callers measure the classic frame player and its chart.
+    [c setValue:@NO forKey:@"newMap"];
+    [c rebuildContent];
     ShownPlaybackPopover *shown = [ShownPlaybackPopover new];
     shown.contentViewController = c.popover.contentViewController;
     c.popover = shown;
@@ -2349,6 +2391,7 @@ static void CheckRefreshDoesNotBlockPlayback(NSString *root, NSDate *now) {
     ShowPlayingPopover(c);
     IsobarLivePlayer *live = [c valueForKey:@"live"];
     NSDate *before = live.playhead;
+    NSView *placeBefore = FindView(c.popover.contentViewController.view, @"hub.place");
     c.commits = 0;
     c.prepares = 0;
     [c.events removeAllObjects];
@@ -2365,6 +2408,9 @@ static void CheckRefreshDoesNotBlockPlayback(NSString *root, NSDate *now) {
     StopWatchingStoreLoads();
     Check(committed && c.commits == 1 && [c.events isEqual:@[@"commit", @"prepare"]],
         [NSString stringWithFormat:@"the load commits once, then prepares maps (%@)", [c.events componentsJoinedByString:@", "]]);
+    NSView *placeAfter = FindView(c.popover.contentViewController.view, @"hub.place");
+    Check(placeBefore && placeAfter == placeBefore,
+        @"an unchanged store update leaves the open popover's views in place");
     ClosePlayingPopover(c);
 }
 
@@ -3240,7 +3286,7 @@ static void CheckHazardControls(NSString *root) {
         GPUMapView *gpu = [c valueForKey:@"gpuMap"];
         Check(c.hazardLayer == expected && (!gpu || gpu.hazards == expected) &&
             (toggle().state == NSControlStateValueOn) == expected,
-            [NSString stringWithFormat:@"hazards follow lens %ld before a manual choice", (long)mode.integerValue]);
+            [NSString stringWithFormat:@"hazards follow the default on lens %ld", (long)mode.integerValue]);
     }
     ShootPopover(c, @"hazards-fly-wide");
     c.availableSize = NSMakeSize(640, 600); [c rebuildContent];
@@ -3254,17 +3300,23 @@ static void CheckHazardControls(NSString *root) {
     Check(!c.hazardLayer, @"Temp's menu also leaves the Fly hazard default");
     ClickLens(c, 1);
     [toggle() performClick:nil];
-    Check(!c.hazardLayer, @"Fly hazards can be manually turned off");
+    Check(!c.hazardLayer, @"Fly hazards can be explicitly turned off");
+    GPUMapView *chosenGPU = [c valueForKey:@"gpuMap"];
+    Check(!chosenGPU || !chosenGPU.hazards, @"explicit Hazards choice reaches the GPU");
+    [c toggleWindBarbs:nil];
+    Check([[c valueForKey:@"barbs"] boolValue], @"barbs can be explicitly enabled beside Hazards");
     ClickLens(c, -1); ClickLens(c, 1);
     [c reloadStoreAtPath:root]; [c rebuildContent];
-    Check(!c.hazardLayer && toggle().state == NSControlStateValueOff,
-        @"manual off survives lens changes and a store refresh");
+    Check(c.hazardLayer && toggle().state == NSControlStateValueOn,
+        @"lens change restores Fly hazards before store refresh");
+    Check(![[c valueForKey:@"barbs"] boolValue], @"lens change clears barbs too");
     ClickLens(c, -1);
     [toggle() performClick:nil];
     [c popoverWillClose:[NSNotification notificationWithName:NSPopoverWillCloseNotification object:c.popover]];
     [c rebuildContent];
-    Check(c.hazardLayer && toggle().state == NSControlStateValueOn,
-        @"manual on in Pressure survives closing and rebuilding the popover");
+    Check(!c.hazardLayer && toggle().state == NSControlStateValueOff,
+        @"reopening on Pressure does not silently restore optional overlays");
+    [toggle() performClick:nil];
     NSView *expanded = [[ChartRoot alloc] initWithFrame:NSMakeRect(0, 0, 1440, 36)];
     [c layoutStatusBar:nil bar:(MSLPRect){0, 0, 1440, 36} in:expanded];
     NSButton *full = (NSButton *)FindView(expanded, @"fullscreen.hazards");
@@ -3278,7 +3330,7 @@ static void CheckHazardControls(NSString *root) {
     Check(!c.hazardLayer && toggle().state == NSControlStateValueOff && full.state == NSControlStateValueOff,
         @"expanded hazard action updates both surfaces in place");
     ClickLens(c, 1);
-    Check(!c.hazardLayer, @"expanded manual off still holds on Fly");
+    Check(c.hazardLayer, @"changing to Fly restores Hazards on");
     c.availableSize = NSMakeSize(640, 600); [c rebuildContent];
     NSView *row = FindView(c.popover.contentViewController.view, @"popover.lensRow");
     Check([row.identifier isEqual:@"symbols"] && toggle().title.length == 0 &&
@@ -3470,7 +3522,7 @@ int main(void) {
                 NSView *row=FindView(layers.popover.contentViewController.view,@"popover.lensRow");
                 NSSegmentedControl *field=(NSSegmentedControl *)FindView(row,@"popover.lens");
                 Check(row && ![row isKindOfClass:NSPopUpButton.class] && [field isKindOfClass:NSSegmentedControl.class] &&
-                    field.segmentCount==7 && FindView(row,@"popover.barbs"),
+                    field.segmentCount==8 && FindView(row,@"popover.barbs"),
                     @"the map row has one lens control and a barb toggle, no Layers menu");
                 [layers toggleMapDetail:2]; [layers toggleMapDetail:4];
                 NSDate *future=[NSDate dateWithTimeIntervalSince1970:2000000000];

@@ -6,12 +6,12 @@ export function pressureTextureSample(values:Float32Array, grid:PressureGrid, t:
   if(grid.wrapsLongitude)x=((x%grid.nx)+grid.nx)%grid.nx;
   if(x<0||x>grid.nx-1&&!grid.wrapsLongitude||y<0||y>grid.ny-1)return null;
   const ix=Math.floor(x),iy=Math.floor(y),tx=x-ix,ty=y-iy;
-  const tap=(a:number,b:number)=>{
-    a=grid.wrapsLongitude?a%grid.nx:Math.min(grid.nx-1,a);b=Math.min(grid.ny-1,b);
-    const i=(b*grid.nx+a)*2;return values[i]*(1-t)+values[i+1]*t;
-  };
-  const a=tap(ix,iy),b=tap(ix+1,iy),c=tap(ix,iy+1),d=tap(ix+1,iy+1);
-  if(![a,b,c,d].every(Number.isFinite))return null;
+  const ix1=grid.wrapsLongitude?(ix+1)%grid.nx:Math.min(grid.nx-1,ix+1);
+  const iy1=Math.min(grid.ny-1,iy+1), row0=iy*grid.nx, row1=iy1*grid.nx;
+  const ia=(row0+ix)*2,ib=(row0+ix1)*2,ic=(row1+ix)*2,id=(row1+ix1)*2, left=1-t;
+  const a=values[ia]*left+values[ia+1]*t,b=values[ib]*left+values[ib+1]*t;
+  const c=values[ic]*left+values[ic+1]*t,d=values[id]*left+values[id+1]*t;
+  if(!Number.isFinite(a)||!Number.isFinite(b)||!Number.isFinite(c)||!Number.isFinite(d))return null;
   const value=(a*(1-tx)+b*tx)*(1-ty)+(c*(1-tx)+d*tx)*ty;
   return storm?cycloneScalar(storm,lon,lat,value,'mslp'):value;
 }
@@ -19,8 +19,10 @@ export function pressureTextureSample(values:Float32Array, grid:PressureGrid, t:
 /** Reattach an old label candidate to today's level, not yesterday's worker
  * geometry. Ambiguous/flat/missing neighbourhoods suppress the candidate. */
 export function pressureLabelPoint(lon:number,lat:number,level:number,sample:(lon:number,lat:number)=>number|null) {
+  // A 256 min/s clock can outrun the worker by several degrees. Keep Newton
+  // steps bounded, but allow stale anchors to reach the current line.
   const h=.01;
-  for(let i=0;i<10;i++){
+  for(let i=0;i<16;i++){
     const value=sample(lon,lat);
     if(value==null)return null;
     if(Math.abs(value-level)<.001)return{lon,lat};
@@ -28,7 +30,7 @@ export function pressureLabelPoint(lon:number,lat:number,level:number,sample:(lo
     if(e==null||w==null||n==null||s==null)return null;
     const dx=(e-w)/(2*h),dy=(n-s)/(2*h),length=dx*dx+dy*dy;
     if(length<1e-10)return null;
-    const error=value-level, scale=Math.min(1,.5/(Math.abs(error)/Math.sqrt(length)));
+    const error=value-level, scale=Math.min(1,2/(Math.abs(error)/Math.sqrt(length)));
     lon-=error*dx/length*scale;lat-=error*dy/length*scale;
   }
   return null;

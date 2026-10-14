@@ -9,7 +9,7 @@ CHECK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/isobar-wind.XXXXXX")
 trap 'rm -rf "$CHECK_DIR"' EXIT
 "$CC" -fobjc-arc -O2 -Wall -Wextra -Werror -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources -DISOBAR_APP \
  Sources/windmapview.m Sources/fieldrender.m Sources/ownchart.m tools/own-chart.m Sources/pure.m Tests/test_windmapview.m \
- -framework Cocoa -framework Metal -framework CoreText -framework Accelerate -lz -o "$CHECK_DIR/wind"
+ -framework Cocoa -framework QuartzCore -framework Metal -framework CoreText -framework Accelerate -lz -o "$CHECK_DIR/wind"
 "$CHECK_DIR/wind"
 export ISOBAR_NATIVE_WIND_REPORT="$PWD/build/qa/wind/native-contract.json"
 export ISOBAR_WIND_PARITY_OUT="$PWD/build/qa/wind"

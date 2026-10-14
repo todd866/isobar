@@ -72,6 +72,57 @@ void DrawMapDetails(NSArray<NSDictionary *> *records, NSRect bounds) {
     }
 }
 
+@implementation MapPointCard
+- (instancetype)initWithFrame:(NSRect)frame {
+    if ((self = [super initWithFrame:frame])) {
+        _closeButton = [NSButton buttonWithTitle:@"×" target:self action:@selector(close:)];
+        _closeButton.bordered = NO;
+        _closeButton.transparent = YES; // glyph is included in offscreen drawing below
+        _closeButton.accessibilityLabel = @"Close point weather";
+        _closeButton.accessibilityIdentifier = @"map.point.close";
+        _closeButton.frame = NSMakeRect(NSWidth(frame)-28, 2, 26, 26);
+        _closeButton.autoresizingMask = NSViewMinXMargin;
+        [self addSubview:_closeButton];
+        self.accessibilityIdentifier = @"map.point.card";
+    }
+    return self;
+}
+- (BOOL)isFlipped { return YES; }
+- (void)close:(id)sender { (void)sender; if (self.onClose) self.onClose(); }
+- (void)setSample:(NSDictionary *)sample { _sample = [sample copy]; self.needsDisplay = YES; }
+- (NSString *)readings {
+    NSString *(^number)(NSString *, NSString *) = ^NSString *(NSString *key, NSString *format) {
+        return Number(self.sample[key]) ? [NSString stringWithFormat:format, [self.sample[key] doubleValue]] : @"—";
+    };
+    return [NSString stringWithFormat:@"%@ °C    %@/%@ kt", number(@"temperature", @"%.1f"),
+        number(@"direction", @"%03.0f"), number(@"wind", @"%.0f")];
+}
+- (NSString *)pressure {
+    return [NSString stringWithFormat:@"MSLP %@ hPa", Number(self.sample[@"pressure"]) ?
+        [NSString stringWithFormat:@"%.0f", [self.sample[@"pressure"] doubleValue]] : @"—"];
+}
+- (BOOL)isAccessibilityElement { return YES; }
+- (NSString *)accessibilityRole { return NSAccessibilityGroupRole; }
+- (NSString *)accessibilityLabel {
+    return [NSString stringWithFormat:@"%@, %@, %@", self.sample[@"title"] ?: @"", self.readings, self.pressure];
+}
+- (void)drawRect:(NSRect)dirty {
+    (void)dirty;
+    [[NSColor colorWithWhite:self.dark ? .12 : .98 alpha:.96] setFill];
+    [[NSBezierPath bezierPathWithRoundedRect:self.bounds xRadius:7 yRadius:7] fill];
+    NSColor *ink = [NSColor colorWithWhite:self.dark ? .94 : .12 alpha:1];
+    NSMutableParagraphStyle *style = [NSMutableParagraphStyle new]; style.lineBreakMode = NSLineBreakByTruncatingTail;
+    NSDictionary *heading = @{NSFontAttributeName:[NSFont systemFontOfSize:12 weight:NSFontWeightMedium],
+        NSForegroundColorAttributeName:ink, NSParagraphStyleAttributeName:style};
+    NSDictionary *value = @{NSFontAttributeName:[NSFont monospacedDigitSystemFontOfSize:13 weight:NSFontWeightMedium],
+        NSForegroundColorAttributeName:ink};
+    [self.sample[@"title"] drawInRect:NSMakeRect(10,8,NSWidth(self.bounds)-42,18) withAttributes:heading];
+    [@"×" drawAtPoint:NSMakePoint(NSWidth(self.bounds)-21,6) withAttributes:value];
+    [self.readings drawAtPoint:NSMakePoint(10,31) withAttributes:value];
+    [self.pressure drawAtPoint:NSMakePoint(10,54) withAttributes:value];
+}
+@end
+
 @interface TemperatureForecastView ()
 @property(nonatomic, strong) NSView *playheadCursor;
 @end

@@ -1,6 +1,6 @@
 /** IEEE binary16 → number. The store's `.f16` grids are little-endian. */
 
-export function float16ToNumber(bits: number): number {
+function decodeBits(bits: number): number {
   const sign = (bits & 0x8000) !== 0 ? -1 : 1;
   const exponent = (bits >> 10) & 0x1f;
   const fraction = bits & 0x03ff;
@@ -13,6 +13,15 @@ export function float16ToNumber(bits: number): number {
     return NaN;
   }
   return sign * 2 ** (exponent - 15) * (1 + fraction / 1024);
+}
+
+// Hot paths (terrain sampling) decode millions of halves a second: one exact
+// table lookup replaces the branchy arithmetic. Same values bit for bit.
+const TABLE = new Float32Array(65536);
+for (let i = 0; i < 65536; i += 1) TABLE[i] = decodeBits(i);
+
+export function float16ToNumber(bits: number): number {
+  return TABLE[bits & 0xffff];
 }
 
 /** Sentinel used by the collector for a missing sample. Not a physical pressure. */

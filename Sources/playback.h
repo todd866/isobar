@@ -83,6 +83,11 @@ typedef double (^IsobarLiveModelIndex)(NSDate *date);
 @property (nonatomic) CGFloat scale;
 @property (nonatomic) NSSize pixelSize;
 @property (nonatomic) OwnLayerOptions layers;
+// The GPU map draws every frame itself. A clock-only player renders no
+// classic frames and never waits for one: ticks advance at the playing rate,
+// the end of the run always holds kIsobarLiveSeamHold and then dissolves to
+// now, and baseImage stays nil. Turning it off resumes classic rendering.
+@property (nonatomic) BOOL clockOnly;
 // Nil until first use, then a wall clock. Tests install a manual clock.
 @property (nonatomic, strong) IsobarLiveClock *clock;
 - (NSTimeInterval)clockNow;

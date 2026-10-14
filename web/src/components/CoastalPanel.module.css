@@ -23,7 +23,13 @@
 .surf { font-size: .75rem; }
 .surf .row, .surf .columns { grid-template-columns: minmax(6.4em, max-content) 2.5em minmax(4.6em, 1fr) minmax(5.2em, 6.2em) 2.4em; min-width: 0; }
 .surf[data-secondary="true"] .row, .surf[data-secondary="true"] .columns { grid-template-columns: minmax(6.2em, max-content) 2.2em minmax(4.2em, 1fr) minmax(4.2em, 1fr) minmax(4.8em, 5.6em) 2.2em; min-width: 0; gap: 3px; }
-.row { min-height: 26px; border-bottom: 1px solid var(--md-outline-soft); }
+.row { min-height: 26px; border-bottom: 1px solid var(--md-outline-soft); transition: background-color 120ms ease; }
+.rowInteractive { cursor: pointer; }
+.rowInteractive:hover { background: color-mix(in srgb, var(--md-surface-container-high) 65%, transparent); }
+.row[data-active="true"] { background: color-mix(in srgb, var(--md-primary-container) 45%, transparent); box-shadow: inset 3px 0 0 var(--md-primary); }
+.row[data-active="true"] time { color: var(--md-on-surface); font-weight: 600; }
+.bestInteractive { cursor: pointer; }
+.bestInteractive:hover { text-decoration: underline; }
 .columns { min-height: 20px; color: var(--md-on-surface-variant); position: sticky; top: 0; z-index: 1; background: var(--md-surface); }
 .row > span, .columns > span { text-align: right; }
 .columns > span:first-child, .row time { text-align: left; }

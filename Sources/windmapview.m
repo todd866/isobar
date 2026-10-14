@@ -1,9 +1,16 @@
 #import "windmapview.h"
+#import <QuartzCore/QuartzCore.h>
 #import "ownchart.h"
 #import <math.h>
+#import <time.h>
 
 static const double kKnotsToMS=.514444, kLife=12, kFade=1.5, kVisual=3600, kMinSpeed=2.5;
 static const NSUInteger kCapacity=1800;
+// Eight alpha buckets of butt-capped straight pieces: one CGContextStrokeLineSegments
+// call each. Round-capped Bézier paths in 64 buckets cost 40-300 ms per frame.
+enum { kBuckets=8 };
+static const double kMaxAlpha=.8,kMinInterval=1.0/30;
+static double Now(void) { return clock_gettime_nsec_np(CLOCK_UPTIME_RAW)/1e9; }
 typedef struct { double lon,lat,age,heading,turn,retireAge; BOOL hasHeading; } WindParticle;
 typedef struct { double u,v; } WindVector;
 static double Hash01(NSUInteger n) {
@@ -26,7 +33,7 @@ BOOL WindMapProjectOffset(IsobarCamera c,double lat,double lon,double east,doubl
     double d=hypot(east,north)/6371000,b=atan2(east,north),phi=lat*M_PI/180;
     double target=asin(fmax(-1,fmin(1,sin(phi)*cos(d)+cos(phi)*sin(d)*cos(b))));
     double lambda=lon*M_PI/180+atan2(sin(b)*sin(d)*cos(phi),cos(d)-sin(phi)*sin(target)),x=0,y=0;
-    if(!IsobarCameraProjectAltitude(c,target*180/M_PI,lambda*180/M_PI,10,&x,&y)||!isfinite(x)||!isfinite(y))return NO;
+    if(!IsobarCameraProjectAboveGround(c,target*180/M_PI,lambda*180/M_PI,10,&x,&y)||!isfinite(x)||!isfinite(y))return NO;
     if(p)*p=NSMakePoint(x,y); return YES;
 }
 static BOOL Screen(IsobarCamera c,WindParticle p,NSPoint *point) {
@@ -38,10 +45,96 @@ static BOOL Screen(IsobarCamera c,WindParticle p,NSPoint *point) {
     NSUInteger _count,_outgoingCount,_serial;
     double _pending,_appearance;
     IsobarCamera _lastCamera;
-    BOOL _haveCamera,_densityChanged;
+    BOOL _haveCamera,_densityChanged,_deferred;
+    CGPoint *_segments[kBuckets];
+    NSUInteger _segmentCount[kBuckets],_segmentCapacity;
+    double _lastDisplayRequest;
+    CAShapeLayer *_trailLayers[kBuckets];
+    BOOL _snapshotDrawing;
 }
 @end
 @implementation WindMapView
+- (instancetype)initWithFrame:(NSRect)frame {
+    if(!(self=[super initWithFrame:frame]))return nil;
+    _flow=YES; return self;
+}
+- (void)dealloc { for(int i=0;i<kBuckets;i++)free(_segments[i]); }
+- (void)drawSnapshotInCurrentContext { _snapshotDrawing=YES; [self drawRect:self.bounds]; _snapshotDrawing=NO; }
+- (void)setFrameSize:(NSSize)size {
+    [super setFrameSize:size];
+    [CATransaction begin];[CATransaction setDisableActions:YES];
+    for(int i=0;i<kBuckets;i++)_trailLayers[i].frame=self.bounds;
+    [CATransaction commit];
+}
+- (void)clearTrailLayers {
+    if(!_trailLayers[0])return;
+    [CATransaction begin];[CATransaction setDisableActions:YES];
+    for(int i=0;i<kBuckets;i++)_trailLayers[i].path=NULL;
+    [CATransaction commit];
+    _layerSegments=0;
+}
+// One shape layer per alpha bucket over the view's own (barb) content.
+- (BOOL)updateTrailLayers {
+    if(!self.wantsLayer)self.wantsLayer=YES;
+    CALayer *host=self.layer; if(!host)return NO;
+    double r=_chartDark?228/255.:26/255.,gr=_chartDark?220/255.:51/255.,b=_chartDark?203/255.:64/255.;
+    [CATransaction begin];[CATransaction setDisableActions:YES];
+    NSUInteger total=0;
+    for(int i=0;i<kBuckets;i++) {
+        CAShapeLayer *layer=_trailLayers[i];
+        if(!layer) {
+            layer=[CAShapeLayer layer];layer.fillColor=NULL;layer.lineCap=kCALineCapButt;
+            layer.actions=@{@"path":NSNull.null,@"strokeColor":NSNull.null,@"lineWidth":NSNull.null,@"bounds":NSNull.null,@"position":NSNull.null};
+            _trailLayers[i]=layer;
+        }
+        if(layer.superlayer!=host)[host addSublayer:layer];
+        layer.frame=host.bounds;
+        layer.lineWidth=_windLens?1.35:1.15;
+        CGColorRef ink=CGColorCreateSRGB(r,gr,b,(i+.5)/kBuckets*kMaxAlpha);
+        layer.strokeColor=ink;CGColorRelease(ink);
+        CGMutablePathRef path=NULL;
+        if(_segmentCount[i]) {
+            path=CGPathCreateMutable();
+            for(NSUInteger k=0;k<_segmentCount[i];k++) {
+                CGPathMoveToPoint(path,NULL,_segments[i][2*k].x,_segments[i][2*k].y);
+                CGPathAddLineToPoint(path,NULL,_segments[i][2*k+1].x,_segments[i][2*k+1].y);
+            }
+            total+=_segmentCount[i];
+        }
+        layer.path=path; if(path)CGPathRelease(path);
+    }
+    [CATransaction commit];
+    _layerSegments=total;
+    return YES;
+}
+- (BOOL)reserveSegments:(NSUInteger)pairs {
+    if(pairs<=_segmentCapacity)return YES;
+    for(int i=0;i<kBuckets;i++) {
+        CGPoint *grown=realloc(_segments[i],pairs*2*sizeof(CGPoint));
+        if(!grown)return NO;
+        _segments[i]=grown;
+    }
+    _segmentCapacity=pairs;return YES;
+}
+- (void)requestDisplay {
+    if(self.hidden)return;
+    double now=Now(),wait=_lastDisplayRequest+kMinInterval-now;
+    if(_lastDisplayRequest<=0||wait<=.002){_lastDisplayRequest=now;_displayPending=YES;[self setNeedsDisplay:YES];return;}
+    if(_deferred)return;
+    _deferred=YES;
+    __weak WindMapView *weak=self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(wait*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+        WindMapView *view=weak; if(!view)return;
+        view->_deferred=NO;[view requestDisplay];
+    });
+}
+- (void)setFlow:(BOOL)flow {
+    if(_flow==flow)return;
+    _flow=flow;_pending=0;
+    // A returning flow fades in rather than resuming stale trails.
+    if(flow){_count=0;_outgoingCount=0;_appearance=0;}
+    [self requestDisplay];
+}
 - (BOOL)isFlipped { return YES; }
 - (BOOL)isOpaque { return NO; }
 - (NSView *)hitTest:(NSPoint)p { (void)p; return nil; }
@@ -50,9 +143,9 @@ static BOOL Screen(IsobarCamera c,WindParticle p,NSPoint *point) {
     _run=run;_count=0;_outgoingCount=0;_serial=0;_appearance=0;
 }
 - (void)advanceBy:(double)seconds {
-    if(!(seconds>0)||!isfinite(seconds))return;
+    if(!(seconds>0)||!isfinite(seconds)||!_flow)return;
     _pending=fmin(.05,_pending+seconds);_time+=seconds;
-    [self setNeedsDisplay:YES];
+    [self requestDisplay];
 }
 - (BOOL)sampleAtLon:(double)lon lat:(double)lat vector:(WindVector *)out {
     OwnRunGeo g=_run.geo;
@@ -94,12 +187,24 @@ static BOOL Screen(IsobarCamera c,WindParticle p,NSPoint *point) {
     return (NSInteger)(s.y/c.viewportH*rows)*cols+(NSInteger)(s.x/c.viewportW*cols);
 }
 - (void)drawRect:(NSRect)dirty {
-    (void)dirty;_drawnCount=0;_maxSegmentPixels=0;
-    if(!_run||!isfinite(_fractionalStep))return;
+    (void)dirty;
+    double began=Now();
+    _drawnCount=0;_maxSegmentPixels=0;
+    if(!_flow&&!_snapshotDrawing)[self clearTrailLayers];
+    if(_flow)[self drawFlow];
+    else if(_barbs&&_run&&isfinite(_fractionalStep)) {
+        IsobarCamera c=_camera;c.viewportW=NSWidth(self.bounds);c.viewportH=NSHeight(self.bounds);
+        if(c.viewportW>=2&&c.viewportH>=2&&c.zoom>0)[self drawBarbs:c];
+    }
+    _lastDrawMilliseconds=(Now()-began)*1000;_drawSerial++;_displayPending=NO;
+}
+- (void)drawFlow {
+    if(!_run||!isfinite(_fractionalStep)){if(!_snapshotDrawing)[self clearTrailLayers];return;}
     IsobarCamera c=_camera;c.viewportW=NSWidth(self.bounds);c.viewportH=NSHeight(self.bounds);
-    if(c.viewportW<2||c.viewportH<2||!(c.zoom>0))return;
+    if(c.viewportW<2||c.viewportH<2||!(c.zoom>0)){if(!_snapshotDrawing)[self clearTrailLayers];return;}
     NSUInteger count=(NSUInteger)llround(fmin(1000,fmax(96,c.viewportW*c.viewportH/1100)));
     if(_windLens)count=MIN(kCapacity,count*2);
+    if(_maxParticles>0)count=MIN(count,MAX(1,_maxParticles));
     BOOL cameraChanged=!_haveCamera||fabs(c.centreLat-_lastCamera.centreLat)>1e-9||fabs(c.centreLon-_lastCamera.centreLon)>1e-9||fabs(c.zoom-_lastCamera.zoom)>1e-9||fabs(c.globe-_lastCamera.globe)>1e-9||fabs(c.pitch-_lastCamera.pitch)>1e-9||fabs(c.bearing-_lastCamera.bearing)>1e-9||c.viewportW!=_lastCamera.viewportW||c.viewportH!=_lastCamera.viewportH;
     if(cameraChanged||count!=_count)_densityChanged=YES;
     _lastCamera=c;_haveCamera=YES;
@@ -141,10 +246,11 @@ static BOOL Screen(IsobarCamera c,WindParticle p,NSPoint *point) {
         }
     }
     if(!crowded)_densityChanged=NO;
-    NSBezierPath *buckets[64];for(int i=0;i<64;i++)buckets[i]=[NSBezierPath bezierPath];
+    for(int i=0;i<kBuckets;i++)_segmentCount[i]=0;
     double span=c.viewportH/(c.zoom*fmin(c.viewportW/360,c.viewportH/180));
     double overview=fmax(.5,fmin(1,sqrt(24/fmax(24,span))));
     NSUInteger renderCount=count+_outgoingCount;
+    if(![self reserveSegments:renderCount*3])return;
     for(NSUInteger i=0;i<renderCount;i++) {
         BOOL outgoing=i>=count; WindParticle *p=outgoing?&_outgoing[i-count]:&_particles[i];WindVector w;
         if(![self sampleAtLon:p->lon lat:p->lat vector:&w]){p->age=kLife;continue;}
@@ -185,22 +291,30 @@ static BOOL Screen(IsobarCamera c,WindParticle p,NSPoint *point) {
             tailHeading=heading;probe=tail;Advect(&probe,next,60);NSPoint endTip;
             if(!Screen(c,probe,&endTip))break;
             double endSpeed=hypot(endTip.x-end.x,endTip.y-end.y);if(!(endSpeed>0)||endSpeed>c.viewportW*.4)break;
-            double segment=hypot(end.x-here.x,end.y-here.y),arm=segment/3;
-            NSInteger bucket=(NSInteger)llround(alpha*(1-part*.3)/.8*64)-1;
-            if(bucket>=0) {
-                NSBezierPath *path=buckets[MIN(63,bucket)];[path moveToPoint:here];
-                [path curveToPoint:end controlPoint1:NSMakePoint(here.x-(tip.x-here.x)/projected*arm,here.y-(tip.y-here.y)/projected*arm)
-                    controlPoint2:NSMakePoint(end.x+(endTip.x-end.x)/endSpeed*arm,end.y+(endTip.y-end.y)/endSpeed*arm)];
+            double segment=hypot(end.x-here.x,end.y-here.y),pieceAlpha=alpha*(1-part*.3);
+            // Each piece spans at most a sixteenth-turn, so a chord stays
+            // within a fraction of a pixel of the old tangent curve.
+            if(pieceAlpha>=.02) {
+                NSInteger bucket=MIN(kBuckets-1,(NSInteger)floor(pieceAlpha/kMaxAlpha*kBuckets));
+                CGPoint *pair=_segments[bucket]+2*_segmentCount[bucket]++;
+                pair[0]=NSPointToCGPoint(here);pair[1]=NSPointToCGPoint(end);
                 _maxSegmentPixels=fmax(_maxSegmentPixels,segment);emitted=YES;
             }
             here=end;w=next;
         }
         if(emitted)_drawnCount++;
     }
-    NSColor *ink=_chartDark?[NSColor colorWithSRGBRed:228/255. green:220/255. blue:203/255. alpha:1]:[NSColor colorWithSRGBRed:26/255. green:51/255. blue:64/255. alpha:1];
-    for(int i=0;i<64;i++)if(!buckets[i].empty) {
-        buckets[i].lineWidth=_windLens?1.35:1.15;buckets[i].lineCapStyle=NSLineCapStyleRound;
-        [[ink colorWithAlphaComponent:(i+1)/64.0*.8]setStroke];[buckets[i]stroke];
+    CGContextRef g=_snapshotDrawing||![self updateTrailLayers]?NSGraphicsContext.currentContext.CGContext:NULL;
+    if(g) {
+        double r=_chartDark?228/255.:26/255.,gr=_chartDark?220/255.:51/255.,b=_chartDark?203/255.:64/255.;
+        CGContextSaveGState(g);
+        CGContextSetLineWidth(g,_windLens?1.35:1.15);CGContextSetLineCap(g,kCGLineCapButt);
+        for(int i=0;i<kBuckets;i++)if(_segmentCount[i]) {
+            CGColorRef ink=CGColorCreateSRGB(r,gr,b,(i+.5)/kBuckets*kMaxAlpha);
+            CGContextSetStrokeColorWithColor(g,ink);CGColorRelease(ink);
+            CGContextStrokeLineSegments(g,_segments[i],_segmentCount[i]*2);
+        }
+        CGContextRestoreGState(g);
     }
     if(_barbs)[self drawBarbs:c];
 }
@@ -212,14 +326,47 @@ static BOOL Screen(IsobarCamera c,WindParticle p,NSPoint *point) {
     double staff=23*metresPerPoint;
     NSColor *ink=[(_chartDark?[NSColor colorWithWhite:.9 alpha:1]:[NSColor colorWithSRGBRed:.12 green:.18 blue:.22 alpha:1]) colorWithAlphaComponent:.68];
     [ink setStroke]; [ink setFill];
-    for(double y=40;y<camera.viewportH-20;y+=58) for(double x=28;x<camera.viewportW-20;x+=58) {
-        double lat=0,lon=0;
-        if(!IsobarCameraUnproject(camera,x,y,&lat,&lon)) continue;
-        double col=(lon-grid.west)/grid.step;
-        if(grid.wrapsLongitude) col=fmod(fmod(col,grid.nLon)+grid.nLon,grid.nLon);
-        NSInteger i=llround(col),j=llround((grid.north-lat)/grid.step);
-        if(grid.wrapsLongitude) i%=grid.nLon;
-        if(i<0||i>=grid.nLon||j<0||j>=grid.nLat) continue;
+    if(grid.nLon<2||grid.nLat<2||!(grid.step>0))return;
+    // Barbs sit on model grid points, so they travel with the map when it pans.
+    // Every k-th point in both axes, k a power of two from the zoom: zooming in
+    // adds barbs between the ones already shown instead of moving them.
+    double spacingDeg=58*metresPerPoint/111195.08;
+    NSInteger k=1; while(k*grid.step<spacingDeg*.75&&k<4096)k*=2;
+    // The visible box, from points around the viewport edge (tilt and globe safe).
+    double south=90,north=-90,west=0,east=0; BOOL any=NO; double ref=camera.centreLon;
+    for(int e=0;e<=40;e++) {
+        double t=e/40.0, pts[4][2]={{t*camera.viewportW,0},{t*camera.viewportW,camera.viewportH},{0,t*camera.viewportH},{camera.viewportW,t*camera.viewportH}};
+        for(int q=0;q<4;q++) {
+            double la=0,lo=0; if(!IsobarCameraUnproject(camera,pts[q][0],pts[q][1],&la,&lo))continue;
+            double d=remainder(lo-ref,360);
+            if(!any){south=north=la;west=east=d;any=YES;} else {south=fmin(south,la);north=fmax(north,la);west=fmin(west,d);east=fmax(east,d);}
+        }
+    }
+    double cla=0,clo=0;
+    if(IsobarCameraUnproject(camera,camera.viewportW/2,camera.viewportH/2,&cla,&clo)&&!any){south=north=cla;west=east=remainder(clo-ref,360);any=YES;}
+    if(!any||east-west>359)west=-180,east=180;
+    south=fmax(-90,south-spacingDeg);north=fmin(90,north+spacingDeg);west-=spacingDeg;east+=spacingDeg;
+    NSInteger j0=MAX(0,(NSInteger)floor((grid.north-north)/grid.step)),j1=MIN(grid.nLat-1,(NSInteger)ceil((grid.north-south)/grid.step));
+    j0=j0/k*k;
+    // Near the horizon a tilted view squeezes many points together; keep one per 40 pt cell.
+    NSMutableSet<NSNumber *> *taken=[NSMutableSet set];
+    NSMutableSet<NSString *> *cells=[NSMutableSet set];
+    NSUInteger considered=0;
+    for(NSInteger j=j0;j<=j1;j+=k) {
+        double lat=grid.north-j*grid.step;
+        double c0=(ref+west-grid.west)/grid.step,c1=(ref+east-grid.west)/grid.step;
+        NSInteger i0=(NSInteger)floor(c0/k)*k,i1=(NSInteger)ceil(c1);
+        for(NSInteger raw=i0;raw<=i1;raw+=k) {
+            if(++considered>6000)break;
+            NSInteger i=raw;
+            if(grid.wrapsLongitude) i=((i%grid.nLon)+grid.nLon)%grid.nLon;
+            if(i<0||i>=grid.nLon) continue;
+            double lon=grid.west+raw*grid.step;
+            NSPoint at; if(!WindMapProjectOffset(camera,lat,lon,0,0,&at)) continue;
+            if(at.x<-20||at.y<-20||at.x>camera.viewportW+20||at.y>camera.viewportH+20) continue;
+            NSNumber *slot=@((NSInteger)floor(at.y/40)*100000+(NSInteger)floor(at.x/40));
+            if([taken containsObject:slot]) continue;
+            [taken addObject:slot];
         NSInteger cell=j*grid.nLon+i;
         double speed=[_run valueAtPointIndex:cell field:OwnRunFieldWindSpeed fractionalHour:_fractionalStep];
         double from=[_run valueAtPointIndex:cell field:OwnRunFieldWindDirection fractionalHour:_fractionalStep];
@@ -249,7 +396,9 @@ static BOOL Screen(IsobarCamera c,WindParticle p,NSPoint *point) {
             if(!valid)continue;
             NSBezierPath *flag=[NSBezierPath bezierPath];[flag moveToPoint:p[0]];[flag lineToPoint:p[1]];[flag lineToPoint:p[2]];[flag closePath];[flag fill];drawn=YES;
         }
-        if(drawn)_drawnCount++;
+        if(drawn){_drawnCount++;[cells addObject:[NSString stringWithFormat:@"%ld,%ld",(long)j,(long)i]];}
+        }
     }
+    _barbCells=cells;
 }
 @end

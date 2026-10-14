@@ -41,6 +41,19 @@ FOUNDATION_EXPORT BOOL IsobarNotacTokenIsValid(NSString * _Nullable token);
                 executableURL:(NSURL *)executableURL
                     completion:(void (^)(BOOL success, NSString *message))completion;
 
+// Imports a NOTAM briefing file with the same sanitized environment and
+// watchdog as a fetch (terminate at 120 s, kill at 130 s). The message is
+// the collector's bounded output on failure, empty on success. Background
+// queue, as fetch.
+- (void)importBriefingAtPath:(NSString *)path
+               dataDirectory:(NSString *)dataDirectory
+               executableURL:(NSURL *)executableURL
+                  completion:(void (^)(BOOL success, NSString *message))completion;
+
 @end
+
+// YES unless the Keychain says no key exists. A locked or unreadable Keychain
+// still holds the saved key, so it must not invite the owner to enter another.
+BOOL IsobarNotacKeyMayBeSaved(NSString * _Nullable token, NSError * _Nullable error);
 
 NS_ASSUME_NONNULL_END

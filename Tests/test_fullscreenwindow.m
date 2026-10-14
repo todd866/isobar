@@ -18,6 +18,8 @@ static void Check(BOOL ok, NSString *message) {
 - (BOOL)handle3DKeyEvent:(NSEvent *)event {
     if ((event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl |
         NSEventModifierFlagOption | NSEventModifierFlagShift)) != 0) return NO;
+    NSString *characters = event.charactersIgnoringModifiers.lowercaseString ?: @"";
+    if (event.keyCode != 123 && event.keyCode != 124 && ![characters isEqualToString:@"d"]) return NO;
     self.handled++;
     return YES;
 }
@@ -50,8 +52,10 @@ int main(void) {
         Check(ChartKeyActionFor(123, @"", 0, YES, 20.05, &last) == ChartKeyDrop && last == 20, @"a fast arrow repeat is coalesced");
         Check(ChartKeyActionFor(124, @"", 0, YES, 20.2, &last) == ChartKeyRight && last == 20.2, @"a later arrow repeat steps");
         Check(ChartKeyActionFor(2, @"d", NSEventModifierFlagCommand, NO, 30, &last) == ChartKeyPass, @"command-D is not the compare shortcut");
+        Check(ChartKeyActionFor(8, @"c", NSEventModifierFlagCommand, NO, 30, &last) == ChartKeyPass, @"command-C is not the compare shortcut");
         Check(ChartKeyActionFor(11, @"b", NSEventModifierFlagCommand, NO, 30, &last) == ChartKeyPass, @"command-B is not the source shortcut");
-        Check(ChartKeyActionFor(2, @"d", 0, NO, 30, &last) == ChartKeyCompare, @"D compares issues");
+        Check(ChartKeyActionFor(2, @"d", 0, NO, 30, &last) == ChartKeyPass, @"D remains available to the 3D camera");
+        Check(ChartKeyActionFor(8, @"c", 0, NO, 30, &last) == ChartKeyCompare, @"C compares issues");
         Check(ChartKeyActionFor(11, @"b", 0, NO, 30, &last) == ChartKeySource, @"B changes chart source");
 
         KeyStub *stub = [KeyStub new];
@@ -64,22 +68,25 @@ int main(void) {
         [window sendEvent:Key(123, @"", 0, NO)];
         [window sendEvent:Key(123, @"", 0, YES)];
         [window sendEvent:Key(2, @"d", NSEventModifierFlagCommand, NO)];
-        [window sendEvent:Key(2, @"d", 0, NO)];
+        [window sendEvent:Key(8, @"c", 0, NO)];
         [window sendEvent:Key(11, @"b", NSEventModifierFlagCommand, NO)];
         Check(stub.plays == 1, @"the window toggles playback once for a held space");
         Check(stub.lefts == 1, @"the window steps once for a held left arrow");
-        Check(stub.compares == 1 && stub.sources == 0, @"command-modified shortcuts are not chart commands");
+        Check(stub.compares == 1 && stub.sources == 0, @"C compares while command-modified shortcuts pass through");
         MapKeyStub *map = [MapKeyStub new];
         window.contentView = map;
         [window makeFirstResponder:map];
         [window sendEvent:Key(123, @"", 0, NO)];
         [window sendEvent:Key(124, @"", NSEventModifierFlagNumericPad, YES)];
         [window sendEvent:Key(123, @"", NSEventModifierFlagCommand, NO)];
-        Check(map.handled == 2, @"focused 3D map owns unmodified arrow repeats, including numeric-pad flags");
+        [window sendEvent:Key(2, @"d", 0, NO)];
+        Check(map.handled == 3 && stub.compares == 1, @"focused 3D map owns D and unmodified arrow repeats");
+        [window sendEvent:Key(8, @"c", 0, NO)];
+        Check(stub.compares == 2, @"C compares while the 3D map is focused");
         NSTextView *editor=[[NSTextView alloc] initWithFrame:NSMakeRect(0,0,100,40)];
         [map addSubview:editor];[window makeFirstResponder:editor];
         [window sendEvent:Key(2,@"d",0,NO)];
-        Check(stub.compares==1&&map.handled==2,@"typing D does not navigate or compare the map");
+        Check(stub.compares==2&&map.handled==3,@"typing D does not compare while the editor is focused");
         Check([editor.string isEqualToString:@"d"],@"the focused text editor receives the typed character");
         [window close];
     }

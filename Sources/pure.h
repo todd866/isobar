@@ -11,6 +11,9 @@ NSDate *IssueTimeFromHTTPDate(NSString *httpDate);
 NSString *AgeText(NSDate *then, NSDate *now);
 // "16:00" when then is the same local day as now, otherwise "25 Sep 16:00".
 NSString *ClockText(NSDate *date, NSTimeZone *tz, NSDate *now);
+// Compact map playhead clock: "NOW · Tue 9:16 pm AWST · 1316Z". A playhead
+// 90 seconds or more from now is labelled FORECAST or PAST. A nil playhead is —.
+NSString *MapPlayheadClockText(NSDate *valid, NSDate *now, NSTimeZone *tz);
 
 // IDW60901-style latest-observations product for a state abbreviation. Nil if unknown.
 NSString *ObservationProductForState(NSString *state);

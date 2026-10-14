@@ -18,6 +18,16 @@ FLAGS=(-fobjc-arc -g -O1 -fno-omit-frame-pointer -fsanitize=address,undefined -f
     -Wall -Wextra -Werror -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources)
 build() { local name=$1; shift; "$CC" "${FLAGS[@]}" "$@" -o "$WORK_DIR/$name"; }
 
+build terrain Sources/terrain.m Tests/test_terrain.m -framework Foundation -framework Metal -framework CoreGraphics -framework ImageIO
+"$WORK_DIR/terrain"
+build terrainmap Sources/terrain.m Sources/terrainmap.m Sources/mapcamera.m Sources/fieldrender.m Sources/ownchart.m Tests/test_terrainmap.m \
+    -framework Foundation -framework Metal -framework CoreGraphics -framework ImageIO -framework CoreText -framework Accelerate
+"$WORK_DIR/terrainmap"
+build terrainscene Sources/terrain.m Sources/terrainmap.m Sources/terrainscene.m Sources/mapcamera.m Sources/fieldrender.m Sources/ownchart.m \
+    Tests/test_terrainscene.m -framework Foundation -framework Metal -framework CoreGraphics -framework ImageIO -framework CoreText -framework Accelerate
+"$WORK_DIR/terrainscene"
+
+
 build pure Sources/pure.m Tests/test_pure.m -framework Foundation -lz
 ISOBAR_FIXTURES="$PWD/Tests/fixtures" "$WORK_DIR/pure" > "$WORK_DIR/pure.log" 2>&1 || { cat "$WORK_DIR/pure.log"; exit 1; }
 build archive Sources/pure.m Sources/archive.m Tests/test_archive.m -framework Foundation -lz -lsqlite3

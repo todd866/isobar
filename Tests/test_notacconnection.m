@@ -28,6 +28,13 @@ static void check(BOOL ok, NSString *message) { fprintf(stderr, "%s %s\n", ok ? 
 
 int main(void) {
     @autoreleasepool {
+        // A locked Keychain keeps the saved key; only "no key" invites a new one.
+        NSError *lockedError = [NSError errorWithDomain:IsobarNotacErrorDomain code:IsobarNotacErrorNoKey + 1 userInfo:nil];
+        NSError *missing = [NSError errorWithDomain:IsobarNotacErrorDomain code:IsobarNotacErrorNoKey userInfo:nil];
+        if (!IsobarNotacKeyMayBeSaved(nil, lockedError) || IsobarNotacKeyMayBeSaved(nil, missing) ||
+            !IsobarNotacKeyMayBeSaved(@"key", nil) || IsobarNotacKeyMayBeSaved(nil, nil)) {
+            fprintf(stderr, "FAIL locked Keychain is not treated as a missing key\n"); return 1;
+        }
         check(IsobarNotacTokenIsValid(@"lb_0123456789abcdef0123456789ABCDEF01234567"), @"accepts a NOTAC key");
         check(!IsobarNotacTokenIsValid(@"lb_0123456789abcdef"), @"rejects a short key");
         check(!IsobarNotacTokenIsValid(@"lb_0123456789abcdef0123456789abcdef0123456g"), @"rejects non-hex key");

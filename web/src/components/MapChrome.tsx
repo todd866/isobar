@@ -90,25 +90,39 @@ export function ClockFace({
   zulu = false,
   weekday = true,
   timeState,
+  interactive = false,
 }: {
   ms: number;
   zone: string;
   zulu?: boolean;
   weekday?: boolean;
   timeState?: { live: boolean; label: string } | null;
+  interactive?: boolean;
 }) {
-  const { mode } = useTimes();
+  const { mode, setMode } = useTimes();
+  const note = usePressNote();
   const shown = clockZone(mode, zone);
   const parts = clockParts(ms, shown);
   const zuluText = zulu && mode !== 'utc' ? zuluLabel(ms) : null;
+  const cycle = () => {
+    const next = mode === 'place' ? 'utc' : mode === 'utc' ? 'device' : 'place';
+    setMode(next);
+    note.show(next === 'place' ? 'Place local' : next === 'utc' ? 'UTC only' : 'My local');
+  };
   return (
-    <span className="map-clock" data-clock={mode} data-clock-zone={shown}>
+    <span
+      className={`map-clock${interactive ? ' map-clock-interactive' : ''}`}
+      data-clock={mode}
+      data-clock-zone={shown}
+      onClick={interactive ? cycle : undefined}
+    >
       {timeState ? <span data-map-time-state={timeState.live ? 'now' : 'forecast'} className="map-time-state">{timeState.label}</span> : null}
       <span data-clock-local>
         {weekday ? <span className="map-clock-weekday">{parts.weekday} </span> : null}
         {parts.time} {parts.abbrev}
       </span>
       {zuluText ? <span data-clock-zulu className="map-clock-zulu">{zuluText}</span> : null}
+      {interactive ? <PressNote text={note.note} /> : null}
     </span>
   );
 }
@@ -227,9 +241,16 @@ export function MapHeader({
         <span data-wind-words className="header-wind-words font-medium">{phone && reading?.windKt != null ? `${Math.round(reading.windKt)} kt` : wind}</span>
         <span className="when-long max-md:hidden">
           {wind ? <span aria-hidden="true"> · </span> : null}
-          {validMs != null ? <ClockFace ms={validMs} zone={zone} zulu /> : '—'}
+          {validMs != null ? <ClockFace ms={validMs} zone={zone} zulu interactive /> : '—'}
         </span>
       </span> : null}
+      {runMs > 0 ? <span
+        data-run-chip
+        data-run-stale={stale ? 'true' : 'false'}
+        title={runDetail}
+        aria-label={runDetail}
+        className={`run-chip inline-flex shrink-0 items-center gap-1 whitespace-nowrap font-medium tabular-nums ${stale ? 'text-[var(--md-warning)]' : 'text-[var(--md-on-surface-variant)]'}`}
+      >{stale ? <span aria-hidden="true">▲</span> : null}{runText} {ageH} h</span> : null}
       <Link href="/train" data-learn-link className="map-header-learn ml-auto hidden h-9 shrink-0 items-center gap-1.5 rounded-md px-2 text-[15px] font-semibold text-[var(--md-on-surface)] hover:bg-[var(--md-surface-container-high)] md:flex">
         <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 9.5 12 5l9.5 4.5L12 14z" /><path d="M6.5 11.5v4.2c1.4 1.4 3.3 2.1 5.5 2.1s4.1-.7 5.5-2.1v-4.2M21.5 9.5v5" /></svg>
         Learn
@@ -270,6 +291,7 @@ export function Transport({
         type="button"
         disabled={held}
         title={held ? 'Time held while the chart explains this feature' : undefined}
+        data-playback-toggle
         aria-label={held ? 'Time held' : playing ? 'Pause' : 'Play'}
         aria-pressed={playing}
         onClick={() => { playback.show(playing ? 'Paused' : 'Playing'); onToggle(); }}
@@ -351,7 +373,7 @@ export function DayTiles({
   return (
     <div ref={dayList} className="forecast-days grid min-w-0 gap-1" style={{ gridTemplateColumns: `repeat(${Math.max(1, days.length)}, minmax(max-content, 1fr))` }} role="list" aria-label="Forecast days">
       {days.map((day) => {
-        const rain = units.rain === 'in' ? formatRainMm(day.rain, units) : rainLabel(day.rain);
+        const rain = rainLabel(day.rain) == null ? null : units.rain === 'in' ? formatRainMm(day.rain, units) : rainLabel(day.rain);
         const rainUnit = units.rain === 'in' ? ' in' : ' mm';
         const rainTitle = day.rain == null ? '' : units.rain === 'in' ? ` · ${formatRainAmount(day.rain, units)} in` : ` · ${day.rain.toFixed(1)} mm`;
         const today = day.key === todayKey;
@@ -367,9 +389,9 @@ export function DayTiles({
             aria-pressed={selected}
             title={`${day.key}${day.event?` · ${day.event.detail}`:''}${rainTitle}${windTitle}${uvTitle}${day.protection ? ` · ${day.protection}` : ''}`}
             onClick={() => onDay(day)}
-            className={`flex min-w-0 flex-col items-center rounded-lg px-0.5 pt-1 pb-1.5 md:px-1 ${selected ? 'bg-[var(--md-primary-container)]/60' : 'hover:bg-[var(--md-surface-container-high)]'}`}
+            className={`flex min-w-0 flex-col items-center rounded-lg px-0.5 pt-1 pb-1.5 transition-colors md:px-1 ${selected ? 'bg-[var(--md-primary-container)]/65 ring-1 ring-inset ring-[var(--md-primary)]/25' : 'hover:bg-[var(--md-surface-container-high)]'}`}
           >
-            <span className="text-[13px] font-medium text-[var(--md-on-surface-variant)]">{today ? 'Today' : day.weekday}</span>
+            <span className={`text-[13px] ${selected ? 'font-semibold text-[var(--md-on-surface)]' : 'font-medium text-[var(--md-on-surface-variant)]'}`}>{today ? 'Today' : day.weekday}</span>
             {day.historical ? <span className="day-values max-w-full px-1 py-2 text-[13px] font-medium"><span className="block truncate">{day.event?.title ?? '—'}</span></span> : <>
             <span className="day-sky flex max-w-full items-center justify-center gap-0.5">
               <SkyGlyph icon={day.icon} className="sky-glyph h-5 w-5 shrink-0 text-[var(--md-on-surface)]" />
@@ -379,15 +401,15 @@ export function DayTiles({
             <span className="day-values text-[15px] font-medium tabular-nums">
               <span className="whitespace-nowrap">{day.hi == null ? '—' : formatTempC(day.hi, units)}</span>
               <span className="day-lo whitespace-nowrap">{day.lo == null ? '' : formatTempC(day.lo, units)}</span>
-              <span className={`day-rain whitespace-nowrap font-semibold text-[var(--md-primary)] ${rain ? '' : 'day-rain-empty'}`}>{rain || '0'}<span className="day-rain-unit">{rainUnit}</span></span>
+              <span className={`day-rain whitespace-nowrap font-semibold text-[var(--md-primary)] ${rain ? '' : 'day-rain-empty'}`}>{rain ? <>{rain}<span className="day-rain-unit">{rainUnit}</span></> : null}</span>
             </span>
             {day.windKt != null ? (
               <span className="max-w-full truncate text-[12px] leading-4 font-semibold tabular-nums">{day.windFrom != null ? `${compass(day.windFrom)} ` : ''}{Math.round(day.windKt)} kt</span>
             ) : null}
-            <span className="day-range relative mt-1 h-1 w-full rounded-full bg-[var(--md-surface-container-highest)]" title="temperature range, low to high" aria-label="temperature range, low to high">
+            <span className="day-range relative mt-1 h-1.5 w-full rounded-full bg-[var(--md-surface-container-highest)]" title="temperature range, low to high" aria-label="temperature range, low to high">
               {day.hi != null && day.lo != null ? (
                 <span
-                  className="absolute top-0 h-1 rounded-full"
+                  className="absolute top-0 h-1.5 rounded-full"
                   style={{
                     left: `${((day.lo - min) / span) * 100}%`,
                     width: `${Math.max(4, ((day.hi - day.lo) / span) * 100)}%`,
@@ -397,7 +419,7 @@ export function DayTiles({
               ) : null}
               {today && nowTemp != null ? (
                 <span
-                  className="absolute -top-0.5 h-2 w-2 -translate-x-1/2 rounded-full border border-[var(--md-surface)] bg-[var(--md-on-surface)]"
+                  className="absolute -top-0.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--md-surface)] bg-[var(--md-on-surface)]"
                   title="now"
                   aria-label="now"
                   style={{ left: `${Math.min(100, Math.max(0, ((nowTemp - min) / span) * 100))}%` }}
@@ -524,7 +546,7 @@ export function CompactForecast({
       <span className="map-compact-temp tabular-nums" data-compact-temp>{temp}</span>
       {transport}
       <div className="min-w-0 flex-1">{timeline}</div>
-      {validMs != null ? <ClockFace ms={validMs} zone={zone} zulu timeState={timeState} /> : null}
+      {validMs != null ? <ClockFace ms={validMs} zone={zone} zulu timeState={timeState} interactive /> : null}
       {toggle}
     </div>
   );

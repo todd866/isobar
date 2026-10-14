@@ -225,3 +225,23 @@ test.describe('terrain', () => {
     });
   }
 });
+
+
+test('tilted Tibet retains highland tint across the old terrain seam',async({page},info)=>{
+ test.setTimeout(120000);await open(page,1280,720);
+ await view(page,{lat:27.9881,lon:86.925},.3);
+ await page.getByRole('button',{name:'3D map',exact:true}).click();
+ const stage=page.locator('[data-api="1"]'),bounds=(await stage.boundingBox())!;
+ await page.mouse.move(bounds.x+bounds.width*.5,bounds.y+bounds.height*.55);
+ for(let i=0;i<3;i++)await page.mouse.wheel(0,160);
+ await settled(page);await page.waitForTimeout(800);
+ const colour=await stage.evaluate(async(e:any)=>{
+  const p=await e.chartApi.readPlate();let yellow=0,n=0;
+  for(let y=Math.floor(p.height*.30);y<p.height*.46;y+=2)for(let x=Math.floor(p.width*.15);x<p.width*.85;x+=2){
+   const i=(y*p.width+x)*4,r=p.data[i],g=p.data[i+1],b=p.data[i+2];
+   if(r>220&&g>210&&b<205&&r-b>28)yellow++;n++;
+  }return {yellow,n};
+ });
+ expect(colour.yellow/colour.n,'distant Tibet must not become a sea-level yellow strip').toBeLessThan(.025);
+ await page.screenshot({path:info.outputPath('tibet-horizon.png')});
+});

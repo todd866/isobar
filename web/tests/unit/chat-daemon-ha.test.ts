@@ -86,7 +86,7 @@ describe('subscription fallback and leases', () => {
   });
   it('does not try another runtime after a held answer', async () => {
     const codex = vi.fn(async () => answer);
-    const run = subscriptionRunner({ claude: async () => ({ ...answer, text: 'Read /Users/' + 'example/file' }), codex },
+    const run = subscriptionRunner({ claude: async () => ({ ...answer, text: 'Read /Users/private/file' }), codex },
       async () => ({ ok: true, runtimes: ['claude', 'codex'] }), async () => false);
     await expect(run(input, new AbortController().signal)).rejects.toThrow('held');
     expect(codex).not.toHaveBeenCalled();

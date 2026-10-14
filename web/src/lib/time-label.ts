@@ -154,6 +154,15 @@ export function localMidnight(ms: number, zone: string): number {
   return guess - offset;
 }
 
+/** Noon on a local calendar date, including a daylight-saving transition day. */
+export function localNoon(day: string, zone: string): number {
+  const [year, month, date] = day.split('-').map(Number);
+  const wall = Date.UTC(year, month - 1, date, 12);
+  let utc = wall - zonedOffset(wall, zone);
+  utc = wall - zonedOffset(utc, zone);
+  return utc;
+}
+
 function zonedOffset(ms: number, zone: string): number {
   const parts = cachedFormat(`offset:${zone}`, 'en-US', {
     timeZone: zone,

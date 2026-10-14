@@ -1,5 +1,5 @@
 /** Bounded geographic 3D cloud density data for a WebGL R8 texture. */
-import {sampleMountainCloud,terrainDisplacement,saturationVapourHPa} from './mountain-cloud';
+import {sampleMountainCloud} from './mountain-cloud';
 export interface CloudDensityVector {
   lat: number;
   lon: number;
@@ -208,36 +208,7 @@ export function buildCloudDensityTexture(
         .slice(0, 24);
     }
   }
-  // Sample a bounded 6 km upwind cross-section once per column. The crest
-  // position is geographic, so lee-wave condensation stands still as air flows.
-  const terrainPaths=candidates.map((local,index)=>{
-    if(options.flowSample)return {baseline:0,crest:0,leeDistance:0,u:0,v:0};
-    const y=Math.floor(index/width),x=index%width;
-    const lat=bounds.south+(y+.5)/height*(bounds.north-bounds.south);
-    const lon=bounds.west+(x+.5)/width*(bounds.east-bounds.west);
-    const sum=local.reduce((s,c)=>s+c.weight,0)||1;
-    const u=local.reduce((s,c)=>s+c.vector.u*c.weight,0)/sum;
-    const v=local.reduce((s,c)=>s+c.vector.v*c.weight,0)/sum;
-    const speed=Math.hypot(u,v)||1;
-    const path=[terrainGrid[index]];
-    let baseline=terrainGrid[index],crest=terrainGrid[index],crestIndex=0;
-    for(let d=500;d<=6000;d+=500){
-      const yy=lat-v/speed*d/metresPerLat,xx=lon-u/speed*d/Math.max(1,metresPerLon);
-      const h=terrainAt(terrainSample,yy,xx);path.push(h);
-      baseline=Math.min(baseline,h);
-      if(h>crest){crest=h;crestIndex=path.length-1;}
-    }
-    let leeDistance=crestIndex*500;
-    if(crestIndex>0&&crestIndex<path.length-1){
-      const left=path[crestIndex-1],right=path[crestIndex+1],curve=left-2*crest+right;
-      if(curve<-.001){
-        const offset=clamp(.5*(left-right)/curve,-.5,.5);
-        leeDistance+=offset*500;
-        crest-=.25*(left-right)*offset;
-      }
-    }
-    return {baseline,crest,leeDistance,u,v};
-  });
+  const meanWind=candidates.map(local=>{const sum=local.reduce((t,c)=>t+c.weight,0)||1;return {u:local.reduce((t,c)=>t+c.vector.u*c.weight,0)/sum,v:local.reduce((t,c)=>t+c.vector.v*c.weight,0)/sum};});
   const verticalRange = bounds.maxHeight - bounds.minHeight;
   for (let z = 0; z < depth; z += 1)
     for (let y = 0; y < height; y += 1)
@@ -264,22 +235,15 @@ export function buildCloudDensityTexture(
           }
         }
         const seconds=Number.isFinite(options.timeSeconds)?options.timeSeconds!:0;
-        let {u,v}=terrainPaths[column];
+        let {u,v}=meanWind[column];
         const shared=options.flowSample?.(lat,lon,altitude);
+        // Terrain lift comes only from a supplied flow field (the mountain-wave
+        // solver or a teaching model); without one, parcels stay where they are.
         if(options.flowSample){weather=shared?.density??0;u=shared?.u??0;v=shared?.v??0;waveShape=true;}
         else if(totalProfile>1e-8){
           const speed=Math.hypot(u,v),agl=altitude-terrainGrid[column];
-          const path=terrainPaths[column];
-          const displacement=terrainDisplacement({upwindBaselineM:path.baseline,crestM:path.crest,currentDownwindM:terrainGrid[column],distanceLeeM:path.leeDistance,windSpeedMs:Math.max(.1,speed),stabilityN2:stability/totalProfile,heightAboveGroundM:agl});
-          const lift=displacement.totalM;
-          const localT=temperature/totalProfile,localP=pressure/totalProfile;
-          const sourceT=localT+.006*Math.max(0,lift),sourceP=localP*Math.exp(Math.max(0,lift)/8000);
-          // Preserve incoming vapour mixing ratio when moving the reference
-          // parcel down to its upstream altitude; warming at fixed RH adds water.
-          const sourceRH=clamp(rh/totalProfile*saturationVapourHPa(localT)/saturationVapourHPa(sourceT)*sourceP/localP,0,100);
-          const parcel=sampleMountainCloud({temperatureC:sourceT,rhPct:sourceRH,pressureHPa:sourceP,liftM:lift,stabilityN2:stability/totalProfile,heightAboveGroundM:agl,windSpeedMs:speed});
+          const parcel=sampleMountainCloud({temperatureC:temperature/totalProfile,rhPct:clamp(rh/totalProfile,0,100),pressureHPa:pressure/totalProfile,liftM:0,stabilityN2:stability/totalProfile,heightAboveGroundM:agl,windSpeedMs:speed});
           weather=parcel.density;
-          waveShape=path.leeDistance>0&&stability/totalProfile>1e-5&&speed>=8;
         }
         if(weather<=0)continue;
         const xMetres = lon * 111320 * Math.cos(lat*Math.PI/180)-u*seconds;

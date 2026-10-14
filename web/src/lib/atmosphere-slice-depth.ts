@@ -18,8 +18,8 @@ function sliceKey(slice: AtmosphereSlice): string {
   return [slice.lat, slice.lon, slice.bearingRadians, slice.halfWidthM, slice.halfDepthM, slice.baseM].join(':');
 }
 
-function rasterizeTriangle(grid: AtmosphereSliceDepthGrid, a: [number, number, number], b: [number, number, number], c: [number, number, number]): void {
-  if (![...a, ...b, ...c].every(Number.isFinite) || a[2] <= 0 || b[2] <= 0 || c[2] <= 0) return;
+export function rasterizeTriangle(grid: AtmosphereSliceDepthGrid, a: [number, number, number], b: [number, number, number], c: [number, number, number]): void {
+  if (!Number.isFinite(a[0] + a[1] + a[2] + b[0] + b[1] + b[2] + c[0] + c[1] + c[2]) || a[2] <= 0 || b[2] <= 0 || c[2] <= 0) return;
   const minX = Math.max(0, Math.ceil(((Math.min(a[0], b[0], c[0]) + 1) * grid.width - 1) / 2));
   const maxX = Math.min(grid.width - 1, Math.floor(((Math.max(a[0], b[0], c[0]) + 1) * grid.width - 1) / 2));
   const minY = Math.max(0, Math.ceil(((1 - Math.max(a[1], b[1], c[1])) * grid.height - 1) / 2));

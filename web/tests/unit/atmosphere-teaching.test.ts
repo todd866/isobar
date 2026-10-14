@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  RIDGE_A,
+  RIDGE_H,
   sampleTeachingAtmosphere,
   type TeachingAtmosphereContext,
   type TeachingScenario,
@@ -65,14 +67,21 @@ describe('synthetic teaching atmosphere', () => {
     expect(cloudLayer.cloudPct).toBeGreaterThan(0); // cloud follows parcel displacement
   });
 
-  it('retains wave cloud through the crest into early descent, then evaporates it', () => {
+  it('gives the idealised ridge linear-wave physics: kinematic ground, lee waves, cap cloud', () => {
     const c=context('mountain-wave');
-    // At 6 km the vertical phase is 6pi/7: solve x for either side of eta's crest.
-    const xFor=(phase:number)=>(phase-6000/7000*Math.PI)/(2*Math.PI/12000);
-    const before=sampleLocal(c,xFor(-.2),0,6000),after=sampleLocal(c,xFor(.2),0,6000),trough=sampleLocal(c,xFor(Math.PI),0,6000);
-    expect(before.w).toBeGreaterThan(0);expect(after.w).toBeLessThan(0);
-    expect(before.cloudPct).toBeGreaterThan(0);expect(after.cloudPct).toBeGreaterThan(0);
-    expect(trough.cloudPct).toBe(0);expect(after.rhPct).toBe(100);
+    const U=16+1.2*Math.sin(2*Math.PI*((c.timeMs+c.lon*240_000)/86_400_000-.25));
+    const h=(x:number)=>RIDGE_H*RIDGE_A**2/(x*x+RIDGE_A**2);
+    for(const x of [-2400,-1200,1200,2400]){
+      const expected=U*(h(x+1)-h(x-1))/2, s=sampleLocal(c,x,0,0);
+      expect(Math.abs(s.w-expected)/Math.abs(expected)).toBeLessThan(.12);
+    }
+    let up=0,down=0;
+    for(let x=2000;x<=40_000;x+=500)for(const z of [1500,3000,4500]){up+=Math.abs(sampleLocal(c,-x,0,z).w);down+=Math.abs(sampleLocal(c,x,0,z).w);}
+    expect(down/up).toBeGreaterThan(2.5);
+    // Cloud only where the moist low layer is lifted over the crest.
+    expect(sampleLocal(c,0,0,0).cloudPct).toBeGreaterThan(0);
+    expect(sampleLocal(c,1200,0,0).cloudPct).toBe(0);
+    expect(sampleLocal(c,-3000,0,0).cloudPct).toBe(0);
   });
 
   it('keeps analytic cells nearly divergence-free and masks every scenario lid', () => {

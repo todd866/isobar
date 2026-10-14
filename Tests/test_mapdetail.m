@@ -4,6 +4,11 @@ static int failures;
 static void Check(BOOL ok, NSString *why) { if(!ok){fprintf(stderr,"FAIL %s\n",why.UTF8String);failures++;} }
 int main(void) { @autoreleasepool {
     [NSApplication sharedApplication]; [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
+    MapPointCard *card = [[MapPointCard alloc] initWithFrame:NSMakeRect(0,0,250,82)];
+    card.sample = @{@"title":@"Point",@"temperature":@0,@"direction":@230,@"wind":@12,@"pressure":@1013};
+    Check([card.accessibilityLabel containsString:@"230/12 kt"] && [card.accessibilityLabel containsString:@"0.0 °C"], @"point wind is direction then speed; zero is real");
+    card.sample = @{@"title":@"Point",@"temperature":NSNull.null,@"direction":@(NAN),@"wind":@YES,@"pressure":NSNull.null};
+    Check([card.accessibilityLabel containsString:@"—/— kt"] && [card.accessibilityLabel containsString:@"MSLP — hPa"], @"point missing and invalid readings stay missing");
     NSDate *start=[NSDate dateWithTimeIntervalSince1970:1800000000];
     NSDictionary *(^row)(double,id)=^NSDictionary *(double h,id v){return @{@"time":[start dateByAddingTimeInterval:h*3600],@"temp":v};};
     NSArray *rows=@[row(0,@-5),row(1,@0),row(2,NSNull.null),row(3,@5),row(5,@8),row(6,@YES),row(60,@50)];

@@ -190,10 +190,10 @@ int main(int argc, const char **argv) {
         Check(![[seeded valueForKey:@"barbs"] boolValue], @"new installation leaves optional wind barbs off");
         [SeededDefaults setBool:YES forKey:@"chartBarbs"];
         seeded = [SeededLayerController new];
-        Check([[seeded valueForKey:@"barbs"] boolValue], @"saved wind barbs remain on after relaunch");
+        Check(![[seeded valueForKey:@"barbs"] boolValue], @"legacy saved wind barbs cannot become launch defaults");
         [SeededDefaults setBool:NO forKey:@"chartBarbs"];
         seeded = [SeededLayerController new];
-        Check(![[seeded valueForKey:@"barbs"] boolValue], @"saved wind barbs remain off after relaunch");
+        Check(![[seeded valueForKey:@"barbs"] boolValue], @"a saved off value also launches with no barbs");
         [SeededDefaults setInteger:2 forKey:@"chartTemperature"];
         [SeededDefaults setBool:YES forKey:@"chartRain"];
         [SeededDefaults setBool:YES forKey:@"chartWindFill"];
@@ -234,8 +234,8 @@ int main(int argc, const char **argv) {
 
             // One segmented lens row and one barb toggle replace the old field row.
             NSSegmentedControl *field = Field(c);
-            Check(field && field.segmentCount == 7 && field.trackingMode == NSSegmentSwitchTrackingSelectOne,
-                @"map and panel choices are one seven-segment lens control");
+            Check(field && field.segmentCount == 8 && field.trackingMode == NSSegmentSwitchTrackingSelectOne,
+                @"map and panel choices are one eight-segment lens control");
             NSMutableArray *labels = [NSMutableArray array];
             for (NSInteger i = 0; i < field.segmentCount; i++) {
                 [labels addObject:[field labelForSegment:i] ?: @""];
@@ -245,8 +245,8 @@ int main(int argc, const char **argv) {
             BOOL labelled = [Find(c.popover.contentViewController.view, @"popover.lensRow").identifier isEqual:@"labels"];
             fprintf(stderr, "      popover %.0f wide; field segments %s\n", NSWidth(c.popover.contentViewController.view.frame),
                 labelled ? "labelled" : "symbols only");
-            Check(labelled ? [labels isEqual:@[@"Pressure", @"Rain", @"Wind", @"Temp", @"Kite", @"Surf", @"Fly"]] : [labels isEqual:@[@"", @"", @"", @"", @"", @"", @""]],
-                @"lens row reads Pressure · Rain · Wind · Temp · Kite · Surf · Fly, or symbols only when narrow");
+            Check(labelled ? [labels isEqual:@[@"Pressure", @"Rain", @"Wind", @"Temp", @"Kite", @"Surf", @"Fly", @"Sat"]] : [labels isEqual:@[@"", @"", @"", @"", @"", @"", @"", @""]],
+                @"lens row reads Pressure · Rain · Wind · Temp · Kite · Surf · Fly · Sat, or symbols only when narrow");
             Check(Barbs(c) && Barbs(c).accessibilityLabel.length && Barbs(c).image, @"wind barbs are a labelled symbol toggle");
             NSMenu *temperature = [field menuForSegment:Segment(c, 4)];
             Check(temperature.numberOfItems == 2 && [temperature itemAtIndex:1].tag == 1,
@@ -272,6 +272,13 @@ int main(int argc, const char **argv) {
                 fprintf(stderr,"      surface/aloft changed %.2f%%; aloft/off %.2f%%\n",surface*100,off*100);
                 Check(surface > .01 && off > .01, @"temperature visibly changes map pixels");
             } else Check(NO,@"three layer captures exist");
+            [c toggleWindBarbs:nil];
+            Check([[c valueForKey:@"barbs"] boolValue] && [c.testPreferences objectForKey:@"chartBarbs"] == nil,
+                @"barbs toggle on without saving a default");
+            [c applyLens:1 rebuild:YES];
+            // UX-037: a lens change restores that lens's defaults; Fly's is hazards on.
+            Check(![[c valueForKey:@"barbs"] boolValue] && c.hazardLayer, @"changing to Fly restores its overlay defaults");
+            [c applyLens:-1 rebuild:YES];
             NSPopUpButton *speedControl = (NSPopUpButton *)Find(c.popover.contentViewController.view,@"popover.speed");
             Check(speedControl && !speedControl.hidden && speedControl.enabled,
                 @"speed is visible beside the map playback controls");
@@ -339,7 +346,7 @@ int main(int argc, const char **argv) {
             [c presentChartWindowInFrame:NSMakeRect(0,0,1024,600)];
             [c focusFullscreenPanel:shown];
             NSSegmentedControl *expandedLens = (NSSegmentedControl *)Find(window.contentView, @"fullscreen.lens");
-            Check(expandedLens && expandedLens.segmentCount == 7 && Find(window.contentView, @"fullscreen.barbs"),
+            Check(expandedLens && expandedLens.segmentCount == 8 && Find(window.contentView, @"fullscreen.barbs"),
                 @"expanded map keeps the same seven-lens row and barb toggle");
             expandedLens.selectedSegment = 1;
             [NSApp sendAction:expandedLens.action to:expandedLens.target from:expandedLens];

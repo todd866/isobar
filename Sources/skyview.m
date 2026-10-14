@@ -6,15 +6,23 @@ double SkyAerodromeElevationFt(NSString *code) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         table = @{@"YPPH": @67, @"YSSY": @21, @"YMML": @434, @"YBBN": @13, @"YPAD": @20,
-                  @"YMHB": @13, @"YPDN": @103, @"YSCB": @1886};
+                  @"YMHB": @13, @"YPDN": @103, @"YSCB": @1886,
+                  @"YPJT": @99, @"YSBK": @29, @"YMMB": @50, @"YBAF": @65, @"YPPF": @57,
+                  @"YBCG": @21, @"YBCS": @10, @"YBTL": @18, @"YWLM": @31, @"YBAS": @1789,
+                  @"YPKG": @1203, @"YPLM": @19, @"YMLT": @562};
     });
     NSNumber *value = [code isKindOfClass:NSString.class] ? table[code.uppercaseString] : nil;
     return value ? value.doubleValue : NAN;
 }
 
 NSNumber *SkyAerodromeCoastKm(NSString *code) {
-    if (![code isKindOfClass:NSString.class]) return nil;
-    return @{@"YPPH": @(-19), @"YSSY": @6}[code.uppercaseString];
+    static NSDictionary<NSString *, NSNumber *> *table;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        // Measured signed W–E distances only; an estimate is worse than none.
+        table = @{@"YPPH": @(-19), @"YSSY": @6};
+    });
+    return [code isKindOfClass:NSString.class] ? table[code.uppercaseString] : nil;
 }
 
 static NSString *SkyText(id value) { return [value isKindOfClass:NSString.class] && [value length] ? value : nil; }
@@ -104,13 +112,19 @@ NSDictionary *SkySectionFeed(NSDictionary *aviation, NSDictionary *upper, NSDict
     if (!code.length) return nil;
     double lat = [aerodrome[@"latitude"] isKindOfClass:NSNumber.class] ? [aerodrome[@"latitude"] doubleValue] : NAN;
     double lon = [aerodrome[@"longitude"] isKindOfClass:NSNumber.class] ? [aerodrome[@"longitude"] doubleValue] : NAN;
-    double elevation = SkyAerodromeElevationFt(code);
-    if (!isfinite(elevation) && [aerodrome[@"elevationFt"] isKindOfClass:NSNumber.class]) elevation = [aerodrome[@"elevationFt"] doubleValue];
     // Products only when they are this aerodrome's.
     NSString *reportCode = [SkyText(aviation[@"icao"]) ?: SkyText(aviation[@"metar"][@"icao"]) uppercaseString];
     BOOL ours = [reportCode isEqual:code];
     BOOL profileOurs = [[SkyText(upper[@"id"]) uppercaseString] isEqual:code];
-    return SkyPointFeed(lat, lon, code, elevation, SkyAerodromeCoastKm(code), profileOurs ? upper : nil, ours ? aviation : nil, now);
+    double elevation = SkyAerodromeElevationFt(code);
+    if (!isfinite(elevation) && [aerodrome[@"elevationFt"] isKindOfClass:NSNumber.class]) elevation = [aerodrome[@"elevationFt"] doubleValue];
+    if (!isfinite(elevation) && [aerodrome[@"elevation_ft"] isKindOfClass:NSNumber.class]) elevation = [aerodrome[@"elevation_ft"] doubleValue];
+    if (!isfinite(elevation) && [aerodrome[@"elevation_m"] isKindOfClass:NSNumber.class]) elevation = round([aerodrome[@"elevation_m"] doubleValue] * 3.28084);
+    if (!isfinite(elevation) && profileOurs && [upper[@"elevation"] isKindOfClass:NSNumber.class]) elevation = round([upper[@"elevation"] doubleValue] * 3.28084);
+    NSNumber *coast = SkyAerodromeCoastKm(code);
+    if (!coast && [aerodrome[@"coastKm"] isKindOfClass:NSNumber.class]) coast = aerodrome[@"coastKm"];
+    if (!coast && [aerodrome[@"coast_km"] isKindOfClass:NSNumber.class]) coast = aerodrome[@"coast_km"];
+    return SkyPointFeed(lat, lon, code, elevation, coast, profileOurs ? upper : nil, ours ? aviation : nil, now);
 }
 
 NSString *SkySectionWebRoot(void) {

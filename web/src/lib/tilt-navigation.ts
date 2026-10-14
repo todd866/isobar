@@ -1,6 +1,7 @@
 import { createTiltCamera, forwardProject, inverseUnproject, inverseAtAltitude, EARTH_RADIUS_M, type TiltCamera } from './tilt-camera';
 import { mapUnproject, mapProject, project, unproject, type Camera, type Lambert } from './lambert';
 import { clampToData, zoomWithinData, type DataFrame } from './camera';
+import { terrainReliefScale } from './terrain/relief-scale';
 
 export type TiltedCamera = Camera & { tiltCamera?: TiltCamera };
 export const MAX_TILT = 75 * Math.PI / 180;
@@ -8,13 +9,16 @@ export function withTilt(geo: Lambert, camera: Camera, pitch: number, elevation?
   if ((pitch <= 0 && !camera.bearingRadians) || geo.projection !== 'equirectangular') return camera;
   const center = unproject(geo, camera.centerX, camera.centerY);
   if (!center) return camera;
-  let tiltCamera = createTiltCamera({ ...center, halfHeightDeg: camera.halfHeight, aspect: camera.halfWidth / camera.halfHeight, tiltRadians: pitch, bearingRadians: camera.bearingRadians ?? 0, targetElevationM: (terrainTarget ? Math.max(0,elevation?.(center.lon,center.lat) ?? 0) : 0) + Math.max(0,camera.focusHeightM??0)*Math.sin(pitch) });
-  // Keep the eye above the terrain underneath it, not just above the focus.
-  // Limited iterations and existing DEM samples keep gestures synchronous.
-  if (terrainTarget && elevation) for (let i=0;i<3;i++) {
+  // One vertical scale for everything drawn against the terrain (terrain/relief-scale.ts).
+  const reliefScale = terrainReliefScale(camera.halfHeight);
+  let tiltCamera = createTiltCamera({ ...center, halfHeightDeg: camera.halfHeight, aspect: camera.halfWidth / camera.halfHeight, tiltRadians: pitch, bearingRadians: camera.bearingRadians ?? 0, reliefScale, targetElevationM: (terrainTarget ? Math.max(0,elevation?.(center.lon,center.lat) ?? 0) : 0) + Math.max(0,camera.focusHeightM??0)*Math.sin(pitch) });
+  // Keep the eye above the (displayed) terrain underneath it, not just above
+  // the focus. Limited iterations and existing DEM samples keep gestures synchronous.
+  if (terrainTarget && elevation && reliefScale > 0) for (let i=0;i<3;i++) {
     const eye=terrainEye(tiltCamera), ground=elevation(eye.lon,eye.lat);
-    if(ground==null||eye.heightM>=ground+100)break;
-    tiltCamera=createTiltCamera({...tiltCamera,targetElevationM:(tiltCamera.targetElevationM??0)+ground+100-eye.heightM});
+    const clearance=100/reliefScale;
+    if(ground==null||eye.heightM>=ground+clearance)break;
+    tiltCamera=createTiltCamera({...tiltCamera,targetElevationM:(tiltCamera.targetElevationM??0)+ground+clearance-eye.heightM});
   }
   return { ...camera, pitch, tiltCamera, surface: {
     project(lat, lon, height) { return forwardProject(tiltCamera, lat, lon, height ?? elevation?.(lon, lat) ?? 0) ?? { x: Infinity, y: Infinity, visible: false, depth: Infinity }; },
@@ -104,12 +108,13 @@ export class TiltFraming {
 /** Geographic point directly beneath the eye and its physical shell altitude. */
 export function terrainEye(camera:TiltCamera):{lat:number;lon:number;heightM:number} {
   const [x,y,z]=camera.geometry.cameraPositionM,k=camera.geometry.curvature;
-  if(k<.001)return {lat:camera.lat+y/EARTH_RADIUS_M*180/Math.PI,lon:camera.lon+x/EARTH_RADIUS_M*180/Math.PI,heightM:z};
+  if(k<.001)return {lat:camera.lat+y/EARTH_RADIUS_M*180/Math.PI,lon:camera.lon+x/EARTH_RADIUS_M*180/Math.PI,heightM:z/Math.max(1e-3,camera.reliefScale??1)};
   const radius=EARTH_RADIUS_M/k, length=Math.hypot(x,y,radius+z), p0=k*camera.lat*Math.PI/180;
   const nx=x/length,ny=y/length,nz=(radius+z)/length;
   const lat=Math.asin(Math.max(-1,Math.min(1,ny*Math.cos(p0)+nz*Math.sin(p0))))/k*180/Math.PI;
   const lon=camera.lon+Math.atan2(nx,nz*Math.cos(p0)-ny*Math.sin(p0))/k*180/Math.PI;
-  return {lat,lon:((lon+180)%360+360)%360-180,heightM:length-radius};
+  // Physical-equivalent height: displayed metres over the scene's vertical scale.
+  return {lat,lon:((lon+180)%360+360)%360-180,heightM:(length-radius)/Math.max(1e-3,camera.reliefScale??1)};
 }
 
 /** Reversible close-approach pitch assistance; manual tilt remains an offset. */

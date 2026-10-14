@@ -1,6 +1,6 @@
 /**
- * Small parcel model for visual reconstruction. It is deliberately heuristic,
- * not a forecast or CFD solver. Saturation is calculated over liquid water;
+ * Small parcel model for cloud from a supplied displacement (the mountain-wave
+ * solver's η). Not a forecast or CFD solver. Saturation is calculated over liquid water;
  * below-freezing ice/mixed-phase effects are outside this bounded model.
  */
 export interface MountainCloudInput {
@@ -21,25 +21,6 @@ export interface MountainCloudResult {
   lclM: number;
   liftedTemperatureC: number;
   mixingRatioGKg: number;
-}
-
-export interface TerrainDisplacementInput {
-  upwindBaselineM: number;
-  crestM: number;
-  currentDownwindM: number;
-  distanceLeeM: number;
-  windSpeedMs: number;
-  stabilityN2: number;
-  heightAboveGroundM: number;
-}
-
-export interface TerrainDisplacementResult {
-  liftM: number;
-  leeWaveM: number;
-  totalM: number;
-  wavelengthM: number;
-  decay: number;
-  waveVerticalVelocityMs: number;
 }
 
 const GRAVITY = 9.80665;
@@ -129,67 +110,5 @@ export function sampleMountainCloud(
     lclM,
     liftedTemperatureC,
     mixingRatioGKg: initialMix,
-  };
-}
-
-/** Heuristic terrain displacement for a parcel crossing a barrier and lee wave. */
-export function terrainDisplacement(
-  input: TerrainDisplacementInput,
-): TerrainDisplacementResult {
-  if (
-    !Object.values(input).every(finite) ||
-    input.windSpeedMs <= 0 ||
-    input.distanceLeeM < 0
-  )
-    throw new Error(
-      "terrain displacement inputs must be finite and physically bounded",
-    );
-  const barrier = clamp(input.crestM - input.upwindBaselineM, -3000, 3000);
-  const leeDrop = clamp(input.crestM - input.currentDownwindM, -3000, 3000);
-  const stability = clamp(input.stabilityN2, 0, 0.01);
-  const buoyancyFrequency = Math.sqrt(Math.max(stability, 1e-8));
-  const wavelengthM = clamp(
-    (2 * Math.PI * input.windSpeedMs) / buoyancyFrequency,
-    500,
-    30000,
-  );
-  const wavelengthScale = Math.max(500, wavelengthM * 1.5);
-  const decay =
-    Math.exp(-input.distanceLeeM / wavelengthScale) *
-    Math.exp(-Math.max(0, input.heightAboveGroundM) / 3000);
-  const stableWave = stability > 1e-5 && input.windSpeedMs >= 8;
-  const phase =
-    (2 * Math.PI * input.distanceLeeM) / wavelengthM +
-    ((Math.max(0, input.heightAboveGroundM) * buoyancyFrequency) /
-      input.windSpeedMs) *
-      0.35;
-  const amplitude = barrier * 0.35 * decay;
-  const leeWaveM = stableWave
-    ? clamp(amplitude * Math.cos(phase), -1200, 1200)
-    : 0;
-  // Analytic d(wave height)/d(distance) advected at the mean wind speed.
-  const waveVerticalVelocityMs = stableWave
-    ? clamp(
-        input.windSpeedMs *
-          amplitude *
-          (-Math.cos(phase) / wavelengthScale -
-            (2 * Math.PI * Math.sin(phase)) / wavelengthM),
-        -12,
-        12,
-      )
-    : 0;
-  const liftM = clamp(
-    (barrier - leeDrop) *
-      Math.exp(-Math.max(0, input.heightAboveGroundM) / 3000),
-    -1500,
-    1500,
-  );
-  return {
-    liftM,
-    leeWaveM,
-    totalM: liftM + leeWaveM,
-    wavelengthM,
-    decay,
-    waveVerticalVelocityMs,
   };
 }

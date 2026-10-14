@@ -6,6 +6,10 @@
 // cloudLayers (amount, baseFt, type); missing fields are NSNull, never implied zero.
 NSDictionary *AviationOutlook(NSDictionary *aviation, NSDate *now, NSTimeZone *tz);
 
+// A configured date formatter, cached per thread by locale, zone and pattern.
+// Creating one costs about as much as formatting hundreds of dates.
+NSDateFormatter *AviationDateFormatter(NSString *locale, NSTimeZone *zone, NSString *pattern);
+
 // Fly lens identity. A place has name, latitude, longitude and geohash.
 // An aerodrome has code, name, latitude and longitude. Missing coordinates
 // stay missing. `hasTAF` NO drops an aerodrome from the nearest choice.

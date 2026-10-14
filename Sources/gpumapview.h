@@ -42,7 +42,11 @@ NSString *GPUMapMenuTitle(NSString *title, BOOL classicOnly, BOOL note);
 @property (nonatomic, strong) NSTimeZone *trafficZone;
 @property (nonatomic, copy) NSDictionary *trafficRoutes;
 @property (nonatomic, copy) void (^onTrafficSelection)(NSString *hex, BOOL selected);
-@property (nonatomic, copy) void (^onPlainClick)(void);
+@property (nonatomic, copy) void (^onPlainClick)(double latitude, double longitude);
+// Clicked-point selection is independent of the home place and forecast clock.
+- (void)selectPointLatitude:(double)latitude longitude:(double)longitude;
+- (BOOL)closePointDetail;
+@property(nonatomic, readonly, copy) NSDictionary *pointSample;
 // Pointer ownership for the shared clock. YES is emitted on mouse-down and
 // NO on mouse-up, cancellation, or window teardown; dragging remains camera-only.
 @property (nonatomic, copy) void (^onHoldChanged)(BOOL held);
@@ -57,6 +61,11 @@ NSString *GPUMapMenuTitle(NSString *title, BOOL classicOnly, BOOL note);
 @property (nonatomic, readonly) double lastLabelMilliseconds;
 @property (nonatomic, readonly) double lastProjectMilliseconds;
 @property (nonatomic, readonly) double lastGeometryMilliseconds;
+// Draws, as AppKit would before the next commit, every visible overlay subview
+// that this frame marked for display (wind trails, atmosphere, hazards, names)
+// and returns that main-thread cost in milliseconds. Frame-time gates add it
+// to lastFrameMilliseconds, which covers only displayAtTime:.
+- (double)drawPendingOverlays;
 // Display ticks redraw the shared playhead. They do not own a forecast timer.
 @property (nonatomic, readonly) BOOL ownsForecastTimer;
 // Drawable presents. A snapshot does not count: the on-screen layer stays
@@ -87,6 +96,10 @@ NSString *GPUMapMenuTitle(NSString *title, BOOL classicOnly, BOOL note);
 @property (nonatomic) BOOL stale;
 @property (nonatomic) BOOL unavailable;
 @property (nonatomic) BOOL windBarbs;
+// Animated surface trails. adoptRun turns them on for the wind-speed field
+// (Wind and Kite lenses) and off otherwise; the trail view is hidden and
+// stops advancing when neither trails nor barbs are wanted.
+@property (nonatomic) BOOL windFlow;
 // Optional atmospheric profile supplied by the shared controller. This view
 // only stores the profile and its focus; atmospheric drawing is a later layer.
 @property (nonatomic, copy) NSDictionary *atmosphereProduct;
@@ -115,6 +128,17 @@ NSString *GPUMapMenuTitle(NSString *title, BOOL classicOnly, BOOL note);
 @property (nonatomic, readonly, copy) NSArray<NSString *> *hazardLabels;
 // Milliseconds the main thread spent on the hazard overlay in the last frame.
 @property (nonatomic, readonly) double lastHazardMilliseconds;
+// Starlink lens (Sources/starlink.h): every satellite over the map as
+// StarlinkSkyPoint records, at the wall clock rather than the forecast
+// playhead (the panel and the dish are live). Satellites high enough for the
+// dish (≥25° from home) are darker; `starlinkServing` (a catalogue index, or
+// -1) is ringed in the link accent while current, muted once its slot ends.
+// Nil hides the layer. Drawn over the field like hazards, GPU map only.
+@property (nonatomic, copy) NSData *starlinkSky;
+@property (nonatomic) NSInteger starlinkServing;
+@property (nonatomic) BOOL starlinkServingCurrent;
+// Satellites the last on-screen or snapshot draw placed in view.
+@property (nonatomic, readonly) NSUInteger starlinkDrawn;
 + (instancetype)mapView;
 - (void)stopRendering;
 - (void)adoptRun:(OwnRun *)run temperature:(int)temperature windFill:(BOOL)windFill rain:(BOOL)rain;
@@ -122,6 +146,9 @@ NSString *GPUMapMenuTitle(NSString *title, BOOL classicOnly, BOOL note);
 - (BOOL)uploadStep:(NSInteger)step kind:(IsobarFieldKind)kind values:(const float *)values
              error:(NSError **)error;
 - (void)waitForUploads;
+// Offscreen QA only; production rendering never blocks on terrain.
+- (BOOL)waitForTerrain;
+@property(nonatomic,readonly) NSUInteger terrainCoveredTexels;
 - (void)pointerDown:(NSPoint)point;
 - (void)pointerDrag:(NSPoint)point;
 - (void)pointerUp:(NSPoint)point;

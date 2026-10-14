@@ -2,7 +2,10 @@
 export const EARTH_RADIUS_M = 6_371_000;
 const DEG = Math.PI / 180, TWENTY = 20 * DEG, TAN25 = Math.tan(25 * DEG), SMALL_K = 1e-3;
 
-export interface TiltCameraInput { lat: number; lon: number; halfHeightDeg: number; aspect: number; tiltRadians: number; targetElevationM?: number; bearingRadians?: number; }
+export interface TiltCameraInput { lat: number; lon: number; halfHeightDeg: number; aspect: number; tiltRadians: number; targetElevationM?: number; bearingRadians?: number;
+  /** Vertical scale of the displayed scene (terrain/relief-scale.ts). Heights
+   * passed to projection are physical; the camera multiplies them. Default 1. */
+  reliefScale?: number; }
 export interface CameraPoint { x: number; y: number; visible: boolean; depth: number; }
 export interface SurfacePoint { lat: number; lon: number; }
 export interface CameraGeometry {
@@ -20,12 +23,13 @@ const wrapLon = (v: number) => ((v + 180) % 360 + 360) % 360 - 180;
 const smoothstep = (v: number) => { const t = Math.max(0, Math.min(1, v)); return t * t * (3 - 2 * t); };
 
 export function createTiltCamera(input: TiltCameraInput): TiltCamera {
-  if (![input.lat, input.lon, input.halfHeightDeg, input.aspect, input.tiltRadians, input.targetElevationM ?? 0, input.bearingRadians ?? 0].every(Number.isFinite) || input.lat < -90 || input.lat > 90 || input.halfHeightDeg <= 0 || input.aspect <= 0) throw new Error('Invalid tilt camera input');
+  if (![input.lat, input.lon, input.halfHeightDeg, input.aspect, input.tiltRadians, input.targetElevationM ?? 0, input.bearingRadians ?? 0, input.reliefScale ?? 1].every(Number.isFinite) || (input.reliefScale ?? 1) < 0 || input.lat < -90 || input.lat > 90 || input.halfHeightDeg <= 0 || input.aspect <= 0) throw new Error('Invalid tilt camera input');
   const halfHeightDeg = Math.min(179.999, input.halfHeightDeg), tiltRadians = Math.max(0, Math.min(75 * DEG, input.tiltRadians));
   const halfHeightRadians = halfHeightDeg * DEG, k = smoothstep(tiltRadians / TWENTY), s = Math.sin(tiltRadians), c = Math.cos(tiltRadians);
   const distance = halfHeightRadians / (TAN25 * Math.max(k, SMALL_K));
   const bearing = input.bearingRadians ?? 0, sb = Math.sin(bearing), cb = Math.cos(bearing);
-  const eye: readonly [number, number, number] = [-sb * s * distance, -cb * s * distance, c * distance + (input.targetElevationM ?? 0) / EARTH_RADIUS_M];
+  const relief = input.reliefScale ?? 1;
+  const eye: readonly [number, number, number] = [-sb * s * distance, -cb * s * distance, c * distance + (input.targetElevationM ?? 0) * relief / EARTH_RADIUS_M];
   const forward: readonly [number, number, number] = [sb * s, cb * s, -c], up: readonly [number, number, number] = [sb * c, cb * c, s], right: readonly [number, number, number] = [cb, -sb, 0];
   return { ...input, halfHeightDeg, tiltRadians, halfHeightRadians, halfWidthRadians: halfHeightRadians * input.aspect, geometry: {
     radiusM: EARTH_RADIUS_M, cameraPositionM: scale(eye, EARTH_RADIUS_M), cameraPositionNormalized: eye, forward, right, up,
@@ -33,26 +37,29 @@ export function createTiltCamera(input: TiltCameraInput): TiltCamera {
   } };
 }
 
-interface Surface { point: readonly [number, number, number]; normal: readonly [number, number, number]; centerZ: number; radius: number; }
-function surface(camera: TiltCamera, lat: number, lon: number, heightM: number): Surface {
-  const k = camera.geometry.curvature;
-  if (k < SMALL_K) return { point: [wrapLon(lon - camera.lon) * DEG, (lat - camera.lat) * DEG, heightM / EARTH_RADIUS_M], normal: [0, 0, 1], centerZ: -1 / SMALL_K, radius: 1 / SMALL_K + heightM / EARTH_RADIUS_M };
-  const re = 1 / k, phi = k * lat * DEG, phi0 = k * camera.lat * DEG, lambda = k * wrapLon(lon - camera.lon) * DEG;
-  const normal: readonly [number, number, number] = [Math.cos(phi) * Math.sin(lambda), Math.sin(phi) * Math.cos(phi0) - Math.cos(phi) * Math.cos(lambda) * Math.sin(phi0), Math.cos(phi) * Math.cos(lambda) * Math.cos(phi0) + Math.sin(phi) * Math.sin(phi0)];
-  return { point: [re * normal[0] + normal[0] * heightM / EARTH_RADIUS_M, re * normal[1] + normal[1] * heightM / EARTH_RADIUS_M, re * (normal[2] - 1) + normal[2] * heightM / EARTH_RADIUS_M], normal, centerZ: -re, radius: re + heightM / EARTH_RADIUS_M };
-}
-
 function perspective(camera: TiltCamera, lat: number, lon: number, heightM: number): CameraPoint {
-  const data = surface(camera, lat, lon, heightM), origin = camera.geometry.cameraPositionNormalized;
-  const relative: readonly [number, number, number] = [data.point[0] - origin[0], data.point[1] - origin[1], data.point[2] - origin[2]], depth = dot(relative, camera.geometry.forward);
-  const y = dot(relative, camera.geometry.up);
+  // Scalar form of surface() + projection: this runs for every terrain, line
+  // and flow sample on every frame, so it allocates only the result.
+  const k = camera.geometry.curvature, g = camera.geometry, origin = g.cameraPositionNormalized, h = heightM * (camera.reliefScale ?? 1) / EARTH_RADIUS_M;
+  let px: number, py: number, pz: number, centerZ: number;
+  if (k < SMALL_K) { px = wrapLon(lon - camera.lon) * DEG; py = (lat - camera.lat) * DEG; pz = h; centerZ = -1 / SMALL_K; }
+  else {
+    const re = 1 / k, phi = k * lat * DEG, phi0 = k * camera.lat * DEG, lambda = k * wrapLon(lon - camera.lon) * DEG;
+    const cp = Math.cos(phi), sp = Math.sin(phi), cl = Math.cos(lambda), cp0 = Math.cos(phi0), sp0 = Math.sin(phi0);
+    const nx = cp * Math.sin(lambda), ny = sp * cp0 - cp * cl * sp0, nz = cp * cl * cp0 + sp * sp0;
+    px = re * nx + nx * h; py = re * ny + ny * h; pz = re * (nz - 1) + nz * h; centerZ = -re;
+  }
+  const rx = px - origin[0], ry = py - origin[1], rz = pz - origin[2];
+  const f = g.forward, u = g.up, r = g.right;
+  const depth = rx * f[0] + ry * f[1] + rz * f[2];
+  const y = rx * u[0] + ry * u[1] + rz * u[2];
   // Clouds and aircraft are visible from below their altitude shell. Occlusion
   // belongs to the ground sphere, not the normal of that higher shell.
-  const re = -data.centerZ, length2 = dot(relative, relative);
-  const t = Math.max(0, Math.min(1, -(dot(origin, relative) + re * relative[2]) / length2));
-  const closest = add(origin, relative, t);
-  const clearance = dot(closest, closest) + 2 * re * closest[2];
-  return { x: dot(relative, camera.geometry.right) / (depth * camera.geometry.tangentHalfHeight * camera.aspect), y: y / (depth * camera.geometry.tangentHalfHeight), visible: depth > 0 && clearance >= -1e-10, depth: depth * EARTH_RADIUS_M };
+  const re = -centerZ, length2 = rx * rx + ry * ry + rz * rz;
+  const t = Math.max(0, Math.min(1, -((origin[0] * rx + origin[1] * ry + origin[2] * rz) + re * rz) / length2));
+  const cx = origin[0] + rx * t, cy = origin[1] + ry * t, cz = origin[2] + rz * t;
+  const clearance = (cx * cx + cy * cy + cz * cz) + 2 * re * cz;
+  return { x: (rx * r[0] + ry * r[1] + rz * r[2]) / (depth * g.tangentHalfHeight * camera.aspect), y: y / (depth * g.tangentHalfHeight), visible: depth > 0 && clearance >= -1e-10, depth: depth * EARTH_RADIUS_M };
 }
 
 export function forwardProject(camera: TiltCamera, lat: number, lon: number, heightM = 0): CameraPoint | null {
@@ -86,7 +93,7 @@ function inverseAnalytic(camera: TiltCamera, clipX: number, clipY: number, heigh
   return { lat, lon: wrapLon(camera.lon + delta) };
 }
 
-export function inverseAtAltitude(camera: TiltCamera, clipX: number, clipY: number, heightM: number): SurfacePoint | null { return [clipX, clipY, heightM].every(Number.isFinite) && heightM >= -EARTH_RADIUS_M ? inverseAnalytic(camera, clipX, clipY, heightM) : null; }
+export function inverseAtAltitude(camera: TiltCamera, clipX: number, clipY: number, heightM: number): SurfacePoint | null { return [clipX, clipY, heightM].every(Number.isFinite) && heightM >= -EARTH_RADIUS_M ? inverseAnalytic(camera, clipX, clipY, heightM * (camera.reliefScale ?? 1)) : null; }
 export function inverseUnproject(camera: TiltCamera, clipX: number, clipY: number): SurfacePoint | null { return inverseAtAltitude(camera, clipX, clipY, 0); }
 
 /** Conservative geographic cap containing every visible ground/terrain point.
@@ -101,11 +108,20 @@ export function visibleTerrainBounds(camera:TiltCamera):{west:number;east:number
   const phi0=k*camera.lat*DEG;
   const phi=Math.asin(Math.max(-1,Math.min(1,(y*Math.cos(phi0)+(z+r)*Math.sin(phi0))/d)));
   const longitude=camera.lon+Math.atan2(x,(z+r)*Math.cos(phi0)-y*Math.sin(phi0))/k/DEG;
-  const angle=Math.acos(Math.min(1,r/d))+Math.acos(r/(r+12000));
+  const angle=Math.acos(Math.min(1,r/d))+Math.acos(r/(r+12000*Math.max(1,camera.reliefScale??1)));
   const south=Math.max(-90,(phi-angle)/k/DEG),north=Math.min(90,(phi+angle)/k/DEG);
   if(Math.abs(phi)+angle>=Math.PI/2)return {west:camera.lon-180,east:camera.lon+180,south,north};
   const half=Math.min(180,Math.asin(Math.min(1,Math.sin(angle)/Math.cos(phi)))/k/DEG);
   return {west:longitude-half,east:longitude+half,south,north};
+}
+
+/** Bounded mesh footprint; a separate coarse mosaic covers the rest of the horizon. */
+export function terrainViewBounds(camera:TiltCamera, multiple=6) {
+  const visible=visibleTerrainBounds(camera);
+  if(!visible)return null;
+  const radius=Math.max(camera.halfWidthRadians,camera.halfHeightRadians)*180/Math.PI*multiple;
+  return {west:Math.max(visible.west,camera.lon-radius),east:Math.min(visible.east,camera.lon+radius),
+    south:Math.max(visible.south,camera.lat-radius),north:Math.min(visible.north,camera.lat+radius)};
 }
 
 /** Matching normalized variable-curvature formulas for a WebGL geoOf implementation. */

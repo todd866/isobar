@@ -768,8 +768,8 @@ static void SetNewMap(LivePopoverController *controller, BOOL on) {
 
 static void ClickLens(LivePopoverController *controller, NSInteger segment) {
     NSSegmentedControl *row = (NSSegmentedControl *)Find(controller.popover.contentViewController.view, @"popover.lens");
-    if (![row isKindOfClass:NSSegmentedControl.class] || row.segmentCount != 7) {
-        Fail("missing seven-segment lens control"); return;
+    if (![row isKindOfClass:NSSegmentedControl.class] || row.segmentCount != 8) {
+        Fail("missing eight-segment lens control"); return;
     }
     row.selectedSegment = segment;
     [NSApp sendAction:row.action to:row.target from:row];
@@ -779,8 +779,8 @@ static void ClickLens(LivePopoverController *controller, NSInteger segment) {
 // Choose the coupled lens through the same AppKit action as a real click.
 static void ChooseLens(LivePopoverController *controller, NSInteger segment) {
     NSSegmentedControl *row = (NSSegmentedControl *)Find(controller.popover.contentViewController.view, @"popover.lens");
-    if (![row isKindOfClass:NSSegmentedControl.class] || row.segmentCount != 7) {
-        Fail("missing seven-segment lens control"); return;
+    if (![row isKindOfClass:NSSegmentedControl.class] || row.segmentCount != 8) {
+        Fail("missing eight-segment lens control"); return;
     }
     if (row.selectedSegment != segment) {
         row.selectedSegment = segment;

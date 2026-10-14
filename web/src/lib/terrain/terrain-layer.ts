@@ -1,3 +1,4 @@
+import { planTerrainMosaics, type TerrainMosaicPlan } from './terrain-plan';
 import { slicePoint } from '../atmosphere-slice';
 /**
  * The map's terrain: asks the terrain worker for a mosaic covering the view
@@ -5,12 +6,14 @@ import { slicePoint } from '../atmosphere-slice';
  * here decodes or composites; the main thread only plans and uploads.
  */
 import { mapUnproject, unproject, type Camera, type Lambert } from '../lambert';
-import { inverseUnproject } from '../tilt-camera';
+import { inverseUnproject, terrainViewBounds, visibleTerrainBounds } from '../tilt-camera';
 import type { TiltedCamera } from '../tilt-navigation';
 import type { SectionSample } from '../point/terrain-section';
-import { boxContains, planMosaic, reliefStrength, MERCATOR_LIMIT, type GeoBox, type TerrainPlan } from './terrarium';
+import { boxContains, reliefStrength, MERCATOR_LIMIT, type GeoBox } from './terrarium';
+import { MESH_MAX_HALF_HEIGHT_DEG } from './relief-scale';
 
 export interface TerrainMosaic {
+  far?: TerrainMosaic | null;
   box: GeoBox;
   width: number;
   height: number;
@@ -52,6 +55,8 @@ export function viewGeoBox(geo: Lambert, camera: Camera): GeoBox | null {
     if (Number.isFinite(west) && east > west && north > south) return { west, east, south, north };
     return null;
   }
+  const tilt=(camera as TiltedCamera).tiltCamera;
+  if(tilt && tilt.geometry.curvature>.05){const bounds=terrainViewBounds(tilt);if(bounds)return bounds;}
   const steps = camera.surface ? 8 : geo.projection === 'equirectangular' ? 1 : 8;
   for (let k = 0; k <= steps; k += 1) {
     const t = (k / steps) * 2 - 1;
@@ -90,7 +95,8 @@ export function createTerrainLayer(onMosaic: (mosaic: TerrainMosaic) => void, op
   }
   let id = 0;
   let sectionId = 0;
-  let requested: TerrainPlan | null = null;
+  let requested: TerrainMosaicPlan | null = null;
+  let planned: { key: string; plan: TerrainMosaicPlan } | null = null;
   const stats: TerrainStats = { z: null, needed: 0, loaded: 0, missing: 0, cached: 0, covered: 0, mosaics: 0 };
   const pending = new Map<number, (samples: SectionSample[]) => void>();
   worker.onmessage = (event: MessageEvent<TerrainMosaic & { type: string; id: number; tiles: { needed: number; loaded: number; missing: number; cached: number }; samples?: SectionSample[] }>) => {
@@ -122,10 +128,29 @@ export function createTerrainLayer(onMosaic: (mosaic: TerrainMosaic) => void, op
       // the inspected foreground. Spend the existing tile/texel budget there.
       const pxPerDegree = terrainDetailDensity(geo, camera, footprintDensity, cssWidth * density);
       const phone = cssWidth < 700;
-      const plan = planMosaic(view, pxPerDegree, phone ? 1_500_000 : 6_000_000);
+      const tilt=(camera as TiltedCamera).tiltCamera;
+      const near=tilt && tilt.geometry.curvature>.05 ? terrainViewBounds(tilt,2) : null;
+      const farView=near && tilt ? visibleTerrainBounds(tilt) ?? view : view;
+      // Use the same supported footprint for planning and reuse. A horizon
+      // beyond the DEM must not invalidate an otherwise complete mosaic.
+      for (const bounds of [near, farView]) {
+        if (!bounds) continue;
+        bounds.south = Math.max(-MERCATOR_LIMIT, bounds.south);
+        bounds.north = Math.min(MERCATOR_LIMIT, bounds.north);
+        if (!(bounds.north > bounds.south)) return strength;
+      }
+      const maxTexels = phone ? 1_500_000 : 6_000_000;
+      // Cache by values: the renderer may recreate its camera every paint.
+      // Bounds capture pitch, bearing, elevation and slice footprint changes.
+      const key = [farView.west, farView.east, farView.south, farView.north,
+        near?.west, near?.east, near?.south, near?.north, pxPerDegree, maxTexels].join(':');
+      if (planned?.key !== key) planned = { key, plan: planTerrainMosaics(farView, near, pxPerDegree, maxTexels) };
+      const plan = planned.plan;
       const stale = !requested
         || requested.z !== plan.z
-        || !boxContains(requested.box, view)
+        || Boolean(requested.far)!==Boolean(plan.far)
+        || !boxContains(requested.box, near ?? view)
+        || (!!plan.far && (!requested.far || requested.far.z!==plan.far.z || !boxContains(requested.far.box,farView)))
         // Zoomed well out of the requested box: a coarser, wider mosaic.
         || (requested.box.east - requested.box.west) > 4 * (plan.box.east - plan.box.west);
       if (stale) {
@@ -164,7 +189,10 @@ export function createTerrainLayer(onMosaic: (mosaic: TerrainMosaic) => void, op
   };
 }
 
+/** A tilted view's footprint runs to the horizon, which would starve the
+ * foreground. Spend up to 4x the footprint density on the screen's own width,
+ * across the whole 3D mesh range, so regional relief has DEM detail to show. */
 export function terrainDetailDensity(geo:Lambert,camera:Camera,footprintDensity:number,pixels:number):number {
-  if(!camera.surface||geo.projection!=='equirectangular'||camera.halfHeight>=.3)return footprintDensity;
+  if(!camera.surface||geo.projection!=='equirectangular'||camera.halfHeight>=MESH_MAX_HALF_HEIGHT_DEG)return footprintDensity;
   return Math.max(footprintDensity,Math.min(footprintDensity*4,pixels/(2*camera.halfWidth/geo.F)));
 }

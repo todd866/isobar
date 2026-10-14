@@ -47,6 +47,8 @@ test.describe('WebGL chart context recovery', () => {
     await paint(page);
 
     await expect.poll(() => stage.evaluate((e: any) => e.chartApi.terrain()?.painted), {timeout: 60000}).toBe(true);
+    await page.setViewportSize({width:1100,height:720});
+    await paint(page);
     const before = await platePixels(stage);
     const state = () => stage.evaluate((element: any) => ({
       camera: element.chartApi.camera(),

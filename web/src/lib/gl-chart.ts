@@ -1,10 +1,15 @@
+import { TERRAIN_HAZE_GLSL } from './terrain/haze';
+import { TERRAIN_SAMPLING_GLSL } from './terrain/terrain-sampling';
+import { createPostAntialias } from './post-antialias';
 import { PRESSURE_ISOBARS_GLSL } from './pressure-isobars';
 import { buildSurfaceMesh, surfaceMeshSpacing } from './terrain/surface-mesh';
+import { meshNeedsRebuild, type MeshBuild } from './terrain/mesh-schedule';
+import { MESH_MAX_HALF_HEIGHT_DEG } from './terrain/relief-scale';
 import { mosaicElevation } from './terrain/elevation';
 import { buildTerrainSliceMesh, atmosphereSliceKey, type AtmosphereSlice } from './atmosphere-slice';
 import {CYCLONE_GLSL,cycloneProfile,DEFAULT_CYCLONE_PROFILE,type CycloneState} from './historical-cyclone';
 import { IMAGERY_MATERIAL_GLSL, type ImageryMapping } from './terrain/imagery-material';
-import { TILT_CAMERA_GLSL, type TiltCamera } from './tilt-camera';
+import { TILT_CAMERA_GLSL, terrainViewBounds, type TiltCamera } from './tilt-camera';
 /** WebGL2 chart plate: Lambert unproject, bicubic field sample, land/sea tint. */
 
 import { kiteBandColor, type KiteBand } from './coastal';
@@ -48,6 +53,7 @@ export interface GlView {
 
 /** Equirectangular elevation mosaic: RG binary16 (elevation m, coverage), rows from the south. */
 export interface TerrainTexture {
+  far?: TerrainTexture | null;
   data: Uint16Array;
   width: number;
   height: number;
@@ -62,6 +68,8 @@ export interface LandBox {
   north: number;
 }
 
+const MIN_TERRAIN_CURVATURE = .05;
+
 const VERT = `#version 300 es
 precision highp float;
 layout(location=0) in vec4 aClip;
@@ -70,6 +78,7 @@ uniform int uHasTerrain;
 uniform sampler2D uTerrain;
 uniform vec4 uTerrainBox;
 uniform vec4 uTiltCam;
+uniform float uReliefScale;
 uniform vec2 uHalf;
 uniform float uCurvature;
 uniform vec3 uEye;
@@ -82,16 +91,17 @@ out vec2 vSliceGeo;
 out float vSliceWall;
 out float vSliceCoverage;
 ${TILT_CAMERA_GLSL}
+${TERRAIN_SAMPLING_GLSL}
 void main() {
   vSliceGeo=vec2(0);vSliceWall=0.0;vSliceCoverage=1.0;
-  if(uSlicePass==0){vClip=aClip.xy;gl_Position=vec4(aClip.xy,0,1);return;}
-  vec2 uv=vec2(mod(aClip.x-uTerrainBox.x+720.0,360.0)/(uTerrainBox.z-uTerrainBox.x),(aClip.y-uTerrainBox.y)/(uTerrainBox.w-uTerrainBox.y));
-  bool covered=uHasTerrain==1&&all(greaterThanEqual(uv,vec2(0)))&&all(lessThanEqual(uv,vec2(1)));
-  vec2 dem=covered?texture(uTerrain,uv).rg:vec2(0);
+  // The plate lies on the far plane: drawn after the terrain mesh it only fills uncovered pixels.
+  if(uSlicePass==0){vClip=aClip.xy;gl_Position=vec4(aClip.xy,1,1);return;}
+  vec2 dem=uHasTerrain==1?measuredTerrain(aClip.xy):vec2(0);
   float height=dem.y>.99?dem.x/dem.y:0.0;
-  vSliceCoverage=covered&&dem.y>.99?1.0:0.0;
+  vSliceCoverage=dem.y>.99?1.0:0.0;
   height=mix(height,min(height,uSliceBase),aClip.z);
-  vec3 point=variableSurface(radians(aClip.y),radians(aClip.x),uTiltCam.x,uTiltCam.y,uCurvature,height);
+  // Displayed heights: the scene's single vertical scale (terrain/relief-scale.ts).
+  vec3 point=variableSurface(radians(aClip.y),radians(aClip.x),uTiltCam.x,uTiltCam.y,uCurvature,height*uReliefScale);
   vec3 relative=point-uEye,right=normalize(cross(uForward,uUp));
   float depth=dot(relative,uForward),w=depth*.46630766*uCurvature;
   vec2 xy=vec2(dot(relative,right)/(uHalf.x/uHalf.y),dot(relative,uUp));
@@ -142,9 +152,11 @@ uniform vec4 uTerrainBox;
 uniform vec2 uTerrainTexel;
 uniform float uRelief;
 uniform int uTerrainMesh;
+uniform vec4 uMeshBox;
 uniform int uHasTerrain;
 uniform int uTilt;
 uniform vec4 uTiltCam;
+uniform float uReliefScale;
 uniform float uCurvature;
 uniform vec3 uEye;
 uniform vec3 uForward;
@@ -175,6 +187,7 @@ float cubic(float p0, float p1, float p2, float p3, float t) {
 }
 
 ${TILT_CAMERA_GLSL}
+${TERRAIN_SAMPLING_GLSL}
 bool tiltedGeo(vec2 clip, float h, out float lat, out float lon) {
   return variableGeo(clip, uTiltCam, uHalf.x/uHalf.y, uCurvature, uEye, uForward, uUp, h, lat, lon);
 }
@@ -182,15 +195,13 @@ bool geoOf(vec2 clip, out float lat, out float lon) {
   if(uSlicePass==1||uSlicePass==2){lat=vSliceGeo.y;lon=vSliceGeo.x;return true;}
   if (uTilt == 1) {
     if (!tiltedGeo(clip, 0.0, lat, lon)) return false;
-    // A bounded height-field intersection. Elevation stays at physical scale.
-    if (uHasTerrain == 1 && uTerrainMesh == 0 && uCurvature > 0.05) {
+    // A bounded height-field intersection against the displayed (scaled) terrain.
+    if (uHasTerrain == 1 && uCurvature > 0.05) {
       for (int i = 0; i < 4; i++) {
-        vec2 uv = vec2(mod(degrees(lon)-uTerrainBox.x+720.0,360.0)/(uTerrainBox.z-uTerrainBox.x), (degrees(lat)-uTerrainBox.y)/(uTerrainBox.w-uTerrainBox.y));
-        if (any(lessThan(uv,vec2(0))) || any(greaterThan(uv,vec2(1)))) break;
-        vec2 dem = texture(uTerrain,uv).rg;
+        vec2 dem = measuredTerrain(vec2(degrees(lon),degrees(lat)));
         if (dem.g < .95) break;
         float nextLat, nextLon;
-        if (!tiltedGeo(clip, max(0.0,dem.r/dem.g), nextLat, nextLon)) break;
+        if (!tiltedGeo(clip, max(0.0,dem.r/dem.g)*uReliefScale, nextLat, nextLon)) break;
         lat=nextLat; lon=nextLon;
       }
     }
@@ -287,11 +298,17 @@ vec3 hypsometric(vec3 low, float metres) {
 
 // Coverage-weighted elevation: uncovered texels are (0, 0), so R/G is the mean of the covered ones.
 vec2 terrainAt(vec2 uv) {
-  vec2 t = texture(uTerrain, uv).rg;
+  vec2 t = measuredTerrain(mix(uTerrainBox.xy,uTerrainBox.zw,uv));
   return vec2(t.g > 0.001 ? t.r / t.g : 0.0, t.g);
 }
 
+vec2 terrainMaterialAt(vec2 uv,vec4 box) {
+  vec2 t=measuredTerrain(mix(box.xy,box.zw,uv));
+  return vec2(t.y>.001?t.x/t.y:0.0,t.y);
+}
+
 ${PRESSURE_ISOBARS_GLSL}
+${TERRAIN_HAZE_GLSL}
 
 vec4 tint(int field, float value) {
   if (value < -1e20) return vec4(0.0);
@@ -331,6 +348,19 @@ void main() {
   SEA = mix(SEA, mix(FIELD_SEA_DAY, FIELD_SEA_NIGHT, uDark), fieldNeutral);
   LANDC = mix(LANDC, mix(FIELD_LAND_DAY, FIELD_LAND_NIGHT, uDark), fieldNeutral);
   if((uSlicePass==1||uSlicePass==2)&&vSliceCoverage<.999)discard;
+  // Under the terrain mesh the plate is hidden. Its material is the costliest
+  // shading in the frame, so skip it there; the depth test rejects this colour.
+  if (uSlicePass == 0 && uTerrainMesh == 1 && uTilt == 1) {
+    float hiddenLat, hiddenLon;
+    if (tiltedGeo(vClip, 0.0, hiddenLat, hiddenLon)) {
+      vec2 hidden = vec2(degrees(hiddenLon), degrees(hiddenLat));
+      vec2 meshUV = terrainUV(hidden, uMeshBox);
+      if (all(greaterThan(meshUV, vec2(.01))) && all(lessThan(meshUV, vec2(.99))) && measuredTerrain(hidden).y > .99) {
+        oColor = vec4(mix(vec3(.83,.89,.93),vec3(.035,.065,.10),uDark), 1.0);
+        return;
+      }
+    }
+  }
   if ((uSliceEnabled==1&&uSlicePass==0) || !geoOf(vClip, lat, lon)) {
     vec3 sky = uTilt==1?skyColour(vClip):SEA;
     oColor = vec4(uTilt == 1 ? sky : SEA, 1.0);
@@ -347,11 +377,14 @@ void main() {
   float landF = smoothstep(0.35, 0.65, land);
   vec3 landColour = LANDC;
   if (uHasTerrain == 1 && uRelief > 0.0) {
-    float tu = mod(mod(lon - uTerrainBox.x, 360.0) + 360.0, 360.0) / (uTerrainBox.z - uTerrainBox.x);
-    float tv = (lat - uTerrainBox.y) / (uTerrainBox.w - uTerrainBox.y);
+    vec4 reliefBox=uTerrainBox;
+    vec2 reliefTexel=uTerrainTexel;
+    if(!insideTerrain(terrainUV(vec2(lon,lat),reliefBox)) && uHasFarTerrain==1){reliefBox=uFarTerrainBox;reliefTexel=uFarTerrainTexel;}
+    float tu = mod(mod(lon - reliefBox.x, 360.0) + 360.0, 360.0) / (reliefBox.z - reliefBox.x);
+    float tv = (lat - reliefBox.y) / (reliefBox.w - reliefBox.y);
     if (tu >= 0.0 && tu <= 1.0 && tv >= 0.0 && tv <= 1.0) {
         vec2 uv = vec2(tu, tv);
-        vec2 here = terrainAt(uv);
+        vec2 here = terrainMaterialAt(uv,reliefBox);
       if (here.y > 0.001) {
         // Land and sea from the DEM where it has data (sea is 0 m; land below
         // sea level is still land), the coastline mask elsewhere.
@@ -360,17 +393,18 @@ void main() {
         // Match the slope kernel to the projected pixel footprint. At close
         // scale this is one texel; farther out it averages a bounded wider
         // neighbourhood instead of sharpening alternating coarse samples.
-        float footprint=max(length(dFdx(uv)/uTerrainTexel),length(dFdy(uv)/uTerrainTexel));
+        float footprint=max(length(dFdx(uv)/reliefTexel),length(dFdy(uv)/reliefTexel));
         float stride=clamp(footprint,1.0,8.0);
-        vec2 slopeStep=uTerrainTexel*stride;
-        vec2 e = terrainAt(uv + vec2(slopeStep.x, 0.0));
-        vec2 w = terrainAt(uv - vec2(slopeStep.x, 0.0));
-        vec2 n = terrainAt(uv + vec2(0.0, slopeStep.y));
-        vec2 s = terrainAt(uv - vec2(0.0, slopeStep.y));
+        vec2 slopeStep=reliefTexel*stride;
+        vec2 e = terrainMaterialAt(uv + vec2(slopeStep.x, 0.0),reliefBox);
+        vec2 w = terrainMaterialAt(uv - vec2(slopeStep.x, 0.0),reliefBox);
+        vec2 n = terrainMaterialAt(uv + vec2(0.0, slopeStep.y),reliefBox);
+        vec2 s = terrainMaterialAt(uv - vec2(0.0, slopeStep.y),reliefBox);
         float cover = min(min(e.y, w.y), min(n.y, s.y));
-        float dx = uTerrainTexel.x * (uTerrainBox.z - uTerrainBox.x) * 111320.0 * max(cos(radians(lat)), 0.05);
-        float dy = uTerrainTexel.y * (uTerrainBox.w - uTerrainBox.y) * 110574.0;
-        float exaggeration = clamp(sqrt(max(dy * stride, 1.0) / 100.0), 1.0, uTilt == 1 ? 1.5 : 8.0);
+        float dx = reliefTexel.x * (reliefBox.z - reliefBox.x) * 111320.0 * max(cos(radians(lat)), 0.05);
+        float dy = reliefTexel.y * (reliefBox.w - reliefBox.y) * 110574.0;
+        // Shade the surface as displayed: tilted slopes carry the scene's vertical scale.
+        float exaggeration = clamp(sqrt(max(dy * stride, 1.0) / 100.0), 1.0, uTilt == 1 ? 1.5 : 8.0) * (uTilt == 1 ? max(uReliefScale, 1.0) : 1.0);
         float gx = (e.x - w.x) / (2.0 * dx * stride) * exaggeration;
         float gy = (n.x - s.x) / (2.0 * dy * stride) * exaggeration;
         vec3 normal = normalize(vec3(-gx, -gy, 1.0));
@@ -393,7 +427,7 @@ void main() {
   if (uHasWater == 1) {
     float wu = (sampleLon - uWaterBox.x) / (uWaterBox.z - uWaterBox.x);
     float wv = (lat - uWaterBox.y) / (uWaterBox.w - uWaterBox.y);
-    if (wu >= 0.0 && wu <= 1.0 && wv >= 0.0 && wv <= 1.0 && texture(uWater, vec2(wu, wv)).r > 0.5) landF = 0.0;
+    if (wu >= 0.0 && wu <= 1.0 && wv >= 0.0 && wv <= 1.0) landF *= 1.0-smoothstep(.35,.65,texture(uWater, vec2(wu,wv)).r);
   }
   vec3 base = mix(SEA, landColour, landF);
   if (uHasImagery == 1) {
@@ -403,12 +437,17 @@ void main() {
     base=mix(base,photographic,photo.a);
   }
   if (uTilt == 1) {
-    // Local aerial perspective suppresses unresolved distant relief, without
-    // altering elevations or weather fields. Global overview remains unchanged.
-    vec2 delta=vec2(mod(radians(lon)-uTiltCam.y+3.14159265,6.2831853)-3.14159265,radians(lat)-uTiltCam.x);
-    delta.x*=cos(uTiltCam.x);
-    float range=length(delta)*6371000.0;
-    float haze=smoothstep(2.0,8.0,range/max(500.0,uTiltCam.z*6371000.0))*.85*(1.0-smoothstep(.004,.02,uTiltCam.z));
+    // Distance from the physical eye, including measured fragment elevation.
+    vec2 ground=measuredTerrain(vec2(lon,lat));
+    float elevation=ground.y>.99?ground.x/ground.y:0.0;
+    vec3 position=variableSurface(radians(lat),radians(lon),uTiltCam.x,uTiltCam.y,uCurvature,elevation*uReliefScale);
+    float range=length(position-uEye)*6371000.0;
+    float haze=uCurvature>.05?hazeOpacity(range,uTiltCam.z):0.0;
+    if(uTerrainMesh==1){
+      vec2 meshUV=terrainUV(vec2(lon,lat),uMeshBox);
+      float edge=max(abs(meshUV.x-.5),abs(meshUV.y-.5))*2.0;
+      haze=max(haze,smoothstep(.72,1.05,edge)*.92);
+    }
     base=mix(base,mix(vec3(.83,.89,.93),vec3(.035,.065,.10),uDark),haze);
   }
   if (uHasField == 1 && uField != 0) {
@@ -494,7 +533,7 @@ export function createGlChart(canvas: HTMLCanvasElement): GlChart | null {
     edgeUv: [...mapping.edgeUv] as [number, number],
   });
   const terrainCopy = (terrain: TerrainTexture | null): StoredTerrain => terrain && ({
-    data: terrain.data.slice(), width: terrain.width, height: terrain.height, box: { ...terrain.box },
+    data: terrain.data.slice(), width: terrain.width, height: terrain.height, box: { ...terrain.box }, far: terrainCopy(terrain.far ?? null),
   });
   const state: {
     land: { pixels: Uint8Array; width: number; height: number; box: LandBox } | null;
@@ -640,6 +679,7 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
   }
   gl.deleteShader(vs);
   gl.deleteShader(fs);
+  const postAntialias = createPostAntialias(gl);
   const buffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
@@ -658,31 +698,61 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,terrainIndices);
   let lastSliceKey="",sliceCount=0;
   let terrainMeshCount=0;
+  let terrainMeshBox: LandBox | null=null;
   let terrainMeshSpacing = 0;
   let terrainMeshFocus: { lat: number; lon: number } | null = null;
-  function updateTerrainSurfaceMesh(camera: TiltCamera) {
-    if (!terrain) return;
-    const box = terrain.box;
-    const centerLon = (box.west + box.east) / 2;
-    const lon = camera.lon + 360 * Math.round((centerLon - camera.lon) / 360);
-    // Keep the tessellation stable during orbit/tilt and small drags. A bounded
-    // world-space anchor rebuilds only after a meaningful change of destination.
-    const focus = {
-      lat: Math.max(box.south, Math.min(box.north, Math.round(camera.lat / .02) * .02)),
-      lon: Math.max(box.west, Math.min(box.east, Math.round(lon / .02) * .02)),
-    };
-    const spacing = surfaceMeshSpacing(camera.halfHeightDeg);
-    if (terrainMeshFocus?.lat === focus.lat && terrainMeshFocus.lon === focus.lon && terrainMeshSpacing === spacing) return;
-    terrainMeshSpacing = spacing;
-    const surface = buildSurfaceMesh({ box, focus, halfHeightDeg: camera.halfHeightDeg });
-    terrainMeshFocus = focus;
-    terrainMeshCount = surface?.indices.length ?? 0;
-    if (!surface) return;
+  let terrainMeshDims = '';
+  // The mesh is rebuilt in a worker; the previous mesh stays on screen until
+  // the new one arrives. Only the first mesh is built synchronously, so the
+  // first 3D frame already has relief. Without workers every build is inline.
+  let meshWorker: Worker | null | undefined;
+  let meshRequest = 0;
+  let meshPending: MeshBuild | null = null;
+  const uploadSurfaceMesh = (build: MeshBuild, mesh: { vertices: Float32Array; indices: Uint32Array; columns: number; rows: number } | null) => {
+    terrainMeshBox = { ...build.box }; terrainMeshFocus = { ...build.focus }; terrainMeshSpacing = build.spacing;
+    terrainMeshCount = mesh?.indices.length ?? 0;
+    if (!mesh) return;
     gl.bindVertexArray(terrainVao);
     gl.bindBuffer(gl.ARRAY_BUFFER, terrainBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, surface.vertices, gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrainIndices);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, surface.indices, gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, mesh.vertices, gl.STATIC_DRAW);
+    // Indices depend only on the grid's dimensions.
+    const dims = `${mesh.columns}x${mesh.rows}`;
+    if (dims !== terrainMeshDims) {
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrainIndices);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.STATIC_DRAW);
+      terrainMeshDims = dims;
+    }
+  };
+  const surfaceMeshWorker = () => {
+    if (meshWorker !== undefined) return meshWorker;
+    try {
+      meshWorker = new Worker(new URL('../workers/surface-mesh.worker.ts', import.meta.url));
+      meshWorker.onmessage = (event: MessageEvent<{ id: number; mesh: { vertices: Float32Array; indices: Uint32Array; columns: number; rows: number } | null }>) => {
+        if (event.data.id !== meshRequest || !meshPending) return;
+        const build = meshPending;
+        meshPending = null;
+        uploadSurfaceMesh(build, event.data.mesh);
+      };
+      meshWorker.onerror = () => { meshWorker?.terminate(); meshWorker = null; meshPending = null; };
+    } catch { meshWorker = null; }
+    return meshWorker;
+  };
+  function updateTerrainSurfaceMesh(camera: TiltCamera) {
+    if (!terrain) return;
+    const box = terrainViewBounds(camera) ?? terrain.box;
+    const required = terrainViewBounds(camera, 4) ?? box;
+    const centerLon = (box.west + box.east) / 2;
+    const lon = camera.lon + 360 * Math.round((centerLon - camera.lon) / 360);
+    const focus = { lat: Math.max(box.south, Math.min(box.north, camera.lat)), lon: Math.max(box.west, Math.min(box.east, lon)) };
+    const want = { box, required, focus, spacing: surfaceMeshSpacing(camera.halfHeightDeg), halfHeightDeg: camera.halfHeightDeg };
+    const target = meshPending ?? (terrainMeshCount && terrainMeshBox && terrainMeshFocus ? { box: terrainMeshBox, focus: terrainMeshFocus, spacing: terrainMeshSpacing } : null);
+    if (!meshNeedsRebuild(target, want)) return;
+    const build: MeshBuild = { box: { ...box }, focus, spacing: want.spacing };
+    const input = { box: build.box, focus, halfHeightDeg: camera.halfHeightDeg };
+    const worker = terrainMeshCount ? surfaceMeshWorker() : null;
+    if (!worker) { meshRequest += 1; meshPending = null; uploadSurfaceMesh(build, buildSurfaceMesh(input)); return; }
+    meshPending = build;
+    worker.postMessage({ id: ++meshRequest, input });
   }
   const texPressure = gl.createTexture();
   let hasPressure = false;
@@ -696,6 +766,7 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
   // Front texture is drawn; a new mosaic fills the back one a slice per frame, then they swap.
   let texTerrain = gl.createTexture();
   let texTerrainBack = gl.createTexture();
+  const texFarTerrain=gl.createTexture();
   const uniformLocations = new Map<string, WebGLUniformLocation | null>();
   const loc = (name: string) => {
     if (!uniformLocations.has(name)) uniformLocations.set(name, gl.getUniformLocation(program, name));
@@ -735,12 +806,12 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   gl.bindTexture(gl.TEXTURE_2D, texWater);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, 1, 1, 0, gl.RED, gl.UNSIGNED_BYTE, new Uint8Array([0]));
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-  for (const texture of [texTerrain, texTerrainBack]) {
+  for (const texture of [texTerrain, texTerrainBack, texFarTerrain]) {
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG16F, 1, 1, 0, gl.RG, gl.HALF_FLOAT, new Uint16Array(2));
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -748,7 +819,7 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   }
-  let terrain: { box: LandBox; width: number; height: number } | null = null;
+  let terrain: { box: LandBox; width: number; height: number; far?:TerrainTexture|null } | null = null;
   let uploadedElevation: ReturnType<typeof mosaicElevation> | null = null;
   let checkedSliceKey="", checkedEpoch=-1, sliceCovered=false;
   const sliceReady=(slice:AtmosphereSlice)=>{
@@ -778,10 +849,11 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
     next.row += rows;
     if (next.row < next.height) return;
     [texTerrain, texTerrainBack] = [texTerrainBack, texTerrain];
-    terrain = { box: { ...next.box }, width: next.width, height: next.height };
-    terrainMeshFocus = null;
-    terrainMeshCount = 0;
-    uploadedElevation=mosaicElevation({...next,z:0,covered:1});
+    terrain = { box: { ...next.box }, width: next.width, height: next.height, far:next.far };
+    gl.bindTexture(gl.TEXTURE_2D,texFarTerrain);
+    const far=next.far;
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RG16F,far?.width??1,far?.height??1,0,gl.RG,gl.HALF_FLOAT,far?.data??new Uint16Array(2));
+    uploadedElevation=mosaicElevation({...next,z:0,covered:1,far:next.far?{...next.far,z:0,covered:1,far:undefined}:null});
     pending = null;
     terrainEpoch += 1;
   }
@@ -824,8 +896,8 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       } else {
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, width, height, 0, gl.RED, gl.UNSIGNED_BYTE, pixels);
       }
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     },
@@ -870,16 +942,21 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
     },
     draw(view: GlView) {
       uploadTerrainSlice();
-      if (view.tiltCamera && view.tiltCamera.halfHeightDeg < 2 && view.tiltCamera.geometry.curvature > .05 && !view.slice) updateTerrainSurfaceMesh(view.tiltCamera);
+      if (view.tiltCamera && view.tiltCamera.halfHeightDeg < MESH_MAX_HALF_HEIGHT_DEG && view.tiltCamera.geometry.curvature > MIN_TERRAIN_CURVATURE && !view.slice) updateTerrainSurfaceMesh(view.tiltCamera);
       const relief = terrain ? Math.max(0, Math.min(1, view.relief ?? 0)) : 0;
       // A close tilted view gets a depth-tested DEM surface. The flat backdrop
       // remains behind it, but must not run the inverse DEM relief pass as well.
-      const closeTerrain = !!terrain && terrainMeshCount > 0 && !!view.tiltCamera && view.tiltCamera.geometry.curvature > 0.05 && view.tiltCamera.halfHeightDeg < 2 && !view.slice;
+      const closeTerrain = !!terrain && terrainMeshCount > 0 && !!view.tiltCamera && view.tiltCamera.geometry.curvature > MIN_TERRAIN_CURVATURE && view.tiltCamera.halfHeightDeg < MESH_MAX_HALF_HEIGHT_DEG && !view.slice;
+      const slice=view.tiltCamera && view.tiltCamera.geometry.curvature > MIN_TERRAIN_CURVATURE ? view.slice : undefined;
+      // Filtered into the usual plate before readback and browser compositing.
+      const antialias = (closeTerrain || !!slice) && postAntialias.begin(canvas.width, canvas.height);
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.useProgram(program);
       gl.bindVertexArray(vao);
       gl.disable(gl.DEPTH_TEST);gl.clear(gl.DEPTH_BUFFER_BIT);
-      const slice=view.tiltCamera&&view.slice?view.slice:undefined;
+      // The slice uses perspective division, just like the terrain mesh. At
+      // overhead curvature it collapses; retain the selection but show the plate.
+
       gl.uniform1i(loc('uSliceEnabled'),slice?1:0);gl.uniform1i(loc('uSlicePass'),0);
       gl.activeTexture(gl.TEXTURE6);
       gl.bindTexture(gl.TEXTURE_2D, texPressure);
@@ -917,7 +994,14 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       gl.uniform4f(loc('uWaterBox'), waterBox.west, waterBox.south, waterBox.east, waterBox.north);
       gl.uniform1i(loc('uHasTerrain'), terrain ? 1 : 0);
       gl.uniform1i(loc('uTerrainMesh'), closeTerrain ? 1 : 0);
-      gl.uniform1f(loc('uRelief'), closeTerrain ? 0 : relief);
+      gl.uniform1f(loc('uRelief'), relief);
+      gl.activeTexture(gl.TEXTURE7);gl.bindTexture(gl.TEXTURE_2D,texFarTerrain);gl.uniform1i(loc('uFarTerrain'),7);
+      const far=terrain?.far;
+      gl.uniform1i(loc('uHasFarTerrain'),far?1:0);
+      gl.uniform4f(loc('uFarTerrainBox'),far?.box.west??0,far?.box.south??0,far?.box.east??1,far?.box.north??1);
+      gl.uniform2f(loc('uFarTerrainTexel'),1/(far?.width??1),1/(far?.height??1));
+      const meshBox=terrainMeshBox??terrain?.box;
+      if(meshBox)gl.uniform4f(loc('uMeshBox'),meshBox.west,meshBox.south,meshBox.east,meshBox.north);
       if (terrain) {
         gl.uniform4f(loc('uTerrainBox'), terrain.box.west, terrain.box.south, terrain.box.east, terrain.box.north);
         gl.uniform2f(loc('uTerrainTexel'), 1 / terrain.width, 1 / terrain.height);
@@ -936,10 +1020,12 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       gl.uniform3f(loc('uQuant'), view.scale, view.offset, view.fill);
       gl.uniform4f(loc('uLandBox'), landBox.west, landBox.south, landBox.east, landBox.north);
       gl.uniform1i(loc('uTilt'), view.tiltCamera ? 1 : 0);
+      gl.uniform1f(loc('uReliefScale'), 1);
       if (view.tiltCamera) {
         const c = view.tiltCamera, g = c.geometry;
         gl.uniform4f(loc('uTiltCam'), c.lat * Math.PI/180, c.lon * Math.PI/180, c.halfHeightRadians, c.tiltRadians);
         gl.uniform1f(loc('uCurvature'), g.curvature);
+        gl.uniform1f(loc('uReliefScale'), c.reliefScale ?? 1);
         gl.uniform3f(loc('uEye'), ...g.cameraPositionNormalized);
         gl.uniform3f(loc('uForward'), ...g.forward);
         gl.uniform3f(loc('uUp'), ...g.up);
@@ -954,8 +1040,10 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       gl.uniform1f(loc('uCutaway'), Math.max(0,Math.min(1,view.cutaway??0)));
       gl.uniform1i(loc('uProjection'), view.lambert.projection === 'equirectangular' ? 1 : 0);
       gl.uniform1i(loc('uWrap'), view.wrapsLongitude ? 1 : 0);
-      gl.drawArrays(gl.TRIANGLES, 0, 3);
       if (closeTerrain) {
+        // Terrain first, then the plate only where no terrain was drawn: the
+        // full-screen plate sits on the far plane and fails the depth test
+        // under the mesh, so the GPU shades each pixel's heavy material once.
         gl.bindVertexArray(terrainVao);
         const eye = view.tiltCamera!.geometry.cameraPositionM;
         gl.uniform1f(loc('uSliceFar'), Math.max(100000, Math.hypot(...eye) + view.tiltCamera!.halfWidthRadians * 6371000 * 8));
@@ -964,8 +1052,14 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
         gl.uniform1f(loc('uCutaway'), 0);
         gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
         gl.drawElements(gl.TRIANGLES, terrainMeshCount, gl.UNSIGNED_INT, 0);
-        gl.disable(gl.DEPTH_TEST); gl.uniform1i(loc('uSlicePass'), 0);
-      }
+        gl.uniform1i(loc('uSlicePass'), 0);
+        gl.uniform1f(loc('uCutaway'), Math.max(0,Math.min(1,view.cutaway??0)));
+        gl.bindVertexArray(vao);
+        gl.depthMask(false);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        gl.depthMask(true);
+        gl.disable(gl.DEPTH_TEST);
+      } else gl.drawArrays(gl.TRIANGLES, 0, 3);
       if(slice&&view.tiltCamera){
         gl.bindVertexArray(sliceVao);
         const sliceKey=atmosphereSliceKey(slice);
@@ -983,6 +1077,7 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
         gl.drawElements(gl.TRIANGLES,sliceCount,gl.UNSIGNED_SHORT,0);
         gl.disable(gl.DEPTH_TEST);gl.uniform1i(loc('uSlicePass'),0);
       }
+      if (antialias) postAntialias.resolve();
       if (wantPlate) {
         const width = canvas.width;
         const height = canvas.height;
@@ -1005,6 +1100,8 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
     },
     contextState() { return 'ready' as const; },
     destroy() {
+      postAntialias.destroy();
+      meshWorker?.terminate();
       gl.deleteVertexArray(sliceVao);gl.deleteBuffer(sliceBuffer);gl.deleteBuffer(sliceIndices);
       gl.deleteVertexArray(terrainVao);gl.deleteBuffer(terrainBuffer);gl.deleteBuffer(terrainIndices);
       gl.deleteVertexArray(vao);
@@ -1018,6 +1115,7 @@ function mountChart(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement): GlCh
       gl.deleteTexture(texImagery);
       gl.deleteTexture(texTerrain);
       gl.deleteTexture(texTerrainBack);
+      gl.deleteTexture(texFarTerrain);
     },
   };
 }

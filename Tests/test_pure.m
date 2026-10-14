@@ -841,6 +841,35 @@ int main(void) {
         check(![evening containsString:@"AEST"] && ![evening containsString:@"EST"] && ![tick containsString:@"EST"],
               @"popover times do not say AEST or EST");
 
+        NSTimeZone *sydneyClock = [NSTimeZone timeZoneWithName:@"Australia/Sydney"];
+        NSDate *perthClockNow = Date(@"2026-09-26T05:16:00Z");
+        check([MapPlayheadClockText(perthClockNow, perthClockNow, perth) isEqual:@"NOW · Sat 1:16 pm AWST · 0516Z"],
+              @"map clock formats Perth NOW and Zulu");
+        check([MapPlayheadClockText([perthClockNow dateByAddingTimeInterval:90], perthClockNow, perth) hasPrefix:@"FORECAST · Sat 1:17 pm AWST"],
+              @"map clock leaves NOW at 90 seconds");
+        check([MapPlayheadClockText([perthClockNow dateByAddingTimeInterval:89], perthClockNow, perth) hasPrefix:@"NOW · Sat 1:17 pm AWST"],
+              @"map clock keeps NOW inside 90 seconds");
+        check([MapPlayheadClockText([perthClockNow dateByAddingTimeInterval:-91], perthClockNow, perth) hasPrefix:@"PAST · Sat 1:14 pm AWST"],
+              @"map clock labels past playheads");
+        NSDate *sydneyBeforeDST = Date(@"2026-10-03T15:00:00Z");
+        NSDate *sydneyAfterDST = Date(@"2026-10-04T16:00:00Z");
+        check([MapPlayheadClockText(sydneyBeforeDST, sydneyBeforeDST, sydneyClock) isEqual:@"NOW · Sun 1:00 am AEST · 1500Z"],
+              @"map clock formats Sydney AEST before DST");
+        check([MapPlayheadClockText(sydneyAfterDST, sydneyAfterDST, sydneyClock) isEqual:@"NOW · Mon 3:00 am AEDT · 1600Z"],
+              @"map clock formats Sydney AEDT after DST");
+        NSDate *sydneyJumpBefore = Date(@"2026-10-03T15:59:00Z");
+        NSDate *sydneyJumpAfter = Date(@"2026-10-03T16:00:00Z");
+        check([MapPlayheadClockText(sydneyJumpBefore, sydneyJumpBefore, sydneyClock) isEqual:@"NOW · Sun 1:59 am AEST · 1559Z"],
+              @"Sydney is AEST immediately before the DST jump");
+        check([MapPlayheadClockText(sydneyJumpAfter, sydneyJumpAfter, sydneyClock) isEqual:@"NOW · Sun 3:00 am AEDT · 1600Z"],
+              @"Sydney is AEDT immediately after the DST jump");
+        check([MapPlayheadClockText(sydneyJumpBefore, sydneyJumpBefore, perth) isEqual:@"NOW · Sat 11:59 pm AWST · 1559Z"],
+              @"Perth stays AWST across Sydney DST");
+        check([MapPlayheadClockText(nil, sydneyJumpBefore, sydneyClock) isEqual:@"—"],
+              @"map clock renders a missing playhead as a dash");
+        check([MapPlayheadClockText(Date(@"2026-09-26T00:00:00Z"), nil, nil) isEqual:@"FORECAST · Sat 12:00 am UTC · 0000Z"],
+              @"map clock defaults nil zone to UTC");
+
         NSString *warnLine = PopoverWarningSummary(@[
             @{@"place": @"Perth", @"title": @"Marine Wind Warning"},
             @{@"place": @"Sydney", @"title": @"Marine Wind Warning"},

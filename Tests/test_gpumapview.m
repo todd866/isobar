@@ -1,8 +1,11 @@
+#import "starlink.h"
 // Offscreen checks for the expanded-map GPU surface. No window is ordered front.
 #import "gpumapview.h"
 #import "hazard.h"
 #import "mapcamera.h"
 #import "playback.h"
+#import "mapdetail.h"
+#import "terrain.h"
 #import <math.h>
 #import <stdio.h>
 #import <stdlib.h>
@@ -209,7 +212,7 @@ static void CheckDragAndPinch(GPUMapView *view) {
     }
     __block NSInteger clicks = 0;
     __block NSInteger holds = 0, releases = 0;
-    view.onPlainClick = ^{ clicks++; };
+    view.onPlainClick = ^(double lat, double lon) { (void)lat; (void)lon; clicks++; };
     view.onHoldChanged = ^(BOOL held) { held ? holds++ : releases++; };
     IsobarCamera start = view.camera;
     [view pointerDown:NSMakePoint(200, 160)];
@@ -271,11 +274,13 @@ static void CheckDragAndPinch(GPUMapView *view) {
         maxTilt.bearing = bearing;
         view.camera = maxTilt;
         renderView.camera = view.camera;
+        [renderView waitForTerrain];
         CGImageRef startShot = [renderView copySnapshot];
         [view pointerDown:NSMakePoint(240, 180)];
         [view pointerDrag:NSMakePoint(240, 230)];
         IsobarCamera forward = view.camera;
         renderView.camera = view.camera;
+        [renderView waitForTerrain];
         CGImageRef peakShot = [renderView copySnapshot];
         double forwardDistance = hypot(forward.centreLat - maxTilt.centreLat,
             MapWrap180(forward.centreLon - maxTilt.centreLon));
@@ -286,6 +291,7 @@ static void CheckDragAndPinch(GPUMapView *view) {
                 @"a maximum-tilt drag follows the local focal-plane bearing");
         [view pointerDrag:NSMakePoint(240, 180)];
         renderView.camera = view.camera;
+        [renderView waitForTerrain];
         CGImageRef originShot = [renderView copySnapshot];
         Check(fabs(view.camera.centreLat - maxTilt.centreLat) < 1e-9 &&
             fabs(view.camera.centreLon - maxTilt.centreLon) < 1e-9,
@@ -723,7 +729,9 @@ static void CheckSmoothClock(GPUMapView *view, IsobarLivePlayer *player, IsobarL
             }
             [view displayAtTime:origin + (NSTimeInterval)i / hz];
             steps[i] = view.renderedStep;
-            ms[i] = view.lastFrameMilliseconds;
+            // What the frame really costs on the main thread: the display
+            // sample plus the AppKit overlays it marked for drawing.
+            ms[i] = view.lastFrameMilliseconds + [view drawPendingOverlays];
             if (i > 0 && !(steps[i] > steps[i - 1])) plateaus++;
             LineMark *lines = NULL;
             int nLines = 0;
@@ -811,6 +819,69 @@ static void CheckSmoothIsobars(void) {
     Check(!view.contoursAreSynchronous, @"a world grid stays on the async contour path");
 }
 
+static int CompareDoubles(const void *a, const void *b) {
+    double x = *(const double *)a, y = *(const double *)b;
+    return x < y ? -1 : x > y;
+}
+
+// Trails are drawn only for the wind-speed field (Wind and Kite), at most 30
+// times a second, and their AppKit cost counts in the frame budget.
+static void CheckWindFlowCost(void) {
+    NSString *fixture = NSProcessInfo.processInfo.environment[@"ISOBAR_FIXTURES"] ?: @"Tests/fixtures";
+    OwnRun *run = OwnRunLoad([fixture stringByAppendingPathComponent:@"store/ecmwf/20260925T18Z"],
+        NSProcessInfo.processInfo.environment[@"ISOBAR_COAST"], nil);
+    Check(run != nil, @"wind-flow fixture loads");
+    if (!run) return;
+    GPUMapView *view = [GPUMapView mapView];
+    view.frame = NSMakeRect(0, 0, 900, 760);
+    view.popoverChrome = YES;
+    // Never ordered on screen; it only gives AppKit a needsDisplay ledger.
+    NSWindow *window = [[NSWindow alloc] initWithContentRect:view.frame styleMask:NSWindowStyleMaskBorderless
+        backing:NSBackingStoreBuffered defer:YES];
+    window.releasedWhenClosed = NO;
+    window.contentView = view;
+    view.camera = MapCameraMake(-28, 134, 4.5, 0, 900, 760);
+    WindMapView *wind = [view valueForKey:@"windView"];
+    [view adoptRun:run temperature:0 windFill:NO rain:NO]; [view waitForUploads];
+    NSTimeInterval origin = 1000;
+    for (int i = 0; i < 30; i++) { [view displayAtTime:origin + i / 60.0]; [view drawPendingOverlays]; }
+    Check(wind.hidden && !view.windFlow && wind.time == 0 && wind.drawSerial == 0,
+        @"pressure lens neither advances nor draws wind trails");
+    view.windBarbs = YES;
+    Check(!wind.hidden && !view.windFlow, @"barbs alone show the vector view without trails");
+    view.windBarbs = NO;
+    Check(wind.hidden, @"turning barbs off hides the vector view again");
+    [view adoptRun:run temperature:0 windFill:YES rain:NO]; [view waitForUploads];
+    Check(view.windFlow && !wind.hidden, @"wind-speed field shows trails");
+    enum { frames = 120 };
+    double ms[frames];
+    NSUInteger firstDraw = wind.drawSerial, maxDrawn = 0;
+    NSTimeInterval began = CACurrentMediaTime();
+    for (int i = 0; i < frames; i++) { @autoreleasepool {
+        NSTimeInterval frameStart = CACurrentMediaTime();
+        [view displayAtTime:origin + 1 + i / 60.0];
+        ms[i] = view.lastFrameMilliseconds + [view drawPendingOverlays];
+        if (wind.drawnCount > maxDrawn) maxDrawn = wind.drawnCount;
+        NSTimeInterval left = 1.0 / 60.0 - (CACurrentMediaTime() - frameStart);
+        if (left > 0) usleep((useconds_t)(left * 1e6));
+    }}
+    double wall = CACurrentMediaTime() - began;
+    NSUInteger draws = wind.drawSerial - firstDraw;
+    qsort(ms, frames, sizeof(double), CompareDoubles);
+    double p50 = ms[frames / 2], p95 = ms[(int)llround((frames - 1) * 0.95)];
+    fprintf(stderr, "    wind flow popover 900x760: %lu trail draws in %.2f s, max drawn %lu, frame+overlay p50 %.2f p95 %.2f ms (trail draw %.2f ms)\n",
+        (unsigned long)draws, wall, (unsigned long)maxDrawn, p50, p95, wind.lastDrawMilliseconds);
+    Check(draws >= 10 && draws <= (NSUInteger)ceil(wall * 30) + 2, @"wind trails redraw at most 30 times a second");
+    Check(maxDrawn > 50 && maxDrawn <= 330, @"popover draws about 300 trails");
+    Check(p95 < 8, @"wind lens frame plus overlay p95 stays under 8 ms");
+    [view adoptRun:run temperature:0 windFill:NO rain:YES]; [view waitForUploads];
+    NSUInteger before = wind.drawSerial; double time = wind.time;
+    for (int i = 0; i < 10; i++) { [view displayAtTime:origin + 4 + i / 60.0]; [view drawPendingOverlays]; }
+    Check(wind.hidden && wind.drawSerial == before && wind.time == time, @"leaving the wind lens stops the trails");
+    [view stopRendering];
+    window.contentView = nil;
+}
+
 static void CheckPopoverChrome(GPUMapView *view) {
     view.frame = NSMakeRect(0, 0, 762, 584);
     view.popoverChrome = YES;
@@ -849,7 +920,7 @@ static void CheckPopoverChrome(GPUMapView *view) {
         fabs(view.camera.zoom - held.zoom) < 1e-9,
         @"a location update leaves the camera where the user put it");
     __block NSInteger clicks = 0;
-    view.onPlainClick = ^{ clicks++; };
+    view.onPlainClick = ^(double lat, double lon) { (void)lat; (void)lon; clicks++; };
     [view pointerDown:NSMakePoint(300, 240)];
     [view pointerDrag:NSMakePoint(360, 180)];
     [view pointerUp:NSMakePoint(360, 180)];
@@ -1482,10 +1553,128 @@ static void CheckNativeJourneySequences(void) {
     [view stopRendering];
 }
 
+static void CheckPointCardHitTesting(void) {
+    NSString *fixtures = NSProcessInfo.processInfo.environment[@"ISOBAR_FIXTURES"] ?: @"Tests/fixtures";
+    OwnRun *run = OwnRunLoad([fixtures stringByAppendingPathComponent:@"store/ecmwf/20260925T18Z"],
+        NSProcessInfo.processInfo.environment[@"ISOBAR_COAST"], NULL);
+    Check(run != nil, @"point hit-testing fixture loads");
+    if (!run) return;
+    for (NSNumber *popover in @[@YES, @NO]) for (NSString *operation in @[@"resize", @"pan", @"reselect"]) {
+        NSView *host = [[NSView alloc] initWithFrame:NSMakeRect(0,0,1440,900)];
+        GPUMapView *map = [GPUMapView mapView];
+        map.frame = NSMakeRect(11,17,popover.boolValue ? 640 : 1280,popover.boolValue ? 400 : 720);
+        map.popoverChrome = popover.boolValue;
+        [host addSubview:map];
+        [map adoptRun:run temperature:0 windFill:NO rain:NO];
+        [map waitForUploads];
+        map.trafficEnabled = YES;
+        {
+            [map frameAustralia];
+            [map selectPointLatitude:-33.9 longitude:151.2];
+            if ([operation isEqual:@"resize"]) {
+                [map setFrameSize:NSMakeSize(NSWidth(map.frame)-80,NSHeight(map.frame)-40)];
+            } else {
+                NSPoint start = NSMakePoint(NSMidX(map.bounds),NSMidY(map.bounds));
+                [map pointerDown:start];
+                NSPoint end = NSMakePoint(start.x+30,start.y+20);
+                [map pointerDrag:end]; [map pointerUp:end];
+                if ([operation isEqual:@"reselect"]) [map selectPointLatitude:-32 longitude:150];
+            }
+            MapPointCard *card = (MapPointCard *)FindID(map, @"map.point.card");
+            NSButton *close = card.closeButton;
+            NSPoint target = [close convertPoint:NSMakePoint(NSMidX(close.bounds),NSMidY(close.bounds)) toView:host];
+            NSView *hit = [host hitTest:target];
+            NSString *context = [NSString stringWithFormat:@"%@ after %@ with traffic",popover.boolValue ? @"popover" : @"expanded",operation];
+            Check(close && hit == close, [context stringByAppendingString:@": close wins actual hit testing"]);
+            // Dispatch only to the hit-tested control; never bypass the overlay.
+            if (close && hit == close) [(NSButton *)hit performClick:nil];
+            Check(map.pointSample == nil, [context stringByAppendingString:@": click closes the point card"]);
+            [map closePointDetail];
+        }
+        [map stopRendering];
+        [map removeFromSuperview];
+    }
+}
+
+// Sat lens layer: satellites over the map, the serving one ringed; nil leaves
+// the map untouched.
+static size_t SnapshotDiff(CGImageRef a, CGImageRef b) {
+    CFDataRef da = CGDataProviderCopyData(CGImageGetDataProvider(a)), db = CGDataProviderCopyData(CGImageGetDataProvider(b));
+    size_t n = MIN(CFDataGetLength(da), CFDataGetLength(db)), diff = 0;
+    const uint8_t *pa = CFDataGetBytePtr(da), *pb = CFDataGetBytePtr(db);
+    for (size_t i = 0; i < n; i++) if (abs((int)pa[i] - (int)pb[i]) > 2) diff++;
+    CFRelease(da); CFRelease(db);
+    return diff;
+}
+
+// A lens change on the same run keeps the smoothed pressure resident and
+// uploads only the new colour; isobars survive every switch.
+static void CheckLensSwitchKeepsPressure(void) {
+    NSString *fixtures = NSProcessInfo.processInfo.environment[@"ISOBAR_FIXTURES"] ?: @"Tests/fixtures";
+    OwnRun *run = OwnRunLoad([fixtures stringByAppendingPathComponent:@"store/ecmwf/20260925T18Z"],
+        NSProcessInfo.processInfo.environment[@"ISOBAR_COAST"], nil);
+    if (!run) { Check(NO, @"lens-switch fixture run loads"); return; }
+    GPUMapView *view = [GPUMapView mapView];
+    view.frame = NSMakeRect(0, 0, 480, 360);
+    [view adoptRun:run temperature:0 windFill:NO rain:NO]; [view waitForUploads];
+    [view frameAustralia]; view.fractionalStep = 1;
+    CGImageRef plain = [view copySnapshot]; NSInteger lines = view.contourLineCount;
+    for (NSArray *lens in @[@[@0, @NO, @YES], @[@2, @NO, @NO], @[@0, @YES, @NO], @[@0, @NO, @NO], @[@0, @NO, @YES]]) {
+        [view adoptRun:run temperature:[lens[0] intValue] windFill:[lens[1] boolValue] rain:[lens[2] boolValue]];
+        [view waitForUploads];
+        CGImageRef shot = [view copySnapshot];
+        Check(shot && view.contourLineCount == lines && lines > 0,
+            [NSString stringWithFormat:@"isobars survive a lens switch on the same run (%ld of %ld)", (long)view.contourLineCount, (long)lines]);
+        if (shot) CGImageRelease(shot);
+    }
+    if (plain) CGImageRelease(plain);
+    [view stopRendering];
+}
+
+static void CheckStarlink(void) {
+    NSString *fixtures = NSProcessInfo.processInfo.environment[@"ISOBAR_FIXTURES"] ?: @"Tests/fixtures";
+    NSString *error = nil;
+    OwnRun *run = OwnRunLoad([[fixtures stringByAppendingPathComponent:@"store"] stringByAppendingPathComponent:@"ecmwf/20260925T18Z"],
+        NSProcessInfo.processInfo.environment[@"ISOBAR_COAST"], &error);
+    if (!run) { Check(NO, @"starlink fixture run loads"); return; }
+    GPUMapView *view = [GPUMapView mapView];
+    view.frame = NSMakeRect(0, 0, 640, 480);
+    view.popoverChrome = YES;
+    [view adoptRun:run temperature:0 windFill:NO rain:NO];
+    [view waitForUploads];
+    [view frameAustralia];
+    view.fractionalStep = 0;
+    CGImageRef plain = [view copySnapshot];
+    StarlinkSkyPoint points[] = {
+        {-31.0f, 116.0f, 60, 180, 550, 630, 7},   // over Perth, high
+        {-33.9f, 151.2f, -5, 90, 550, 3000, 8},   // over Sydney, below Perth's horizon
+        {55.0f, 10.0f, -60, 0, 550, 9000, 9},     // Europe: off the map
+    };
+    view.starlinkSky = [NSData dataWithBytes:points length:sizeof points];
+    view.starlinkServing = 7;
+    view.starlinkServingCurrent = YES;
+    CGImageRef sats = [view copySnapshot];
+    Check(view.starlinkDrawn == 2, [NSString stringWithFormat:@"two satellites in view, serving included (%lu)", (unsigned long)view.starlinkDrawn]);
+    Check(plain && sats && SnapshotDiff(plain, sats) > 100, @"satellites and the serving ring are drawn");
+    view.starlinkSky = nil;
+    CGImageRef off = [view copySnapshot];
+    Check(plain && off && SnapshotDiff(plain, off) == 0, @"no satellites leaves the map untouched");
+    if (plain) CGImageRelease(plain);
+    if (sats) CGImageRelease(sats);
+    if (off) CGImageRelease(off);
+    [view stopRendering];
+}
+
 int main(void) {
     @autoreleasepool {
+        if (!getenv("ISOBAR_TERRAIN_TILES")) {
+            NSString *fixtures = NSProcessInfo.processInfo.environment[@"ISOBAR_FIXTURES"] ?: @"Tests/fixtures";
+            setenv("ISOBAR_TERRAIN_TILES", [fixtures stringByAppendingPathComponent:@"terrain"].UTF8String, 0);
+        }
+        setenv("ISOBAR_TERRAIN_OFFLINE", "1", 0);
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
+        CheckPointCardHitTesting();
         CheckToggleAndLayers();
         CheckHazardLowFollowsDrawnCentre();
         GPUMapView *view = [GPUMapView mapView];
@@ -1495,6 +1684,7 @@ int main(void) {
         CheckPlayhead(view);
         CheckPopoverChrome(view);
         CheckSmoothIsobars();
+        CheckWindFlowCost();
         CheckPresentSurvives();
         CheckDragAndPinch(view);
         CheckPlaceAndGlobe(view);
@@ -1503,6 +1693,8 @@ int main(void) {
         CheckStates(view);
         CheckHazards();
         CheckVectorSnapshots();
+        CheckStarlink();
+        CheckLensSwitchKeepsPressure();
         NSString *fixture = NSProcessInfo.processInfo.environment[@"ISOBAR_FIELD_FIXTURE"] ?: @"Tests/fixtures/fieldrender";
         WriteShots(view, fixture);
         fprintf(stderr, "%s\n", failures ? "FAIL gpumap" : "ok  gpumap");

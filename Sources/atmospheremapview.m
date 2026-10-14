@@ -90,7 +90,7 @@ static AMTrajectoryPoint AMTrajectoryAt(NSArray<NSValue *> *path,double time) {
         _disclosureButton.frame=[self disclosureRect];
         [self addSubview:_disclosureButton];
         _teachingSelector=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
-        [_teachingSelector addItemsWithTitles:@[@"Convection",@"Sea breeze",@"Thunderstorm",@"Mountain wave"]];
+        [_teachingSelector addItemsWithTitles:@[@"Convection",@"Sea breeze",@"Thunderstorm",@"Idealised ridge"]];
         _teachingSelector.target=self; _teachingSelector.action=@selector(teachingChanged:); [_teachingSelector selectItemAtIndex:0]; _teachingSelector.hidden=YES;
         _teachingSelector.toolTip=@"Choose a synthetic teaching scenario";
         [self addSubview:_teachingSelector];
@@ -289,7 +289,7 @@ static AMTrajectoryPoint AMTrajectoryAt(NSArray<NSValue *> *path,double time) {
 - (void)drawRect:(NSRect)dirtyRect {
     self.disclosureButton.hidden = fabs(self.camera.pitch)<1e-6 || !self.date || ![self sample];
     self.disclosureButton.title = self.disclosureOpen?@"Atmosphere ×":@"Atmosphere ≈";
-    self.disclosureButton.toolTip = self.teachingKind==ATTeachingSeaBreeze ? @"Sea-breeze height shown at 3×" : @"Synthetic atmospheric data; vertical separation adapts to map scale";
+    self.disclosureButton.toolTip = self.teachingKind==ATTeachingSeaBreeze ? @"Sea-breeze height shown at 3×" : self.teachingKind==ATTeachingMountainWave ? @"Idealised ridge · linear wave theory" : @"Synthetic atmospheric data; vertical separation adapts to map scale";
     self.altitudeSlider.hidden = !self.disclosureOpen || fabs(self.camera.pitch)<1e-6 || !self.date || ![self sample];
     (void)dirtyRect; // AppKit clears the transparent backing; preserve the map when compositing snapshots.
     if (fabs(self.camera.pitch)<1e-6 || !self.date) return;

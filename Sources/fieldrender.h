@@ -46,15 +46,26 @@ typedef struct {
     // Heading of the camera around the local vertical, radians. Zero is
     // north-up; this is used by the pitched 3D projection and its inverse.
     double bearing;
+    // Registered 3D terrain scene (terrainscene.h). Zero, or a token that is
+    // no longer registered, is the sea-level camera: every projection below
+    // is then unchanged. With a live token and a perspective tilt, the
+    // ground is the displayed terrain mesh, every height is multiplied by
+    // one shared display relief, and the orbit focus is lifted to the local
+    // terrain. Points hidden behind terrain project but return NO.
+    uint64_t terrain;
 } IsobarCamera;
 
 // Screen x right, y down.
 BOOL IsobarCameraProject(IsobarCamera camera, double latitude, double longitude,
     double *x, double *y);
-// Projects a point at metres AMSL. The sea-level globe is the occlusion
-// reference; native DEM occlusion is not available yet.
+// Projects a point at physical metres AMSL. The sea-level globe, and with a
+// terrain camera the displayed terrain, are the occlusion references.
 BOOL IsobarCameraProjectAltitude(IsobarCamera camera, double latitude, double longitude,
     double heightM, double *x, double *y);
+// A point `aboveGroundM` over the displayed ground. Without terrain the
+// ground is sea level, so this equals ProjectAltitude.
+BOOL IsobarCameraProjectAboveGround(IsobarCamera camera, double latitude, double longitude,
+    double aboveGroundM, double *x, double *y);
 // Closed form at globe 0 and globe 1. The morph uses the same front-most
 // root as Project. The pick API does not use this; it reads the lat/lon
 // attachment.
@@ -63,7 +74,7 @@ BOOL IsobarCameraUnproject(IsobarCamera camera, double x, double y,
 // Clamps a camera the app can apply during drag and pinch. Render does not
 // call this, so a test can still pass an unclamped camera.
 //
-// zoom stays in [1, 64]. centreLon is left as given (repaired only when
+// zoom stays in [1, 18000] (about 2 km across a 1280 px view). centreLon is left as given (repaired only when
 // non-finite). globe is folded into [0, 1].
 //
 // Flat (globe 0): centreLat and, when the frame is taller than 2:1, zoom
@@ -76,6 +87,63 @@ BOOL IsobarCameraUnproject(IsobarCamera camera, double x, double y,
 // Between 0 and 1 the flat latitude inset and the extra zoom floor ease
 // off linearly with globe.
 IsobarCamera IsobarCameraClamp(IsobarCamera camera);
+
+// The perspective (tilted) camera frame: x right, y forward along the
+// ground, z up at the focus, in sphere-radius units. Shared by the renderer,
+// its inverse and the terrain ray marches so there is one transform.
+// relief multiplies every height; focusM lifts the orbit focus (physical m).
+typedef struct {
+    double vw, vh, radius, k, re, pitch, sn, cn, cb, sb, distance, tanK;
+    double phi0, lonCorrection, centreLat, centreLon;
+    double relief, lift, eyeY, eyeZ;
+} IsobarTiltBasis;
+// NO when the camera is not on the perspective path.
+BOOL IsobarTiltBasisMake(IsobarCamera camera, double relief, double focusM, IsobarTiltBasis *basis);
+void IsobarTiltPoint(const IsobarTiltBasis *basis, double latitude, double dlon, double heightM, double p[3]);
+// Screen x/y and view depth (radius units, larger is farther).
+BOOL IsobarTiltScreen(const IsobarTiltBasis *basis, const double p[3], double *x, double *y, double *depth);
+// Inverse of IsobarTiltPoint. heightM is physical (relief removed).
+void IsobarTiltGeo(const IsobarTiltBasis *basis, const double p[3], double *latitude, double *dlon, double *heightM);
+// Eye position and unit direction of the ray through pixel (x, y).
+void IsobarTiltRay(const IsobarTiltBasis *basis, double x, double y, double eye[3], double dir[3]);
+
+// Terrain view of one camera. Plain data; grids point into an immutable
+// registered scene. Filled by the installed terrain hooks.
+typedef struct {
+    double west, south, east, north;
+    int width, height;
+    const float *samples;   // RG: metres, coverage; south-first
+    const float *blockMax;  // dilated per-block maxima, metres
+    int blockW, blockH, block;
+} IsobarTerrainGrid;
+typedef struct {
+    int active;
+    double relief, focusM, maxM;
+    double latC, lonC, sLat, sLon, ratio, radiusDeg, halfH;
+    int n0, nOuter;
+    IsobarTerrainGrid near, far;
+    void *nearTexture, *farTexture;   // id<MTLTexture>, owned by the scene
+} IsobarTerrainView;
+typedef struct {
+    BOOL (*resolve)(IsobarCamera camera, IsobarTerrainView *view);
+    double (*height)(const IsobarTerrainView *view, double latitude, double longitude);
+    // p is the point in the tilt frame; x, y, depth its screen position.
+    BOOL (*occluded)(IsobarCamera camera, const IsobarTiltBasis *basis, const IsobarTerrainView *view,
+        const double p[3], double x, double y, double depth);
+    BOOL (*unproject)(IsobarCamera camera, const IsobarTiltBasis *basis, const IsobarTerrainView *view,
+        double x, double y, double *latitude, double *longitude);
+    // Displayed mesh cell edge (degrees of latitude) near a point.
+    double (*cell)(const IsobarTerrainView *view, double latitude, double longitude);
+    unsigned long (*epoch)(void);
+    // Publishes a view-depth probe: buffer is an id<MTLBuffer> of float rows
+    // (row 0 at the top; INFINITY is sky), filled when the id<MTLCommandBuffer>
+    // `pending` completes. Readers wait for it on first use.
+    void (*probe)(IsobarCamera camera, int width, int height, void *buffer, void *pending);
+} IsobarTerrainHooks;
+// Installed by terrainscene.m when it is linked; NULL otherwise.
+extern const IsobarTerrainHooks *IsobarTerrainHooksInstalled;
+// The resolved terrain of a camera (cached per thread). NO without terrain.
+BOOL IsobarCameraTerrain(IsobarCamera camera, IsobarTerrainView *view);
 
 typedef NS_ENUM(NSInteger, IsobarFieldKind) {
     IsobarFieldPressure,    // hPa
@@ -142,7 +210,16 @@ void IsobarSmoothPressure(float *values, IsobarGeoGrid grid, double sigmaDegrees
 // the clock, so a slow frame cannot push a label in or out of the set.
 void IsobarFieldRenderTestingSetNow(double milliseconds);
 
+@class IsobarTerrainMosaic;
 @interface IsobarFieldRenderer : NSObject
+// Prepared off-thread; missing coverage retains the existing flat plate.
+- (void)setTerrainMosaic:(IsobarTerrainMosaic *)mosaic relief:(float)relief;
+// Renders the terrain camera's view depth at half resolution on a private
+// queue and publishes it, pending, so overlay occlusion and picking read the
+// drawn mesh instead of marching rays; the first reader waits for the GPU.
+// No-op unless the camera shows the 3D mesh, or when that camera's probe is
+// already published.
+- (void)publishTerrainProbeForCamera:(IsobarCamera)camera;
 // nil device selects the system default. Returns nil when Metal is absent
 // or the field library fails to compile.
 - (instancetype)initWithDevice:(id<MTLDevice>)device;
@@ -153,6 +230,10 @@ void IsobarFieldRenderTestingSetNow(double milliseconds);
 // zero leaves pressure unchanged. The linear time blend of smoothed steps
 // matches smoothing the blend.
 @property (nonatomic) double pressureSmoothDegrees;
+// Frees every colour field except `keep`; pressure stays resident. A lens
+// change on the same run calls this before uploading the new colour, so the
+// LRU budget never evicts pressure to make room.
+- (void)dropColourFieldsExcept:(IsobarFieldKind)keep;
 // `values` is nLon * nLat floats, row 0 at the north edge. Non-finite
 // samples stay missing; they are not stored as zero.
 - (BOOL)uploadStep:(NSInteger)step

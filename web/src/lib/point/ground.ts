@@ -108,3 +108,11 @@ export function formatGround(elevationM: number): string {
   const feet = Math.round(elevationM * FT_PER_M).toLocaleString('en-AU');
   return `${metres} m / ${feet} ft`;
 }
+
+/** Surveyed peak identity is separate from the terrain used by the sounding. */
+export function summitGroundLabel(terrainM: number | null, surveyedM: number | null | undefined): {text: string | null; title?: string} {
+  const survey = surveyedM != null && Number.isFinite(surveyedM) ? surveyedM : null;
+  const terrain = terrainM != null && Number.isFinite(terrainM) ? terrainM : null;
+  return {text: survey != null ? formatGround(survey) : terrain != null ? formatGround(terrain) : null,
+    ...(survey != null ? {title: `Surveyed summit · ${terrain != null ? `terrain sample ${formatGround(terrain)}` : 'Terrain sample unavailable'}`} : {})};
+}

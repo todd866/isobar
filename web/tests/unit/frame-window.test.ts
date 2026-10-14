@@ -53,6 +53,27 @@ describe('bounded interactive forecast', () => {
     expect(f.requests.filter((url) => url.includes('/rain24/'))).toHaveLength(2);
   });
 
+  it('pins the now blend near the endpoint within the bounded cache', async () => {
+    const f = fixture();
+    const chart = (await openChart({ fields: 'opened', nowMs: now, fetchBytes: f.fetchBytes, cacheBytes: cells * 2 * 8 }))!;
+    await chart.complete;
+    chart.prepare!(hours.at(-1)! * 60 - 30, ['u10', 'v10']);
+    await idle(chart);
+    for (const name of ['mslp', 'u10', 'v10']) {
+      for (const index of [1, 2, 51, 52]) expect(chart.state[name][index]).toBe(FRAME_READY);
+    }
+    const count = f.requests.length;
+    f.offline(); chart.prepare!(240, ['u10', 'v10']);
+    for (const name of ['mslp', 'u10', 'v10']) {
+      expect(chartFrame(chart, name, 1)).toHaveLength(cells);
+      expect(chartFrame(chart, name, 2)).toHaveLength(cells);
+    }
+    expect(chart.cacheStats!().bytes).toBeLessThanOrEqual(chart.cacheStats!().limit);
+    // Only speculative neighbours may need fetching after returning to now.
+    expect(f.requests.slice(count).every(url => !/f00[36]/.test(url))).toBe(true);
+    await idle(chart);
+  });
+
   it('drops obsolete queued work and promotes the newest time while in-flight requests finish', async () => {
     const f = fixture();
     const chart = (await openChart({ fields: 'opened', nowMs: now, fetchBytes: f.fetchBytes, concurrency: 1 }))!;

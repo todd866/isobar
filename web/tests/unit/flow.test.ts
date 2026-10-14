@@ -7,6 +7,7 @@ import {
   circularLowWind,
   particleCount,
   sampleBlended,
+  sampleScalar,
   seedParticle,
   stepParticle,
   streakInk,
@@ -182,4 +183,17 @@ describe('quiet particle lives', () => {
     expect(particleCount(1440 * 900, false)).toBeLessThanOrEqual(1000);
     expect(particleCount(4000 * 3000, true)).toBeLessThanOrEqual(1800);
   });
+});
+
+it('preserves wind sample edges, dateline, missing values and temporal endpoints', () => {
+  const grid = { nx:2, ny:2, west:0, north:1, dlon:1, dlat:1, wraps:false, fill:65535, scale:1, offset:0 };
+  const a = Uint16Array.from([0,1,2,3]), b = Uint16Array.from([10,11,12,13]);
+  expect(sampleScalar(a, 1, 0, grid)).toBe(3);
+  expect(sampleScalar(a, -.01, 1, grid)).toBeNull();
+  expect(sampleScalar(a, 2, 1, {...grid,wraps:true})).toBe(0);
+  expect(sampleScalar(a, -1, 1, {...grid,wraps:true})).toBe(1);
+  expect(sampleBlended(a,b,0,1,0,grid)).toBe(3);
+  expect(sampleBlended(a,b,1,1,0,grid)).toBe(13);
+  a[3] = 65535;
+  expect(sampleScalar(a,.5,.5,grid)).toBeNull();
 });

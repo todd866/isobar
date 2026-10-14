@@ -1,3 +1,6 @@
+import {drawOverlay,DAY_INK} from '../../src/lib/overlay';
+import {createTerrainLineProjector} from '../../src/lib/terrain/line-occlusion';
+import {withTilt} from '../../src/lib/tilt-navigation';
 // Bundled by Playwright. This deliberately drives the production WebGL chart.
 import { createGlChart, type GlView } from '../../src/lib/gl-chart';
 import { globalEquirectangular } from '../../src/lib/lambert';
@@ -14,7 +17,16 @@ function half(v:number):number {
 function run(reverseOrder=false, ridgeEnabled=true) {
   const width=640,height=480, canvas=document.createElement('canvas');
   canvas.width=width; canvas.height=height; document.body.replaceChildren(canvas);
-  const gl=canvas.getContext('webgl2'); if(!gl) throw new Error('WebGL2 unavailable');
+  const gl=canvas.getContext('webgl2', {antialias:false,alpha:false}); if(!gl) throw new Error('WebGL2 unavailable');
+  // Terrain is drawn single-sampled into the post-antialias target (a texture
+  // with depth), never multisampled: Metal would shade every sample.
+  let samples=0,offscreen=false;
+  const draw=gl.drawElements.bind(gl);
+  gl.drawElements=(...args:Parameters<WebGL2RenderingContext['drawElements']>)=>{
+    samples=Math.max(samples,gl.getParameter(gl.SAMPLES));
+    offscreen=offscreen||gl.getParameter(gl.FRAMEBUFFER_BINDING)!==null;
+    draw(...args);
+  };
   let original: any;
   if(reverseOrder) {
     original=WebGL2RenderingContext.prototype.bufferData;
@@ -60,7 +72,7 @@ function run(reverseOrder=false, ridgeEnabled=true) {
   const output=document.createElement('canvas');output.width=plate.width;output.height=plate.height;
   output.getContext('2d')!.putImageData(new ImageData(plate.data,plate.width,plate.height),0,0);
   const debug=gl.getExtension('WEBGL_debug_renderer_info');
-  return {width,height,pixel:[px,py],colour:at(px,py),pixels:Array.from(plate.data),png:output.toDataURL(),renderer:debug?gl.getParameter(debug.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER)};
+  return {error:gl.getError(),samples,offscreen,width,height,pixel:[px,py],colour:at(px,py),pixels:Array.from(plate.data),png:output.toDataURL(),renderer:debug?gl.getParameter(debug.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER)};
   } finally { chart?.destroy(); if(original) WebGL2RenderingContext.prototype.bufferData=original; }
 }
 
@@ -68,3 +80,21 @@ export function runTerrainOcclusion() { return run(false); }
 export function runTerrainOcclusionReversed() { return run(true); }
 
 export function runTerrainFlat() { return run(false,false); }
+
+export function runTerrainLines() {
+ const geo=globalEquirectangular(), camera=withTilt(geo,{centerX:86.95,centerY:27.98,halfWidth:.213,halfHeight:.16},48*Math.PI/180,()=>0,false);
+ const project=createTerrainLineProjector(geo,camera,(_lon,lat)=>Math.abs(lat-28.035)<.012?7600:900,640,480);
+ const far=project([86.945,86.955],[28.10,28.10],false), near=project([86.945,86.955],[27.98,27.98],false);
+ return {farHidden:far.every(p=>p===null),nearVisible:near.every(Boolean),samples:near.length};
+}
+
+export function runTerrainOverlay() {
+ const canvas=document.createElement('canvas');canvas.width=640;canvas.height=480;
+ const ctx=canvas.getContext('2d')!,geo=globalEquirectangular();
+ const camera=withTilt(geo,{centerX:86.95,centerY:27.98,halfWidth:.213,halfHeight:.16},48*Math.PI/180,()=>0,false);
+ const elevation=(_lon:number,lat:number)=>Math.abs(lat-28.035)<.012?7600:900;
+ const ring=(lat:number)=>({lon:new Float32Array([86.945,86.955,86.95]),lat:new Float32Array([lat,lat,lat+.002])});
+ const inked=()=>{const data=ctx.getImageData(0,0,640,480).data;let n=0;for(let i=3;i<data.length;i+=4)if(data[i])n++;return n;};
+ const paint=(lat:number)=>{drawOverlay(ctx,640,480,1,geo,camera,{rings:[ring(lat)]},[],[],false,undefined,DAY_INK,[],undefined,elevation,false,{country:[ring(lat)],state:[],disputed:[]});return inked();};
+ return {hidden:paint(28.10),visible:paint(27.98)};
+}

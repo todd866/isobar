@@ -22,11 +22,12 @@ import {
   type TerrainPlan,
   type TileKey,
 } from '../lib/terrain/terrarium';
+import type { TerrainMosaicPlan } from '../lib/terrain/terrain-plan';
 
 interface PlanMessage {
   type: 'plan';
   id: number;
-  plan: TerrainPlan;
+  plan: TerrainMosaicPlan;
   template?: string;
 }
 
@@ -120,32 +121,51 @@ function compose() {
   const message = current;
   if (!message) return;
   const { plan } = message;
-  const mosaic = compositeMosaic(plan.box, plan.width, plan.height, plan.z, lookup);
-  const needed = tilesForBox(plan.box, plan.z);
-  let loaded = 0;
-  let absent = 0;
-  for (const tile of needed) {
-    const key = tileKey(tile.z, tile.x, tile.y);
-    const state = lookup(tile.z, tile.x, tile.y);
-    if (state) {
-      // Touch: the view's tiles are the most recently used.
-      cache.delete(key);
-      cache.set(key, state);
-      loaded += 1;
+  const composeField = (field: TerrainPlan) => {
+    const mosaic = compositeMosaic(field.box, field.width, field.height, field.z, lookup);
+    const needed = tilesForBox(field.box, field.z);
+    let loaded = 0;
+    let absent = 0;
+    for (const tile of needed) {
+      const key = tileKey(tile.z, tile.x, tile.y);
+      const state = lookup(tile.z, tile.x, tile.y);
+      if (state) {
+        // Touch: the view's tiles are the most recently used.
+        cache.delete(key);
+        cache.set(key, state);
+        loaded += 1;
+      }
+      else if (state === null) absent += 1;
     }
-    else if (state === null) absent += 1;
-  }
+    return { mosaic, needed: needed.length, loaded, missing: absent };
+  };
+  const near = composeField(plan);
+  const far = plan.far ? composeField(plan.far) : null;
+  if (current !== message) return;
   scope.postMessage({
     type: 'mosaic',
     id: message.id,
     z: plan.z,
-    box: mosaic.box,
-    width: mosaic.width,
-    height: mosaic.height,
-    data: mosaic.data,
-    covered: mosaic.covered,
-    tiles: { needed: needed.length, loaded, missing: absent, cached: cache.size },
-  }, [mosaic.data.buffer]);
+    box: near.mosaic.box,
+    width: near.mosaic.width,
+    height: near.mosaic.height,
+    data: near.mosaic.data,
+    covered: near.mosaic.covered,
+    far: far ? {
+      z: plan.far!.z,
+      box: far.mosaic.box,
+      width: far.mosaic.width,
+      height: far.mosaic.height,
+      data: far.mosaic.data,
+      covered: far.mosaic.covered,
+    } : null,
+    tiles: {
+      needed: near.needed + (far?.needed ?? 0),
+      loaded: near.loaded + (far?.loaded ?? 0),
+      missing: near.missing + (far?.missing ?? 0),
+      cached: cache.size,
+    },
+  }, [near.mosaic.data.buffer, ...(far ? [far.mosaic.data.buffer] : [])]);
 }
 
 function scheduleCompose() {
@@ -207,7 +227,13 @@ scope.onmessage = (event: MessageEvent<PlanMessage | SectionMessage>) => {
   if (message.type !== 'plan') return;
   current = message;
   template = message.template;
-  const needed = tilesForBox(message.plan.box, message.plan.z);
+  const fields: TerrainPlan[] = [ ...(message.plan.far ? [message.plan.far] : []), message.plan ];
+  // The far field is queued first so a tilted view gets horizon coverage while
+  // the close field is still resolving. Each primary list is already bounded
+  // by the planner (40 near + 16 far).
+  const needed = fields.flatMap(field => tilesForBox(field.box, field.z));
+  const uniqueNeeded = new Map<string, TileKey>();
+  for (const tile of needed) uniqueNeeded.set(tileKey(tile.z, tile.x, tile.y), tile);
   // Two parent levels arrive first so unavailable local high-detail tiles do
   // not erase measured relief. Ancestors are deduplicated and share the LRU.
   const ancestors=new Map<string,TileKey>();
@@ -217,8 +243,8 @@ scope.onmessage = (event: MessageEvent<PlanMessage | SectionMessage>) => {
   }
   // Keep the complete active set within the decoded cache budget, preserving
   // every primary tile and preferring the broadest fallback coverage.
-  const parents=[...ancestors.values()].sort((a,b)=>a.z-b.z).slice(0,Math.max(0,CACHE_TILES-needed.length));
-  const candidates=[...parents,...needed];
+  const parents=[...ancestors.values()].sort((a,b)=>a.z-b.z).slice(0,Math.max(0,CACHE_TILES-uniqueNeeded.size));
+  const candidates=[...parents,...uniqueNeeded.values()];
   wanted = new Set(candidates.map((tile) => tileKey(tile.z, tile.x, tile.y)));
   for (const [key, controller] of inflight) {
     if (!wanted.has(key)) {

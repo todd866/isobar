@@ -10,7 +10,7 @@ import { chartRoutes } from './map-fixture';
  * Theme lives in the menu on this branch.
  */
 
-const SHOTS = process.env.ISOBAR_PHONE_DIR ?? path.join(process.cwd(), 'test-results', 'map-zoom');
+const SHOTS = path.join(process.env.HOME ?? '.', '.local/state/isobar-week/map-zoom');
 const places = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'public/places/world-places.json'), 'utf8'));
 
 type Cam = { centerX: number; centerY: number; halfWidth: number; halfHeight: number };

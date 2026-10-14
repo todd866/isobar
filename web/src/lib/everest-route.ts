@@ -1,3 +1,4 @@
+import {createTerrainLineProjector} from './terrain/line-occlusion';
 import { mapProject, type Camera, type Lambert } from './lambert';
 import type { ElevationAt } from './map-generalise';
 import type { DrawnLabel, LabelBox } from './overlay';
@@ -18,8 +19,10 @@ export function drawEverestRoute(ctx:CanvasRenderingContext2D,geo:Lambert,camera
   let connected=false;
   // Prepared DEM-guided geometry is shared by all viewers; never solve a route
   // during animation. Break the path where the 3D surface occludes it.
-  for(const p of reconstructed.points){
-    const q=mapProject(geo,camera,p.lat,p.lon,(elevation?.(p.lon,p.lat)??p.elevation_m)+8);
+  const route = elevation && camera.surface
+    ? createTerrainLineProjector(geo,camera,elevation,width,height)(reconstructed.points.map(p=>p.lon),reconstructed.points.map(p=>p.lat),false)
+    : reconstructed.points.map(p=>mapProject(geo,camera,p.lat,p.lon,(elevation?.(p.lon,p.lat)??p.elevation_m)+8));
+  for(const q of route){
     if(!q){connected=false;continue;}
     const x=(q.x+1)*width/2,y=(1-q.y)*height/2;
     if(connected)ctx.lineTo(x,y);else ctx.moveTo(x,y);connected=true;

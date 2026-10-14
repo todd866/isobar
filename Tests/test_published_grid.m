@@ -36,9 +36,11 @@ static void WriteField(NSString *root, NSString *run, NSString *var, NSString *p
     uint16_t bits[4];
     for (int i = 0; i < 4; i++) {
         float value = values ? values[i].floatValue : base + i;
+        if (value == -32768.0f) { bits[i] = 0xf800; continue; }
         int sign = value < 0 ? 0x8000 : 0;
         int exponent = value == 0 ? 0 : (int)floorf(log2f(fabsf(value))) + 15;
         int fraction = exponent > 0 ? (int)lrintf((fabsf(value) / ldexpf(1, exponent - 15) - 1) * 1024) : 0;
+        if (fraction >= 1024) { exponent++; fraction -= 1024; }
         bits[i] = (uint16_t)(sign | (exponent << 10) | (fraction & 1023));
     }
     NSMutableData *data = [NSMutableData data];
@@ -112,7 +114,7 @@ static void WriteWeekRun(NSString *root, NSString *run, NSArray<NSNumber *> *hou
     double rainScale = [[run substringWithRange:NSMakeRange(9, 2)] intValue] == 12 ? 1.1 : 1.0;
     for (NSNumber *lead in hours) for (NSArray *item in vars) {
         float base = 1;
-        if ([item[0] isEqual:@"mslp"]) base = 1000 + lead.floatValue;
+        if ([item[0] isEqual:@"mslp"]) base = 1000 + lead.floatValue * 0.25f;
         else if ([item[0] isEqual:@"tp"]) base = lead.floatValue * rainScale;
         else if ([item[0] isEqual:@"t850"]) base = 10;
         WriteField(root, run, item[0], item[1], item[2], lead.intValue, base, nil, NO);
@@ -164,7 +166,7 @@ static void TestWeekLadder(NSString *coast) {
         WriteWeekRun(root, @"20261006T00Z", hours);
         WriteWeekRun(root, @"20261006T12Z", hours);
         WriteWeekRun(root, @"20261007T00Z", hours);
-        WriteField(root, @"20261007T00Z", @"mslp", @"msl", @"hPa", 147, 1147, nil, NO);
+        WriteField(root, @"20261007T00Z", @"mslp", @"msl", @"hPa", 147, 1047, nil, NO);
         MarkSchema2Sidecar(root, @"20261007T00Z", @"mslp", 147);
         WriteWeekPointer(root, @[@"20261006T00Z", @"20261006T12Z", @"20261007T00Z"], hours);
         NSString *error = nil;
@@ -389,6 +391,18 @@ int main(void) {
         data = [NSJSONSerialization dataWithJSONObject:@{@"latest":@"20260926T00Z",@"runs":@[@"20260926T00Z"]} options:0 error:nil];
         [data writeToFile:[bf stringByAppendingPathComponent:@"current.json"] atomically:YES];
         check(OwnRunLoadPublished(bad, NO, coast, &error) == nil, @"corrupt published field is rejected");
+        NSString *outOfRange = [root stringByAppendingPathComponent:@"out-of-range"]; MakeRun(outOfRange, @"20260926T00Z", 33, NO);
+        WriteCustomField(outOfRange, @"20260926T00Z", @"mslp", @"msl", @"hPa", 0, @[@1012, @1014, @500, @1016]);
+        NSString *oof = [outOfRange stringByAppendingPathComponent:@"products/grids/ecmwf_ifs025"];
+        [[NSFileManager defaultManager] createDirectoryAtPath:oof withIntermediateDirectories:YES attributes:nil error:nil];
+        [data writeToFile:[oof stringByAppendingPathComponent:@"current.json"] atomically:YES];
+        error = nil;
+        check(OwnRunLoadPublished(outOfRange, NO, coast, &error) == nil && [error containsString:@"out of range"],
+            [NSString stringWithFormat:@"published mslp outside 800..1150 hPa fails closed (%@)", error ?: @""]);
+        WriteCustomField(outOfRange, @"20260926T00Z", @"mslp", @"msl", @"hPa", 0, @[@-32768, @-32768, @-32768, @-32768]);
+        error = nil;
+        check(OwnRunLoadPublished(outOfRange, NO, coast, &error) == nil && [error containsString:@"no finite in-range value"],
+            [NSString stringWithFormat:@"published mslp with only fill values fails closed (%@)", error ?: @""]);
         NSString *partial = [root stringByAppendingPathComponent:@"partial"]; MakeRun(partial, @"20260926T00Z", 32, NO);
         NSString *pf = [partial stringByAppendingPathComponent:@"products/grids/ecmwf_ifs025"];
         [[NSFileManager defaultManager] createDirectoryAtPath:pf withIntermediateDirectories:YES attributes:nil error:nil];

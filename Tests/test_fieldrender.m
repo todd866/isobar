@@ -25,7 +25,7 @@ static double LonErr(double a, double b) {
 }
 
 static IsobarCamera Cam(double lat, double lon, double zoom, double globe, double w, double h) {
-    IsobarCamera c;
+    IsobarCamera c = {0};
     c.centreLat = lat;
     c.centreLon = lon;
     c.zoom = zoom;

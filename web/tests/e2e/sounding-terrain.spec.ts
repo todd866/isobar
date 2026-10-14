@@ -294,6 +294,7 @@ test('a summit is a mountain in the profile and a flat coast stays flat', async 
         }
         await expect(panel(page).locator('[data-level="surface"] [data-level-label]')).toHaveText(place.label, { timeout: 20_000 });
         await expect(panel(page).locator('[data-point-elevation]')).toHaveText(place.label.replace(/^SFC /, ''));
+        if (named) await expect(panel(page).locator('[data-point-elevation]')).toHaveAttribute('title', /^Surveyed summit · terrain sample /);
         await expect(panel(page).locator('[data-sounding]')).toHaveAttribute('data-model-ground-m', place.model);
         if (place.mountain) {
           await expect(panel(page).locator('[data-sounding]')).toHaveAttribute('data-section-mid', String(place.peak.elevationM), { timeout: 20_000 });
@@ -316,4 +317,15 @@ test('a summit is a mountain in the profile and a flat coast stays flat', async 
       }
     }
   }
+});
+
+test('a snapped summit shows its survey while retaining the distinct DEM sample', async ({page}) => {
+  test.setTimeout(120000);
+  await install(page);
+  await page.route('https://tiles.mapterhorn.com/**', route => route.fulfill({body:png(TILE,TILE,()=>encode(8721)),contentType:'image/png'}));
+  await boot(page,1280,720,'light');
+  await openSpot(page,everest.lat,everest.lon,'Everest',12);
+  await expect(panel(page).locator('[data-point-title]')).toHaveText('Everest');
+  await expect(panel(page).locator('[data-point-elevation]')).toHaveText('8,849 m / 29,032 ft');
+  await expect(panel(page).locator('[data-point-elevation]')).toHaveAttribute('title','Surveyed summit · terrain sample 8,721 m / 28,612 ft');
 });

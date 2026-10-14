@@ -94,9 +94,10 @@ describe('bicubic', () => {
 });
 
 describe('playback', () => {
-  it('never plays backwards: the end of the run returns to now', () => {
+  it('never plays backwards: the end holds, dissolves, then resumes from now', () => {
     const next = advancePlayback({ minute: 99, playing: true, direction: 1 }, 1, 8, 100, 30);
-    expect(next.minute).toBe(30);
+    expect(next.minute).toBeCloseTo(30.6); // remaining .075 s after the .8 s hold/dissolve
+    expect(next.wrapSeconds).toBeUndefined();
     expect(next.direction).toBe(1);
   });
 

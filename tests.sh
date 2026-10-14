@@ -1,7 +1,14 @@
 #!/bin/zsh
 # Compile and run unit tests and the offscreen store-refresh regression.
 set -euo pipefail
+# Terrain tests use explicit fixtures; native QA never fetches live tiles.
+export ISOBAR_TERRAIN_OFFLINE=1
 cd "${0:A:h}"
+# The Sat lens never reaches a dish or CelesTrak offscreen.
+export ISOBAR_STARLINK_FIXTURE="$PWD/Tests/fixtures/starlink.tle"
+# Terrain comes only from tests that name their fixture tiles: never the
+# owner's tile cache, whose contents would change what a recording shows.
+export ISOBAR_TERRAIN_TILES="$PWD/Tests/fixtures/no-terrain"
 # An installed app runs from /, where a checkout-relative coast path does not
 # exist. Every renderer resolves the coastline through OwnCoastPath().
 if grep -n '"Resources/ownchart-coast.bin"' Sources/*.m | grep -v '^Sources/ownchart.m:'; then
@@ -10,8 +17,8 @@ fi
 
 SHORT=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
 BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist)
-if [[ "$SHORT" != "1.11.4" || "$BUILD" != "40" ]]; then
-    echo "tests.sh: Info.plist version is ${SHORT} (${BUILD}); expected 1.11.4 (40)." >&2
+if [[ "$SHORT" != "1.11.5" || "$BUILD" != "41" ]]; then
+    echo "tests.sh: Info.plist version is ${SHORT} (${BUILD}); expected 1.11.5 (41)." >&2
     exit 1
 fi
 
@@ -36,6 +43,17 @@ python3 tools/run-python-tests.py Tests test_package_release.py
 python3 tools/run-python-tests.py Tests test_public_weather.py
 python3 tools/run-python-tests.py Tests test_native_gate.py
 python3 tools/run-python-tests.py Tests test_deployment_coherence.py
+python3 tools/run-python-tests.py Tests test_measure_jank.py
+
+"$CC" -fobjc-arc -Wall -Wextra -Werror -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
+    Sources/terrain.m Tests/test_terrain.m -framework Foundation -framework ImageIO -framework Metal -framework CoreGraphics -framework ImageIO \
+    -o "$WORK_DIR/terrain_tests"
+
+"$CC" -fobjc-arc -Wall -Wextra -Werror -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
+    Sources/terrain.m Tests/test_terrain_transport.m -framework Foundation -framework CoreGraphics -framework ImageIO \
+    -o "$WORK_DIR/terrain_transport_tests"
+"$WORK_DIR/terrain_transport_tests"
+"$WORK_DIR/terrain_tests"
 
 "$CC" -fobjc-arc -Wall -Wextra -Werror -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
     Sources/collector.m Tests/test_collector.m -framework Foundation -o "$WORK_DIR/collector_tests"
@@ -73,28 +91,47 @@ ISOBAR_COAST="${0:A:h}/Resources/ownchart-coast.bin" "$WORK_DIR/ownchart_tests"
 "$CC" -fobjc-arc -Wall -Wextra -Werror \
     -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
     Sources/fieldrender.m Sources/ownchart.m Sources/hazard.m Tests/test_fieldrender.m \
-    -framework Foundation -framework Metal -framework CoreGraphics -framework CoreText -framework Accelerate \
+    -framework Foundation -framework ImageIO -framework Metal -framework CoreGraphics -framework CoreText -framework Accelerate \
     -o "$WORK_DIR/fieldrender_tests"
 ISOBAR_COAST="${0:A:h}/Resources/ownchart-coast.bin" "$WORK_DIR/fieldrender_tests"
+
+"$CC" -fobjc-arc -O2 -Wall -Wextra -Werror -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
+    Sources/terrain.m Sources/terrainmap.m Sources/terrainscene.m Sources/mapcamera.m Sources/fieldrender.m Sources/ownchart.m Tests/test_terrainmap.m \
+    -framework Foundation -framework Metal -framework CoreGraphics -framework ImageIO -framework CoreText -framework Accelerate \
+    -o "$WORK_DIR/terrainmap_tests"
+"$WORK_DIR/terrainmap_tests"
+
+"$CC" -fobjc-arc -O2 -Wall -Wextra -Werror -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
+    Sources/terrain.m Sources/terrainmap.m Sources/terrainscene.m Sources/mapcamera.m Sources/fieldrender.m Sources/ownchart.m Tests/test_terrain_relief.m \
+    -framework Foundation -framework Metal -framework CoreGraphics -framework ImageIO -framework CoreText -framework Accelerate \
+    -o "$WORK_DIR/terrain_relief_tests"
+"$WORK_DIR/terrain_relief_tests"
+
+"$CC" -fobjc-arc -O2 -Wall -Wextra -Werror -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
+    Sources/terrain.m Sources/terrainmap.m Sources/terrainscene.m Sources/mapcamera.m Sources/fieldrender.m Sources/ownchart.m Tests/test_terrainscene.m \
+    -framework Foundation -framework Metal -framework CoreGraphics -framework ImageIO -framework CoreText -framework Accelerate \
+    -o "$WORK_DIR/terrainscene_tests"
+"$WORK_DIR/terrainscene_tests"
+
 
 "$CC" -fobjc-arc -O2 -Wall -Wextra -Werror \
     -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources -DISOBAR_APP \
     Sources/windmapview.m Sources/fieldrender.m Sources/ownchart.m tools/own-chart.m Sources/pure.m Tests/test_windmapview.m \
-    -framework Cocoa -framework Metal -framework CoreText -framework Accelerate -lz \
+    -framework Cocoa -framework QuartzCore -framework ImageIO -framework Metal -framework CoreText -framework Accelerate -lz \
     -o "$WORK_DIR/windmap_tests"
 "$WORK_DIR/windmap_tests"
 
 "$CC" -fobjc-arc -O2 -Wall -Wextra -Werror \
     -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
     Sources/hazard.m Sources/fieldrender.m Sources/ownchart.m Tests/test_hazard.m \
-    -framework Foundation -framework Metal -framework CoreGraphics -framework CoreText -framework Accelerate -framework ImageIO \
+    -framework Foundation -framework ImageIO -framework Metal -framework CoreGraphics -framework CoreText -framework Accelerate -framework ImageIO \
     -o "$WORK_DIR/hazard_tests"
 ISOBAR_FIXTURES="${0:A:h}/Tests/fixtures" "$WORK_DIR/hazard_tests"
 
 "$CC" -fobjc-arc -O2 -Wall -Wextra -Werror \
     -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources -DISOBAR_APP \
-    Sources/mapcamera.m Sources/gpumapview.m Sources/windmapview.m Sources/hazard.m Sources/atmospheremapview.m Sources/atmosphere.m Sources/traffic.m Sources/trafficroute.m Sources/fieldrender.m Sources/ownchart.m tools/own-chart.m Sources/pure.m Sources/playback.m Tests/test_traffic_overlay.m \
-    -framework Cocoa -framework Metal -framework QuartzCore -framework CoreText -framework Accelerate -lz \
+    Sources/mapcamera.m Sources/terrain.m Sources/terrainmap.m Sources/terrainscene.m Sources/gpumapview.m Sources/windmapview.m Sources/hazard.m Sources/atmospheremapview.m Sources/atmosphere.m Sources/traffic.m Sources/trafficroute.m Sources/fieldrender.m Sources/ownchart.m tools/own-chart.m Sources/pure.m Sources/playback.m Sources/mapdetail.m Tests/test_traffic_overlay.m \
+    -framework Cocoa -framework ImageIO -framework Metal -framework QuartzCore -framework CoreText -framework Accelerate -lz \
     -o "$WORK_DIR/traffic_overlay_tests"
 ISOBAR_FIELD_FIXTURE="${0:A:h}/Tests/fixtures/fieldrender" \
     ISOBAR_COAST="${0:A:h}/Resources/ownchart-coast.bin" "$WORK_DIR/traffic_overlay_tests"
@@ -102,8 +139,8 @@ ISOBAR_FIELD_FIXTURE="${0:A:h}/Tests/fixtures/fieldrender" \
 
 "$CC" -fobjc-arc -O2 -Wall -Wextra -Werror \
     -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources -DISOBAR_APP \
-    Sources/mapcamera.m Sources/gpumapview.m Sources/windmapview.m Sources/hazard.m Sources/atmospheremapview.m Sources/atmosphere.m Sources/traffic.m Sources/trafficroute.m Sources/fieldrender.m Sources/ownchart.m tools/own-chart.m Sources/pure.m Sources/playback.m Tests/test_gpumapview.m \
-    -framework Cocoa -framework Metal -framework QuartzCore -framework CoreText -framework Accelerate -lz \
+    Sources/mapcamera.m Sources/terrain.m Sources/terrainmap.m Sources/terrainscene.m Sources/gpumapview.m Sources/windmapview.m Sources/hazard.m Sources/atmospheremapview.m Sources/atmosphere.m Sources/traffic.m Sources/trafficroute.m Sources/fieldrender.m Sources/ownchart.m tools/own-chart.m Sources/pure.m Sources/playback.m Sources/mapdetail.m Tests/test_gpumapview.m \
+    -framework Cocoa -framework ImageIO -framework Metal -framework QuartzCore -framework CoreText -framework Accelerate -lz \
     -o "$WORK_DIR/gpumap_tests"
 ISOBAR_FIELD_FIXTURE="${0:A:h}/Tests/fixtures/fieldrender" \
     ISOBAR_COAST="${0:A:h}/Resources/ownchart-coast.bin" "$WORK_DIR/gpumap_tests"
@@ -117,7 +154,7 @@ if [[ -d "${0:A:h}/build/global-archive" ]]; then
         -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources -DISOBAR_APP \
         Sources/mapcamera.m Sources/fieldrender.m Sources/ownchart.m Sources/hazard.m \
         Sources/pure.m tools/own-chart.m Tests/test_global_native.m \
-        -framework Cocoa -framework Metal -framework QuartzCore -framework CoreText \
+        -framework Cocoa -framework ImageIO -framework Metal -framework QuartzCore -framework CoreText \
         -framework Accelerate -framework ImageIO -lz -o "$WORK_DIR/global_native_tests"
     ISOBAR_DATA_ROOT="${0:A:h}/build/global-archive" \
     ISOBAR_WORLD_COAST="${0:A:h}/Resources/world-coast.bin" \
@@ -138,20 +175,26 @@ fi
 
 "$CC" -fobjc-arc -O2 -Wall -Wextra -Werror -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources -DISOBAR_APP \
     Sources/fieldrender.m Sources/ownchart.m tools/own-chart.m Sources/pure.m Sources/atmosphere.m Sources/atmospheremapview.m Sources/mapcamera.m Tests/test_atmospheremapview.m \
-    -framework Cocoa -framework Metal -framework QuartzCore -framework CoreText -framework Accelerate -lz -o "$WORK_DIR/atmospheremap_tests"
+    -framework Cocoa -framework ImageIO -framework Metal -framework QuartzCore -framework CoreText -framework Accelerate -lz -o "$WORK_DIR/atmospheremap_tests"
 "$WORK_DIR/atmospheremap_tests"
 
 "$CC" -std=c11 -Wall -Wextra -Werror -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
     tools/check-atmosphere-teaching.c -lm -o "$WORK_DIR/atmosphere_teaching_c_tests"
 "$WORK_DIR/atmosphere_teaching_c_tests"
 
-for TEST in rain aviation solar atmosphere aircraft traffic trafficroute; do
+for TEST in rain aviation solar atmosphere aircraft traffic trafficroute starlink; do
     "$CC" -fobjc-arc -Wall -Wextra -Werror \
         -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
         "Sources/${TEST}.m" "Tests/test_${TEST}.m" \
         -framework Foundation -o "$WORK_DIR/${TEST}_tests"
     "$WORK_DIR/${TEST}_tests"
 done
+
+"$CC" -fobjc-arc -Wall -Wextra -Werror \
+    -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
+    Sources/starlink.m Sources/starlinkview.m Tests/test_starlinkview.m \
+    -framework Cocoa -o "$WORK_DIR/starlinkview_tests"
+"$WORK_DIR/starlinkview_tests"
 
 "$CC" -fobjc-arc -O2 -Wall -Wextra -Werror \
     -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
@@ -237,7 +280,7 @@ ISOBAR_TRAINING_DIST="${0:A:h}/training/dist" "$WORK_DIR/skyview_tests" Tests/fi
 "$CC" -fobjc-arc -O2 -Wall -Wextra -Werror \
     -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources -DISOBAR_APP \
     Sources/pure.m Sources/archive.m Sources/aviation.m Sources/ownchart.m tools/own-chart.m \
-    Sources/trainingdata.m Sources/trainingwindow.m \
+    Sources/trainingdata.m Sources/trainingwindow.m Sources/starlink.m Sources/starlinkview.m \
     Tests/test_trainingwindow.m \
     -framework Cocoa -framework WebKit -framework Accelerate -lz -lsqlite3 \
     -o "$WORK_DIR/trainingwindow_tests"
@@ -247,7 +290,7 @@ if [[ -n "${ISOBAR_QA_STORE:-}" ]]; then
     "$CC" -fobjc-arc -O2 -Wall -Wextra -Werror \
         -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources -DISOBAR_APP \
         Sources/pure.m Sources/archive.m Sources/aviation.m Sources/ownchart.m tools/own-chart.m \
-        Sources/trainingdata.m Sources/trainingwindow.m tools/render-training.m \
+        Sources/trainingdata.m Sources/trainingwindow.m Sources/starlink.m Sources/starlinkview.m tools/render-training.m \
         -framework Cocoa -framework WebKit -framework Accelerate -lz -lsqlite3 \
         -o "$WORK_DIR/render_training"
     mkdir -p build/qa/training
@@ -301,8 +344,8 @@ cp Resources/ownchart-coast.bin Resources/world-coast.bin "$COAST_APP/Resources/
 "$CC" \
     -fobjc-arc -O2 -Wall -Wextra -Werror \
     -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources -DISOBAR_APP \
-    Sources/pure.m Sources/rain.m Sources/rainview.m Sources/aviation.m Sources/forecastview.m Sources/aviationview.m Sources/skyview.m Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Sources/trafficroute.m Sources/notices.m Sources/notacconnection.m Sources/surfview.m Sources/motion.m Sources/rawmovie.m Sources/scrub.m Sources/mapdetail.m Sources/collector.m Sources/archive.m Sources/ownchart.m tools/own-chart.m Sources/daystrip.m Sources/fullscreenwindow.m Sources/playback.m Sources/storereload.m     Sources/mapcamera.m Sources/gpumapview.m Sources/windmapview.m Sources/hazard.m Sources/atmospheremapview.m Sources/fieldrender.m Sources/trainingdata.m Sources/trainingwindow.m Tests/test_store_refresh.m \
-    -framework Cocoa -framework WebKit -framework Security -framework ServiceManagement -framework CoreLocation -framework Vision -framework CoreVideo -framework CoreMedia -framework AVFoundation -framework QuartzCore -framework Metal -framework CoreText -framework Accelerate -lz -lsqlite3 \
+    Sources/pure.m Sources/rain.m Sources/rainview.m Sources/aviation.m Sources/forecastview.m Sources/aviationview.m Sources/skyview.m Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Sources/trafficroute.m Sources/notices.m Sources/notacconnection.m Sources/surfview.m Sources/motion.m Sources/rawmovie.m Sources/scrub.m Sources/mapdetail.m Sources/collector.m Sources/archive.m Sources/ownchart.m tools/own-chart.m Sources/daystrip.m Sources/fullscreenwindow.m Sources/playback.m Sources/storereload.m     Sources/mapcamera.m Sources/terrain.m Sources/terrainmap.m Sources/terrainscene.m Sources/gpumapview.m Sources/windmapview.m Sources/hazard.m Sources/atmospheremapview.m Sources/fieldrender.m Sources/trainingdata.m Sources/trainingwindow.m Sources/starlink.m Sources/starlinkview.m Tests/test_store_refresh.m \
+    -framework Cocoa -framework WebKit -framework Security -framework ServiceManagement -framework CoreLocation -framework Vision -framework CoreVideo -framework CoreMedia -framework AVFoundation -framework QuartzCore -framework ImageIO -framework Metal -framework CoreText -framework Accelerate -lz -lsqlite3 \
     -o "$WORK_DIR/store_refresh_tests"
 ISOBAR_FIXTURES="${0:A:h}/Tests/fixtures" \
     ISOBAR_COAST="${0:A:h}/Resources/ownchart-coast.bin" "$WORK_DIR/store_refresh_tests"

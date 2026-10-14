@@ -11,6 +11,10 @@ It reports what a viewer sees rather than what the renderer intends:
   numbers  pressure labels and H/L values, tracked as text-sized dark blobs:
            how often one appears, vanishes or moves, per minute
   lines    typical per-update motion of everything else
+A recording whose picture changes on fewer than --min-updates-per-second
+frames a second (default 10) is "jumpy": a map that does not move is not
+smooth playback. That rate counts every frame that differs from the one
+before; "updates" above count only changes large enough to judge.
 A JSON summary is printed; --out also writes summary.json and worst.png, a
 strip of the worst moments with the blobs that changed outlined.
 """
@@ -149,16 +153,24 @@ def main():
         help="forecast time the recording covers; judge numbers per forecast hour (scrubbing)")
     parser.add_argument("--seam", action="append", default=[],
         help="START,DURATION seconds of an intended dissolve; its updates are not spikes or number events. Repeat for each seam")
+    parser.add_argument("--min-updates-per-second", type=float, default=10.0,
+        help="fewer changing frames per second than this is a stalled or stepping map (default 10)")
     args = parser.parse_args()
     seams = seam_windows(args.seam)
     w0, h0, fps = probe(args.recording)
     height = int(round(h0 * WIDTH / w0 / 2) * 2)
     previous = None
+    last_raw = None
+    changing = 0
     tracker = Tracker()
     times, diffs, events = [], [], []
     kept = []
     for n, frame in enumerate(frames(args.recording, WIDTH, height)):
         t = n / fps
+        if last_raw is not None and t >= args.skip and \
+                float(np.abs(frame.astype(np.int16) - last_raw.astype(np.int16)).mean()) > 0.0005:
+            changing += 1
+        last_raw = frame
         if previous is None:
             previous = frame
             tracker.update(text_blobs(frame), True)
@@ -222,7 +234,11 @@ def main():
         calm = summary["number_events_per_forecast_hour"] <= 3
     else:
         calm = summary["number_events_per_minute"] < 6
-    summary["verdict"] = ("smooth" if summary["spikes"] == 0 and calm
+    # A still picture has no spikes and no gaps; it must not pass as smooth.
+    summary["changing_frames_per_second"] = round(changing / max(1e-6, duration - args.skip), 2)
+    summary["min_updates_per_second"] = args.min_updates_per_second
+    moving = summary["changing_frames_per_second"] >= args.min_updates_per_second
+    summary["verdict"] = ("smooth" if summary["spikes"] == 0 and calm and moving
                           and summary["update_gap_ms"]["irregularity"] < 0.3 else "jumpy")
     print(json.dumps(summary, indent=2))
     if args.out:

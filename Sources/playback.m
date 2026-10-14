@@ -639,6 +639,12 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
     return _frames[@(step)] != nil;
 }
 
+- (void)setClockOnly:(BOOL)clockOnly {
+    if (_clockOnly == clockOnly) return;
+    _clockOnly = clockOnly;
+    if (!clockOnly) [self schedule];
+}
+
 - (double)clampedAdvance:(double)candidate {
     // Move through rendered frames and stop at the first one that is missing.
     // A large step must not skip ahead, and it must not freeze before frames
@@ -689,7 +695,7 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
         if (_spanHours > 0 && candidate >= _spanHours - 0.00001) {
             NSInteger last = _stepCount - 1;
             NSInteger nowStep = [self stepForHours:_nowHours];
-            if ([self hasStep:last] && [self hasStep:nowStep]) {
+            if (_clockOnly || ([self hasStep:last] && [self hasStep:nowStep])) {
                 _hours = _spanHours;
                 _seaming = YES;
                 _seam = 0;
@@ -699,7 +705,7 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
         } else {
             // Real time is a clock, not a render budget. Keep elapsed time even
             // when a frame is late; the last available image remains on screen.
-            _hours = realTime ? candidate : [self clampedAdvance:candidate];
+            _hours = realTime || _clockOnly ? candidate : [self clampedAdvance:candidate];
         }
     }
     [self reanchorFromSeek:NO];
@@ -753,7 +759,7 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
 }
 
 - (void)schedule {
-    if (!_run || (!_playing && !_holding && !_seaming)) return;
+    if (_clockOnly || !_run || (!_playing && !_holding && !_seaming)) return;
     if (_inFlight >= 1) return;
     NSInteger step = [self nextWantedStep];
     if (step == NSNotFound) return;

@@ -5,7 +5,7 @@ const PERTH = { id: 'perth', name: 'Perth', zone: 'Australia/Perth', lat: -31.95
 const SYDNEY = { id: 'sydney', name: 'Sydney', zone: 'Australia/Sydney', lat: -33.87, lon: 151.21, icao: 'YSSY' };
 
 /** Synthetic chart plus the endpoints a headless map hits. Usage is acknowledged so a missing database is not a console error. */
-export function chartRoutes(page: Page, global = false) {
+export function chartRoutes(page: Page, global = false, run = RUN) {
   const hours = global ? [...Array.from({ length: 49 }, (_, i) => i * 3), 150, 156, 162, 168] : Array.from({ length: 41 }, (_, i) => i * 3);
   const grid = global
     ? { nx: 720, ny: 361, west: -180, east: 179.5, north: 90, south: -90, step: .5, wraps_longitude: true, dtype: 'uint16' }
@@ -14,7 +14,7 @@ export function chartRoutes(page: Page, global = false) {
     frames: hours.map(() => `${name}.bin`), units: name === 'mslp' ? 'hPa' : name === 't2m' ? '°C' : name === 'rain24' ? 'mm' : 'kt', scale: 1, offset: 0, fill: 65535,
   }]));
   const manifest = {
-    schema: 2, contract: 'isobar-web', run: RUN, generated: RUN, forecast_hours: hours, grid, variables,
+    schema: 2, contract: 'isobar-web', run, generated: run, forecast_hours: hours, grid, variables,
     places: [PERTH, SYDNEY], points: 'points.json', aviation: 'aviation.json',
     attribution: [{ source: 'Synthetic point journey', licence: 'Test fixture' }],
   };
@@ -39,7 +39,7 @@ export function chartRoutes(page: Page, global = false) {
     page.route('**/data/**', async (route) => {
       const file = new URL(route.request().url()).pathname.split('/').at(-1)!;
       if (file === 'manifest.json') return route.fulfill({ json: manifest });
-      if (file === 'points.json') return route.fulfill({ json: { run: RUN, hours, places: {
+      if (file === 'points.json') return route.fulfill({ json: { run, hours, places: {
         perth: { t: hours.map(() => 20), wspd: hours.map(() => 13), wdir: hours.map(() => 220), tp: hours.map(() => 0), cc: hours.map(() => 42) },
         sydney: { t: hours.map(() => 21), wspd: hours.map(() => 11), wdir: hours.map(() => 180), tp: hours.map(() => 0), cc: hours.map(() => 36) },
       } } });

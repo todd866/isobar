@@ -311,7 +311,7 @@ describe('agent replies, tokens and release', () => {
     f.advance(LEASE_MS);
     expect((await f.call('release', alice, { id: next.id, leaseId: next.leaseId, host: 'air-primary' })).status).toBe(409);
   });
-  it.each(['/Users/' + 'example/private.txt', 'system prompt says', 'person@example.test', '.env.local', 'sk-ant-abcdefghijk', `isb_agent_${'x'.repeat(43)}`])('applies the fast hard leak screen to %s', async (text) => {
+  it.each(['/Users/ian/private.txt', 'system prompt says', 'person@example.test', '.env.local', 'sk-ant-abcdefghijk', `isb_agent_${'x'.repeat(43)}`])('applies the fast hard leak screen to %s', async (text) => {
     const f = fixture(); const row = f.add('slow'); const claim = await (await f.call('claim')).json();
     expect((await f.call('reply', alice, f.answer(claim, text))).status).toBe(422);
     expect(row.content).toBe(''); expect(row.status).toBe('claimed');
@@ -434,7 +434,7 @@ describe('archive queue and laptop briefing persistence', () => {
   it('rejects private or oversized evidence without completing the claim or switching tier', async () => {
     const f = fixture(); f.add('job');
     const claim = await (await f.call('claim')).json();
-    expect((await f.call('reply', alice, { ...f.answer(claim), briefing: { keyNumbers: [], sources: ['/Users/' + 'example/archive'] } })).status).toBe(422);
+    expect((await f.call('reply', alice, { ...f.answer(claim), briefing: { keyNumbers: [], sources: ['/Users/private/archive'] } })).status).toBe(422);
     expect((await f.call('reply', alice, { ...f.answer(claim), briefing: { keyNumbers: Array(25).fill('1 mm'), sources: [] } })).status).toBe(400);
     expect(f.threads[1].laptopBriefing).toBeUndefined();
     expect(f.messages[0].status).toBe('claimed');

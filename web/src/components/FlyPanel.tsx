@@ -155,7 +155,7 @@ function severity(body: string): 0 | 1 | 2 {
 
 const TONE = ['bg-[var(--md-surface-container-highest)]', 'bg-[#e8a33d]/35', 'bg-[#c0392b]/30'];
 
-function TafTimeline({ taf, validMs, zone }: { taf: NonNullable<AviationAirport['taf']>; validMs: number; zone: string }) {
+function TafTimeline({ taf, validMs, zone, onSeek }: { taf: NonNullable<AviationAirport['taf']>; validMs: number; zone: string; onSeek?: (timeMs: number) => void }) {
   const { units } = useUnits();
   const groups = tafGroups({ raw: taf.raw, issue: taf.issue, from: taf.from, to: taf.to });
   const from = taf.from ? Date.parse(taf.from) : NaN;
@@ -171,7 +171,18 @@ function TafTimeline({ taf, validMs, zone }: { taf: NonNullable<AviationAirport[
   for (let t = Math.ceil(from / 10_800_000) * 10_800_000; t < to; t += 10_800_000) ticks.push(t);
   const inPlay = validMs >= from && validMs < to;
   return (
-    <div className="relative select-none" data-taf-timeline aria-label="TAF timeline" role="group">
+    <div
+      className={`relative select-none${onSeek ? ' cursor-pointer' : ''}`}
+      data-taf-timeline
+      aria-label="TAF timeline"
+      role="group"
+      onClick={onSeek ? (event) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        if (rect.width <= 0) return;
+        const frac = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+        onSeek(Math.round(from + frac * (to - from)));
+      } : undefined}
+    >
       <div className="relative h-[22px] overflow-hidden rounded-[4px]">
         {prevailing.map((group, index) => {
           const start = effective[index];
@@ -268,6 +279,7 @@ export function FlyPanel({
   zone,
   validMs,
   nowMs,
+  onSeek,
   onClose,
   anchorRef,
 }: {
@@ -276,6 +288,7 @@ export function FlyPanel({
   zone: string;
   validMs: number;
   nowMs: number;
+  onSeek?: (timeMs: number) => void;
   onClose: () => void;
   /** The map panel the phone sheet sits on. */
   anchorRef: RefObject<HTMLElement | null>;
@@ -322,7 +335,7 @@ export function FlyPanel({
   const body = (
     <>
       <div className="overflow-hidden rounded-lg">{section}</div>
-      {airport.taf ? <TafTimeline taf={airport.taf} validMs={validMs} zone={zone} /> : <div className="text-[12px] text-[var(--md-on-surface-variant)]">No TAF</div>}
+      {airport.taf ? <TafTimeline taf={airport.taf} validMs={validMs} zone={zone} onSeek={onSeek} /> : <div className="text-[12px] text-[var(--md-on-surface-variant)]">No TAF</div>}
       <RawReports airport={airport} validMs={validMs} nowMs={nowMs} zone={zone} />
     </>
   );

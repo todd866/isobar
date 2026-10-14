@@ -6,9 +6,15 @@ export interface SurfaceMesh { vertices: Float32Array; indices: Uint32Array; col
 
 const MAX_AXIS = 385;
 
-/** Bounded to useful DEM resolution; buckets prevent rebuilding on every wheel tick. */
+const MAX_SPACING_M = 2000;
+/** Near-focus spacing follows the view: about 1/256 of its height, from 30 m
+ * (useful DEM resolution) at the closest to 2 km for regional relief. Finer
+ * triangles than that only multiply shading. Buckets prevent rebuilding on
+ * every wheel tick: 10 m steps up to 80 m, then quarter octaves. */
 export function surfaceMeshSpacing(halfHeightDeg: number): number {
-  return Math.max(30, Math.min(80, Math.round(halfHeightDeg * 111320 / 256 / 10) * 10));
+  const raw = halfHeightDeg * 111320 / 256;
+  if (!(raw > 80)) return Math.max(30, Math.min(80, Math.round(raw / 10) * 10));
+  return Math.min(MAX_SPACING_M, Math.round(80 * 2 ** (Math.round(Math.log2(raw / 80) * 4) / 4) / 10) * 10);
 }
 
 function axis(west: number, east: number, focus: number, targetMetres: number): number[] {
@@ -46,7 +52,7 @@ function axis(west: number, east: number, focus: number, targetMetres: number): 
   return unique;
 }
 
-export function buildSurfaceMesh(input: SurfaceMeshInput): SurfaceMesh | null {
+export function surfaceMeshAxes(input: SurfaceMeshInput): {lons: number[]; lats: number[]} | null {
   const { box, focus } = input;
   if (![box.west, box.south, box.east, box.north, focus.lat, focus.lon, input.halfHeightDeg].every(Number.isFinite)) return null;
   if (!(box.east > box.west && box.north > box.south) || box.south < -90 || box.north > 90 || box.east - box.west > 360 || input.halfHeightDeg <= 0 || input.halfHeightDeg > 180 || focus.lat < box.south || focus.lat > box.north) return null;
@@ -57,6 +63,13 @@ export function buildSurfaceMesh(input: SurfaceMeshInput): SurfaceMesh | null {
   lons[0] = box.west; lons[lons.length - 1] = box.east; lats[0] = box.south; lats[lats.length - 1] = box.north;
   for (let i = 1; i < lons.length; i++) if (Math.fround(lons[i]) <= Math.fround(lons[i - 1])) return null;
   for (let i = 1; i < lats.length; i++) if (Math.fround(lats[i]) <= Math.fround(lats[i - 1])) return null;
+  return {lons, lats};
+}
+
+export function buildSurfaceMesh(input: SurfaceMeshInput): SurfaceMesh | null {
+  const axes = surfaceMeshAxes(input);
+  if (!axes) return null;
+  const {lons, lats} = axes;
   const vertices = new Float32Array(lons.length * lats.length * 4);
   for (let y = 0; y < lats.length; y++) for (let x = 0; x < lons.length; x++) {
     const at = (y * lons.length + x) * 4; vertices[at] = lons[x]; vertices[at + 1] = lats[y];

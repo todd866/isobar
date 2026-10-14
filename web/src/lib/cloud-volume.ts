@@ -8,7 +8,9 @@ const R=6371000, RAD=Math.PI/180;
 export function cloudWorldPoint(camera:TiltCamera,lat:number,lon:number,height:number):[number,number,number]{
   const k=Math.max(.001,camera.geometry.curvature),re=R/k,p=k*lat*RAD,p0=k*camera.lat*RAD,l=k*((lon-camera.lon+540)%360-180)*RAD;
   const n=[Math.cos(p)*Math.sin(l),Math.sin(p)*Math.cos(p0)-Math.cos(p)*Math.cos(l)*Math.sin(p0),Math.cos(p)*Math.cos(l)*Math.cos(p0)+Math.sin(p)*Math.sin(p0)];
-  return [n[0]*(re+height),n[1]*(re+height),re*(n[2]-1)+n[2]*height];
+  // Displayed height: the scene's shared vertical scale (terrain/relief-scale.ts).
+ const shown=height*(camera.reliefScale??1);
+ return [n[0]*(re+shown),n[1]*(re+shown),re*(n[2]-1)+n[2]*shown];
 }
 export function cloudWorldBounds(camera:TiltCamera,data:CloudDensityTexture,display?:{baseM:number;scale:number}){
   const b=data.bounds,min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];
@@ -25,7 +27,7 @@ in vec2 clip;out vec4 colour;
 uniform sampler3D volume;uniform sampler2D ground;uniform sampler2D depthMap;
 uniform vec4 box;uniform vec2 heights;uniform vec3 eye;uniform vec3 forward;uniform vec3 up;
 uniform vec3 minimum;uniform vec3 maximum;uniform vec3 lightStep;uniform vec4 camera;uniform vec2 projection;
-uniform vec4 slice;uniform vec2 sliceSize;uniform vec2 heightDisplay;
+uniform vec4 slice;uniform vec2 sliceSize;uniform vec2 heightDisplay;uniform float relief;
 uniform float dark;uniform float inspection;uniform float opacityLimit;
 const float R=6371000.0;
 vec3 geographical(vec3 p){
@@ -33,7 +35,7 @@ vec3 geographical(vec3 p){
  vec3 n=(p+vec3(0,0,re))/r;float p0=k*camera.x;
  float lat=asin(clamp(n.y*cos(p0)+n.z*sin(p0),-1.0,1.0))/k;
  float lon=camera.y+atan(n.x,n.z*cos(p0)-n.y*sin(p0))/k;
- float h=(dot(p,p)+2.0*re*p.z)/(r+re);
+ float h=(dot(p,p)+2.0*re*p.z)/(r+re)/max(relief,.001);
  return vec3(degrees(lon),degrees(lat),h);
 }
 vec3 uvw(vec3 g){return vec3((g.xy-box.xy)/(box.zw-box.xy),((heightDisplay.x+(g.z-heightDisplay.x)/heightDisplay.y)-heights.x)/(heights.y-heights.x));}
@@ -131,7 +133,7 @@ export function createCloudVolumeLayer(canvas:HTMLCanvasElement):CloudVolumeLaye
     gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,textures[2]);gl.texImage2D(gl.TEXTURE_2D,0,gl.R32F,48,32,0,gl.RED,gl.FLOAT,pixels);textureParameters(gl.TEXTURE_2D,gl.NEAREST);lastCamera=key;
    }
    const bounds=cloudWorldBounds(camera,data,view.atmosphereDisplay),b=data.bounds,g=camera.geometry;
-   gl.uniform2f(loc('heightDisplay'),view.atmosphereDisplay?.baseM??0,view.atmosphereDisplay?.scale??1);
+   gl.uniform2f(loc('heightDisplay'),view.atmosphereDisplay?.baseM??0,view.atmosphereDisplay?.scale??1);gl.uniform1f(loc('relief'),camera.reliefScale??1);
    gl.uniform1i(loc('volume'),0);gl.uniform1i(loc('ground'),1);gl.uniform1i(loc('depthMap'),2);
    gl.uniform3f(loc('lightStep'),-360/((b.east-b.west)*111320*Math.max(.01,Math.cos((b.north+b.south)*.5*RAD))),180/((b.north-b.south)*111132),420/(b.maxHeight-b.minHeight));
    gl.uniform4f(loc('box'),b.west,b.south,b.east,b.north);gl.uniform2f(loc('heights'),b.minHeight,b.maxHeight);

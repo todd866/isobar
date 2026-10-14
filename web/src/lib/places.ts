@@ -23,6 +23,22 @@ export interface PlaceCandidate {
   region: string;
 }
 
+export interface ProjectedPlace extends PlaceCandidate { x: number; y: number; depth: number; }
+
+/** Keep the ranked foreground labels while thinning far labels near the horizon. */
+export function thinTiltedPlaces<T extends { x: number; y: number; depth: number }>(places: readonly T[], height: number): T[] {
+  if (!places.length) return [];
+  const depths = places.map(place => place.depth).filter(Number.isFinite).sort((a, b) => a - b);
+  const cutoff = depths[Math.floor(depths.length * .6)] ?? Infinity;
+  const far: T[] = [];
+  return places.filter(place => {
+    if (place.y >= height * .38 || place.depth < cutoff) return true;
+    if (far.some(other => Math.hypot(other.x - place.x, other.y - place.y) < 100)) return false;
+    far.push(place);
+    return true;
+  });
+}
+
 /**
  * Gives every same-name place after the first (the larger: the list is ranked)
  * its region code; drops it when that does not tell the two apart.
@@ -125,7 +141,9 @@ export function drawPlaces(
   const toScreen = (lat: number, lon: number) => {
     if (camera.surface) {
       const p = mapProject(geo, camera, lat, lon);
-      return p && { x: (p.x + 1) * width / 2, y: (1 - p.y) * height / 2 };
+      const depth = camera.surface.project(lat, lon).depth;
+      return p && Number.isFinite(depth)
+        ? { x: (p.x + 1) * width / 2, y: (1 - p.y) * height / 2, depth } : null;
     }
     const p = project(geo, lat, lon);
     if (!p) return null;
@@ -133,10 +151,10 @@ export function drawPlaces(
       const period = 360 * geo.F;
       p.x += Math.round((camera.centerX - p.x) / period) * period;
     }
-    return { x: (1 + (p.x - camera.centerX) / camera.halfWidth) * width / 2, y: (1 - (p.y - camera.centerY) / camera.halfHeight) * height / 2 };
+    return { x: (1 + (p.x - camera.centerX) / camera.halfWidth) * width / 2, y: (1 - (p.y - camera.centerY) / camera.halfHeight) * height / 2, depth: 0 };
   };
   // Candidates in view, ranked, then de-duplicated by name before placing.
-  const inView: (PlaceCandidate & { x: number; y: number })[] = [];
+  const inView: ProjectedPlace[] = [];
   // Cheap geographic cull before projecting: thousands of ranked rows, a few dozen in view.
   const equirect = geo.projection === 'equirectangular';
   const centreLon = equirect ? geo.lon0 + camera.centerX / geo.F : 0;
@@ -156,7 +174,7 @@ export function drawPlaces(
     const point = toScreen(lat, lon);
     if (!point || point.x < 4 || point.y < 4 || point.x > width - 4 || point.y > height - 4) continue;
     if (onWater?.(lat, lon)) continue;
-    inView.push({ name, lat, lon, rank, region: region ?? '', x: point.x, y: point.y });
+    inView.push({ name, lat, lon, rank, region: region ?? '', x: point.x, y: point.y, depth: point.depth });
   }
   const taken = avoid.slice();
   const drawn: string[] = [];
@@ -166,7 +184,8 @@ export function drawPlaces(
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
   ctx.lineJoin = 'round';
-  for (const place of dedupeNames(inView)) {
+  const placedCandidates = camera.surface ? thinTiltedPlaces(inView, height) : inView;
+  for (const place of dedupeNames(placedCandidates)) {
     if (drawn.length >= maxLabels) break;
     const big = place.rank <= rankLimit - 1.5;
     const nameFont = big ? '600 12px ui-sans-serif, system-ui, sans-serif' : '500 11px ui-sans-serif, system-ui, sans-serif';
@@ -185,7 +204,9 @@ export function drawPlaces(
       const lx = side === 1 ? place.x - r - 3 - w : side === 0 ? place.x + r + 3 : place.x - w / 2;
       const ly = side === 2 ? place.y - r - 2 - h : side === 3 ? place.y + r + 2 : place.y - h / 2;
       if (ly < 2 || ly + h > height - 2 || lx < 2 || lx + w > width - 2) continue;
-      const box = { x: lx - 4, y: ly - 2, w: w + 8, h: h + 4 };
+      const horizonFar = !!camera.surface && place.y < height * .38 && place.depth > 0;
+      const pad = horizonFar ? 10 : 4;
+      const box = { x: lx - pad, y: ly - pad / 2, w: w + 2 * pad, h: h + pad };
       if (taken.some((other) => intersects(box, other))) continue;
       label = { x: lx, y: ly, w, h };
       taken.push(box, { x: place.x - r, y: place.y - r, w: 2 * r, h: 2 * r });

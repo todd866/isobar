@@ -21,11 +21,27 @@ static NSDate *Date(id value) {
     });
     return [fractional dateFromString:value] ?: [whole dateFromString:value];
 }
+NSDateFormatter *AviationDateFormatter(NSString *locale, NSTimeZone *zone, NSString *pattern) {
+    zone = zone ?: NSTimeZone.localTimeZone;
+    NSString *key = [NSString stringWithFormat:@"%@|%@|%@", locale, zone.name, pattern];
+    NSMutableDictionary *cache = NSThread.currentThread.threadDictionary[@"IsobarAviationDateFormatters"];
+    if (!cache) {
+        cache = [NSMutableDictionary dictionary];
+        NSThread.currentThread.threadDictionary[@"IsobarAviationDateFormatters"] = cache;
+    }
+    NSDateFormatter *f = cache[key];
+    if (f) return f;
+    if (cache.count > 64) [cache removeAllObjects];
+    f = [NSDateFormatter new];
+    f.locale = [NSLocale localeWithLocaleIdentifier:locale];
+    f.timeZone = zone;
+    f.dateFormat = pattern;
+    cache[key] = f;
+    return f;
+}
 static NSString *Format(NSDate *d, NSTimeZone *tz, NSString *pattern) {
     if (!d) return @"—";
-    NSDateFormatter *f = [NSDateFormatter new]; f.locale = [NSLocale localeWithLocaleIdentifier:@"en_AU_POSIX"];
-    f.timeZone = tz; f.dateFormat = pattern;
-    return [f stringFromDate:d];
+    return [AviationDateFormatter(@"en_AU_POSIX", tz, pattern) stringFromDate:d];
 }
 static NSString *Clock(NSDate *d, NSTimeZone *tz) {
     NSCalendar *cal = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian]; cal.timeZone = tz;
@@ -535,18 +551,11 @@ NSString *AviationTAFWrapped(NSString *raw) {
 }
 static NSString *BulletinStamp(NSDate *date, NSTimeZone *tz) {
     if (!date) return nil;
-    NSDateFormatter *f = [NSDateFormatter new];
-    f.locale = [NSLocale localeWithLocaleIdentifier:@"en_AU_POSIX"];
-    f.timeZone = tz;
-    f.dateFormat = @"EEE d MMM HH:mm zzz";
-    return [f stringFromDate:date];
+    return [AviationDateFormatter(@"en_AU_POSIX", tz, @"EEE d MMM HH:mm zzz") stringFromDate:date];
 }
 static NSString *BulletinUTC(NSDate *date) {
     if (!date) return nil;
-    NSDateFormatter *f = [NSDateFormatter new];
-    f.locale = [NSLocale localeWithLocaleIdentifier:@"en_AU_POSIX"];
-    f.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
-    f.dateFormat = @"d MMM HH:mm";
+    NSDateFormatter *f = AviationDateFormatter(@"en_AU_POSIX", [NSTimeZone timeZoneForSecondsFromGMT:0], @"d MMM HH:mm");
     return [[f stringFromDate:date] stringByAppendingString:@" UTC"];
 }
 static BOOL BulletinCovers(NSDictionary *period, NSDate *playhead) {

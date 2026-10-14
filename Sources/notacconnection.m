@@ -184,4 +184,48 @@ static NSString *FetchFailure(NSData *diagnostics, BOOL timedOut) {
                                    task.terminationStatus == 0 ? @"NOTAMs updated" : FetchFailure(bounded,expired));
     });
 }
+
+- (void)importBriefingAtPath:(NSString *)path dataDirectory:(NSString *)root executableURL:(NSURL *)executable
+                  completion:(void (^)(BOOL success, NSString *message))completion {
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        if (!executable.isFileURL || ![NSFileManager.defaultManager isExecutableFileAtPath:executable.path]) {
+            if (completion) completion(NO, @"The collector is missing from this build."); return;
+        }
+        NSTask *task = [NSTask new];
+        task.executableURL = executable;
+        task.arguments = @[@"import-notams", @"--file", path, @"--source", @"Imported briefing", @"--data-dir", root];
+        task.environment = SubprocessEnvironment();
+        task.standardInput = NSFileHandle.fileHandleWithNullDevice;
+        NSPipe *output = [NSPipe pipe];
+        task.standardOutput = output; task.standardError = output;
+        NSError *launchError = nil;
+        if (![task launchAndReturnError:&launchError]) { if (completion) completion(NO, launchError.localizedDescription ?: @"Import failed"); return; }
+        __block BOOL timedOut = NO;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 120 * NSEC_PER_SEC), dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            @synchronized(task) { if (task.running) { timedOut = YES; [task terminate]; } }
+        });
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 130 * NSEC_PER_SEC), dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            @synchronized(task) { if (task.running) kill(task.processIdentifier, SIGKILL); }
+        });
+        NSMutableData *bounded = [NSMutableData data];
+        while (YES) {
+            NSData *chunk = [output.fileHandleForReading readDataOfLength:2048];
+            if (!chunk.length) break;
+            if (bounded.length < 4096) [bounded appendData:[chunk subdataWithRange:NSMakeRange(0, MIN(chunk.length, 4096 - bounded.length))]];
+        }
+        [task waitUntilExit];
+        BOOL expired = NO; @synchronized(task) { expired = timedOut; }
+        BOOL success = task.terminationStatus == 0 && !expired;
+        NSString *message = success ? @"" : expired ? @"Import timed out"
+            : [[NSString alloc] initWithData:bounded encoding:NSUTF8StringEncoding] ?: @"";
+        if (!success && !message.length) message = @"Import failed";
+        if (message.length > 240) message = [message substringToIndex:240];
+        if (completion) completion(success, message);
+    });
+}
 @end
+
+BOOL IsobarNotacKeyMayBeSaved(NSString *token, NSError *error) {
+    if (token) return YES;
+    return error && !([error.domain isEqual:IsobarNotacErrorDomain] && error.code == IsobarNotacErrorNoKey);
+}

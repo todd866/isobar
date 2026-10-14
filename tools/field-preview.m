@@ -57,7 +57,7 @@ static BOOL UploadHour(IsobarFieldRenderer *renderer, OwnRun *run, OwnRunField f
 }
 
 static IsobarCamera View(double lat, double lon, double globe, double zoom) {
-    IsobarCamera cam;
+    IsobarCamera cam = {0};
     cam.centreLat = lat;
     cam.centreLon = lon;
     cam.zoom = zoom;

@@ -55,7 +55,7 @@ describe('standing', () => {
     expect(initialTier(null, true)).toBe('haiku');
     expect(initialTier('off', true)).toBe('off');
     expect(isDisposableEmail('person+tag@mailinator.com')).toBe(true);
-    expect(clusterEmail('Person+Tag@' + 'Gmail.com')).toBe('person@' + 'gmail.com');
+    expect(clusterEmail('Person+Tag@Gmail.com')).toBe('person@gmail.com');
   });
 });
 
@@ -202,8 +202,8 @@ describe('anonymous quota and clusters', () => {
   });
 
   it('links plus-addresses, devices, and sign-ups ten minutes apart', () => {
-    const links = [{ clusterId: 'c1', kind: 'email' as const, hash: 'person@' + 'gmail.com' }];
-    expect(resolveClusterId({ deviceHash: null, ipHash: null, email: 'person@' + 'gmail.com', signedUpAtMs: null }, links, []).clusterId).toBe('c1');
+    const links = [{ clusterId: 'c1', kind: 'email' as const, hash: 'person@gmail.com' }];
+    expect(resolveClusterId({ deviceHash: null, ipHash: null, email: 'person@gmail.com', signedUpAtMs: null }, links, []).clusterId).toBe('c1');
     const at = Date.parse('2026-10-08T00:00:00Z');
     const signups = [{ clusterId: 'c2', ipHash: 'ip', atMs: at }];
     expect(resolveClusterId({ deviceHash: null, ipHash: 'ip', email: null, signedUpAtMs: at + SIGNUP_WINDOW_MS }, [], signups).clusterId).toBe('c2');
@@ -239,7 +239,7 @@ describe('watcher', () => {
   });
 
   it('holds a path, a credential, or a number the tools did not return', () => {
-    expect(screenAnswer('See /Users/' + 'example/secret')).toContain('a local file path');
+    expect(screenAnswer('See /Users/iantodd/secret')).toContain('a local file path');
     expect(screenAnswer('The system prompt says')).not.toEqual([]);
     expect(screenAnswer('The wind is backing over Perth.')).toEqual([]);
     expect(numbersOutsideEvidence('1013.2 hPa', '{"value":1013.2}')).toEqual([]);
@@ -1194,7 +1194,7 @@ describe('automatic laptop escalation and briefing follow-ups', () => {
   });
   it('parses whitespace around the gap line but never accepts malformed or private gap data', () => {
     expect(parseArchiveGaps('  ARCHIVE_GAPS: ["Compare runs"]  \nPASS')).toEqual(['Compare runs']);
-    expect(parseArchiveGaps('ARCHIVE_GAPS: ["/Users/" + "example/secrets"]\nPASS')).toEqual([]);
+    expect(parseArchiveGaps('ARCHIVE_GAPS: ["/Users/owner/secrets"]\nPASS')).toEqual([]);
     expect(parseArchiveGaps('ARCHIVE_GAPS: [1]\nPASS')).toEqual([]);
     expect(parseArchiveGaps(`ARCHIVE_GAPS: ${JSON.stringify(Array(7).fill('gap'))}\nPASS`)).toEqual([]);
   });

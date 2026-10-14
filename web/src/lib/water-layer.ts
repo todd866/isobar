@@ -6,7 +6,7 @@
 import { latitudeSpan } from './map-generalise';
 import { viewGeoBox } from './terrain/terrain-layer';
 import type { GeoBox } from './terrain/terrarium';
-import type { Camera, Lambert } from './lambert';
+import { unproject, type Camera, type Lambert } from './lambert';
 import {
   addWater,
   closeWater,
@@ -34,11 +34,54 @@ export interface WaterLayer {
   destroy(): void;
 }
 
+/**
+ * Keep texture uploads out of the middle of a pinch/trackpad zoom. Camera
+ * updates arrive in a burst, so only the final raster is uploaded after the
+ * gesture has been quiet for this long.
+ */
+export const WATER_UPLOAD_SETTLE_MS = 100;
+
+export function createWaterUploadScheduler(publish: () => void, delay = WATER_UPLOAD_SETTLE_MS) {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  return {
+    schedule(immediate = false) {
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      if (immediate) {
+        publish();
+        return;
+      }
+      timer = setTimeout(() => {
+        timer = null;
+        publish();
+      }, delay);
+    },
+    defer() {
+      if (timer !== null) this.schedule();
+    },
+    cancel() {
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+    },
+  };
+}
+
 /** Keep the measured water raster while a gesture stays inside its margin.
  * Rebuild before leaving coverage or changing detail by more than a quarter. */
 export function reuseWaterRaster(box:LonLatBox|null,view:LonLatBox,span:number,nextSpan:number):boolean {
   return !!box&&span>0&&nextSpan/span>=.8&&nextSpan/span<=1.25&&closeWater(span)===closeWater(nextSpan)
     &&view.west>=box.west&&view.east<=box.east&&view.south>=box.south&&view.north<=box.north;
+}
+
+/** A tilted horizon must not spend all lake texels on distant ground. */
+export function waterViewBox(geo:Lambert,camera:Camera):GeoBox|null {
+  if(!camera.surface)return viewGeoBox(geo,camera);
+  const focus=unproject(geo,camera.centerX,camera.centerY);
+  if(!focus)return null;
+  const radius=Math.max(camera.halfWidth/geo.F,camera.halfHeight)*2;
+  return {west:focus.lon-radius,east:focus.lon+radius,south:Math.max(-90,focus.lat-radius),north:Math.min(90,focus.lat+radius)};
 }
 
 export function createWaterLayer(water: Water, onRaster: (raster: WaterRaster) => void): WaterLayer {
@@ -50,6 +93,7 @@ export function createWaterLayer(water: Water, onRaster: (raster: WaterRaster) =
   }
   let id = 0;
   let key = '';
+  let lastView = ''; 
   let box: LonLatBox | null = null;
   let span = 0;
   let width = 2;
@@ -69,6 +113,8 @@ export function createWaterLayer(water: Water, onRaster: (raster: WaterRaster) =
     onRaster({ pixels, width, height, west: box.west, south: box.south, east: box.east, north: box.north });
   };
 
+  const uploadScheduler = createWaterUploadScheduler(publish);
+
   if (worker) {
     worker.onmessage = (event: MessageEvent<{ type: string; id: number; tiles: { z: number; x: number; y: number; rings: DecodedRing[] }[] }>) => {
       const message = event.data;
@@ -80,7 +126,7 @@ export function createWaterLayer(water: Water, onRaster: (raster: WaterRaster) =
         tiles.set(tileKey, tile.rings);
         changed = true;
       }
-      if (changed) publish();
+      if (changed) uploadScheduler.schedule();
     };
   }
 
@@ -108,9 +154,11 @@ export function createWaterLayer(water: Water, onRaster: (raster: WaterRaster) =
 
   return {
     update(geo, camera, cssWidth, cssHeight) {
-      const view = viewGeoBox(geo, camera);
+      const view = waterViewBox(geo, camera);
       if (!view) return;
       const nextSpan = latitudeSpan(geo, camera);
+      const viewKey = `${view.west}:${view.east}:${view.south}:${view.north}:${cssWidth}:${cssHeight}`;
+      if (viewKey !== lastView) { lastView = viewKey; uploadScheduler.defer(); }
       if(viewportWidth===cssWidth&&viewportHeight===cssHeight&&reuseWaterRaster(box,view,span,nextSpan))return;
       viewportWidth=cssWidth;viewportHeight=cssHeight;
       const dx=(view.east-view.west)*.25,dy=(view.north-view.south)*.25;
@@ -119,6 +167,7 @@ export function createWaterLayer(water: Water, onRaster: (raster: WaterRaster) =
       const nextKey = `${view.west.toFixed(3)}:${view.south.toFixed(3)}:${view.east.toFixed(3)}:${view.north.toFixed(3)}:${size.width}x${size.height}:${nextSpan.toFixed(2)}`;
       if (nextKey === key) return;
       id += 1; // Invalidate close-zoom replies even when the next view requests no tiles.
+      const hadRaster = box !== null;
       key = nextKey;
       box = rasterView;
       span = nextSpan;
@@ -127,11 +176,14 @@ export function createWaterLayer(water: Water, onRaster: (raster: WaterRaster) =
       const lakes = lakesInView(water, rasterView, nextSpan);
       base = rasterRings(lakes, rasterView, width, height);
       if (!closeWater(nextSpan)) tiles.clear();
-      publish();
+      // The first raster is useful immediately. Subsequent camera updates are
+      // coalesced until the zoom gesture has settled.
+      uploadScheduler.schedule(!hadRaster);
       requestTiles(rasterView);
     },
     destroy() {
       id += 1;
+      uploadScheduler.cancel();
       worker?.terminate();
       worker = null;
       tiles.clear();

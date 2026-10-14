@@ -17,7 +17,7 @@ async function explainChart(page: Page) {
   await page.getByRole('button', { name: 'Explain this chart', exact: true }).click();
 }
 async function fit(page: Page, label: string) {
-  const helper = process.env.ISOBAR_VIEWPORT_HELPER ?? '';
+  const helper = process.env.ISOBAR_VIEWPORT_HELPER ?? `${process.env.HOME}/Projects/.ux-authoring/viewport-fit.mjs`;
   if (fs.existsSync(helper)) {
     const { assertViewport } = await import(pathToFileURL(helper).href);
     await assertViewport(page, { primary: [{ selector: '[data-map-ready]', minWidth: 250, minHeight: 160 }], controls: [{ selector: '.teach-card-foot', minHeight: 36 }] });

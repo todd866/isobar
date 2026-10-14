@@ -5,7 +5,7 @@ import { loadMarine, marineAt, marineCacheKey, type MarineSeries } from '@/lib/p
 import { loadPointProfile, pointCacheKey, pointProfileAt, pointSurfaceAt, type PointModel } from '@/lib/point/openmeteo';
 import { forecastRunLabel, forecastRunTitle } from '@/lib/point/provenance';
 import { collectorPointModel, pointSky, type MapPoint } from '@/lib/point/section';
-import { formatGround } from '@/lib/point/ground';
+import { summitGroundLabel } from '@/lib/point/ground';
 import { airRows, pointSheetHeight, seaRows, soundingFrame, soundingReadout, type SoundingEmphasis } from '@/lib/point/sounding';
 import { modelGroundFromPressure, resolveModelGroundM, type SectionSample } from '@/lib/point/terrain-section';
 import type { AtmosphereSlice } from '@/lib/atmosphere-slice';
@@ -18,12 +18,13 @@ import { PressNote, usePressNote, type Lens } from './MapChrome';
 import { StarIcon } from './PlaceField';
 import styles from './PointPanel.module.css';
 
-export function PointPanel({ reconstructedModel=null, archiveOnly=false, point, name, detail, isPlace, onMakePlace, validMs, lens, terrainM, section, sectionGeometry, sectionExpedition = false, orographyM, mslpHpa, onClose, anchorRef, panelRef, collectorIcao }: {
+export function PointPanel({ reconstructedModel=null, archiveOnly=false, point, name, detail, isPlace, onMakePlace, validMs, lens, terrainM, surveyedElevationM, section, sectionGeometry, sectionExpedition = false, orographyM, mslpHpa, onClose, anchorRef, panelRef, collectorIcao }: {
   reconstructedModel?: PointModel | null;
   archiveOnly?: boolean;
   point: MapPoint; name: string; detail: string; isPlace: boolean; onMakePlace: () => 'set' | 'restored' | 'same'; validMs: number; lens: Lens;
   /** Offline ground: export orography, else the loaded DEM. Null until one exists. */
   terrainM: number | null;
+  surveyedElevationM?: number;
   /** DEM track through the selected section. Null while terrain is unavailable. */
   section?: SectionSample[] | null;
   sectionGeometry?: AtmosphereSlice | null;
@@ -101,7 +102,7 @@ export function PointPanel({ reconstructedModel=null, archiveOnly=false, point, 
   const compact = !profile || !state;
   const identity = model ? { source: model.provenance.source, model: model.provenance.model, run: model.provenance.run, cycle: model.provenance.cycle } : null;
   const frame = soundingFrame(rows, elevation);
-  const groundText = elevation == null ? null : formatGround(elevation);
+  const groundLabel = summitGroundLabel(elevation, surveyedElevationM);
   return (
     <aside ref={panelRef} aria-label="Point section" data-point-panel data-point-layout={desktop ? (compact ? 'compact' : 'side') : 'sheet'} data-point-state={loading ? 'loading' : compact ? 'unavailable' : 'ready'} data-point-emphasis={lens} data-point-location={`${point.lat},${point.lon}`}
       className={`${styles.panel} ${desktop ? styles.side : styles.sheet} ${compact ? styles.compact : ''}`}
@@ -112,7 +113,7 @@ export function PointPanel({ reconstructedModel=null, archiveOnly=false, point, 
           <strong data-point-title>{name}</strong>
           <span className={styles.datum}>
             {detail ? <span className={styles.coords} data-point-coords>{detail}</span> : null}
-            {groundText ? <span className={styles.elevation} data-point-elevation>{groundText}</span> : null}
+            {groundLabel.text ? <span className={styles.elevation} data-point-elevation title={groundLabel.title}>{groundLabel.text}</span> : null}
           </span>
         </span>
 

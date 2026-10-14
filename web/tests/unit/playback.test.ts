@@ -22,3 +22,30 @@ describe('real time and forecast replay share one clock', () => {
     expect(speedLabel(1)).toBe('1 min/s');
   });
 });
+
+describe('forward loop dissolve', () => {
+  it('holds the endpoint for .2 seconds, then dissolves for .6 seconds', () => {
+    let clock = advancePlayback({ minute: 990, playing: true, direction: 1 }, 10 / 256, 256, 1000, 100);
+    expect(clock.minute).toBe(1000);
+    expect(clock.wrapSeconds).toBe(0);
+    clock = advancePlayback(clock, .19, 256, 1000, 100);
+    expect(clock.minute).toBe(1000);
+    clock = advancePlayback(clock, .11, 256, 1000, 100);
+    expect(clock.minute).toBe(100);
+    expect(clock.wrapSeconds).toBeCloseTo(.3);
+    expect(advancePlayback({ ...clock, playing: false }, 1, 256, 1000, 100)).toEqual({ ...clock, playing: false });
+    clock = advancePlayback(clock, .5, 256, 1000, 100);
+    expect(clock.wrapSeconds).toBeUndefined();
+    expect(clock.minute).toBeCloseTo(100);
+    expect(advancePlayback(clock, .1, 256, 1000, 100).minute).toBeCloseTo(125.6);
+  });
+  it('accounts for crossing within a frame and resumes forward after delayed delivery', () => {
+    const clock = advancePlayback({ minute: 999, playing: true, direction: -1 }, .1, 256, 1000, 100);
+    expect(clock.minute).toBe(1000);
+    expect(clock.wrapSeconds).toBeCloseTo(.1 - 1 / 256);
+    const resumed = advancePlayback(clock, 1, 256, 1000, 100);
+    expect(resumed.direction).toBe(1);
+    expect(resumed.wrapSeconds).toBeUndefined();
+    expect(resumed.minute).toBeGreaterThanOrEqual(100);
+  });
+});

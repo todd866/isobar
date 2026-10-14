@@ -25,8 +25,8 @@ if [[ ! "$MINIMUM_MACOS" =~ '^[0-9]+\.[0-9]+(\.[0-9]+)?$' ]]; then
 fi
 SHORT=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
 BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist)
-if [[ "$SHORT" != "1.11.4" || "$BUILD" != "40" ]]; then
-    echo "build.sh: ERROR — Info.plist version is ${SHORT} (${BUILD}); expected 1.11.4 (40)." >&2
+if [[ "$SHORT" != "1.11.5" || "$BUILD" != "41" ]]; then
+    echo "build.sh: ERROR — Info.plist version is ${SHORT} (${BUILD}); expected 1.11.5 (41)." >&2
     exit 1
 fi
 
@@ -59,8 +59,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
     "${ARCH_FLAGS[@]}" \
     -ISources \
     -DISOBAR_APP \
-    Sources/pure.m Sources/rain.m Sources/rainview.m Sources/aviation.m Sources/forecastview.m Sources/aviationview.m Sources/skyview.m Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Sources/trafficroute.m Sources/notices.m Sources/notacconnection.m Sources/surfview.m Sources/motion.m Sources/rawmovie.m Sources/scrub.m Sources/mapdetail.m Sources/collector.m Sources/archive.m Sources/ownchart.m tools/own-chart.m Sources/daystrip.m Sources/fullscreenwindow.m Sources/playback.m Sources/storereload.m     Sources/mapcamera.m Sources/gpumapview.m Sources/windmapview.m Sources/hazard.m Sources/atmospheremapview.m Sources/fieldrender.m Sources/trainingdata.m Sources/trainingwindow.m Sources/main.m \
-    -framework Cocoa -framework WebKit -framework Security -framework ServiceManagement -framework CoreLocation -framework Vision -framework CoreVideo -framework CoreMedia -framework AVFoundation -framework QuartzCore -framework Metal -framework CoreText -framework Accelerate -lz -lsqlite3 \
+    Sources/pure.m Sources/rain.m Sources/rainview.m Sources/aviation.m Sources/forecastview.m Sources/aviationview.m Sources/skyview.m Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Sources/trafficroute.m Sources/notices.m Sources/notacconnection.m Sources/surfview.m Sources/motion.m Sources/rawmovie.m Sources/scrub.m Sources/mapdetail.m Sources/collector.m Sources/archive.m Sources/ownchart.m tools/own-chart.m Sources/daystrip.m Sources/fullscreenwindow.m Sources/playback.m Sources/storereload.m     Sources/mapcamera.m Sources/terrainmap.m Sources/terrainscene.m Sources/gpumapview.m Sources/windmapview.m Sources/hazard.m Sources/atmospheremapview.m Sources/terrain.m Sources/fieldrender.m Sources/trainingdata.m Sources/trainingwindow.m Sources/starlink.m Sources/starlinkview.m Sources/main.m \
+    -framework Cocoa -framework WebKit -framework Security -framework ServiceManagement -framework CoreLocation -framework Vision -framework CoreVideo -framework CoreMedia -framework AVFoundation -framework QuartzCore -framework ImageIO -framework Metal -framework CoreText -framework Accelerate -lz -lsqlite3 \
     -o "$APP/Contents/MacOS/Isobar"
 install -m 0644 Info.plist "$APP/Contents/Info.plist"
 python3 tools/stamp-native-source.py "$APP/Contents/Info.plist"

@@ -22,9 +22,10 @@ export function createElevationCoverage(): (mosaic: TerrainMosaic) => ElevationA
 /** Same south-first pixel centres as the plate. No extrapolation over missing tiles. */
 export function mosaicElevation(mosaic: TerrainMosaic): ElevationAt {
   const { box, width, height, data } = mosaic;
+  const far=mosaic.far ? mosaicElevation(mosaic.far) : null;
   return (lon, lat) => {
     lon += Math.round(((box.west + box.east) / 2 - lon) / 360) * 360;
-    if (lon < box.west || lon > box.east || lat < box.south || lat > box.north) return null;
+    if (lon < box.west || lon > box.east || lat < box.south || lat > box.north) return far?.(lon,lat) ?? null;
     const x = Math.max(0, Math.min(width - 1, (lon - box.west) / (box.east - box.west) * width - 0.5));
     const y = Math.max(0, Math.min(height - 1, (lat - box.south) / (box.north - box.south) * height - 0.5));
     const x0 = Math.floor(x), y0 = Math.floor(y), tx = x - x0, ty = y - y0;
@@ -36,6 +37,14 @@ export function mosaicElevation(mosaic: TerrainMosaic): ElevationAt {
     const blend = (a: number, b: number, t: number) => t === 0 ? a : t === 1 ? b : a * (1 - t) + b * t;
     const x1 = Math.min(x0 + 1, width - 1), y1 = Math.min(y0 + 1, height - 1);
     const value = blend(blend(at(x0, y0), at(x1, y0), tx), blend(at(x0, y1), at(x1, y1), tx), ty);
-    return Number.isFinite(value) ? value : null;
+    if (!far) return Number.isFinite(value) ? value : null;
+    const u=(lon-box.west)/(box.east-box.west),v=(lat-box.south)/(box.north-box.south);
+    const t=Math.max(0,Math.min(1,Math.min(u,1-u,v,1-v)/.08));
+    // Inside the blend band only: the far mosaic is not sampled where it has no weight.
+    if (Number.isFinite(value) && t >= 1) return value;
+    const distant=far(lon,lat);
+    if(!Number.isFinite(value))return distant;
+    if(distant==null)return value;
+    return distant+(value-distant)*t*t*(3-2*t);
   };
 }

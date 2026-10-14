@@ -9,6 +9,14 @@ NSDictionary * _Nullable MapDetailSample(NSArray<NSDictionary *> * _Nullable row
 void DrawMapDetails(NSArray<NSDictionary *> *records, NSRect bounds);
 NSRect MapDetailsRect(NSUInteger count, NSRect bounds);
 
+// Compact clicked-point card. Numeric missing values remain em dashes.
+@interface MapPointCard : NSView
+@property(nonatomic, copy) NSDictionary *sample;
+@property(nonatomic) BOOL dark;
+@property(nonatomic, copy) void (^onClose)(void);
+@property(nonatomic, readonly) NSButton *closeButton;
+@end
+
 @interface TemperatureForecastView : NSView <NSViewToolTipOwner>
 @property(nonatomic, copy) NSArray<NSDictionary *> *rows;
 @property(nonatomic, strong, nullable) NSDate *now;

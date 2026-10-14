@@ -718,6 +718,28 @@ static BOOL PublishedField(NSString *root, NSString *runID, NSDate *runDate, NSD
     NSString *dataPath = [stem stringByAppendingPathExtension:@"f16"];
     float *values = ReadF16(dataPath, nLon * nLat, error);
     if (!values) return NO;
+    if ([spec.sidecarParam isEqual:@"msl"]) {
+        NSUInteger finite = 0;
+        for (int i = 0; i < nLon * nLat; i++) {
+            float v = values[i];
+            if (isnan(v)) continue;
+            // Physically impossible at sea level (records ~870 and ~1084 hPa;
+            // reduction over Antarctica or Tibet can pass 1100): Pa, zeros or junk.
+            if (!isfinite(v) || v < 800.0f || v > 1150.0f) {
+                free(values);
+                if (error) *error = [NSString stringWithFormat:@"%@ mslp sample %.1f is out of range",
+                    dataPath.lastPathComponent, v];
+                return NO;
+            }
+            finite++;
+        }
+        if (finite == 0) {
+            free(values);
+            if (error) *error = [NSString stringWithFormat:@"%@ mslp has no finite in-range value",
+                dataPath.lastPathComponent];
+            return NO;
+        }
+    }
     *out = values;
     return YES;
 }

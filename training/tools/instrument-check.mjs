@@ -8,7 +8,7 @@ import { launch } from './browser.mjs';
 import { INSTRUMENTS } from '../src/instruments/index.ts';
 const out=resolve(process.argv[2]??'../build/instruments/previews');mkdirSync(out,{recursive:true});
 const url=pathToFileURL(resolve('dist/index.html')).href;
-const helper=process.env.VIEWPORT_HELPER??'';
+const helper=process.env.VIEWPORT_HELPER??`${process.env.HOME}/Projects/.ux-authoring/viewport-fit.mjs`;
 const viewport=existsSync(helper)?await import(pathToFileURL(helper).href):null;
 const browser=await launch();if(!browser)throw Error('Headless Chromium unavailable');
 const reports=[],frames=[],errors=[],network=[];

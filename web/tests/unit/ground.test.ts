@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FRAME_READY, type LoadedChart } from '../../src/lib/chart-store';
 import {
-  formatGround, metresFromModel, orographyMetresAt, orographyVariable, resolveGroundM, sampleFrame, STANDARD_GRAVITY,
+  summitGroundLabel, formatGround, metresFromModel, orographyMetresAt, orographyVariable, resolveGroundM, sampleFrame, STANDARD_GRAVITY,
 } from '../../src/lib/point/ground';
 import type { ChartManifest } from '../../src/lib/manifest';
 
@@ -51,4 +51,11 @@ describe('point ground elevation', () => {
     const missing = { ...chart, state: { z: Uint8Array.of(0) } } as unknown as LoadedChart;
     expect(orographyMetresAt(missing, 99.5, 32.5)).toBeNull();
   });
+});
+
+it('keeps the surveyed summit in the heading and the sampled terrain in its tooltip', () => {
+  expect(summitGroundLabel(8721,8849)).toEqual({text:'8,849 m / 29,032 ft',title:'Surveyed summit · terrain sample 8,721 m / 28,612 ft'});
+  expect(summitGroundLabel(null,8849).title).toContain('Terrain sample unavailable');
+  expect(summitGroundLabel(null,null).text).toBeNull();
+  expect(summitGroundLabel(20,null).text).toBe('20 m / 66 ft');
 });

@@ -61,7 +61,7 @@ describe('slow daemon loop', () => {
     await processOne(api, async () => { shutdown.abort(); return result; }, undefined, shutdown.signal);
     expect(api.reply).not.toHaveBeenCalled(); expect(api.release).toHaveBeenCalledTimes(1);
     expect(screenAgentReply(`isb_agent_${'a'.repeat(43)}`)).toContain('a credential');
-    await processOne(api, async () => ({ ...result, text: 'Read /Users/' + 'example/test' }));
+    await processOne(api, async () => ({ ...result, text: 'Read /Users/private/test' }));
     expect(api.reply).not.toHaveBeenCalled();
   });
 });

@@ -22,8 +22,16 @@ int main(int argc, char **argv) {
   assert(fabs(golden.w-7.322382145)<1e-6 && fabs(golden.temperatureC+0.901663337)<1e-6 && fabs(golden.cloudPct-100.0)<1e-6);
   assert(up.w>0 && above.u==0 && above.w==0);
   ATTeachingContext wave=sea; wave.kind=ATTeachingMountainWave; finite_sample(wave);
-  ATTeachingSample a=at_teaching_sample(wave,wave.lat,wave.lon+.03,1820), b=at_teaching_sample(wave,wave.lat,wave.lon-.03,1820);
-  assert(a.u>5 && a.w*b.w<0);
+  /* Idealised ridge physics: w = U dh/dx at the ground, waves trail into the lee. */
+  double mlon=111320.0*cos(wave.lat*3.14159265358979323846/180.0);
+  ATTeachingSample windward=at_teaching_sample(wave,wave.lat,wave.lon-1200.0/mlon,wave.groundM), lee=at_teaching_sample(wave,wave.lat,wave.lon+1200.0/mlon,wave.groundM);
+  assert(windward.w>2 && lee.w<-2 && windward.u>5);
+  double upstream=0, down=0;
+  for (double x=2000;x<=40000;x+=500) for (double z=1500;z<=4500;z+=1500) {
+    upstream+=fabs(at_teaching_sample(wave,wave.lat,wave.lon-x/mlon,wave.groundM+z).w);
+    down+=fabs(at_teaching_sample(wave,wave.lat,wave.lon+x/mlon,wave.groundM+z).w);
+  }
+  assert(down>2.5*upstream);
   if (argc > 1 && strcmp(argv[1], "--matrix") == 0) {
     const ATTeachingKind kinds[] = {ATTeachingCirculation,ATTeachingSeaBreeze,ATTeachingThunderstorm,ATTeachingMountainWave};
     const double offsets[][2]={{0,0},{.01,.01},{-.02,.015}};

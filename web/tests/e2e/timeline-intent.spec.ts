@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { chartRoutes } from './map-fixture';
 
 async function openPaused(page: Page) {
-  await chartRoutes(page);
+  await chartRoutes(page, false, new Date(Date.now() - 6 * 3600000).toISOString());
   await page.goto('/');
   await expect(page.locator('[data-isobars="true"]')).toBeVisible();
   await expect(page.getByRole('slider', { name: 'Forecast time' })).toBeVisible();

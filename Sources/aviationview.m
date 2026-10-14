@@ -37,14 +37,12 @@ static NSString *AVBadge(NSDictionary *p) {
         stringByReplacingOccurrencesOfString:@"PROB40" withString:@"40%"];
 }
 static NSString *AVTime(NSDate *date, NSTimeZone *zone, BOOL day) {
-    NSDateFormatter *f=[NSDateFormatter new];
-    f.locale=[NSLocale localeWithLocaleIdentifier:@"en_AU_POSIX"];
-    f.timeZone=zone; f.dateFormat=day?@"EEE HH:mm":@"HH:mm";
-    return [f stringFromDate:date];
+    return [AviationDateFormatter(@"en_AU_POSIX", zone, day?@"EEE HH:mm":@"HH:mm") stringFromDate:date];
 }
 static NSString *AVFeet(NSNumber *feet) {
-    NSNumberFormatter *f=[NSNumberFormatter new]; f.numberStyle=NSNumberFormatterDecimalStyle;
-    f.maximumFractionDigits=0; f.locale=[NSLocale localeWithLocaleIdentifier:@"en_AU"];
+    static NSNumberFormatter *f;
+    if (!f) { f=[NSNumberFormatter new]; f.numberStyle=NSNumberFormatterDecimalStyle;
+        f.maximumFractionDigits=0; f.locale=[NSLocale localeWithLocaleIdentifier:@"en_AU"]; }
     return [[f stringFromNumber:feet] stringByAppendingString:@" ft"];
 }
 static void AVText(NSString *text, NSRect rect, CGFloat size, NSColor *colour, BOOL bold, NSTextAlignment align) {
@@ -669,10 +667,7 @@ static NSDictionary *AVBlendScene(NSDictionary *a, NSDictionary *b, double p) {
     NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
     calendar.timeZone = zone;
     NSInteger minute = [calendar component:NSCalendarUnitMinute fromDate:date];
-    NSDateFormatter *fmt = [NSDateFormatter new];
-    fmt.locale = [NSLocale localeWithLocaleIdentifier:@"en_AU"];
-    fmt.timeZone = zone;
-    fmt.dateFormat = minute ? @"EEE h:mm a" : @"EEE h a";
+    NSDateFormatter *fmt = AviationDateFormatter(@"en_AU", zone, minute ? @"EEE h:mm a" : @"EEE h a");
     NSString *text = [[fmt stringFromDate:date] lowercaseString];
     // The weekday stays capitalised: "Wed 8 am".
     if (text.length) text = [[[text substringToIndex:1] uppercaseString] stringByAppendingString:[text substringFromIndex:1]];
@@ -1339,6 +1334,13 @@ static NSDictionary *AVBlendScene(NSDictionary *a, NSDictionary *b, double p) {
     SkySectionView *_sky;
     NSString *_nearestCode;
     BOOL _loading;
+    // The bulletin and instruments change only where a TAF group, the TAF
+    // validity or its coverage starts or ends. `_groupBounds` are those
+    // instants; the key counts how many the playhead has passed.
+    NSArray<NSDate *> *_groupBounds;
+    NSInteger _groupKey;
+    double _bulletinAt;
+    BOOL _bulletinDeferred;
 }
 
 static NSUInteger AVNoticeCountUncached(NSDictionary *product, BOOL sigmet, NSString *airport, NSDate *date);
@@ -1509,17 +1511,50 @@ static NSUInteger AVNoticeCountUncached(NSDictionary *product, BOOL sigmet, NSSt
 - (void)openNotices:(NSButton *)sender { if (self.onNotices) self.onNotices(sender.tag); }
 - (void)openSource:(id)sender { if (self.onSource) self.onSource(sender); }
 - (void)openAtmosphere:(id)sender { if (self.onAtmosphere) self.onAtmosphere(sender); }
+- (NSInteger)groupKeyAtDate:(NSDate *)date {
+    if (!_groupBounds) {
+        NSMutableSet<NSDate *> *bounds=[NSMutableSet set];
+        for (NSDictionary *period in _forecast.periods) for (NSString *key in @[@"start",@"end"])
+            if ([period[key] isKindOfClass:NSDate.class]) [bounds addObject:period[key]];
+        NSDictionary *taf=[self.aviation[@"taf"] isKindOfClass:NSDictionary.class]?self.aviation[@"taf"]:@{};
+        for (NSString *key in @[@"valid_from",@"valid_to"]) { NSDate *d=FlyDate(taf[key]); if (d) [bounds addObject:d]; }
+        _groupBounds=[bounds.allObjects sortedArrayUsingSelector:@selector(compare:)];
+    }
+    if (![date isKindOfClass:NSDate.class]) return -1;
+    NSInteger passed=0;
+    for (NSDate *bound in _groupBounds) if ([date compare:bound]!=NSOrderedAscending) passed++;
+    return passed;
+}
+- (void)updateBulletin {
+    _bulletinDeferred=NO;
+    if (_loading || !self.aerodrome) return;
+    _bulletinAt=NSProcessInfo.processInfo.systemUptime;
+    _groupKey=[self groupKeyAtDate:_playhead];
+    NSString *code=[self.aerodrome[@"code"] isKindOfClass:NSString.class]?[self.aerodrome[@"code"] uppercaseString]:@"";
+    [self applyBulletin:AviationBulletin(self.aviation,code,_playhead,self.placeZone?:NSTimeZone.localTimeZone)];
+    [self refreshInstruments];
+}
 - (void)setPlayhead:(NSDate *)date {
     if (_playhead==date || [_playhead isEqualToDate:date]) return;
     _playhead=date;
     _sky.time=date;
     if (_loading || !self.aerodrome) return;
-    NSString *code=[self.aerodrome[@"code"] isKindOfClass:NSString.class]?[self.aerodrome[@"code"] uppercaseString]:@"";
-    [self applyBulletin:AviationBulletin(self.aviation,code,_playhead,self.placeZone?:NSTimeZone.localTimeZone)];
-    [self refreshInstruments];
+    // Play moves the playhead every frame; the text changes only between
+    // TAF groups, and never more than five times a second.
+    if ([self groupKeyAtDate:date]==_groupKey || _bulletinDeferred) return;
+    double wait=_bulletinAt+0.2-NSProcessInfo.processInfo.systemUptime;
+    if (wait<=0) { [self updateBulletin]; return; }
+    _bulletinDeferred=YES;
+    __weak AviationLensView *weak=self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(wait*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+        AviationLensView *view=weak;
+        if (view && view->_bulletinDeferred) [view updateBulletin];
+    });
 }
 - (void)reload {
     _loading=YES;
+    _groupBounds=nil;
+    _bulletinDeferred=NO;
     NSString *code=[self.aerodrome[@"code"] isKindOfClass:NSString.class]?[self.aerodrome[@"code"] uppercaseString]:@"";
     NSString *title=FlyIdentityTitle(self.aerodrome);
     NSString *distance=FlyDistancePhrase(self.place,self.aerodrome);
@@ -1579,6 +1614,9 @@ static NSUInteger AVNoticeCountUncached(NSDictionary *product, BOOL sigmet, NSSt
     _sky.time=self.playhead?:clock;
     [self applyBulletin:bulletin];
     [self refreshInstruments];
+    _groupBounds=nil;
+    _groupKey=[self groupKeyAtDate:self.playhead];
+    _bulletinAt=NSProcessInfo.processInfo.systemUptime;
     NSUInteger notamCount=AVNoticeCount(self.notams,NO,code,clock), sigmetCount=AVNoticeCount(self.sigmets,YES,code,clock);
     _notamButton.title=[self.notams[@"notices"] isKindOfClass:NSArray.class]?[NSString stringWithFormat:@"▣ %lu",(unsigned long)notamCount]:@"▣ —";
     _sigmetButton.title=[self.sigmets[@"features"] isKindOfClass:NSArray.class]?[NSString stringWithFormat:@"⚠ %lu",(unsigned long)sigmetCount]:@"⚠ —";

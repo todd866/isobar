@@ -101,6 +101,177 @@ static void Drag(GPUMapView *map, double dx, double dy) {
 
 static NSArray<NSString *> *Lenses(void) { return @[@"Rain", @"Wind", @"Temp", @"Kite", @"Surf", @"Fly", @"Pressure"]; }
 
+static void CheckPointSamples(GPUMapView *map, OwnRun *run) {
+    NSDictionary *sample = map.pointSample;
+    OwnRunGeo g = run.geo;
+    NSInteger x = llround(([sample[@"longitude"] doubleValue]-g.west)/g.step);
+    NSInteger y = llround((g.north-[sample[@"latitude"] doubleValue])/g.step);
+    if (g.wrapsLongitude) x = (x%g.nLon+g.nLon)%g.nLon;
+    NSInteger index = y*g.nLon+x;
+    NSArray *keys = @[@"temperature",@"direction",@"wind",@"pressure"];
+    OwnRunField fields[] = {OwnRunFieldT2M,OwnRunFieldWindDirection,OwnRunFieldWindSpeed,OwnRunFieldMSLP};
+    EXPECT(sample != nil, "click did not open point card");
+    for (NSUInteger i=0;i<keys.count;i++) {
+        double direct = [run valueAtPointIndex:index field:fields[i] fractionalHour:map.fractionalStep];
+        id shown = sample[keys[i]];
+        EXPECT(isfinite(direct) ? ([shown isKindOfClass:NSNumber.class] && fabs([shown doubleValue]-direct)<1e-8) : shown==NSNull.null,
+            "%s differs from direct grid sample", [keys[i] UTF8String]);
+    }
+}
+
+static void ArrowJourney(JourneyController *c) {
+    journey = @"popover shared-player arrows";
+    GPUMapView *map = Map(c);
+    NSArray<NSDate *> *times = [c valueForKey:@"sequenceTimes"];
+    for (NSNumber *playing in @[@YES,@NO]) {
+        [c startLivePlaybackFromDate:times[3]];
+        if (!playing.boolValue) [c pauseLivePlayback];
+        for (NSNumber *delta in @[@1,@-1]) {
+            NSInteger wanted = delta.integerValue>0 ? 4 : 3;
+            [c stepPopoverPair:delta.integerValue];
+            [map displayAtTime:[map.timeline clockNow]];
+            EXPECT(fabs([map.timeline.playhead timeIntervalSinceDate:times[wanted]])<.01,
+                "arrow %+ld did not move shared playhead while %s",(long)delta.integerValue,playing.boolValue?"playing":"paused");
+            EXPECT(fabs(map.fractionalStep-[c liveModelIndexForDate:times[wanted]])<1e-6,
+                "arrow did not update GPU playhead");
+            EXPECT(map.timeline.playing==playing.boolValue, "arrow changed prior playback state");
+        }
+    }
+    [c startLivePlaybackFromDate:times[3]];
+    [c previewPopoverMovieFraction:[c motionFractionForDate:times[7]]];
+    [c stepPopoverPair:1];
+    EXPECT(fabs([map.timeline.playhead timeIntervalSinceDate:times[8]])<.01 && map.timeline.playing,
+        "hover to arrow did not seek from inspected time and restore playback");
+    [c previewPopoverMovieFraction:NAN];
+    EXPECT(fabs([[c selectedForecastDate] timeIntervalSinceDate:times[8]])<.01,
+        "leaving hover restored stale time after arrow");
+    [c startLivePlaybackFromDate:times.lastObject]; [c pauseLivePlayback];
+    [map.timeline setValue:nil forKey:@"baseImage"];
+    [c stepPopoverPair:1];
+    EXPECT(fabs([map.timeline.playhead timeIntervalSinceDate:times.lastObject])<.01,"right arrow passed last frame: player %s expected %s selected %s", map.timeline.playhead.description.UTF8String,times.lastObject.description.UTF8String,[c selectedForecastDate].description.UTF8String);
+    [c startLivePlaybackFromDate:times.firstObject]; [c pauseLivePlayback];
+    [c stepPopoverPair:-1];
+    EXPECT(fabs([map.timeline.playhead timeIntervalSinceDate:times.firstObject])<.01,"left arrow passed first frame");
+    [c toggleChartSource];
+    EXPECT(![c livePlaybackAvailable],"fixture Bureau fallback unavailable");
+    [c stepPopoverPair:1];
+    ChartPair pair; [[c valueForKey:@"pair"] getValue:&pair size:sizeof(pair)];
+    NSArray *bureauTimes = [c valueForKey:@"sequenceTimes"];
+    EXPECT(pair.valid && [[c selectedForecastDate] isEqual:bureauTimes[pair.left]],"Bureau pair stepping changed");
+    [c toggleChartSource];
+    [c startLivePlaybackFromDate:[c currentPlaybackNow]];
+}
+
+static void SavePointTrafficShot(GPUMapView *map, NSString *path) {
+    CGImageRef shot = [map copySnapshot];
+    EXPECT(shot != NULL, "point/traffic snapshot unavailable");
+    if (!shot) return;
+    NSImageView *picture = [NSImageView imageViewWithImage:[[NSImage alloc] initWithCGImage:shot size:map.bounds.size]];
+    CGImageRelease(shot);
+    picture.frame = map.bounds;
+    picture.imageScaling = NSImageScaleAxesIndependently;
+    // Metal does not cache. Put its snapshot below the real AppKit overlays,
+    // preserving their actual stacking order in the viewport capture.
+    [map addSubview:picture positioned:NSWindowBelow relativeTo:map.subviews.firstObject];
+    @try {
+        NSBitmapImageRep *rep = [map bitmapImageRepForCachingDisplayInRect:map.bounds];
+        [map cacheDisplayInRect:map.bounds toBitmapImageRep:rep];
+        EXPECT([[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:path atomically:YES],
+            "could not save %s",path.UTF8String);
+    } @finally { [picture removeFromSuperview]; }
+}
+
+static void PointCloseTrafficJourney(JourneyController *c, NSString *surface, NSString *dir) {
+    BOOL expanded = [surface isEqual:@"expanded"];
+    NSView *(^root)(void) = ^{ return expanded ? c.chartWindow.contentView : c.popover.contentViewController.view; };
+    EXPECT(ClickLens(root(), @"Fly"), "Fly lens unavailable for point close journey");
+    GPUMapView *map = Map(c);
+    EXPECT(map.trafficEnabled, "Fly traffic overlay is disabled");
+    NSRect originalFrame = expanded ? c.chartWindow.frame : map.frame;
+    for (NSString *theme in @[@"light",@"dark"]) for (NSString *operation in @[@"resize",@"pan"]) {
+        map.appearance = [NSAppearance appearanceNamed:[theme isEqual:@"dark"] ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua];
+        [map recenter];
+        [map selectPointLatitude:-33.9 longitude:151.2];
+        if ([operation isEqual:@"resize"]) {
+            NSRect frame = originalFrame; frame.size.width -= 80; frame.size.height -= 40;
+            if (expanded) { [c.chartWindow setFrame:frame display:NO]; [c layoutChartWindow]; }
+            else [map setFrame:frame];
+        } else Drag(map,30,20);
+        [map displayAtTime:[map.timeline clockNow]];
+        MapPointCard *card = (MapPointCard *)Find(map, ^BOOL(NSView *v) { return [v isKindOfClass:MapPointCard.class]; });
+        NSButton *close = card.closeButton;
+        NSPoint at = [close convertPoint:NSMakePoint(NSMidX(close.bounds),NSMidY(close.bounds)) toView:map.superview];
+        NSView *hit = [map hitTest:at];
+        EXPECT(card && NSContainsRect(map.bounds,card.frame), "point card clipped after %s",operation.UTF8String);
+        EXPECT(close && hit == close, "%s %s: traffic intercepted point close (%s)",theme.UTF8String,operation.UTF8String,NSStringFromClass(hit.class).UTF8String);
+        NSString *name = [NSString stringWithFormat:@"%@-traffic-%@-%@",surface,operation,theme];
+        SavePointTrafficShot(map,[dir stringByAppendingPathComponent:[name stringByAppendingString:@"-before-close.png"]]);
+        if (close && hit == close) [(NSButton *)hit performClick:nil];
+        EXPECT(!map.pointSample, "%s: hit-tested close did not remove point",name.UTF8String);
+        SavePointTrafficShot(map,[dir stringByAppendingPathComponent:[name stringByAppendingString:@"-after-close.png"]]);
+        [map closePointDetail];
+        if (expanded) { [c.chartWindow setFrame:originalFrame display:NO]; [c layoutChartWindow]; }
+        else map.frame = originalFrame;
+    }
+    map.appearance = nil;
+    EXPECT(ClickLens(root(), @"Pressure"), "could not restore Pressure after point close journey");
+    [Map(c) recenter];
+}
+
+static void PointJourney(JourneyController *c, NSString *surface) {
+    journey = [surface stringByAppendingString:@" J10 point card"];
+    GPUMapView *map = Map(c);
+    OwnRun *run = [c valueForKey:@"ownRun"];
+    NSDate *before = [c selectedForecastDate];
+    [c startLivePlaybackFromDate:[run timeAtIndex:3]];
+    [map displayAtTime:[map.timeline clockNow]];
+    NSDate *clicked = map.timeline.playhead;
+    NSPoint at = NSMakePoint(NSMidX(map.placeMarkerFrame),NSMidY(map.placeMarkerFrame));
+    [map pointerDown:at]; [map pointerUp:at];
+    EXPECT(map.timeline.playing && fabs([map.timeline.playhead timeIntervalSinceDate:clicked])<1,
+        "point selection paused or reset playback");
+    CheckPointSamples(map,run);
+    NSDictionary *first = map.pointSample;
+    [c advanceLiveTicks:30]; [map displayAtTime:[map.timeline clockNow]];
+    EXPECT([map.pointSample[@"step"] doubleValue]>[first[@"step"] doubleValue], "point card did not follow playback: before %.6f after %.6f live %s playing %d scrub %d", [first[@"step"] doubleValue],[map.pointSample[@"step"] doubleValue],map.timeline.playhead.description.UTF8String,map.timeline.playing,[[c valueForKey:@"scrubHasFraction"] boolValue]);
+    CheckPointSamples(map,run);
+    NSPoint next = NSMakePoint(at.x+20,at.y+15);
+    [map pointerDown:next]; [map pointerUp:next];
+    EXPECT(fabs([map.pointSample[@"longitude"] doubleValue]-[first[@"longitude"] doubleValue])>.01,
+        "second click did not move point");
+    CheckPointSamples(map,run);
+    NSString *dir = NSProcessInfo.processInfo.environment[@"ISOBAR_JOURNEY_SHOTS"] ?: @"build/qa/journeys";
+    [NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:NULL];
+    for (NSString *theme in @[@"light",@"dark"]) {
+        map.appearance = [NSAppearance appearanceNamed:[theme isEqual:@"dark"]?NSAppearanceNameDarkAqua:NSAppearanceNameAqua];
+        CGImageRef shot = [map copySnapshot];
+        EXPECT(shot != NULL, "point snapshot unavailable");
+        if (shot) {
+            NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithCGImage:shot];
+            [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}]
+                writeToFile:[dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@-point-%@.png",surface,theme]] atomically:YES];
+            CGImageRelease(shot);
+        }
+        MapPointCard *card = (MapPointCard *)Find(map, ^BOOL(NSView *v) { return [v isKindOfClass:MapPointCard.class]; });
+        EXPECT(card && NSContainsRect(map.bounds,card.frame), "point card does not fit viewport");
+    }
+    map.appearance = nil;
+    if ([surface isEqual:@"popover"]) [c escapePopover]; else [c escapeFullscreen];
+    EXPECT(!map.pointSample && map.superview, "Escape did not close only the point card");
+    [map pointerDown:at]; [map pointerUp:at];
+    MapPointCard *card = (MapPointCard *)Find(map, ^BOOL(NSView *v) { return [v isKindOfClass:MapPointCard.class]; });
+    [card.closeButton performClick:nil];
+    EXPECT(!map.pointSample, "close button did not remove point");
+    PointCloseTrafficJourney(c,surface,dir);
+    map = Map(c);
+    // Outside the published coverage is explicitly unavailable.
+    [map selectPointLatitude:89 longitude:0];
+    EXPECT(map.pointSample[@"temperature"] == NSNull.null, "outside coverage invented a temperature");
+    [map closePointDetail];
+    [c inspectPopoverMovieFraction:[c motionFractionForDate:before]];
+    printf("%s point journey complete (%d failures so far)\n",surface.UTF8String,failures);
+}
+
 static void Journeys(JourneyController *c, NSView *(^root)(void), NSString *surface) {
     GPUMapView *map = Map(c);
     if (!map) { fprintf(stderr, "SKIP %s journeys: no Metal map\n", surface.UTF8String); return; }
@@ -110,6 +281,10 @@ static void Journeys(JourneyController *c, NSView *(^root)(void), NSString *surf
     NSDate *opened = [c selectedForecastDate];
     EXPECT(opened && fabs([opened timeIntervalSinceDate:[c valueForKey:@"chartNow"] ?: NSDate.date]) < 3 * 3600,
         "open is not at now");
+
+    if ([surface isEqual:@"popover"]) ArrowJourney(c);
+    PointJourney(c,surface);
+    if (getenv("ISOBAR_POINT_JOURNEY_ONLY") || getenv("ISOBAR_NATIVE_SYNC_ONLY")) return;
 
     journey = [surface stringByAppendingString:@" J2 look closer, change lens"];
     ZoomInOnPlace(map, 6);
@@ -224,21 +399,33 @@ static void Journeys(JourneyController *c, NSView *(^root)(void), NSString *surf
     map.camera=tiltStart;
     NSDate *vectorTime = [c selectedForecastDate];
     IsobarCamera vectorCamera = map.camera;
-    NSButton *barbs = (NSButton *)Find(root(), ^BOOL(NSView *v) {
-        return [v isKindOfClass:NSButton.class] && [v.accessibilityIdentifier hasSuffix:@".barbs"] && !v.hiddenOrHasHiddenAncestor;
-    });
-    EXPECT(barbs && barbs.enabled, "wind toggle is available on the GPU map");
-    // Default flow is independent of the optional meteorological barbs.
-    if (barbs.state == NSControlStateValueOn) [barbs performClick:nil];
+    // Surface flow belongs to the Wind and Kite lenses; Pressure neither
+    // advances nor draws trails (their CPU cost was 40-300 ms a frame).
     WindMapView *surfaceWind=[map valueForKey:@"windView"];
-    EXPECT(!surfaceWind.hidden&&!surfaceWind.barbs,"default wind flow disappears when barbs are off");
+    EXPECT(surfaceWind.hidden&&!map.windFlow,"Pressure lens keeps wind trails hidden");
+    double pressureWindTime=surfaceWind.time;
+    for(int frame=0;frame<10;frame++) [map advanceDisplay:1.0/60.0];
+    EXPECT(surfaceWind.time==pressureWindTime,"hidden wind trails still advance on Pressure");
+    EXPECT(ClickLens(root(), @"Wind"), "no Wind lens for surface flow");
+    map = Map(c);
+    vectorTime = [c selectedForecastDate];
+    surfaceWind=[map valueForKey:@"windView"];
+    EXPECT(!surfaceWind.hidden&&map.windFlow&&!surfaceWind.barbs,"Wind lens shows surface flow without barbs");
     for(int frame=0;frame<100;frame++) { @autoreleasepool {
         [map advanceDisplay:1.0/60.0];
         CGImageRef shot=[map copySnapshot];if(shot)CGImageRelease(shot);
     }}
-    EXPECT(surfaceWind.drawnCount>10,"default rendered wind is missing without barbs");
+    EXPECT(surfaceWind.drawnCount>10,"Wind lens rendered no trails");
     EXPECT(surfaceWind.time>1,"map display link did not advance wind independently of forecast");
     EXPECT(fabs([[c selectedForecastDate] timeIntervalSinceDate:vectorTime])<1,"wind animation changed held forecast time");
+    EXPECT(ClickLens(root(), @"Pressure"), "could not return to Pressure after the wind flow check");
+    map = Map(c);
+    map.camera = vectorCamera;
+    vectorTime = [c selectedForecastDate];
+    NSButton *barbs = (NSButton *)Find(root(), ^BOOL(NSView *v) {
+        return [v isKindOfClass:NSButton.class] && [v.accessibilityIdentifier hasSuffix:@".barbs"] && !v.hiddenOrHasHiddenAncestor;
+    });
+    EXPECT(barbs && barbs.enabled, "wind toggle is available on the GPU map");
     if (barbs.state != NSControlStateValueOn) [barbs performClick:nil];
     map = Map(c);
     // Warmup finishes the mode-transition animation. Restore the known
@@ -257,7 +444,7 @@ static void Journeys(JourneyController *c, NSView *(^root)(void), NSString *surf
         "tilting wind must dolly closer while retaining the visible geographic anchor");
     EXPECT(fabs([[c selectedForecastDate] timeIntervalSinceDate:vectorTime])<1, "tilting wind changed forecast time");
     [map waitForUploads];
-    NSString *dir = @"build/qa/journeys";
+    NSString *dir = NSProcessInfo.processInfo.environment[@"ISOBAR_JOURNEY_SHOTS"] ?: @"build/qa/journeys";
     [NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:NULL];
     OwnRun *windRun = [map valueForKey:@"run"];
     NSString *coverage = windRun.geo.wrapsLongitude ? @"global" : @"regional";
@@ -291,6 +478,33 @@ static void Journeys(JourneyController *c, NSView *(^root)(void), NSString *surf
         "two-finger scroll in 2D should zoom out without tilting");
 }
 
+static void AttributionJourney(JourneyController *c) {
+    journey = @"native data attribution";
+    NSString *credit = @"ECMWF open data, CC BY 4.0";
+    for (NSView *root in @[c.popover.contentViewController.view,c.chartWindow.contentView]) {
+        NSView *issued = Find(root, ^BOOL(NSView *v) { return [v.accessibilityIdentifier hasSuffix:@".issued"]; });
+        EXPECT([issued.toolTip containsString:credit], "run-age tooltip lacks ECMWF attribution");
+    }
+    [c openSettings:nil]; // Window ordering and activation are blocked in main.
+    NSWindow *settings = [c valueForKey:@"settingsWindow"];
+    NSTextField *footer = (NSTextField *)Find(settings.contentView, ^BOOL(NSView *v) {
+        return [v.accessibilityIdentifier isEqual:@"settings.attribution"];
+    });
+    EXPECT([footer.stringValue isEqual:credit] && NSContainsRect(settings.contentView.bounds,footer.frame),
+        "Settings attribution is missing or outside its viewport");
+    NSString *dir = NSProcessInfo.processInfo.environment[@"ISOBAR_JOURNEY_SHOTS"] ?: @"build/qa/journeys";
+    for (NSString *theme in @[@"light",@"dark"]) {
+        settings.contentView.appearance = [NSAppearance appearanceNamed:[theme isEqual:@"dark"]?NSAppearanceNameDarkAqua:NSAppearanceNameAqua];
+        NSView *root = settings.contentView;
+        NSBitmapImageRep *rep = [root bitmapImageRepForCachingDisplayInRect:root.bounds];
+        [root cacheDisplayInRect:root.bounds toBitmapImageRep:rep];
+        EXPECT(rep != nil, "Settings offscreen capture missing");
+        [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}]
+            writeToFile:[dir stringByAppendingPathComponent:[NSString stringWithFormat:@"settings-%@.png",theme]] atomically:YES];
+    }
+    [settings close];
+}
+
 int main(int argc, const char **argv) {
     @autoreleasepool {
         if (argc < 2) { fprintf(stderr, "usage: check-journeys STORE\n"); return 64; }
@@ -312,6 +526,7 @@ int main(int argc, const char **argv) {
         [c presentChartWindowInFrame:NSMakeRect(-30000, -30000, 1512, 982)];
         Pump(.3);
         Journeys(c, ^NSView *{ return c.chartWindow.contentView; }, @"expanded");
+        AttributionJourney(c);
         [c closeChartWindow];
         [c stopPopoverPlayback];
         [Map(c) stopRendering];

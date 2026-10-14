@@ -49,17 +49,14 @@ for (const theme of ['light', 'dark'] as const) test(`one-tap report, cancel and
   const button = page.getByRole('button', { name: 'Email me a detailed report', exact: true });
   await expect(button).toBeVisible(); await expect(page.locator('[data-dig-deeper]')).toHaveCount(0);
   expect(f.calls()).toBe(0);
-  const helper = process.env.ISOBAR_VIEWPORT_HELPER;
-  if (helper) {
-    const { assertViewport } = await import(pathToFileURL(helper).href);
-    mkdirSync(SHOTS, { recursive: true });
-    for (const [name, viewport] of Object.entries({ laptop: { width: 1280, height: 720 }, phone: { width: 390, height: 844 }, landscape: { width: 844, height: 390 } })) {
-      await page.setViewportSize(viewport);
-      await expect(button).toBeInViewport();
-      await assertViewport(page, { primary: [{ selector: '[data-chat-panel]', minWidth: 280, minHeight: 120 }], controls: [
-        { selector: '[data-email-report]', minWidth: 100, minHeight: 36 }, { selector: '[aria-label="Close chat"]', minWidth: 40, minHeight: 40 },
-      ], screenshotPath: path.join(SHOTS, `${name}-${theme}.png`) });
-    }
+  const { assertViewport } = await import(pathToFileURL(`${process.env.HOME}/Projects/.ux-authoring/viewport-fit.mjs`).href);
+  mkdirSync(SHOTS, { recursive: true });
+  for (const [name, viewport] of Object.entries({ laptop: { width: 1280, height: 720 }, phone: { width: 390, height: 844 }, landscape: { width: 844, height: 390 } })) {
+    await page.setViewportSize(viewport);
+    await expect(button).toBeInViewport();
+    await assertViewport(page, { primary: [{ selector: '[data-chat-panel]', minWidth: 280, minHeight: 120 }], controls: [
+      { selector: '[data-email-report]', minWidth: 100, minHeight: 36 }, { selector: '[aria-label="Close chat"]', minWidth: 40, minHeight: 40 },
+    ], screenshotPath: path.join(SHOTS, `${name}-${theme}.png`) });
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => {

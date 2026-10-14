@@ -1,3 +1,5 @@
+import { MESH_MAX_HALF_HEIGHT_DEG } from './terrain/relief-scale';
+import { createTerrainLineProjector, terrainCanOcclude, type TerrainLineProjector } from './terrain/line-occlusion';
 import {pressureLabelPoint} from './pressure-label';
 import { visibleTerrainBounds, type TiltCamera } from './tilt-camera';
 import { mapProject, mapUnproject } from './lambert';
@@ -739,6 +741,7 @@ function strokeBorders(
   lambert: Lambert,
   camera: Camera,
   inkSet: ChartInk,
+  terrainLine?: TerrainLineProjector,
 ) {
   const view = borderWindow(lambert, camera);
   const paint = (rings: Borders['country'], lineWidth: number, alpha: number, dash: number[]) => {
@@ -749,7 +752,8 @@ function strokeBorders(
     ctx.setLineDash(dash);
     for (const ring of view ? borderRingsInView(rings, view) : []) {
       if (!borderBoxHits(borderRingBox(ring), view!)) continue;
-      for (const path of projectedStrokePaths(lambert, camera, width, height, ring.lon, ring.lat, false))
+      if (terrainLine) strokeChain(ctx, terrainLine(ring.lon, ring.lat, false), false, [], width, height);
+      else for (const path of projectedStrokePaths(lambert, camera, width, height, ring.lon, ring.lat, false))
         strokeChain(ctx, path.points, false, [], width, height);
     }
     ctx.restore();
@@ -884,7 +888,13 @@ export function drawOverlay(
     }
   }
   const graticuleLabels = graticule ? drawGraticule(ctx, width, height, lambert, camera, inkSet) : [];
-  if (borders) strokeBorders(ctx, borders, width, height, lambert, camera, inkSet);
+  const tilt = (camera as Camera & {tiltCamera?: TiltCamera}).tiltCamera;
+  const visibleBounds = elevationAt && tilt && tilt.geometry.curvature > .05 && camera.halfHeight < MESH_MAX_HALF_HEIGHT_DEG ? surfaceStrokeBounds(camera, width, height, 4) : null;
+  const terrainProject = elevationAt && visibleBounds && terrainCanOcclude(camera, elevationAt, visibleBounds, tilt?.reliefScale ?? 1)
+    ? createTerrainLineProjector(lambert, camera, elevationAt, width, height, visibleBounds) : null;
+  const terrainLine: TerrainLineProjector | undefined = terrainProject ? (lon, lat, closed) => terrainProject(lon, lat, closed)
+    .map(p => p && ({x: (p.x + 1) * width / 2, y: (1 - p.y) * height / 2})) : undefined;
+  if (borders) strokeBorders(ctx, borders, width, height, lambert, camera, inkSet, terrainLine);
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 
@@ -1022,6 +1032,7 @@ export function drawOverlay(
   ctx.lineWidth = 0.85;
   for (const ring of coastRings) {
     if (!ringInView(lambert, camera, ring)) continue;
+    if (terrainLine) { strokeChain(ctx, terrainLine(ring.lon, ring.lat, true), false, [], width, height); continue; }
     for (const path of projectedStrokePaths(lambert, camera, width, height, ring.lon, ring.lat, true)) {
       // A coarse world coastline must not zigzag across a finer DEM shoreline.
       // Keep its segments only where the close terrain mosaic has no coverage.

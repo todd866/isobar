@@ -438,13 +438,17 @@ function installFrameWindow(chart: LoadedChart, options: LoadOptions,
   chart.prepare = (minute, names) => {
     const first = bracket(minute);
     const fields = [...new Set(['mslp', ...names])].filter((name) => !!manifest.variables[name]);
-    const nextSignature = `${first.join(',')}:${fields.join(',')}`;
+    // At 256 min/s the last two pairs give several seconds to prepare the
+    // return. Pin just its blend alongside the active window, never a whole run.
+    const returning = first.length && first[first.length - 1] >= manifest.forecastHours.length - 3
+      ? bracket(nowMinuteOf(manifest, options.nowMs ?? Date.now())) : [];
+    const nextSignature = `${first.join(',')}:${returning.join(',')}:${fields.join(',')}`;
     if (nextSignature === signature) return;
     signature = nextSignature;
-    current = new Set(first.flatMap((index) => fields.map((name) => key([name, index]))));
+    current = new Set([...first, ...returning].flatMap((index) => fields.map((name) => key([name, index]))));
     const nearby = first.length ? [first[first.length - 1] + 1, first[0] - 1, first[first.length - 1] + 2]
       .filter((index) => index >= 0 && index < manifest.forecastHours.length) : [];
-    plan = [...first, ...nearby].flatMap((index) => fields.map((name): Entry => [name, index]));
+    plan = [...new Set([...first, ...returning, ...nearby])].flatMap((index) => fields.map((name): Entry => [name, index]));
     for (const entry of [...plan].reverse()) touched.set(key(entry), ++serial);
     rebuild(); trim(); pump();
   };

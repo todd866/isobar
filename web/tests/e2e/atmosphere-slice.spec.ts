@@ -17,18 +17,33 @@ test('terrain and wind slice retains camera/time through lenses, orbit and retur
  await toggle.click();await expect(stage).toHaveAttribute('data-slice','ready',{timeout:45000});
  expect((await state(page)).camera).toEqual(before.camera);expect((await state(page)).time).toBe(before.time);
  const slice=(await state(page)).slice;
- await expect.poll(async()=>Number(await page.locator('[data-atmosphere-layer]').getAttribute('data-flows')),{timeout:30000}).toBeGreaterThan(3);
+ // 1953 has no pressure-level profile: the mountain wind stays missing, never stretched from the surface.
+ await expect(page.locator('[data-atmosphere-layer]')).toHaveAttribute('data-wind','missing',{timeout:30000});
+ expect(Number(await page.locator('[data-atmosphere-layer]').getAttribute('data-path-count'))).toBe(0);
  await page.screenshot({path:info.outputPath('slice-laptop.png')});
  const plate=await stage.locator('[data-chart-layer=webgl]').screenshot();
  const pixels=await sharp(plate).removeAlpha().raw().toBuffer();let rock=0,sky=0;
  for(let i=0;i<pixels.length;i+=3){const r=pixels[i],g=pixels[i+1],b=pixels[i+2];if(r>85&&r<140&&g>70&&g<130&&b>50&&b<105)rock++;if(b>180&&b>r+8&&g>170)sky++;}
  expect(rock).toBeGreaterThan(500);expect(sky).toBeGreaterThan(10000);
  await page.locator('[data-lens=wind]').first().click();expect((await state(page)).slice).toEqual(slice);expect((await state(page)).camera).toEqual(before.camera);
- await stage.locator('canvas[tabindex="0"]').focus();await page.keyboard.down('ArrowRight');await page.waitForTimeout(400);await page.keyboard.up('ArrowRight');
+ await stage.locator('canvas[tabindex="0"]').focus();await page.keyboard.down('ArrowRight');
+ try { await expect.poll(async()=>(await state(page)).camera.bearingRadians,{timeout:15000}).toBeGreaterThan(.05); } finally { await page.keyboard.up('ArrowRight'); }
+ await expect.poll(async()=>{const s=await state(page);return Math.abs(s.slice.bearingRadians-s.camera.bearingRadians);}).toBeLessThan(1e-6);
  const rotated=(await state(page));
  expect(rotated.slice.bearingRadians).toBeCloseTo(rotated.camera.bearingRadians,6);
  expect(rotated.slice.lat).toBeCloseTo(slice.lat,8);expect(rotated.slice.lon).toBeCloseTo(slice.lon,8);
  expect(rotated.camera.bearingRadians).toBeGreaterThan(.05);
+ // A retained orbit at pitch zero must not collapse the perspective slice.
+ expect(await stage.evaluate((e:any)=>e.chartApi.tilt())).toBeGreaterThan(0);
+ await page.keyboard.down('ArrowDown');
+ try { await expect.poll(()=>stage.evaluate((e:any)=>e.chartApi.tilt())).toBe(0); } finally { await page.keyboard.up('ArrowDown'); }
+ expect((await state(page)).slice).not.toBeNull();
+ const range=await stage.evaluate(async(e:any)=>{const p=await e.chartApi.readPlate();let lo=255,hi=0;for(let y=Math.floor(p.height*.35);y<p.height*.8;y+=4)for(let x=Math.floor(p.width*.25);x<p.width*.75;x+=4){const i=(y*p.width+x)*4;lo=Math.min(lo,p.data[i]);hi=Math.max(hi,p.data[i]);}return hi-lo;});
+ expect(range,'overhead plate retains terrain and geographic detail').toBeGreaterThan(25);
+ await page.keyboard.down('ArrowUp');
+ try { await expect.poll(()=>stage.evaluate((e:any)=>e.chartApi.tilt())).toBeGreaterThan(.4); } finally { await page.keyboard.up('ArrowUp'); }
+ await expect(stage).toHaveAttribute('data-slice','ready');
+ expect((await state(page)).slice).not.toBeNull();
  const orbited=await state(page);await page.screenshot({path:info.outputPath('slice-orbit.png')});
  await toggle.click();await expect(stage).toHaveAttribute('data-slice','off');expect((await state(page)).camera).toEqual(orbited.camera);expect((await state(page)).time).toBe(before.time);
  await page.getByRole('button',{name:'2D map',exact:true}).click();await expect(toggle).toHaveCount(0);expect((await state(page)).slice).toBeNull();expect(errors).toEqual([]);

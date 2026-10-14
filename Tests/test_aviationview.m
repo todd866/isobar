@@ -955,10 +955,21 @@ int main(void) { @autoreleasepool {
             fabs(ControlBaseline(lens,notams)-ControlBaseline(lens,atmosphere))<1,
             @"NOTAMs, SIGMETs and Atmosphere share a baseline");
         Check(LineHighlighted(lens.bulletin,@"FM261505") && !LineHighlighted(lens.bulletin,@"9999 SCT030"), @"the text highlight follows the playhead");
+        // Within a TAF group the playhead leaves the text alone; crossing a
+        // group updates it, at most five times a second.
+        NSAttributedString *beforeMinute=[lens.bulletin.attributedString copy];
+        lens.playhead=UTC(@"2026-09-26T15:06:00Z");
+        Check([lens.bulletin.attributedString isEqualToAttributedString:beforeMinute], @"a playhead move inside a TAF group keeps the bulletin");
         lens.playhead=UTC(@"2026-09-26T15:04:00Z");
+        NSDate *deadline=[NSDate dateWithTimeIntervalSinceNow:0.5];
+        while (!LineHighlighted(lens.bulletin,@"9999 SCT030") && deadline.timeIntervalSinceNow>0)
+            [NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
         Check(LineHighlighted(lens.bulletin,@"9999 SCT030") && !LineHighlighted(lens.bulletin,@"FM261505"), @"moving the playhead moves the highlighted group");
         NSDate *pastTaf=[end dateByAddingTimeInterval:6*3600];
         lens.playhead=pastTaf;
+        deadline=[NSDate dateWithTimeIntervalSinceNow:0.5];
+        while (deadline.timeIntervalSinceNow>0)
+            [NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
         lens.forecast.timeZone=[NSTimeZone timeZoneWithName:@"Australia/Perth"];
         lens.forecast.selectedDate=pastTaf;
         Check([lens.bulletin.string containsString:@"SCT030"] && [lens.bulletin.string containsString:@"TSRA"] &&

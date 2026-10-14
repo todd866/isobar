@@ -76,13 +76,24 @@ export function tileKey(z: number, x: number, y: number): string {
   return `${z}/${x}/${y}`;
 }
 
-/** Tiles covering `box` at zoom z, nearest the box centre first (fetch priority). */
-export function tilesForBox(box: GeoBox, z: number): TileKey[] {
+function tileRange(box: GeoBox, z: number) {
   const n = 2 ** z;
   const x0 = Math.floor(lonToTileX(box.west, z));
   const x1 = Math.floor(lonToTileX(box.east, z) - 1e-9);
   const y0 = Math.max(0, Math.floor(latToTileY(box.north, z)));
   const y1 = Math.min(n - 1, Math.floor(latToTileY(box.south, z) - 1e-9));
+  return { n, x0, x1, y0, y1 };
+}
+
+/** Unique tile count without allocating or sorting candidates. */
+export function tileCountForBox(box: GeoBox, z: number): number {
+  const { n, x0, x1, y0, y1 } = tileRange(box, z);
+  return Math.max(0, Math.min(n, x1 - x0 + 1)) * Math.max(0, y1 - y0 + 1);
+}
+
+/** Tiles covering `box` at zoom z, nearest the box centre first (fetch priority). */
+export function tilesForBox(box: GeoBox, z: number): TileKey[] {
+  const { n, x0, x1, y0, y1 } = tileRange(box, z);
   const cx = (lonToTileX(box.west, z) + lonToTileX(box.east, z)) / 2;
   const cy = (latToTileY(box.north, z) + latToTileY(box.south, z)) / 2;
   const seen = new Set<string>();
@@ -273,7 +284,7 @@ export function planMosaic(view: GeoBox, screenPxPerDegree: number, maxTexels: n
   };
   let z = terrainZoom(screenPxPerDegree);
   // Bounded fetch and memory: a view never needs more than MAX_VIEW_TILES tiles.
-  while (z > 0 && tilesForBox(box, z).length > MAX_VIEW_TILES) z -= 1;
+  while (z > 0 && tileCountForBox(box, z) > MAX_VIEW_TILES) z -= 1;
   const tilePxPerDegree = (TILE_SIZE * 2 ** z) / 360;
   let density = Math.min(screenPxPerDegree, tilePxPerDegree * 1.25);
   const lonDeg = box.east - box.west;

@@ -1,7 +1,7 @@
 # Isobar slow lane daemon
 
 One serial subscription worker per host. The M2 Air is primary; the laptop is
-standby. Machine settings and the scoped token live in owned mode-0600
+standby. Machine settings and the owner-scoped token live in owned mode-0600
 `~/.local/state/isobar-chat-daemon/daemon.env`, never the plist or runner input.
 
 The daemon posts to `/api/agent/claim`, replies with its host and opaque lease,
@@ -11,15 +11,15 @@ exists. If capacity, login, network or supervisor access is unavailable, the job
 stays queued. Expired leases are recovered by the next claim request.
 
 Claude runs with the existing restricted archive MCP. Codex and Cursor require
-a separate service account, a reviewed data copy and the trusted runtime
+a separate `isobaragent` account, a reviewed data copy and the trusted runtime
 helper. Missing isolation disables fallbacks. Runtime priority is Claude → Codex
 → Cursor, using fresh, unexpired readings from `~/.local/bin/ai-capacity --json`.
 A low Claude window or md3's busy signal yields the whole worker, including
 cancelling active work at the next 20-second check. Stale busy files expire after
 30 minutes; stale capacity never counts as headroom.
 
-Deployment and supervisor setup is environment-specific and intentionally omitted
-from this source projection.
+See [the deployment and supervisor runbook](../../docs/runbooks/isobar-slow-lane.md)
+for exact Air/laptop setup, thresholds, login limitations, health and recovery.
 `install.sh --install` only copies the LaunchAgent; it does not start it.
 
 Offline checks from `web/`:

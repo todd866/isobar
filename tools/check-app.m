@@ -41,7 +41,7 @@ static NSView *Find(NSView *view, NSString *identifier) {
 }
 static BOOL ClickLens(Controller *controller, NSInteger segment) {
     NSSegmentedControl *row = (NSSegmentedControl *)Find(controller.popover.contentViewController.view, @"popover.lens");
-    if (![row isKindOfClass:NSSegmentedControl.class] || row.segmentCount != 7) return NO;
+    if (![row isKindOfClass:NSSegmentedControl.class] || row.segmentCount != 8) return NO;
     row.selectedSegment = segment;
     return [NSApp sendAction:row.action to:row.target from:row];
 }
@@ -437,6 +437,12 @@ static int SliderAligned(NSView *content) {
     if (![timeline isKindOfClass:TimelineStrip.class] || !days || !play || !now || !clock || clock.superview != timeline ||
         Find(content, @"popover.prev") || Find(content, @"popover.next")) {
         fprintf(stderr, "FAIL popover slider row\n");
+        return 1;
+    }
+    NSString *clockText = [(NSTextField *)clock stringValue];
+    if (![clockText containsString:@"Z"] || !([clockText hasPrefix:@"NOW ·"] ||
+        [clockText hasPrefix:@"FORECAST ·"] || [clockText hasPrefix:@"PAST ·"])) {
+        fprintf(stderr, "FAIL playhead clock lacks state or Zulu: %s\n",clockText.UTF8String);
         return 1;
     }
     NSRect dayFrame = [days convertRect:days.bounds toView:content];
@@ -1128,7 +1134,7 @@ static int CheckPopoverMap(AcceptanceController *c, NSString *store) {
             for (int i = 0; i < 24; i++) [gpu displayAtTime:origin + i / 120.0];
             for (int i = 0; i < 120; i++) {
                 [gpu displayAtTime:origin + (24 + i) / 120.0];
-                samples[i] = gpu.lastFrameMilliseconds;
+                samples[i] = gpu.lastFrameMilliseconds + [gpu drawPendingOverlays];
                 contours[i] = gpu.lastContourMilliseconds;
                 labels[i] = gpu.lastLabelMilliseconds;
                 projects[i] = gpu.lastProjectMilliseconds;
@@ -1202,7 +1208,7 @@ static int CheckPopoverMap(AcceptanceController *c, NSString *store) {
                         [gpu pointerDrag:NSMakePoint(start.x + i - 119, start.y)];
                     }
                     [gpu displayAtTime:origin + (168 + i) / 120.0];
-                    hz[i] = gpu.lastFrameMilliseconds;
+                    hz[i] = gpu.lastFrameMilliseconds + [gpu drawPendingOverlays];
                     hzOverlay[i] = gpu.lastHazardMilliseconds;
                 }
                 [gpu pointerUp:NSMakePoint(NSMidX(gpu.bounds) + 120, NSMidY(gpu.bounds))];
@@ -1366,7 +1372,7 @@ int main(int argc, const char **argv) {
         printf("chart source: %s\n", modelSource ? "ECMWF model" : "Bureau");
         NSTimeInterval start = NSDate.timeIntervalSinceReferenceDate;
         [c reloadStoreAtPath:root];
-        if (getenv("ISOBAR_POPOVER_TIMING")) {
+        if (getenv("ISOBAR_POPOVER_TIMING") || getenv("ISOBAR_CHECK_POPOVER_ONLY")) {
             int failures = [c chartsReady] ? 0 : 1;
             failures += CheckPopoverMap(c, root);
             printf("acceptance failures: %d\n", failures);
@@ -1713,7 +1719,7 @@ int main(int argc, const char **argv) {
                 if (mode >= 0 && (!Find(view,@"forecast.close") || !DetailFollowsMaps(view,panelID))) FAIL();
                 if (mode < 0 && (Find(view,@"popover.rain") || Find(view,@"popover.aviation") || Find(view,@"popover.windForecast") || Find(view,@"popover.surf"))) FAIL();
                 NSSegmentedControl *lensRow = (NSSegmentedControl *)Find(view, @"popover.lens");
-                if (!lensRow || lensRow.segmentCount != 7 || NSWidth(lensRow.frame) + .5 < lensRow.intrinsicContentSize.width) FAIL();
+                if (!lensRow || lensRow.segmentCount != 8 || NSWidth(lensRow.frame) + .5 < lensRow.intrinsicContentSize.width) FAIL();
                 NSInteger selectedMode = [lensRow tagForSegment:lensRow.selectedSegment];
                 if (mode >= 0 && selectedMode != mode) FAIL();
                 if (mode == 0) [(HourlyForecastView *)Find(view,@"popover.windForecast") updateTrackingAreas];

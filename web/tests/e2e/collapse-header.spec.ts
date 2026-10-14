@@ -29,7 +29,7 @@ async function prepare(page: Page, width: number, height: number, mode: 'light' 
   }, mode);
   if (frozen) await page.clock.setFixedTime(FROZEN);
   await page.setViewportSize({ width, height });
-  await chartRoutes(page);
+  await chartRoutes(page, false, frozen ? undefined : new Date(Date.now() - 6 * 3600000).toISOString());
   await page.route('https://api.open-meteo.com/**', (route) => route.abort());
   await page.route('https://marine-api.open-meteo.com/**', (route) => route.abort());
   await page.goto('/');
@@ -254,6 +254,7 @@ test('Vancouver shows PDT and Vancouver’s today', async ({ page }) => {
 test('Times switches place local, UTC and this device, and stays in this browser', async ({ page }) => {
   test.setTimeout(90_000);
   await prepare(page, 1440, 900, 'light', true);
+  await page.getByRole('button', { name: 'Now', exact: true }).click();
   await page.getByRole('button', { name: 'Menu', exact: true }).click();
   const times = page.locator('select[data-times]');
   await expect(times).toBeVisible();
@@ -284,7 +285,7 @@ test('a traffic track collapses the bar and removing it restores the bar', async
     localStorage.setItem('isobar.speed', '1');
   });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await chartRoutes(page);
+  await chartRoutes(page, false, new Date(Date.now() - 6 * 3600000).toISOString());
   await page.route('https://api.adsb.lol/**', (route) => route.abort());
   await page.route('https://api.open-meteo.com/**', (route) => route.abort());
   await page.route('https://marine-api.open-meteo.com/**', (route) => route.abort());

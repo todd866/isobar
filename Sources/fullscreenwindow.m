@@ -8,10 +8,10 @@ ChartKeyAction ChartKeyActionFor(unsigned short keyCode, NSString *characters, N
     NSEventModifierFlags mods = flags & NSEventModifierFlagDeviceIndependentFlagsMask;
     BOOL command = (mods & NSEventModifierFlagCommand) != 0;
     NSString *ch = characters.lowercaseString ?: @"";
-    if ([ch isEqualToString:@"d"] || [ch isEqualToString:@"b"]) {
+    if ([ch isEqualToString:@"c"] || [ch isEqualToString:@"b"]) {
         if (command) return ChartKeyPass;
         if (isRepeat) return ChartKeyDrop;
-        return [ch isEqualToString:@"d"] ? ChartKeyCompare : ChartKeySource;
+        return [ch isEqualToString:@"c"] ? ChartKeyCompare : ChartKeySource;
     }
     if (keyCode == 53) return ChartKeyEscape;
     if (keyCode == 49) return isRepeat ? ChartKeyDrop : ChartKeyPlay;

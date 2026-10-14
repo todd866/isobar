@@ -87,6 +87,31 @@ int main(int argc, const char **argv) {
         lowercase[@"metar"] = lowerMetar;
         Check([SkySectionFeed(lowercase, upper, ypph, metarTime)[@"report"] isKindOfClass:NSDictionary.class],
             @"the fallback METAR ICAO is case insensitive");
+
+        // AIP elevations for the TAF aerodromes and secondary fields. Only measured
+        // coast distances are tabled; any other aerodrome has none (missing, not zero).
+        NSDictionary *aip = @{@"YBBN": @13, @"YPAD": @20, @"YMHB": @13, @"YPDN": @103, @"YMML": @434, @"YSCB": @1886,
+            @"YPJT": @99, @"YSBK": @29, @"YMMB": @50, @"YBAF": @65, @"YPPF": @57};
+        for (NSString *code in aip)
+            Check(SkyAerodromeElevationFt(code) == [aip[code] doubleValue], [code stringByAppendingString:@" AIP elevation"]);
+        Check([SkyAerodromeCoastKm(@"YSSY") isEqual:@6] && SkyAerodromeCoastKm(@"YBBN") == nil && SkyAerodromeCoastKm(@"YMML") == nil,
+            @"coast distance only where measured");
+        Check(isnan(SkyAerodromeElevationFt(@"YPWR")), @"an unlisted aerodrome has no elevation");
+
+        // Aerodrome dictionary fallbacks and upper-air elevation fallback for unlisted fields.
+        NSDictionary *customField = @{@"code": @"YXXX", @"latitude": @(-31.94), @"longitude": @115.97,
+            @"elevation_ft": @250, @"coast_km": @(-14)};
+        NSDictionary *customFeed = SkySectionFeed(nil, nil, customField, metarTime);
+        Check([customFeed[@"elevationFt"] isEqual:@250] && [customFeed[@"coastKm"] isEqual:@(-14)],
+            @"unlisted aerodrome falls back to elevation_ft and coast_km dictionary keys");
+        NSMutableDictionary *customUpper = [upper mutableCopy];
+        customUpper[@"id"] = @"YZZZ";
+        customUpper[@"elevation"] = @100.0;
+        NSDictionary *upperElevFeed = SkySectionFeed(nil, customUpper,
+            @{@"code": @"YZZZ", @"latitude": @(-32.0), @"longitude": @116.0}, metarTime);
+        Check(fabs([upperElevFeed[@"elevationFt"] doubleValue] - 328.0) < 1.0,
+            @"unlisted aerodrome without dictionary elevation falls back to matching upper-air elevation_m");
+
         // Feed checks can run without WKWebView; the default still runs every page check.
         if (argc > 2 && [@(argv[2]) isEqual:@"--feed-only"]) {
             printf("sky feed failures: %d\n", failures); return failures ? 1 : 0;

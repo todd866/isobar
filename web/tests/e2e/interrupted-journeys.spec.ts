@@ -64,7 +64,8 @@ test('rapid historical day reversal while playing keeps the last requested day a
   expect(await camera(page)).toEqual(before);
   const held=await map(page).getAttribute('data-valid-ms');await page.waitForTimeout(400);
   expect(await map(page).getAttribute('data-valid-ms')).toBe(held);
-  await expect.poll(async()=>Number(await page.locator('[data-atmosphere-layer]').getAttribute('data-flows')),{timeout:20000}).toBeGreaterThan(0);
+  // No 1953 pressure-level profile: the mountain wind is honestly missing for the held day.
+  await expect(page.locator('[data-atmosphere-layer]')).toHaveAttribute('data-wind','missing',{timeout:20000});
   await page.screenshot({path:info.outputPath('historical-day-reversal.png')});
  }finally{release();}
 });

@@ -54,6 +54,9 @@ describe('day tiles', () => {
 
   it('shows rain to one decimal under 10 mm and hides a dry day', () => {
     expect(rainLabel(0.1)).toBeNull();
+    expect(rainLabel(0.99)).toBeNull();
+    expect(rainLabel(null)).toBeNull();
+    expect(rainLabel(1)).toBe('1.0');
     expect(rainLabel(2.94)).toBe('2.9');
     expect(rainLabel(21.4)).toBe('21');
   });

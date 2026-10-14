@@ -11,9 +11,9 @@ import path from 'node:path';
 
 const out = path.join(process.cwd(), 'test-results', 'parity');
 const REFS = {
-  'light-none': process.env.ISOBAR_PARITY_LIGHT_NONE ?? '',
-  'dark-rain': process.env.ISOBAR_PARITY_DARK_RAIN ?? '',
-  'light-fly': process.env.ISOBAR_PARITY_LIGHT_FLY ?? '',
+  'light-none': `${process.env.HOME}/.cursor/worktrees/isobar/map-readable-2/build/qa/popover-real/light-new-plate.png`,
+  'dark-rain': `${process.env.HOME}/.cursor/worktrees/isobar/map-readable-2/build/qa/popover-real/dark-new-rainlayer.png`,
+  'light-fly': `${process.env.HOME}/.cursor/worktrees/isobar/rel2-polish/build/qa/rel2/popover-cb/light-new-play-fly-window.png`,
 } as const;
 
 type Case = { name: string; theme: 'light' | 'dark'; lens: 'none' | 'rain' | 'fly'; ref: string | null; width: number };

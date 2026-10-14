@@ -265,6 +265,48 @@ static void TestFastLoopsDissolveForward(void) {
     Check(sawHold && sawDissolve, @"each loop holds the last frame, then dissolves");
 }
 
+// With the GPU map on screen the player is only its clock: no classic frame
+// is rendered or waited for, the end of the run holds 0.2 s and dissolves to
+// now, and the sampled hour reaches the end instead of parking short of it.
+static void TestClockOnlyNeverWaitsForFrames(void) {
+    IsobarLivePlayer *player = [IsobarLivePlayer new];
+    IsobarLiveClock *clock = [IsobarLiveClock manualClock];
+    player.clock = clock;
+    player.clockOnly = YES;
+    NSDate *start = [NSDate dateWithTimeIntervalSince1970:1700000000];
+    const double span = 6;
+    OwnRun *run = [OwnRun new];
+    [player configureRun:run start:start end:[start dateByAddingTimeInterval:span * 3600] now:start
+        modelIndex:^double(NSDate *date) { return [date timeIntervalSinceDate:start] / 3600.0; }];
+    player.hoursPerSecond = IsobarLiveHoursPerSecond(IsobarLiveSpeed256x);
+    [player playFromDate:start];
+    double expected = 0, maxHours = 0;
+    BOOL steady = YES, sawHold = NO, sawMix = NO, returned = NO;
+    NSTimeInterval seamBegan = -1;
+    for (int tick = 0; tick < 200 && !returned; tick++) {
+        [clock advance:kIsobarLiveDisplayTick];
+        [player tick:kIsobarLiveDisplayTick];
+        double hours = [player forecastHoursAtTime:[clock now]];
+        maxHours = MAX(maxHours, hours);
+        if (!player.seaming && seamBegan < 0) {
+            expected = MIN(span, expected + player.hoursPerSecond * kIsobarLiveDisplayTick);
+            if (fabs(hours - expected) > 1e-6 && hours < span - 1e-6) steady = NO;
+        }
+        if (player.seaming) {
+            if (seamBegan < 0) seamBegan = [clock now] - kIsobarLiveDisplayTick;
+            double elapsed = [clock now] - seamBegan;
+            if (elapsed < kIsobarLiveSeamHold - 1e-6 && player.seamMix <= 0.001) sawHold = YES;
+            if (player.seamMix > 0.3 && player.seamMix < 0.9) sawMix = YES;
+        } else if (seamBegan >= 0) returned = YES;
+    }
+    Check(player.rendersInFlight == 0 && player.completedRenders == 0 && player.baseImage == nil,
+        @"a clock-only player renders no classic frames");
+    Check(steady, @"a clock-only player advances at the playing rate without waiting for frames");
+    Check(fabs(maxHours - span) < 1e-6, @"the GPU clock reaches the end of the run, not 0.998 of it");
+    Check(sawHold && sawMix && returned, @"the end of the run holds, dissolves and returns to now");
+    Check(returned && [player forecastHoursAtTime:[clock now]] < 0.5, @"after the dissolve the clock plays from now");
+}
+
 static void TestPlateRetentionIsBudgeted(void) {
     IsobarLivePlayer *player = [IsobarLivePlayer new];
     NSImage *image = ContourFrame(600), *plate = ContourFrame(-1);
@@ -294,6 +336,7 @@ int main(void) {
         TestMovingContourHasNoGhost();
         TestLoopDissolvesTheEndpoints();
         TestFastLoopsDissolveForward();
+        TestClockOnlyNeverWaitsForFrames();
         TestPlateRetentionIsBudgeted();
     }
     return failures ? 1 : 0;

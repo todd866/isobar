@@ -368,11 +368,12 @@ int main(int argc, const char **argv) {
                     [c startLivePlaybackFromDate:[c selectedForecastDate]];
                     IsobarLivePlayer *live = [c valueForKey:@"live"];
                     NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:20];
-                    while (!live.baseImage && deadline.timeIntervalSinceNow > 0) {
+                    // A clock-only player (GPU map on screen) renders no classic frame.
+                    while (!live.baseImage && !live.clockOnly && deadline.timeIntervalSinceNow > 0) {
                         Pump(.02);
                         [c advanceLiveTicks:1];
                     }
-                    if (!live.baseImage) { fprintf(stderr, "selected field frame timed out\n"); failures++; }
+                    if (!live.baseImage && !live.clockOnly) { fprintf(stderr, "selected field frame timed out\n"); failures++; }
                     [c applyLiveFrame];
                     NSView *root = c.chartWindow.contentView;
                     failures += CheckExpandedGeometry(root, size, c.requestedMapFrame) + CheckWarningBadge(root, [c packFor:[c hubPlace]][@"warnings"]);

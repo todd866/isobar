@@ -80,6 +80,25 @@ static inline void at_cloud(double t, double rh, double p, double z, double n2,
   (void)z; (void)n2; (void)wind;
 }
 
+/* Idealised teaching ridge: Witch of Agnesi, half-width 1200 m, height 400 m. */
+#define AT_RIDGE_A 1200.0
+#define AT_RIDGE_H 400.0
+#define AT_RIDGE_N2 0.00035
+#define AT_RIDGE_TERMS 64
+static inline void at_ridge_wave(double x, double z, double U, double N, double *eta, double *w, double *du) {
+  const double kmax=5.0/AT_RIDGE_A, dk=kmax/AT_RIDGE_TERMS, l=N/U;
+  double c1=cos(dk*x), s1=sin(dk*x), cr=cos(dk*x/2), ci=sin(dk*x/2);
+  *eta=0; *w=0; *du=0;
+  for (int j=0;j<AT_RIDGE_TERMS;j++) {
+    double k=(j+.5)*dk, amp=AT_RIDGE_H*AT_RIDGE_A*exp(-k*AT_RIDGE_A)*dk, pr, pi, mr, mi;
+    if (k<l) { mr=sqrt(l*l-k*k); mi=0; pr=cos(mr*z); pi=sin(mr*z); }
+    else { mr=0; mi=sqrt(k*k-l*l); pr=exp(-mi*z); pi=0; }
+    double er=cr*pr-ci*pi, ei=cr*pi+ci*pr;
+    *eta+=amp*er; *w+=-U*k*amp*ei; *du+=U*amp*(mi*er+mr*ei);
+    double t=cr*c1-ci*s1; ci=cr*s1+ci*c1; cr=t;
+  }
+}
+
 static inline ATTeachingSample at_teaching_sample(ATTeachingContext c, double lat, double lon, double heightM) {
   const double PI = 3.14159265358979323846, EARTH = 111320.0, MAXZ = 12000.0;
   double z = at_clamp(heightM - c.groundM, 0, MAXZ);
@@ -99,11 +118,11 @@ static inline ATTeachingSample at_teaching_sample(ATTeachingContext c, double la
     double outflow=at_clamp((z-6500.0)/3000.0,0,1), plumeRadius=2500*(1+2.2*outflow*outflow*(3-2*outflow));
     lift=fmin(z,3000.0)*exp(-r2/(plumeRadius*plumeRadius)); lid=H;
   } else if (c.kind == ATTeachingMountainWave) {
-    double k=2*PI/12000, m=PI/7000, phase=k*x+m*z, taper=sin(PI*z/MAXZ); taper*=taper;
-    double hg=exp(-x*x/(130000.0*130000.0)), d=900*cos(phase)*taper*hg;
-    double dx=900*taper*hg*(-k*sin(phase)-2*x*cos(phase)/(130000.0*130000.0));
-    double dz=900*hg*(-m*sin(phase)*taper+cos(phase)*(PI/MAXZ)*sin(2*PI*z/MAXZ));
-    double mean=16+1.2*sin(day); u=mean-mean*dz; w=mean*dx; v=.4*sin(phase+PI/2)*taper*hg; n2=.00035; wind=fabs(u); lift=d; lid=MAXZ;
+    // Idealised N-S ridge under a uniform stable westerly: linear non-hydrostatic
+    // wave (lee waves downstream, w = U dh/dx at the ground). Mirrors
+    // idealisedRidgeWave in web/src/lib/atmosphere-teaching.ts term for term.
+    double mean=16+1.2*sin(day), eta=0, dw=0, du=0; at_ridge_wave(x,z,mean,sqrt(AT_RIDGE_N2),&eta,&dw,&du);
+    u=mean+du; w=dw; v=0; n2=AT_RIDGE_N2; wind=fmax(1.0,fabs(u)); lift=eta; lid=MAXZ;
   } else {
     double H=10000, L=6000, r2=x*x+y*y, g=exp(-r2/(L*L)), f=(1-r2/(L*L))*g, q=z/H, r=sqrt(r2);
     double vr=-3*PI/H*cos(PI*q)*.5*r*g; u=r>0?vr*x/r:0; v=r>0?vr*y/r:0; w=3*f*sin(PI*q); n2=.0001; wind=hypot(u,v)+1; lift=600*f*(1-cos(PI*q))*.5; lid=H;

@@ -1,5 +1,6 @@
 #import "fieldrender.h"
 #import "ownchart.h"
+#import "terrainmap.h"
 #import <Accelerate/Accelerate.h>
 #import <CoreText/CoreText.h>
 #import <simd/simd.h>
@@ -82,6 +83,126 @@ typedef struct {
 } Surface;
 static BOOL IsFront(IsobarCamera cam, double lat, double lon, Surface self);
 
+const IsobarTerrainHooks *IsobarTerrainHooksInstalled = NULL;
+
+// One resolved terrain view per thread, keyed by the whole camera. The
+// registry epoch changes when a scene is retired, so the grid pointers here
+// are never used after their scene is released.
+static _Thread_local struct {
+    IsobarCamera cam;
+    IsobarTerrainView view;
+    IsobarTiltBasis basis;
+    unsigned long epoch;
+    int valid, ok;
+} gTerrainCache;
+
+BOOL IsobarCameraTerrain(IsobarCamera cam, IsobarTerrainView *view) {
+    const IsobarTerrainHooks *hooks = IsobarTerrainHooksInstalled;
+    if (!cam.terrain || !hooks || !(cam.pitch > 1e-7)) return NO;
+    unsigned long epoch = hooks->epoch();
+    if (!gTerrainCache.valid || gTerrainCache.epoch != epoch
+        || memcmp(&gTerrainCache.cam, &cam, sizeof cam) != 0) {
+        IsobarTerrainView v;
+        memset(&v, 0, sizeof v);
+        gTerrainCache.ok = hooks->resolve(cam, &v) && v.active
+            && IsobarTiltBasisMake(cam, v.relief, v.focusM, &gTerrainCache.basis);
+        gTerrainCache.view = v;
+        gTerrainCache.cam = cam;
+        gTerrainCache.epoch = epoch;
+        gTerrainCache.valid = 1;
+    }
+    if (gTerrainCache.ok && view) *view = gTerrainCache.view;
+    return gTerrainCache.ok;
+}
+
+BOOL IsobarTiltBasisMake(IsobarCamera cam, double relief, double focusM, IsobarTiltBasis *b) {
+    double vw, vh, px, radius, globe;
+    if (!b || !Metrics(cam, &vw, &vh, &px, &radius, &globe)) return NO;
+    if (!(cam.pitch > 1e-7) || SmoothStep01(cam.pitch / (20.0 * kDeg)) < 1e-3) return NO;
+    double pitch = cam.pitch;
+    if (pitch > kMaxCameraPitch) pitch = kMaxCameraPitch;
+    double k = SmoothStep01(pitch / (20.0 * kDeg));
+    b->vw = vw; b->vh = vh; b->radius = radius; b->k = k; b->pitch = pitch;
+    b->re = 1.0 / fmax(k, 1e-3);
+    b->sn = sin(pitch); b->cn = cos(pitch);
+    b->cb = cos(cam.bearing); b->sb = sin(cam.bearing);
+    b->tanK = tan(kPerspectiveFov) * fmax(k, 1e-3);
+    b->distance = (vh * 0.5 / radius) / b->tanK;
+    b->phi0 = k * cam.centreLat * kDeg;
+    b->lonCorrection = cos(cam.centreLat * kDeg) * (1.0 - k) + k;
+    b->centreLat = cam.centreLat;
+    b->centreLon = cam.centreLon;
+    b->relief = isfinite(relief) && relief > 0 ? relief : 1.0;
+    b->lift = isfinite(focusM) ? focusM * b->relief / 6371000.0 : 0;
+    b->eyeY = -b->sn * b->distance;
+    b->eyeZ = b->cn * b->distance + b->lift;
+    return isfinite(b->distance) && b->distance > 0;
+}
+
+void IsobarTiltPoint(const IsobarTiltBasis *b, double lat, double dlonDeg, double heightM, double p[3]) {
+    double k = b->k, re = b->re;
+    double phi = k * lat * kDeg, phi0 = b->phi0;
+    double lam = k * dlonDeg * kDeg * b->lonCorrection;
+    double cp = cos(phi), sp = sin(phi), c0 = cos(phi0), s0 = sin(phi0);
+    double cl = cos(lam), sl = sin(lam);
+    double nx = cp * sl;
+    double ny = sp * c0 - cp * cl * s0;
+    double nz = cp * cl * c0 + sp * s0;
+    double altitude = heightM * b->relief / 6371000.0;
+    double pointRadius = re + altitude;
+    double pointX = pointRadius * nx, pointY = pointRadius * ny, pointZ = re * (nz - 1.0) + altitude * nz;
+    p[0] = b->cb * pointX - b->sb * pointY;
+    p[1] = b->sb * pointX + b->cb * pointY;
+    p[2] = pointZ;
+}
+
+BOOL IsobarTiltScreen(const IsobarTiltBasis *b, const double p[3], double *x, double *y, double *depthOut) {
+    double relX = p[0], relY = p[1] - b->eyeY, relZ = p[2] - b->eyeZ;
+    double depth = relY * b->sn + relZ * -b->cn;
+    double denom = depth * b->tanK;
+    if (!(fabs(denom) > 1e-9) || !isfinite(denom)) return NO;
+    double yNumerator = relY * b->cn + relZ * b->sn;
+    double half = b->vh * 0.5 / b->radius;
+    double px = relX / denom * half, py = yNumerator / denom * half;
+    if (x) *x = b->vw * 0.5 + px * b->radius;
+    if (y) *y = b->vh * 0.5 - py * b->radius;
+    if (depthOut) *depthOut = depth;
+    return isfinite(px) && isfinite(py);
+}
+
+void IsobarTiltGeo(const IsobarTiltBasis *b, const double p[3], double *lat, double *dlon, double *heightM) {
+    double hx = b->cb * p[0] + b->sb * p[1];
+    double hy = -b->sb * p[0] + b->cb * p[1];
+    double hz = p[2] + b->re;
+    double r = sqrt(hx * hx + hy * hy + hz * hz);
+    if (!(r > 0)) r = 1e-12;
+    double nx = hx / r, ny = hy / r, nz = hz / r;
+    double sp = ny * cos(b->phi0) + nz * sin(b->phi0);
+    if (sp < -1) sp = -1;
+    if (sp > 1) sp = 1;
+    if (lat) *lat = asin(sp) / b->k / kDeg;
+    if (dlon) *dlon = atan2(nx, nz * cos(b->phi0) - ny * sin(b->phi0)) / (b->k * b->lonCorrection) / kDeg;
+    if (heightM) *heightM = (r - b->re) * 6371000.0 / b->relief;
+}
+
+void IsobarTiltRay(const IsobarTiltBasis *b, double x, double y, double eye[3], double dir[3]) {
+    double d = b->tanK, aspect = b->vw / b->vh;
+    double cx = (x - b->vw * 0.5) / (b->vw * 0.5);
+    double cy = (b->vh * 0.5 - y) / (b->vh * 0.5);
+    double dx = cx * d * aspect, dy = b->sn + cy * d * b->cn, dz = -b->cn + cy * d * b->sn;
+    double norm = sqrt(dx * dx + dy * dy + dz * dz);
+    eye[0] = 0; eye[1] = b->eyeY; eye[2] = b->eyeZ;
+    dir[0] = dx / norm; dir[1] = dy / norm; dir[2] = dz / norm;
+}
+
+// The displayed ground under a terrain camera, else sea level.
+static double GroundHeight(IsobarCamera cam, double lat, double lon) {
+    IsobarTerrainView view;
+    if (!IsobarCameraTerrain(cam, &view)) return 0;
+    double h = IsobarTerrainHooksInstalled->height(&view, lat, lon);
+    return isfinite(h) ? h : 0;
+}
+
 static BOOL SurfaceAtHeight(IsobarCamera cam, double lat, double dlonDeg, double heightM, Surface *s) {
     double vw, vh, px, radius, globe;
     if (!Metrics(cam, &vw, &vh, &px, &radius, &globe)) return NO;
@@ -109,51 +230,35 @@ static BOOL SurfaceAtHeight(IsobarCamera cam, double lat, double dlonDeg, double
         s->visible = YES;
         return isfinite(s->x) && isfinite(s->y) && isfinite(s->pz);
     }
-    double pitch = cam.pitch;
-    if (pitch < 0) pitch = 0;
-    if (pitch > kMaxCameraPitch) pitch = kMaxCameraPitch;
-    double k = SmoothStep01(pitch / (20.0 * kDeg));
-    double re = 1.0 / fmax(k, 1e-3);
-    double phi = k * lat * kDeg, phi0 = k * cam.centreLat * kDeg;
-    double lonCorrection = cos(cam.centreLat * kDeg) * (1.0 - k) + k;
-    double lam = k * dlonDeg * kDeg * lonCorrection;
-    double cp = cos(phi), sp = sin(phi), c0 = cos(phi0), s0 = sin(phi0);
-    double cl = cos(lam), sl = sin(lam);
-    double nx = cp * sl;
-    double ny = sp * c0 - cp * cl * s0;
-    double nz = cp * cl * c0 + sp * s0;
-    double altitude = heightM / 6371000.0;
-    double pointRadius = re + altitude;
-    double pointX = pointRadius * nx, pointY = pointRadius * ny, pointZ = re * (nz - 1.0) + altitude * nz;
-    double cb = cos(cam.bearing), sb = sin(cam.bearing);
-    double rotatedX = cb * pointX - sb * pointY;
-    double rotatedY = sb * pointX + cb * pointY;
-    double sn = sin(pitch), cn = cos(pitch);
-    double distance = (vh * 0.5 / radius) / (tan(kPerspectiveFov) * fmax(k, 1e-3));
-
-    double eyeY = -sn * distance, eyeZ = cn * distance;
-    double relX = rotatedX, relY = rotatedY - eyeY, relZ = pointZ - eyeZ;
-    double forwardY = sn, forwardZ = -cn;
-    double upY = cn, upZ = sn;
-    double depth = relY * forwardY + relZ * forwardZ;
-    double denom = depth * tan(kPerspectiveFov) * fmax(k, 1e-3);
-    if (!(fabs(denom) > 1e-9) || !isfinite(denom)) return NO;
-    double viewZ = depth;
-    double yNumerator = relY * upY + relZ * upZ;
-    s->px = relX / denom * (vh * 0.5 / radius);
-    s->py = yNumerator / denom * (vh * 0.5 / radius);
-    s->pz = viewZ;
-    s->x = vw * 0.5 + s->px * radius;
-    s->y = vh * 0.5 - s->py * radius;
+    IsobarTerrainView view;
+    BOOL terrain = IsobarCameraTerrain(cam, &view);
+    IsobarTiltBasis b;
+    if (terrain) b = gTerrainCache.basis;
+    else if (!IsobarTiltBasisMake(cam, 1.0, 0, &b)) return NO;
+    double p[3], depth = 0, x = 0, y = 0;
+    IsobarTiltPoint(&b, lat, dlonDeg, heightM, p);
+    if (!IsobarTiltScreen(&b, p, &x, &y, &depth)) return NO;
+    s->px = (x - vw * 0.5) / radius;
+    s->py = (vh * 0.5 - y) / radius;
+    s->pz = depth;
+    (void)px;
+    s->x = x;
+    s->y = y;
+    double relX = p[0], relY = p[1] - b.eyeY, relZ = p[2] - b.eyeZ;
     double length2 = relX*relX + relY*relY + relZ*relZ;
-    double t = fmax(0, fmin(1, -(eyeY*relY + eyeZ*relZ + re*relZ)/length2));
-    double qx=relX*t, qy=eyeY+relY*t, qz=eyeZ+relZ*t;
-    s->visible = depth > 0 && qx*qx+qy*qy+qz*qz+2*re*qz >= -1e-10;
+    double t = fmax(0, fmin(1, -(b.eyeY*relY + b.eyeZ*relZ + b.re*relZ)/length2));
+    double qx=relX*t, qy=b.eyeY+relY*t, qz=b.eyeZ+relZ*t;
+    s->visible = depth > 0 && qx*qx+qy*qy+qz*qz+2*b.re*qz >= -1e-10;
+    // Terrain occlusion is tested only where it can matter: on screen.
+    if (terrain && s->visible && x >= -2 && y >= -2 && x <= vw + 2 && y <= vh + 2
+        && IsobarTerrainHooksInstalled->occluded(cam, &b, &view, p, x, y, depth)) s->visible = NO;
     return isfinite(s->x) && isfinite(s->y) && isfinite(s->pz);
 }
 
+// The geographic surface point: displayed terrain under a terrain camera.
 static BOOL SurfaceAt(IsobarCamera cam, double lat, double dlonDeg, Surface *s) {
-    return SurfaceAtHeight(cam, lat, dlonDeg, 0, s);
+    double h = cam.terrain ? GroundHeight(cam, lat, cam.centreLon + dlonDeg) : 0;
+    return SurfaceAtHeight(cam, lat, dlonDeg, h, s);
 }
 
 BOOL IsobarCameraProjectAltitude(IsobarCamera camera, double latitude, double longitude,
@@ -163,6 +268,13 @@ BOOL IsobarCameraProjectAltitude(IsobarCamera camera, double latitude, double lo
     if (x) *x = s.x;
     if (y) *y = s.y;
     return IsFront(camera, latitude, longitude, s);
+}
+
+BOOL IsobarCameraProjectAboveGround(IsobarCamera camera, double latitude, double longitude,
+    double aboveGroundM, double *x, double *y) {
+    if (!isfinite(aboveGroundM)) return NO;
+    double ground = camera.terrain ? GroundHeight(camera, latitude, longitude) : 0;
+    return IsobarCameraProjectAltitude(camera, latitude, longitude, ground + aboveGroundM, x, y);
 }
 
 static BOOL SurfaceLon(IsobarCamera cam, double lat, double lon, Surface *s) {
@@ -341,6 +453,17 @@ static BOOL UnprojectTilted(IsobarCamera cam, double x, double y, double *lat, d
     double pitch = cam.pitch;
     double k = SmoothStep01(pitch / (20.0 * kDeg));
     if (k < 1e-3) return UnprojectFlat(cam, x, y, lat, lon);
+    IsobarTerrainView view;
+    if (IsobarCameraTerrain(cam, &view)) {
+        // First intersection with the displayed terrain, verified by the hook.
+        IsobarTiltBasis b;
+        double la = 0, lo = 0;
+        if (!IsobarTiltBasisMake(cam, view.relief, view.focusM, &b)
+            || !IsobarTerrainHooksInstalled->unproject(cam, &b, &view, x, y, &la, &lo)) return NO;
+        if (!isfinite(la) || !isfinite(lo) || la < -90 || la > 90) return NO;
+        *lat = la; *lon = Wrap180(lo);
+        return YES;
+    }
     double halfH = vh * 0.5 / radius, aspect = vw / vh;
     double d = tan(kPerspectiveFov) * k;
     double sn = sin(pitch), cn = cos(pitch);
@@ -555,11 +678,15 @@ static NSString *const kShader = @""
 "    float4 ink;\n"
 "    float4 ocean;\n"
 "    float4 uncovered;\n"
+"    float4 terrainBox;\n"
+"    float4 terrain;\n"
+"    float4 t0, t1, t2, nearBox, farBox, t3;\n"
 "};\n"
 "struct VOut {\n"
 "    float4 position [[position]];\n"
 "    float lat;\n"
 "    float lon;\n"
+"    float range;\n"
 "};\n"
 "struct LineV {\n"
 "    float lat0, lon0, lat1, lon1;\n"
@@ -584,7 +711,8 @@ static NSString *const kShader = @""
 "    return x - 180.0;\n"
 "}\n"
 "static float depthOf(float z) { return 0.5 - 0.45 * z; }\n"
-"static float3 projectAt(float lat, float dlon, constant U &u) {\n"
+#include "terrainshader.inc"
+"static float3 projectHeight(float lat, float dlon, float height, constant U &u) {\n"
 "    float centreLat = u.cam.x;\n"
 "    float globe = clamp(u.cam.z, 0.0, 1.0);\n"
 "    float pitch = clamp(u.cam2.x, 0.0, 1.30);\n"
@@ -608,17 +736,19 @@ static NSString *const kShader = @""
 "    float lam = k * dlon * 0.017453292519943295 * lonCorrection, cp = cos(phi), sp = sin(phi);\n"
 "    float c0 = cos(phi0), s0 = sin(phi0), cl = cos(lam), sl = sin(lam);\n"
 "    float nx = cp * sl, ny = sp * c0 - cp * cl * s0, nz = cp * cl * c0 + sp * s0;\n"
-"    float3 point = float3(re * nx, re * ny, re * (nz - 1.0));\n"
+"    float altitude = height * u.t0.y / 6371000.0;\n"
+"    float3 point = float3((re + altitude) * nx, (re + altitude) * ny, re * (nz - 1.0) + altitude * nz);\n"
 "    float cb = cos(bearing), sb = sin(bearing);\n"
 "    point = float3(cb * point.x - sb * point.y, sb * point.x + cb * point.y, point.z);\n"
 "    float sn = sin(pitch), cn = cos(pitch);\n"
 "    float distance = (vh * 0.5 / radius) / (0.46630766 * max(k, 0.001));\n"
-"    float3 eye = float3(0.0, -sn * distance, cn * distance);\n"
+"    float3 eye = float3(0.0, -sn * distance, cn * distance + u.t0.z);\n"
 "    float3 rel = point - eye, forward = float3(0.0, sn, -cn), up = float3(0.0, cn, sn);\n"
 "    float depth = dot(rel, forward);\n"
 "    float scale = vh * 0.5 / (depth * 0.46630766 * max(k, 0.001));\n"
 "    return float3(vw * 0.5 + rel.x * scale, vh * 0.5 - dot(rel, up) * scale, depth);\n"
 "}\n"
+"static float3 projectAt(float lat, float dlon, constant U &u) { return projectHeight(lat, dlon, 0.0, u); }\n"
 "static float4 clipPoint(float3 p, constant U &u) {\n"
 "    float2 xy=float2(p.x/u.view.x*2.0-1.0,1.0-p.y/u.view.y*2.0);\n"
 "    float k=smoothstep(0.0,1.0,u.cam2.x/0.3490658504);\n"
@@ -627,22 +757,49 @@ static NSString *const kShader = @""
 "    float nearZ=max(0.00000001,distance*0.001);\n"
 "    return float4(xy*p.z,p.z-nearZ,p.z);\n"
 "}\n"
+// Terrain frames use reversed Z (near 1, far 0) for depth precision across
+// the range from a 10 km foreground to the horizon. bias > 1 pulls forward.
+"static float4 clipTerrain(float3 p, constant U &u, float bias) {\n"
+"    float2 xy=float2(p.x/u.view.x*2.0-1.0,1.0-p.y/u.view.y*2.0);\n"
+"    float k=smoothstep(0.0,1.0,u.cam2.x/0.3490658504);\n"
+"    float distance=(u.view.y*0.5/u.view.w)/(0.46630766*max(k,0.001));\n"
+"    float nearZ=max(0.00000001,distance*0.001);\n"
+"    return float4(xy*p.z,min(nearZ*bias,p.z),p.z);\n"
+"}\n"
+"vertex VOut terrainVertex(uint vid [[vertex_id]], constant U &u [[buffer(0)]],\n"
+"    texture2d<float> near [[texture(3)]], texture2d<float> far [[texture(4)]]) {\n"
+"    uint cols = uint(u.t2.w) * 2u + 1u;\n"
+"    float i = float(vid / cols) - u.t2.w, j = float(vid % cols) - u.t2.w;\n"
+"    float lat = meshLat(i, u), lon = meshLon(j, u);\n"
+"    float h = terrainGround(lat, lon, u, near, far);\n"
+"    float3 p = projectHeight(lat, wrap180(lon - u.cam.y), h, u);\n"
+"    VOut o;\n"
+"    o.position = clipTerrain(p, u, 1.0);\n"
+"    o.lat = lat;\n"
+"    o.lon = wrap180(lon);\n"
+"    o.range = p.z;\n"
+"    return o;\n"
+"}\n"
 "vertex VOut fieldVertex(uint vid [[vertex_id]], constant U &u [[buffer(0)]],\n"
 "    const device float2 *verts [[buffer(1)]]) {\n"
 "    float lat = verts[vid].x;\n"
 "    float dlon = verts[vid].y;\n"
 "    float3 p = projectAt(lat, dlon, u);\n"
 "    VOut o;\n"
-"    o.position = clipPoint(p,u);\n"
+"    o.position = u.t0.x > 0.5 ? clipTerrain(p,u,0.995) : clipPoint(p,u);\n"
 "    o.lat = lat;\n"
 "    o.lon = u.cam.y + dlon;\n"
+"    o.range = p.z;\n"
 "    return o;\n"
 "}\n"
 "vertex LOut lineVertex(uint vid [[vertex_id]], constant U &u [[buffer(0)]],\n"
-"    const device LineV *lines [[buffer(1)]]) {\n"
+"    const device LineV *lines [[buffer(1)]], texture2d<float> near [[texture(3)]], texture2d<float> far [[texture(4)]]) {\n"
 "    LineV v = lines[vid];\n"
-"    float3 p0 = projectAt(v.lat0, v.lon0, u);\n"
-"    float3 p1 = projectAt(v.lat1, v.lon1, u);\n"
+"    bool drape = u.t0.x > 0.5;\n"
+"    float h0 = drape ? meshHeight(v.lat0, u.cam.y + v.lon0, u, near, far) : 0.0;\n"
+"    float h1 = drape ? meshHeight(v.lat1, u.cam.y + v.lon1, u, near, far) : 0.0;\n"
+"    float3 p0 = projectHeight(v.lat0, v.lon0, h0, u);\n"
+"    float3 p1 = projectHeight(v.lat1, v.lon1, h1, u);\n"
 "    float2 dir = p1.xy - p0.xy;\n"
 "    float len = length(dir);\n"
 "    float2 tangent = len > 0.25 ? dir / len : float2(1.0, 0.0);\n"
@@ -655,12 +812,18 @@ static NSString *const kShader = @""
 "    float z = mix(p0.z, p1.z, v.t);\n"
 "    LOut o;\n"
 "    if (len > fmax(u.view.x, u.view.y) * 1.25) o.position = float4(4.0, 4.0, 1.0, 1.0);\n"
-"    else o.position = clipPoint(float3(c,z),u);\n"
+"    else o.position = drape ? clipTerrain(float3(c,z),u,1.0006) : clipPoint(float3(c,z),u);\n"
 "    o.side = v.side;\n"
 "    o.halfInk = v.halfInk;\n"
 "    o.halfOuter = v.halfOuter;\n"
 "    o.pz = z;\n"
 "    o.colour = float4(v.r, v.g, v.b, v.a);\n"
+// Terrain frames: the DEM shoreline replaces the coarse coast where tiles exist.
+"    if (drape && u.cam2.z > 1.5) {\n"
+"        float la = mix(v.lat0, v.lat1, 0.5), lo = u.cam.y + mix(v.lon0, v.lon1, 0.5);\n"
+"        float covered = max(demRead(near, u.nearBox, la, lo).y, demRead(far, u.farBox, la, lo).y);\n"
+"        o.colour.a *= 1.0 - covered;\n"
+"    }\n"
 "    return o;\n"
 "}\n"
 "static float srgbToLinear(float c) {\n"
@@ -809,12 +972,92 @@ static NSString *const kShader = @""
 "    if (y >= int(h)) y = int(h) - 1;\n"
 "    return land.read(uint2(uint(x), uint(y))).r;\n"
 "}\n"
-"fragment Frag fieldFragment(VOut in [[stage_in]], constant U &u [[buffer(0)]],\n"
-"    texture2d<float, access::read> fill0 [[texture(0)]],\n"
-"    texture2d<float, access::read> fill1 [[texture(1)]],\n"
-"    texture2d<float, access::read> land [[texture(2)]]) {\n"
-"    Frag o;\n"
-"    o.geo = float2(in.lat, in.lon);\n"
+"static float3 relieveIn(float3 land, float lat, float lon, float4 box, float2 texel, float strength,\n"
+"    float dark, float exaggeration, float contrast, texture2d<float> dem) {\n"
+"    float span = box.z - box.x, vspan = box.w - box.y;\n"
+"    if (!(strength > 0.001) || !(span > 0.001) || !(vspan > 0.001) || span >= 360.0) return land;\n"
+"    float tu = terrainWrap(lon - box.x) / span, tv = (lat - box.y) / vspan;\n"
+"    if (tu < 0.0 || tv < 0.0 || tu > 1.0 || tv > 1.0) return land;\n"
+"    float2 uv = float2(tu, tv);\n"
+"    float2 here = terrainSample(dem, uv);\n"
+"    if (!(here.y > 0.999)) return land;\n"
+"    float2 e = terrainSample(dem, uv + float2(texel.x, 0.0)), w = terrainSample(dem, uv - float2(texel.x, 0.0));\n"
+"    float2 n = terrainSample(dem, uv + float2(0.0, texel.y)), s = terrainSample(dem, uv - float2(0.0, texel.y));\n"
+"    float cover = min(min(e.y, w.y), min(n.y, s.y)) > 0.999 ? 1.0 : 0.0;\n"
+"    float dx = texel.x * span * 111320.0 * max(cos(lat * 0.01745329251), 0.05);\n"
+"    float dy = texel.y * vspan * 110574.0;\n"
+"    float3 tinted = mix(land, hypsometric(land, here.x, dark), 0.55 * strength * here.y);\n"
+"    if (!(dx > 1.0) || !(dy > 1.0)) return tinted;\n"
+"    float gx = (e.x - w.x) / (2.0 * dx) * exaggeration, gy = (n.x - s.x) / (2.0 * dy) * exaggeration;\n"
+"    float3 normal = normalize(float3(-gx, -gy, 1.0));\n"
+"    float shade = 0.15 * max(dot(normal, float3(-0.5, -0.5, 0.7071)), 0.0)\n"
+"        + 0.25 * max(dot(normal, float3(-0.7071, 0.0, 0.7071)), 0.0)\n"
+"        + 0.40 * max(dot(normal, float3(-0.5, 0.5, 0.7071)), 0.0)\n"
+"        + 0.20 * max(dot(normal, float3(0.0, 0.7071, 0.7071)), 0.0);\n"
+"    float delta = (shade - 0.7071) * strength * cover * contrast;\n"
+"    float darken = mix(0.75, 0.9, dark), lighten = mix(0.4, 0.25, dark);\n"
+"    return tinted * (1.0 + darken * min(delta, 0.0)) + (float3(1.0) - tinted) * lighten * max(delta, 0.0);\n"
+"}\n"
+// Coverage-weighted tent of four bilinear taps: a soft shoreline from a
+// coarse mosaic instead of texel steps. Returns (metres, coverage).
+"static float2 terrainSoft(texture2d<float> t, float4 box, float lat, float lon) {\n"
+"    float2 span = box.zw - box.xy;\n"
+"    if (!(span.x > 0.0) || !(span.y > 0.0)) return float2(0.0);\n"
+"    float2 uv = float2(terrainWrap(lon - box.x), lat - box.y) / span;\n"
+"    if (any(uv < 0.0) || any(uv > 1.0)) return float2(0.0);\n"
+"    constexpr sampler smp(mag_filter::linear, min_filter::linear, address::clamp_to_edge);\n"
+"    float2 e = 0.5 / float2(t.get_width(), t.get_height());\n"
+"    float2 a = t.sample(smp, uv + float2(-e.x, -e.y)).rg + t.sample(smp, uv + float2(e.x, -e.y)).rg\n"
+"        + t.sample(smp, uv + float2(-e.x, e.y)).rg + t.sample(smp, uv + float2(e.x, e.y)).rg;\n"
+"    return a.y > 0.004 ? float2(a.x / a.y, a.y * 0.25) : float2(0.0);\n"
+"}\n"
+"static float2 terrainAtFar(float lat, float lon, constant U &u, texture2d<float> far) {\n"
+"    float2 span = u.farBox.zw - u.farBox.xy;\n"
+"    if (!(span.x > 0.0) || !(span.y > 0.0)) return float2(0.0);\n"
+"    float2 uv = float2(terrainWrap(lon - u.farBox.x), lat - u.farBox.y) / span;\n"
+"    if (any(uv < 0.0) || any(uv > 1.0)) return float2(0.0);\n"
+"    float2 sample = terrainSample(far, uv);\n"
+"    return sample.y > 0.999 ? sample : float2(0.0);\n"
+"}\n"
+"static float nearWeight(float lat, float lon, constant U &u) {\n"
+"    float2 span = u.nearBox.zw - u.nearBox.xy;\n"
+"    if (!(span.x > 0.0) || !(span.y > 0.0)) return 0.0;\n"
+"    float2 uv = float2(terrainWrap(lon - u.nearBox.x), lat - u.nearBox.y) / span;\n"
+"    if (any(uv < 0.0) || any(uv > 1.0)) return 0.0;\n"
+"    return smoothstep(0.0, 0.06, min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)));\n"
+"}\n"
+// Sky by view-ray elevation above the eye's horizon; theme only, not time.
+"static float3 skyColour(float2 pixel, constant U &u) {\n"
+"    float k = smoothstep(0.0, 1.0, u.cam2.x / 0.3490658504);\n"
+"    float d = 0.46630766 * max(k, 0.001), sn = sin(u.cam2.x), cn = cos(u.cam2.x);\n"
+"    float cx = (pixel.x - u.view.x * 0.5) / (u.view.x * 0.5), cy = (u.view.y * 0.5 - pixel.y) / (u.view.y * 0.5);\n"
+"    float3 ray = normalize(float3(cx * d * u.view.x / u.view.y, sn + cy * d * cn, -cn + cy * d * sn));\n"
+"    float elevation = dot(ray, float3(0.0, u.t3.z, u.t3.w)) + u.t3.y;\n"
+"    float t = smoothstep(0.0, 0.6, elevation);\n"
+"    float3 horizon = mix(float3(0.84, 0.88, 0.91), float3(0.17, 0.21, 0.27), u.t0.w);\n"
+"    float3 zenith = mix(float3(0.30, 0.52, 0.76), float3(0.03, 0.05, 0.10), u.t0.w);\n"
+"    return mix(horizon, zenith, t);\n"
+"}\n"
+"static float3 aerial(float3 rgb, float range, constant U &u) {\n"
+"    if (u.t0.x < 0.5) return rgb;\n"
+"    float D = u.t3.x;\n"
+"    float haze = 0.86 * (1.0 - exp(-max(0.0, range - 0.7 * D) / (2.2 * D)));\n"
+"    float3 horizon = mix(float3(0.84, 0.88, 0.91), float3(0.17, 0.21, 0.27), u.t0.w);\n"
+"    return mix(rgb, horizon, haze);\n"
+"}\n"
+"vertex VOut skyVertex(uint vid [[vertex_id]]) {\n"
+"    VOut o;\n"
+"    float2 p = float2(vid == 1 ? 3.0 : -1.0, vid == 2 ? 3.0 : -1.0);\n"
+"    o.position = float4(p, 0.0, 1.0);\n"
+"    o.lat = 999.0; o.lon = 999.0; o.range = 0.0;\n"
+"    return o;\n"
+"}\n"
+"fragment float4 skyFragment(VOut in [[stage_in]], constant U &u [[buffer(0)]]) {\n"
+"    return present(float4(skyColour(in.position.xy, u), 1.0), u);\n"
+"}\n"
+"static float4 fieldShade(VOut in, constant U &u, texture2d<float, access::read> fill0,\n"
+"    texture2d<float, access::read> fill1, texture2d<float, access::read> land,\n"
+"    texture2d<float> dem, texture2d<float> far) {\n"
 "    float west = u.geo0.x, north = u.geo0.y, east = u.geo0.w, south = u.geo1.x;\n"
 "    bool wraps = u.geo1.w > 0.5;\n"
 "    bool inside = in.lat <= north + 1e-3 && in.lat >= south - 1e-3;\n"
@@ -824,31 +1067,80 @@ static NSString *const kShader = @""
 "        lon = mid + wrap180(in.lon - mid);\n"
 "        inside = inside && lon >= west - 1e-3 && lon <= east + 1e-3;\n"
 "    }\n"
+"    bool scene = u.t0.x > 0.5;\n"
+"    float2 terrainHeight = terrainAt(in.lat, in.lon, u, dem);\n"
+"    float3 landPlate = u.colours[7].xyz, reliefLand;\n"
+"    float landAmount = -1.0;\n"
+"    if (scene) {\n"
+"        float2 coarse = terrainAtFar(in.lat, in.lon, u, far);\n"
+"        float wn = terrainHeight.y > 0.999 ? (coarse.y > 0.999 ? nearWeight(in.lat, in.lon, u) : 1.0) : 0.0;\n"
+"        float exaggeration = clamp(u.t0.y * 1.3, 1.5, 6.0);\n"
+"        float2 fineTexel = u.terrain.xy;\n"
+"        float2 farTexel = float2(1.0 / float(far.get_width()), 1.0 / float(far.get_height()));\n"
+"        float3 fineLand = wn > 0.0 ? relieveIn(landPlate, in.lat, in.lon, u.terrainBox, fineTexel, 1.0, u.terrain.w, exaggeration, 1.35, dem) : landPlate;\n"
+"        float3 farLand = wn < 1.0 ? relieveIn(landPlate, in.lat, in.lon, u.farBox, farTexel, 1.0, u.terrain.w, exaggeration, 1.35, far) : landPlate;\n"
+"        reliefLand = mix(farLand, fineLand, wn);\n"
+"        float hBoth = wn > 0.0 ? mix(coarse.y > 0.999 ? coarse.x : terrainHeight.x, terrainHeight.x, wn) : coarse.x;\n"
+"        if ((wn > 0.0 || coarse.y > 0.999) && abs(hBoth) > 20.0) landAmount = 1.0;\n"
+"        else {\n"
+"            float2 softNear = wn > 0.0 ? terrainSoft(dem, u.terrainBox, in.lat, in.lon) : float2(0.0);\n"
+"            float2 softFar = wn < 1.0 ? terrainSoft(far, u.farBox, in.lat, in.lon) : float2(0.0);\n"
+"            float wSoft = softNear.y > 0.0 ? (softFar.y > 0.0 ? nearWeight(in.lat, in.lon, u) : 1.0) : 0.0;\n"
+"            float hSoft = mix(softFar.x, softNear.x, wSoft);\n"
+"            float covered = max(softNear.y, softFar.y);\n"
+"            landAmount = covered > 0.0 ? smoothstep(0.3, 6.0, abs(hSoft)) : -1.0;\n"
+"        }\n"
+"        terrainHeight = wn > 0.0 ? float2(mix(coarse.y > 0.999 ? coarse.x : terrainHeight.x, terrainHeight.x, wn), 1.0) : coarse;\n"
+"    } else {\n"
+"        reliefLand = relieve(landPlate, in.lat, in.lon, u, dem);\n"
+"    }\n"
+"    bool measured = terrainHeight.y > 0.999;\n"
+"    bool terrainSea = abs(terrainHeight.x) < 0.1;\n"
+"    if (landAmount >= 0.0) { measured = true; terrainSea = landAmount < 0.5; }\n"
 "    if (!inside) {\n"
-"        o.colour = float4(u.uncovered.xyz, 1.0);\n"
-"        return o;\n"
+"        float3 base = measured ? (terrainSea ? u.ocean.xyz : reliefLand) : u.uncovered.xyz;\n"
+"        if (landAmount >= 0.0) base = mix(u.ocean.xyz, reliefLand, landAmount);\n"
+"        if (scene) return present(float4(aerial(base, in.range, u), 1.0), u);\n"
+"        return measured ? present(float4(base, 1.0), u) : float4(base, 1.0);\n"
 "    }\n"
 "    float v = blended(fill0, fill1, in.lat, in.lon, u);\n"
 "    bool mask = u.ocean.w > 0.5;\n"
 "    bool colourField = u.ink.w > 0.5;\n"
 "    float3 rgb;\n"
 "    if (isnan(v)) rgb = u.missing.xyz;\n"
-"    else if (mask) {\n"
-"        bool sea = landFraction(land, in.lat, lon, u) < 0.5;\n"
-"        float3 plate = sea ? u.ocean.xyz : u.colours[7].xyz;\n"
+"    else if (mask || measured) {\n"
+"        bool sea = measured ? terrainSea : landFraction(land, in.lat, lon, u) < 0.5;\n"
+"        float3 plate = landAmount >= 0.0 ? mix(u.ocean.xyz, reliefLand, landAmount) : (sea ? u.ocean.xyz : reliefLand);\n"
 "        if (colourField) {\n"
 "            float a = clamp(alphaFor(v, u) * (sea ? u.missing.w : 1.0), 0.0, 1.0);\n"
 "            rgb = mix(plate, colourFor(v, u), a);\n"
 "        } else rgb = plate;\n"
 "    } else rgb = colourFor(v, u);\n"
-"    o.colour = present(float4(rgb, 1.0), u);\n"
+"    return present(float4(aerial(rgb, in.range, u), 1.0), u);\n"
+"}\n"
+"fragment Frag fieldFragment(VOut in [[stage_in]], constant U &u [[buffer(0)]],\n"
+"    texture2d<float, access::read> fill0 [[texture(0)]],\n"
+"    texture2d<float, access::read> fill1 [[texture(1)]],\n"
+"    texture2d<float, access::read> land [[texture(2)]], texture2d<float> dem [[texture(3)]],\n"
+"    texture2d<float> far [[texture(4)]]) {\n"
+"    Frag o;\n"
+"    o.geo = float2(in.lat, in.lon);\n"
+"    o.colour = fieldShade(in, u, fill0, fill1, land, dem, far);\n"
 "    return o;\n"
 "}\n"
+"fragment float4 fieldColourFragment(VOut in [[stage_in]], constant U &u [[buffer(0)]],\n"
+"    texture2d<float, access::read> fill0 [[texture(0)]],\n"
+"    texture2d<float, access::read> fill1 [[texture(1)]],\n"
+"    texture2d<float, access::read> land [[texture(2)]], texture2d<float> dem [[texture(3)]],\n"
+"    texture2d<float> far [[texture(4)]]) {\n"
+"    return fieldShade(in, u, fill0, fill1, land, dem, far);\n"
+"}\n"
+"fragment float rangeFragment(VOut in [[stage_in]]) { return in.range; }\n"
 "fragment float2 pickFragment(VOut in [[stage_in]]) {\n"
 "    return float2(in.lat, in.lon);\n"
 "}\n"
 "fragment float4 lineFragment(LOut in [[stage_in]], constant U &u [[buffer(0)]],\n"
-"    texture2d<float, access::read> pick [[texture(0)]]) {\n"
+"    texture2d<float, access::read> pick [[texture(0)]], texture2d<float> dem [[texture(3)]]) {\n"
 "    if (u.cam.z > 0.001) {\n"
 "        if (in.pz < -0.002) discard_fragment();\n"
 "        uint2 px = uint2(uint(in.position.x), uint(in.position.y));\n"
@@ -858,6 +1150,13 @@ static NSString *const kShader = @""
 "    float dist = abs(in.side) * in.halfOuter;\n"
 "    float3 rgb = in.colour.rgb;\n"
 "    float alphaIn = in.colour.a;\n"
+"    if(u.cam2.z > 0.5 && u.cam2.z < 1.5) {\n"
+"        uint2 px=uint2(in.position.xy);\n"
+"        if(px.x<uint(u.view.x) && px.y<uint(u.view.y)) {\n"
+"            float2 geo=pick.read(px).xy;\n"
+"            if(terrainAt(geo.x,geo.y,u,dem).y>0.999) alphaIn*=1.0-u.terrain.z;\n"
+"        }\n"
+"    }\n"
 "    float alpha = (1.0 - smoothstep(in.halfInk, in.halfOuter, dist)) * alphaIn;\n"
 "    if (alpha < 0.004) discard_fragment();\n"
 "    return present(float4(rgb, alpha), u);\n"
@@ -907,8 +1206,13 @@ typedef struct {
     simd_float4 ink;
     simd_float4 ocean;
     simd_float4 uncovered;
+    simd_float4 terrainBox;
+    simd_float4 terrain;
+    // 3D terrain: t0 (on, relief, focus lift, dark), t1 mesh origin/spacing,
+    // t2 (n0, nOuter, ratio, N), boxes, t3 (eye distance, horizon dip, eye up y/z).
+    simd_float4 t0, t1, t2, nearBox, farBox, t3;
 } FieldUniform;
-_Static_assert(sizeof(FieldUniform) == 320, "field uniform must match the shader");
+_Static_assert(sizeof(FieldUniform) == 448, "field uniform must match the shader");
 
 typedef struct {
     float lat0, lon0, lat1, lon1;
@@ -1073,6 +1377,21 @@ static const float kClassPx[3] = {11.f, 18.f, 11.f};
     double *_landWeight;
     id<MTLTexture> _landTex;
     id<MTLTexture> _landDummy;
+    id<MTLTexture> _terrainTex, _terrainDummy;
+    id<MTLFunction> _skyVS, _skyFS, _terrainVS, _colourFS, _pickFS;
+    id<MTLRenderPipelineState> _pipePickTerrain, _pipeProbeTerrain, _pipeProbeGlobe;
+    id<MTLCommandQueue> _probeQueue;
+    id<MTLTexture> _probeTex, _probeDepth;
+    IsobarCamera _probeCam;
+    BOOL _probeValid;
+    id<MTLDepthStencilState> _depthNear, _depthNearRead, _depthAlways;
+    NSMutableDictionary<NSNumber *, NSArray *> *_terrainPipes;
+    id<MTLTexture> _msaaColour, _msaaDepth;
+    id<MTLBuffer> _terrainIndices;
+    NSUInteger _terrainIndexCount;
+    int _terrainIndexN;
+    TerrainBox _terrainBox;
+    float _terrainRelief;
     int _landLon, _landLat;
     double _landWest, _landNorth, _landStep;
     ContourSet *_current;
@@ -1393,6 +1712,26 @@ static id<MTLRenderPipelineState> MakePipe(id<MTLDevice> device, id<MTLFunction>
     return [device newRenderPipelineStateWithDescriptor:desc error:error];
 }
 
+static id<MTLRenderPipelineState> MakeSampledPipe(id<MTLDevice> device, id<MTLFunction> vs, id<MTLFunction> fs,
+    MTLPixelFormat colour, BOOL blend, NSUInteger samples, NSError **error) {
+    MTLRenderPipelineDescriptor *desc = [MTLRenderPipelineDescriptor new];
+    desc.vertexFunction = vs;
+    desc.fragmentFunction = fs;
+    desc.rasterSampleCount = samples;
+    desc.colorAttachments[0].pixelFormat = colour;
+    if (blend) {
+        desc.colorAttachments[0].blendingEnabled = YES;
+        desc.colorAttachments[0].rgbBlendOperation = MTLBlendOperationAdd;
+        desc.colorAttachments[0].alphaBlendOperation = MTLBlendOperationAdd;
+        desc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
+        desc.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        desc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
+        desc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+    }
+    desc.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
+    return [device newRenderPipelineStateWithDescriptor:desc error:error];
+}
+
 static id<MTLRenderPipelineState> MakeTextPipe(id<MTLDevice> device, id<MTLFunction> vs, id<MTLFunction> fs,
     MTLPixelFormat colour, NSError **error) {
     MTLRenderPipelineDescriptor *desc = [MTLRenderPipelineDescriptor new];
@@ -1509,6 +1848,30 @@ static id<MTLRenderPipelineState> MakeTextPipe(id<MTLDevice> device, id<MTLFunct
     depth.depthWriteEnabled = NO;
     _depthRead = [device newDepthStencilStateWithDescriptor:depth];
     if (!_depthWrite || !_depthRead || ![self buildMesh]) return nil;
+    // Terrain frames: reversed Z, cleared to 0, nearer is greater.
+    depth.depthCompareFunction = MTLCompareFunctionGreaterEqual;
+    depth.depthWriteEnabled = YES;
+    _depthNear = [device newDepthStencilStateWithDescriptor:depth];
+    depth.depthWriteEnabled = NO;
+    _depthNearRead = [device newDepthStencilStateWithDescriptor:depth];
+    depth.depthCompareFunction = MTLCompareFunctionAlways;
+    _depthAlways = [device newDepthStencilStateWithDescriptor:depth];
+    _skyVS = [lib newFunctionWithName:@"skyVertex"];
+    _skyFS = [lib newFunctionWithName:@"skyFragment"];
+    _terrainVS = [lib newFunctionWithName:@"terrainVertex"];
+    _colourFS = [lib newFunctionWithName:@"fieldColourFragment"];
+    _pickFS = pick;
+    _pipePickTerrain = MakePipe(device, _terrainVS, pick, MTLPixelFormatRG32Float, MTLPixelFormatInvalid, NO, &error);
+    id<MTLFunction> rangeFS = [lib newFunctionWithName:@"rangeFragment"];
+    _pipeProbeTerrain = rangeFS ? MakePipe(device, _terrainVS, rangeFS, MTLPixelFormatR32Float, MTLPixelFormatInvalid, NO, &error) : nil;
+    _pipeProbeGlobe = rangeFS ? MakePipe(device, vs, rangeFS, MTLPixelFormatR32Float, MTLPixelFormatInvalid, NO, &error) : nil;
+    _probeQueue = [device newCommandQueue];
+    _terrainPipes = [NSMutableDictionary dictionary];
+    if (!_depthNear || !_depthNearRead || !_depthAlways || !_skyVS || !_skyFS || !_terrainVS || !_colourFS
+        || !_pipePickTerrain || !_pipeProbeTerrain || !_pipeProbeGlobe || !_probeQueue) {
+        fprintf(stderr, "fieldrender: %s\n", error.localizedDescription.UTF8String ?: "terrain pipeline failed");
+        return nil;
+    }
     _coast = OwnCoastParse([NSData dataWithContentsOfFile:OwnCoastPath()]);
     _worldCoast = OwnCoastParse([NSData dataWithContentsOfFile:OwnWorldCoastPath()]);
     MTLTextureDescriptor *landDesc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm
@@ -1520,6 +1883,10 @@ static id<MTLRenderPipelineState> MakeTextPipe(id<MTLDevice> device, id<MTLFunct
         uint8_t landByte = 255;
         [_landDummy replaceRegion:MTLRegionMake2D(0, 0, 1, 1) mipmapLevel:0 withBytes:&landByte bytesPerRow:1];
     }
+    MTLTextureDescriptor *demDesc=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRG32Float width:1 height:1 mipmapped:NO];
+    demDesc.usage=MTLTextureUsageShaderRead; demDesc.storageMode=MTLStorageModeShared;
+    _terrainDummy=[_device newTextureWithDescriptor:demDesc];
+    float empty[2]={0,0}; [_terrainDummy replaceRegion:MTLRegionMake2D(0,0,1,1) mipmapLevel:0 withBytes:empty bytesPerRow:sizeof empty];
     [self rebuildAtlas];
     return self;
 }
@@ -1565,6 +1932,13 @@ static OwnCoast CoastForGrid(IsobarGeoGrid grid, OwnCoast australia, OwnCoast wo
     for (IsobarFieldSlot *slot in _slots)
         if (slot.step == step && slot.kind == kind) return slot;
     return nil;
+}
+
+- (void)dropColourFieldsExcept:(IsobarFieldKind)keep {
+    NSMutableArray *gone = [NSMutableArray array];
+    for (IsobarFieldSlot *slot in _slots)
+        if (slot.kind != IsobarFieldPressure && slot.kind != keep) [gone addObject:slot];
+    [_slots removeObjectsInArray:gone];
 }
 
 - (void)evictLRU {
@@ -2598,10 +2972,31 @@ static ContourSet *BuildContourSet(const float *va, const float *vb, float mix,
 }
 
 
+// Set by drawCamera while it builds line geometry for a terrain frame.
+static _Thread_local struct { int on; IsobarTerrainView view; double centreLon; } gDrape;
+
 static void PushSegment(FieldLineVertex **verts, int *count, int *cap,
     float lat0, float dlon0, float lat1, float dlon1, float width, IsobarRGB rgb, float alpha,
     float pixelScale, BOOL *truncated) {
     enum { kLineVertHardCap = 1000000 };
+    if (gDrape.on && IsobarTerrainHooksInstalled && IsobarTerrainHooksInstalled->cell) {
+        double midLat = 0.5 * ((double)lat0 + lat1), midLon = gDrape.centreLon + 0.5 * ((double)dlon0 + dlon1);
+        double cell = IsobarTerrainHooksInstalled->cell(&gDrape.view, midLat, midLon);
+        double across = fmax(fabs((double)lat1 - lat0), fabs((double)dlon1 - dlon0) * cos(midLat * kDeg));
+        int n = cell > 0 && isfinite(cell) ? (int)ceil(across / cell) : 1;
+        if (n > 1) {
+            if (n > 96) n = 96;
+            int on = gDrape.on;
+            gDrape.on = 0;
+            for (int i = 0; i < n; i++) {
+                float a = (float)i / n, b = (float)(i + 1) / n;
+                PushSegment(verts, count, cap, lat0 + (lat1 - lat0) * a, dlon0 + (dlon1 - dlon0) * a,
+                    lat0 + (lat1 - lat0) * b, dlon0 + (dlon1 - dlon0) * b, width, rgb, alpha, pixelScale, truncated);
+            }
+            gDrape.on = on;
+            return;
+        }
+    }
     if (*count + 6 > kLineVertHardCap) {
         if (truncated) *truncated = YES;
         return;
@@ -2859,7 +3254,7 @@ static BOOL ProjectMark(IsobarCamera cam, double lat, double lon, double *x, dou
 static BOOL CamSame(IsobarCamera a, IsobarCamera b) {
     return a.centreLat == b.centreLat && a.centreLon == b.centreLon && a.zoom == b.zoom
         && a.globe == b.globe && a.pitch == b.pitch && a.viewportW == b.viewportW && a.viewportH == b.viewportH
-        && a.bearing == b.bearing;
+        && a.bearing == b.bearing && a.terrain == b.terrain;
 }
 
 static int GlyphIndex(int klass, char ch) {
@@ -5358,7 +5753,159 @@ static void LocalOf(double x, double y, double cx, double cy, double ang, double
     [self ensureLandTexture];
     u.ocean = (simd_float4){(float)plate.sea.r, (float)plate.sea.g, (float)plate.sea.b, _landTex ? 1.f : 0.f};
     u.uncovered = (simd_float4){(float)plate.uncovered.r, (float)plate.uncovered.g, (float)plate.uncovered.b, (float)cutoff};
+    u.terrainBox=(simd_float4){(float)_terrainBox.west,(float)_terrainBox.south,(float)_terrainBox.east,(float)_terrainBox.north};
+    id<MTLTexture> dem=_terrainTex ?: _terrainDummy;
+    u.terrain=(simd_float4){1.f/dem.width,1.f/dem.height,_terrainTex ? _terrainRelief : 0,_chartDark ? 1.f : 0.f};
+    u.t0=(simd_float4){0,1,0,_chartDark ? 1.f : 0.f};
+    IsobarTerrainView tv;
+    IsobarTiltBasis b;
+    if ([self terrainSceneForCamera:camera view:&tv]
+        && IsobarTiltBasisMake(camera, tv.relief, tv.focusM, &b)) {
+        id<MTLTexture> near=(__bridge id<MTLTexture>)tv.nearTexture;
+        u.t0=(simd_float4){1,(float)tv.relief,(float)b.lift,_chartDark ? 1.f : 0.f};
+        u.t1=(simd_float4){(float)tv.latC,(float)tv.lonC,(float)tv.sLat,(float)tv.sLon};
+        u.t2=(simd_float4){(float)tv.n0,(float)tv.nOuter,(float)tv.ratio,(float)(tv.n0+tv.nOuter)};
+        u.nearBox=(simd_float4){(float)tv.near.west,(float)tv.near.south,(float)tv.near.east,(float)tv.near.north};
+        u.farBox=(simd_float4){(float)tv.far.west,(float)tv.far.south,(float)tv.far.east,(float)tv.far.north};
+        if (!tv.near.samples) u.nearBox=(simd_float4){0,0,0,0};
+        if (!tv.far.samples) u.farBox=(simd_float4){0,0,0,0};
+        u.terrainBox=u.nearBox;
+        u.terrain=(simd_float4){near ? 1.f/near.width : 1.f, near ? 1.f/near.height : 1.f, near ? 1.f : 0.f, _chartDark ? 1.f : 0.f};
+        double ux=0, uy=b.eyeY, uz=b.eyeZ+b.re, un=sqrt(uy*uy+uz*uz);
+        double altitude=un-b.re;
+        double dip=altitude>0 ? acos(fmin(1.0,b.re/un)) : 0;
+        (void)ux;
+        u.t3=(simd_float4){(float)b.distance,(float)sin(dip),(float)(uy/un),(float)(uz/un)};
+    }
     return u;
+}
+
+// The mesh reaches past the horizon and clear of the poles: no globe needed.
+static BOOL TerrainMeshCoversGlobe(const IsobarTerrainView *v) {
+    return v->radiusDeg < 79.9 && fabs(v->latC) + v->radiusDeg < 89.4;
+}
+
+// A 3D terrain frame: a live scene, its textures and a perspective camera.
+- (BOOL)terrainSceneForCamera:(IsobarCamera)camera view:(IsobarTerrainView *)view {
+    IsobarTerrainView tv;
+    if (!IsobarCameraTerrain(camera, &tv)) return NO;
+    if (!tv.nearTexture && !tv.farTexture) return NO;
+    if (tv.n0 + tv.nOuter <= 0) return NO;
+    if (view) *view = tv;
+    return YES;
+}
+
+// Index grid of the analytic terrain mesh: (2N+1)^2 vertices from vertex_id.
+// Cells split on the (x+1, y)-(x, y+1) diagonal, as the CPU height does.
+- (void)publishTerrainProbeForCamera:(IsobarCamera)camera {
+    IsobarTerrainView view;
+    if (_probeValid && memcmp(&_probeCam, &camera, sizeof camera) == 0) return;
+    if (!_gridOK || ![self terrainSceneForCamera:camera view:&view] || ![self ensureTerrainIndices:view.n0 + view.nOuter]) return;
+    double vw, vh, px, radius, globe;
+    if (!Metrics(camera, &vw, &vh, &px, &radius, &globe)) return;
+    NSUInteger w = (NSUInteger)MAX(2, MIN(960, llround(vw * 0.5))), h = (NSUInteger)MAX(2, llround(w * vh / vw));
+    if (!_probeTex || _probeTex.width != w || _probeTex.height != h) {
+        MTLTextureDescriptor *desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR32Float width:w height:h mipmapped:NO];
+        desc.usage = MTLTextureUsageRenderTarget;
+        desc.storageMode = MTLStorageModePrivate;
+        _probeTex = [_device newTextureWithDescriptor:desc];
+        desc.pixelFormat = MTLPixelFormatDepth32Float;
+        _probeDepth = [_device newTextureWithDescriptor:desc];
+    }
+    // A fresh buffer per probe: readers of the previous one may still hold it.
+    id<MTLBuffer> out = [_device newBufferWithLength:w * h * sizeof(float) options:MTLResourceStorageModeShared];
+    if (!_probeTex || !_probeDepth || !out) return;
+    id<MTLCommandBuffer> buffer = [_probeQueue commandBuffer];
+    MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+    pass.colorAttachments[0].texture = _probeTex;
+    pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+    pass.colorAttachments[0].clearColor = MTLClearColorMake(INFINITY, 0, 0, 0);
+    pass.depthAttachment.texture = _probeDepth;
+    pass.depthAttachment.loadAction = MTLLoadActionClear;
+    pass.depthAttachment.storeAction = MTLStoreActionDontCare;
+    pass.depthAttachment.clearDepth = 0;
+    id<MTLRenderCommandEncoder> enc = buffer ? [buffer renderCommandEncoderWithDescriptor:pass] : nil;
+    if (!enc) return;
+    FieldUniform uniform = [self uniformForCamera:camera fill:IsobarFieldPressure mix:0];
+    [enc setCullMode:MTLCullModeNone];
+    [enc setDepthStencilState:_depthNear];
+    [enc setVertexBytes:&uniform length:sizeof uniform atIndex:0];
+    [enc setVertexTexture:((__bridge id<MTLTexture>)view.nearTexture ?: _terrainDummy) atIndex:3];
+    [enc setVertexTexture:((__bridge id<MTLTexture>)view.farTexture ?: _terrainDummy) atIndex:4];
+    [enc setRenderPipelineState:_pipeProbeTerrain];
+    [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_terrainIndexCount indexType:MTLIndexTypeUInt32
+        indexBuffer:_terrainIndices indexBufferOffset:0];
+    if (!TerrainMeshCoversGlobe(&view)) {
+        [enc setRenderPipelineState:_pipeProbeGlobe];
+        [enc setVertexBuffer:_vertices offset:0 atIndex:1];
+        [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_indexCount indexType:MTLIndexTypeUInt32
+            indexBuffer:_indices indexBufferOffset:0];
+    }
+    [enc endEncoding];
+    id<MTLBlitCommandEncoder> blit = [buffer blitCommandEncoder];
+    [blit copyFromTexture:_probeTex sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0)
+        sourceSize:MTLSizeMake(w, h, 1) toBuffer:out destinationOffset:0
+        destinationBytesPerRow:w * sizeof(float) destinationBytesPerImage:w * h * sizeof(float)];
+    [blit endEncoding];
+    [buffer commit];
+    if (!IsobarTerrainHooksInstalled || !IsobarTerrainHooksInstalled->probe) return;
+    IsobarTerrainHooksInstalled->probe(camera, (int)w, (int)h, (__bridge void *)out, (__bridge void *)buffer);
+    _probeCam = camera;
+    _probeValid = YES;
+}
+
+- (BOOL)ensureTerrainIndices:(int)N {
+    if (_terrainIndices && _terrainIndexN == N) return YES;
+    NSUInteger cols = (NSUInteger)N * 2 + 1, cells = (cols - 1) * (cols - 1);
+    uint32_t *idx = malloc(cells * 6 * sizeof(uint32_t));
+    if (!idx) return NO;
+    NSUInteger at = 0;
+    for (NSUInteger y = 0; y + 1 < cols; y++) for (NSUInteger x = 0; x + 1 < cols; x++) {
+        uint32_t i00 = (uint32_t)(y * cols + x), i10 = i00 + 1, i01 = (uint32_t)(i00 + cols), i11 = i01 + 1;
+        idx[at++] = i00; idx[at++] = i10; idx[at++] = i01;
+        idx[at++] = i10; idx[at++] = i11; idx[at++] = i01;
+    }
+    _terrainIndices = [_device newBufferWithBytes:idx length:at * sizeof(uint32_t) options:MTLResourceStorageModeShared];
+    free(idx);
+    _terrainIndexCount = _terrainIndices ? at : 0;
+    _terrainIndexN = _terrainIndices ? N : 0;
+    return _terrainIndices != nil;
+}
+
+// MSAA pipelines for a terrain frame: sky, globe, mesh, lines.
+- (NSArray<id<MTLRenderPipelineState>> *)terrainPipesForFormat:(MTLPixelFormat)fmt error:(NSError **)error {
+    NSArray *cached = _terrainPipes[@(fmt)];
+    if (cached) return cached;
+    id<MTLRenderPipelineState> sky = MakeSampledPipe(_device, _skyVS, _skyFS, fmt, NO, 4, error);
+    id<MTLRenderPipelineState> globe = MakeSampledPipe(_device, _fieldVS, _colourFS, fmt, NO, 4, error);
+    id<MTLRenderPipelineState> mesh = MakeSampledPipe(_device, _terrainVS, _colourFS, fmt, NO, 4, error);
+    id<MTLRenderPipelineState> line = MakeSampledPipe(_device, _lineVS, _lineFS, fmt, YES, 4, error);
+    if (!sky || !globe || !mesh || !line) return nil;
+    cached = @[sky, globe, mesh, line];
+    _terrainPipes[@(fmt)] = cached;
+    return cached;
+}
+
+- (BOOL)ensureMSAAWidth:(NSUInteger)w height:(NSUInteger)h format:(MTLPixelFormat)fmt {
+    if (_msaaColour && _msaaColour.width == w && _msaaColour.height == h && _msaaColour.pixelFormat == fmt && _msaaDepth)
+        return YES;
+    MTLTextureDescriptor *desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:fmt width:w height:h mipmapped:NO];
+    desc.textureType = MTLTextureType2DMultisample;
+    desc.sampleCount = 4;
+    desc.usage = MTLTextureUsageRenderTarget;
+    // Tile memory only: the multisample targets live and resolve inside one pass.
+    desc.storageMode = [_device supportsFamily:MTLGPUFamilyApple1] ? MTLStorageModeMemoryless : MTLStorageModePrivate;
+    _msaaColour = [_device newTextureWithDescriptor:desc];
+    desc.pixelFormat = MTLPixelFormatDepth32Float;
+    _msaaDepth = [_device newTextureWithDescriptor:desc];
+    return _msaaColour && _msaaDepth;
+}
+
+- (void)setTerrainMosaic:(IsobarTerrainMosaic *)mosaic relief:(float)relief {
+    _terrainTex=mosaic.texture;
+    _terrainBox=mosaic ? mosaic.box : (TerrainBox){0};
+    _terrainRelief=isfinite(relief) ? fmaxf(0,fminf(1,relief)) : 0;
 }
 
 - (BOOL)prepareTargetWidth:(NSUInteger)w height:(NSUInteger)h colour:(id<MTLTexture>)colour error:(NSError **)error {
@@ -5547,6 +6094,16 @@ static double ToLinear(double c) {
     fill1.stamp = ++_clock;
     double geometryBegan = NowMs();
     if (![self prepareTargetWidth:w height:h colour:color error:error]) return NO;
+    IsobarTerrainView sceneView;
+    NSArray<id<MTLRenderPipelineState>> *scenePipes = nil;
+    BOOL sceneFrame = [self terrainSceneForCamera:camera view:&sceneView]
+        && [self ensureTerrainIndices:sceneView.n0 + sceneView.nOuter]
+        && (scenePipes = [self terrainPipesForFormat:color.pixelFormat error:NULL]) != nil
+        && [self ensureMSAAWidth:w height:h format:color.pixelFormat];
+    // Isobars and coast are split at the mesh cell size so their chords
+    // follow the displayed surface instead of cutting through ridges.
+    gDrape.on = sceneFrame;
+    if (sceneFrame) { gDrape.view = sceneView; gDrape.centreLon = camera.centreLon; }
     BOOL linesFresh = _current && _current->gen == _contentGen;
     BOOL linesGrace = isobars && _current && !linesFresh && _isobarGraceFor != _contentGen;
     BOOL drawIso = isobars && _current && (linesFresh || linesGrace);
@@ -5615,6 +6172,7 @@ static double ToLinear(double c) {
         textVerts = [self textVerts:&textCount];
         _lastGeometryMilliseconds = NowMs() - geometryBegan;
     }
+    gDrape.on = 0;
     // Each frame owns one ring slot until its command buffer completes.
     // A slot that is never committed stays owned; this wait times out and
     // the frame draws through a transient buffer instead.
@@ -5693,70 +6251,154 @@ static double ToLinear(double c) {
         [self releaseFrameSlot:slot];
         return Fail(error, 16, @"command buffer could not be created");
     }
-    MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
-    IsobarRGB ocean = FromOwn(OwnChartPaletteFor(_chartDark).sea);
-    double cr = ocean.r, cg = ocean.g, cb = ocean.b;
-    if (srgb) { cr = ToLinear(cr); cg = ToLinear(cg); cb = ToLinear(cb); }
-    pass.colorAttachments[0].texture = color;
-    pass.colorAttachments[0].loadAction = MTLLoadActionClear;
-    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
-    pass.colorAttachments[0].clearColor = MTLClearColorMake(cr, cg, cb, 1);
-    pass.colorAttachments[1].texture = _pickTex;
-    pass.colorAttachments[1].loadAction = MTLLoadActionClear;
-    pass.colorAttachments[1].storeAction = MTLStoreActionStore;
-    pass.colorAttachments[1].clearColor = MTLClearColorMake(999, 999, 0, 0);
-    pass.depthAttachment.texture = _depthTex;
-    pass.depthAttachment.loadAction = MTLLoadActionClear;
-    pass.depthAttachment.storeAction = (coastCount + isoCount) > 0 ? MTLStoreActionStore : MTLStoreActionDontCare;
-    pass.depthAttachment.clearDepth = 1;
-    id<MTLRenderCommandEncoder> enc = [buffer renderCommandEncoderWithDescriptor:pass];
-    if (!enc) {
-        [self releaseFrameSlot:slot];
-        return Fail(error, 17, @"render pass could not be created");
-    }
     FieldUniform uniform = [self uniformForCamera:camera fill:fill mix:mix];
     uniform.flags.x = srgb ? 2.f : 1.f;
     uniform.flags.y = (float)scale;
-    [enc setRenderPipelineState:pipes[0]];
-    [enc setDepthStencilState:_depthWrite];
-    [enc setCullMode:MTLCullModeNone];
-    [enc setVertexBuffer:_vertices offset:0 atIndex:1];
-    [enc setVertexBytes:&uniform length:sizeof uniform atIndex:0];
-    [enc setFragmentBytes:&uniform length:sizeof uniform atIndex:0];
-    [enc setFragmentTexture:fill0.texture atIndex:0];
-    [enc setFragmentTexture:fill1.texture atIndex:1];
-    [enc setFragmentTexture:(_landTex ?: _landDummy) atIndex:2];
-    [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_indexCount indexType:MTLIndexTypeUInt32
-        indexBuffer:_indices indexBufferOffset:0];
-    [enc endEncoding];
-    if (coastCount + isoCount > 0) {
-        MTLRenderPassDescriptor *lines = [MTLRenderPassDescriptor renderPassDescriptor];
-        lines.colorAttachments[0].texture = color;
-        lines.colorAttachments[0].loadAction = MTLLoadActionLoad;
-        lines.colorAttachments[0].storeAction = MTLStoreActionStore;
-        lines.depthAttachment.texture = _depthTex;
-        lines.depthAttachment.loadAction = MTLLoadActionLoad;
-        lines.depthAttachment.storeAction = MTLStoreActionDontCare;
-        id<MTLRenderCommandEncoder> le = [buffer renderCommandEncoderWithDescriptor:lines];
-        if (le && ((coastCount > 0 && coastBuf) || (isoCount > 0 && lineBuf))) {
-            [le setRenderPipelineState:pipes[1]];
-            [le setDepthStencilState:_depthRead];
-            [le setDepthBias:-0.0015 slopeScale:0 clamp:0];
-            [le setCullMode:MTLCullModeNone];
-            [le setVertexBytes:&uniform length:sizeof uniform atIndex:0];
-            [le setFragmentBytes:&uniform length:sizeof uniform atIndex:0];
-            [le setFragmentTexture:_pickTex atIndex:0];
+    if (sceneFrame) {
+        // One 4x MSAA pass in tile memory: sky, sea-level globe (pushed just
+        // behind), the displaced terrain mesh, then depth-tested lines.
+        id<MTLTexture> nearTex = (__bridge id<MTLTexture>)sceneView.nearTexture ?: _terrainDummy;
+        id<MTLTexture> farTex = (__bridge id<MTLTexture>)sceneView.farTexture ?: _terrainDummy;
+        MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+        IsobarRGB ocean = FromOwn(OwnChartPaletteFor(_chartDark).sea);
+        double cr = ocean.r, cg = ocean.g, cb = ocean.b;
+        if (srgb) { cr = ToLinear(cr); cg = ToLinear(cg); cb = ToLinear(cb); }
+        pass.colorAttachments[0].texture = _msaaColour;
+        pass.colorAttachments[0].resolveTexture = color;
+        pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+        pass.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
+        pass.colorAttachments[0].clearColor = MTLClearColorMake(cr, cg, cb, 1);
+        pass.depthAttachment.texture = _msaaDepth;
+        pass.depthAttachment.loadAction = MTLLoadActionClear;
+        pass.depthAttachment.storeAction = MTLStoreActionDontCare;
+        pass.depthAttachment.clearDepth = 0;
+        id<MTLRenderCommandEncoder> enc = [buffer renderCommandEncoderWithDescriptor:pass];
+        if (!enc) {
+            [self releaseFrameSlot:slot];
+            return Fail(error, 17, @"render pass could not be created");
+        }
+        [enc setCullMode:MTLCullModeNone];
+        [enc setRenderPipelineState:scenePipes[0]];
+        [enc setDepthStencilState:_depthAlways];
+        [enc setFragmentBytes:&uniform length:sizeof uniform atIndex:0];
+        [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+        [enc setVertexBytes:&uniform length:sizeof uniform atIndex:0];
+        [enc setVertexTexture:nearTex atIndex:3];
+        [enc setVertexTexture:farTex atIndex:4];
+        [enc setFragmentTexture:fill0.texture atIndex:0];
+        [enc setFragmentTexture:fill1.texture atIndex:1];
+        [enc setFragmentTexture:(_landTex ?: _landDummy) atIndex:2];
+        [enc setFragmentTexture:nearTex atIndex:3];
+        [enc setFragmentTexture:farTex atIndex:4];
+        [enc setDepthStencilState:_depthNear];
+        [enc setRenderPipelineState:scenePipes[1]];
+        [enc setVertexBuffer:_vertices offset:0 atIndex:1];
+        // Mesh first: it usually covers the whole earth disc, and early depth
+        // then rejects the sea-level globe that fills any polar or capped gap.
+        [enc setRenderPipelineState:scenePipes[2]];
+        [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_terrainIndexCount indexType:MTLIndexTypeUInt32
+            indexBuffer:_terrainIndices indexBufferOffset:0];
+        [enc setRenderPipelineState:scenePipes[1]];
+        if (!TerrainMeshCoversGlobe(&sceneView)) [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_indexCount
+            indexType:MTLIndexTypeUInt32 indexBuffer:_indices indexBufferOffset:0];
+        if ((coastCount > 0 && coastBuf) || (isoCount > 0 && lineBuf)) {
+            // The CPU culls hidden labels; lines need no pick attachment here.
+            FieldUniform lineUniform = uniform;
+            lineUniform.cam.z = 0;
+            lineUniform.cam2.z = 0;
+            [enc setRenderPipelineState:scenePipes[3]];
+            [enc setDepthStencilState:_depthNearRead];
+            [enc setVertexBytes:&lineUniform length:sizeof lineUniform atIndex:0];
+            [enc setFragmentBytes:&lineUniform length:sizeof lineUniform atIndex:0];
+            [enc setFragmentTexture:_pickTex atIndex:0];
             if (coastCount > 0 && coastBuf) {
-                [le setVertexBuffer:coastBuf offset:0 atIndex:1];
-                [le drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:(NSUInteger)coastCount];
+                FieldUniform coastUniform = lineUniform;
+                coastUniform.cam2.z = 2;
+                [enc setVertexBytes:&coastUniform length:sizeof coastUniform atIndex:0];
+                [enc setFragmentBytes:&coastUniform length:sizeof coastUniform atIndex:0];
+                [enc setVertexBuffer:coastBuf offset:0 atIndex:1];
+                [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:(NSUInteger)coastCount];
             }
             if (isoCount > 0 && lineBuf) {
-                [le setVertexBuffer:lineBuf offset:0 atIndex:1];
-                [le drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:(NSUInteger)isoCount];
+                [enc setVertexBytes:&lineUniform length:sizeof lineUniform atIndex:0];
+                [enc setFragmentBytes:&lineUniform length:sizeof lineUniform atIndex:0];
+                [enc setVertexBuffer:lineBuf offset:0 atIndex:1];
+                [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:(NSUInteger)isoCount];
             }
-            [le endEncoding];
-        } else if (le) {
-            [le endEncoding];
+        }
+        [enc endEncoding];
+        uniform.cam.z = 0;
+    } else {
+        MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+        IsobarRGB ocean = FromOwn(OwnChartPaletteFor(_chartDark).sea);
+        double cr = ocean.r, cg = ocean.g, cb = ocean.b;
+        if (srgb) { cr = ToLinear(cr); cg = ToLinear(cg); cb = ToLinear(cb); }
+        pass.colorAttachments[0].texture = color;
+        pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+        pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+        pass.colorAttachments[0].clearColor = MTLClearColorMake(cr, cg, cb, 1);
+        pass.colorAttachments[1].texture = _pickTex;
+        pass.colorAttachments[1].loadAction = MTLLoadActionClear;
+        pass.colorAttachments[1].storeAction = MTLStoreActionStore;
+        pass.colorAttachments[1].clearColor = MTLClearColorMake(999, 999, 0, 0);
+        pass.depthAttachment.texture = _depthTex;
+        pass.depthAttachment.loadAction = MTLLoadActionClear;
+        pass.depthAttachment.storeAction = (coastCount + isoCount) > 0 ? MTLStoreActionStore : MTLStoreActionDontCare;
+        pass.depthAttachment.clearDepth = 1;
+        id<MTLRenderCommandEncoder> enc = [buffer renderCommandEncoderWithDescriptor:pass];
+        if (!enc) {
+            [self releaseFrameSlot:slot];
+            return Fail(error, 17, @"render pass could not be created");
+        }
+        [enc setRenderPipelineState:pipes[0]];
+        [enc setDepthStencilState:_depthWrite];
+        [enc setCullMode:MTLCullModeNone];
+        [enc setVertexBuffer:_vertices offset:0 atIndex:1];
+        [enc setVertexBytes:&uniform length:sizeof uniform atIndex:0];
+        [enc setFragmentBytes:&uniform length:sizeof uniform atIndex:0];
+        [enc setFragmentTexture:fill0.texture atIndex:0];
+        [enc setFragmentTexture:fill1.texture atIndex:1];
+        [enc setFragmentTexture:(_landTex ?: _landDummy) atIndex:2];
+        [enc setFragmentTexture:(_terrainTex ?: _terrainDummy) atIndex:3];
+        [enc setFragmentTexture:_terrainDummy atIndex:4];
+        [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_indexCount indexType:MTLIndexTypeUInt32
+            indexBuffer:_indices indexBufferOffset:0];
+        [enc endEncoding];
+        if (coastCount + isoCount > 0) {
+            MTLRenderPassDescriptor *lines = [MTLRenderPassDescriptor renderPassDescriptor];
+            lines.colorAttachments[0].texture = color;
+            lines.colorAttachments[0].loadAction = MTLLoadActionLoad;
+            lines.colorAttachments[0].storeAction = MTLStoreActionStore;
+            lines.depthAttachment.texture = _depthTex;
+            lines.depthAttachment.loadAction = MTLLoadActionLoad;
+            lines.depthAttachment.storeAction = MTLStoreActionDontCare;
+            id<MTLRenderCommandEncoder> le = [buffer renderCommandEncoderWithDescriptor:lines];
+            if (le && ((coastCount > 0 && coastBuf) || (isoCount > 0 && lineBuf))) {
+                [le setRenderPipelineState:pipes[1]];
+                [le setDepthStencilState:_depthRead];
+                [le setDepthBias:-0.0015 slopeScale:0 clamp:0];
+                [le setCullMode:MTLCullModeNone];
+                [le setVertexBytes:&uniform length:sizeof uniform atIndex:0];
+                [le setVertexTexture:_terrainDummy atIndex:3];
+                [le setVertexTexture:_terrainDummy atIndex:4];
+                [le setFragmentBytes:&uniform length:sizeof uniform atIndex:0];
+                [le setFragmentTexture:_pickTex atIndex:0];
+                [le setFragmentTexture:(_terrainTex ?: _terrainDummy) atIndex:3];
+                if (coastCount > 0 && coastBuf) {
+                    FieldUniform coastUniform=uniform; coastUniform.cam2.z=1;
+                    [le setFragmentBytes:&coastUniform length:sizeof coastUniform atIndex:0];
+                    [le setVertexBuffer:coastBuf offset:0 atIndex:1];
+                    [le drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:(NSUInteger)coastCount];
+                }
+                if (isoCount > 0 && lineBuf) {
+                    [le setFragmentBytes:&uniform length:sizeof uniform atIndex:0];
+                    [le setVertexBuffer:lineBuf offset:0 atIndex:1];
+                    [le drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:(NSUInteger)isoCount];
+                }
+                [le endEncoding];
+            } else if (le) {
+                [le endEncoding];
+            }
         }
     }
     if (textCount > 0 && _atlas && textBuf) {
@@ -5908,17 +6550,28 @@ static void FreePixels(void *info, const void *data, size_t size) {
     pass.depthAttachment.texture = _pickQueryDepth;
     pass.depthAttachment.loadAction = MTLLoadActionClear;
     pass.depthAttachment.storeAction = MTLStoreActionDontCare;
-    pass.depthAttachment.clearDepth = 1;
+    IsobarTerrainView sceneView;
+    BOOL sceneFrame = [self terrainSceneForCamera:camera view:&sceneView]
+        && [self ensureTerrainIndices:sceneView.n0 + sceneView.nOuter];
+    pass.depthAttachment.clearDepth = sceneFrame ? 0 : 1;
     id<MTLRenderCommandEncoder> enc = [buffer renderCommandEncoderWithDescriptor:pass];
     if (!enc) return Fail(error, 17, @"render pass could not be created");
     FieldUniform uniform = [self uniformForCamera:camera fill:IsobarFieldPressure mix:0];
     [enc setRenderPipelineState:_pipePick];
-    [enc setDepthStencilState:_depthWrite];
+    [enc setDepthStencilState:sceneFrame ? _depthNear : _depthWrite];
     [enc setCullMode:MTLCullModeNone];
     [enc setVertexBuffer:_vertices offset:0 atIndex:1];
     [enc setVertexBytes:&uniform length:sizeof uniform atIndex:0];
     [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_indexCount indexType:MTLIndexTypeUInt32
         indexBuffer:_indices indexBufferOffset:0];
+    if (sceneFrame) {
+        // The pick sees the same displaced mesh the frame draws.
+        [enc setRenderPipelineState:_pipePickTerrain];
+        [enc setVertexTexture:((__bridge id<MTLTexture>)sceneView.nearTexture ?: _terrainDummy) atIndex:3];
+        [enc setVertexTexture:((__bridge id<MTLTexture>)sceneView.farTexture ?: _terrainDummy) atIndex:4];
+        [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_terrainIndexCount indexType:MTLIndexTypeUInt32
+            indexBuffer:_terrainIndices indexBufferOffset:0];
+    }
     [enc endEncoding];
     [buffer commit];
     [buffer waitUntilCompleted];

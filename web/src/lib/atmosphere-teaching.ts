@@ -85,6 +85,54 @@ function cloudFromParcel(
   };
 }
 
+/** Idealised teaching ridge: Witch of Agnesi, half-width RIDGE_A, height RIDGE_H. */
+export const RIDGE_A = 1200;
+export const RIDGE_H = 400;
+export const RIDGE_N2 = 0.00035;
+const RIDGE_TERMS = 64;
+const RIDGE_KMAX = 5 / RIDGE_A;
+
+/**
+ * Linear steady 2D mountain wave over h(x) = H a²/(x² + a²) (Queney 1948,
+ * non-hydrostatic): η = Re ∫₀^∞ H a e^{−ka} e^{i(kx + m z)} dk with
+ * m = √(N²/U² − k²) for k < N/U (upward radiation) and m = i√(k² − N²/U²)
+ * otherwise; w = U ∂η/∂x, u′ = −U ∂η/∂z. A 64-term midpoint sum, mirrored
+ * term for term in Sources/atmosphereteaching.h for native parity.
+ */
+// Vertical factors depend only on (U, z); fields sample a few fixed heights
+// many times, so cache them. Values are identical to the uncached sum.
+const ridgeColumns = new Map<string, Float64Array>();
+function ridgeColumn(z: number, U: number, N: number) {
+  const key = `${U}:${N}:${z}`;
+  let column = ridgeColumns.get(key);
+  if (column) return column;
+  const l = N / U, dk = RIDGE_KMAX / RIDGE_TERMS;
+  column = new Float64Array(RIDGE_TERMS * 5);
+  for (let j = 0; j < RIDGE_TERMS; j++) {
+    const k = (j + 0.5) * dk, o = j * 5;
+    column[o] = RIDGE_H * RIDGE_A * Math.exp(-k * RIDGE_A) * dk;
+    if (k < l) { const mr = Math.sqrt(l * l - k * k); column[o + 1] = Math.cos(mr * z); column[o + 2] = Math.sin(mr * z); column[o + 3] = mr; column[o + 4] = 0; }
+    else { const mi = Math.sqrt(k * k - l * l); column[o + 1] = Math.exp(-mi * z); column[o + 2] = 0; column[o + 3] = 0; column[o + 4] = mi; }
+  }
+  if (ridgeColumns.size >= 512) ridgeColumns.clear();
+  ridgeColumns.set(key, column);
+  return column;
+}
+export function idealisedRidgeWave(x: number, z: number, U: number, N: number) {
+  const dk = RIDGE_KMAX / RIDGE_TERMS, column = ridgeColumn(z, U, N);
+  const c1 = Math.cos(dk * x), s1 = Math.sin(dk * x);
+  let cr = Math.cos(dk * x / 2), ci = Math.sin(dk * x / 2), eta = 0, w = 0, du = 0;
+  for (let j = 0; j < RIDGE_TERMS; j++) {
+    const o = j * 5, k = (j + 0.5) * dk, amp = column[o], pr = column[o + 1], pi = column[o + 2], mr = column[o + 3], mi = column[o + 4];
+    const er = cr * pr - ci * pi, ei = cr * pi + ci * pr;
+    eta += amp * er;
+    w += -U * k * amp * ei;
+    du += U * amp * (mi * er + mr * ei);
+    const t = cr * c1 - ci * s1; ci = cr * s1 + ci * c1; cr = t;
+  }
+  return { eta, w, du };
+}
+
 /** Sample one bounded pedagogical atmosphere. All outputs are finite. */
 export function sampleTeachingAtmosphere(
   context: TeachingAtmosphereContext,
@@ -159,29 +207,18 @@ export function sampleTeachingAtmosphere(
     const plumeRadius=2500*(1+2.2*outflow*outflow*(3-2*outflow));
     liftM = Math.min(z,3000)*Math.exp(-r2/(plumeRadius*plumeRadius));
   } else if (safeContext.kind === 'mountain-wave') {
-    // Idealised ridge runs north/south at x=0; a stable westerly crosses it.
-    // Phase is stationary and tied to the ridge, while the weak time term only
-    // represents a deterministic, slowly varying background wind.
-    const wavelength = 12_000;
+    // Idealised north–south ridge at x=0 under a uniform stable westerly:
+    // the linear non-hydrostatic solution (see idealisedRidgeWave). Lee waves
+    // trail downstream, phase lines tilt upstream, and w at the ground is U dh/dx.
     lid = MAX_Z;
-    const phase = (2 * PI * x) / wavelength + (z / 7000) * PI;
-    const verticalTaper = Math.sin(PI * z / MAX_Z) ** 2;
-    const horizontalDecay = Math.exp(-(x * x) / (130_000 * 130_000));
-    const k = 2 * PI / wavelength;
-    const m = PI / 7000;
-    const displacement = 900 * Math.cos(phase) * verticalTaper * horizontalDecay;
-    const dEtaDx = 900 * verticalTaper * horizontalDecay *
-      (-k * Math.sin(phase) - 2 * x * Math.cos(phase) / (130_000 * 130_000));
-    const taperDerivative = (PI / MAX_Z) * Math.sin(2 * PI * z / MAX_Z);
-    const dEtaDz = 900 * horizontalDecay *
-      (-m * Math.sin(phase) * verticalTaper + Math.cos(phase) * taperDerivative);
     const meanU = 16 + 1.2 * Math.sin(dayPhase);
-    u = meanU - meanU * dEtaDz;
-    w = meanU * dEtaDx;
-    v = 0.4 * Math.sin(phase + PI / 2) * verticalTaper * horizontalDecay;
-    stabilityN2 = 0.00035;
+    stabilityN2 = RIDGE_N2;
+    const wave = idealisedRidgeWave(x, z, meanU, Math.sqrt(RIDGE_N2));
+    u = meanU + wave.du;
+    w = wave.w;
+    v = 0;
     windSpeed = Math.max(1, Math.abs(u));
-    liftM = displacement;
+    liftM = wave.eta;
   } else {
     // Generic local circulation uses the same divergence-free axisymmetric
     // cell as the storm, with a wider, weaker envelope and no cloud sheet.

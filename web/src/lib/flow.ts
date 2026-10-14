@@ -195,16 +195,12 @@ export function sampleScalar(frame: Uint16Array, lon: number, lat: number, grid:
   const tx = x - x0;
   const ty = y - y0;
   const y1 = Math.min(grid.ny - 1, y0 + 1);
-  const at = (ix: number, iy: number): number | null => {
-    let col = ix;
-    if (grid.wraps) col = ((ix % grid.nx) + grid.nx) % grid.nx;
-    else if (ix < 0 || ix >= grid.nx) return null;
-    return decodeRaw(frame[iy * grid.nx + col], grid);
-  };
-  const v00 = at(x0, y0);
-  const v10 = at(x0 + 1, y0);
-  const v01 = at(x0, y1);
-  const v11 = at(x0 + 1, y1);
+  const x1 = grid.wraps ? (x0 + 1) % grid.nx : x0 + 1;
+  const row0 = y0 * grid.nx, row1 = y1 * grid.nx;
+  const v00 = decodeRaw(frame[row0 + x0], grid);
+  const v10 = decodeRaw(frame[row0 + x1], grid);
+  const v01 = decodeRaw(frame[row1 + x0], grid);
+  const v11 = decodeRaw(frame[row1 + x1], grid);
   if (v00 == null || v10 == null || v01 == null || v11 == null) return null;
   return (v00 * (1 - tx) + v10 * tx) * (1 - ty) + (v01 * (1 - tx) + v11 * tx) * ty;
 }

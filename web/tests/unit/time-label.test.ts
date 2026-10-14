@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { nowMinuteOf, type ChartManifest } from '../../src/lib/chart-store';
-import { clockZone, formatClock, zoneAbbreviation, zuluLabel } from '../../src/lib/time-label';
+import { clockZone, formatClock, localNoon, zoneAbbreviation, zuluLabel } from '../../src/lib/time-label';
 
 const NOW = Date.parse('2026-10-09T06:04:00Z');
 
@@ -39,4 +39,11 @@ describe('place clocks', () => {
     expect(nowMinuteOf(manifest, NOW)).toBeCloseTo(364, 5);
     expect(formatClock(Date.parse('2026-10-09T00:00:00Z'), 'Australia/Perth')).toBe('Fri 8:00 am AWST');
   });
+});
+
+
+it('day clicks select local noon including Sydney clock changes', () => {
+  expect(new Date(localNoon('2026-10-13', 'Australia/Perth')).toISOString()).toBe('2026-10-13T04:00:00.000Z');
+  expect(new Date(localNoon('2026-10-04', 'Australia/Sydney')).toISOString()).toBe('2026-10-04T01:00:00.000Z');
+  expect(new Date(localNoon('2026-04-05', 'Australia/Sydney')).toISOString()).toBe('2026-04-05T02:00:00.000Z');
 });

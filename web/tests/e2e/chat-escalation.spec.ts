@@ -57,9 +57,7 @@ async function fixture(page: Page, { width = 1280, height = 720, theme = 'light'
 
 async function shot(page: Page, name: string) {
   mkdirSync(SHOTS, { recursive: true });
-  const helper = process.env.ISOBAR_VIEWPORT_HELPER;
-  if (!helper) return;
-  const { assertViewport } = await import(pathToFileURL(helper).href);
+  const { assertViewport } = await import(pathToFileURL(`${process.env.HOME}/Projects/.ux-authoring/viewport-fit.mjs`).href);
   await assertViewport(page, { primary: [{ selector: '[data-chat-panel]', minWidth: 280, minHeight: 120 }], controls: [
     { selector: '[aria-label="Close chat"]', minWidth: 40, minHeight: 40 },
     { selector: '[aria-label="Message"]', minWidth: 100, minHeight: 32 },

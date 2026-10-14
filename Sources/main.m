@@ -29,6 +29,8 @@
 #import "storereload.h"
 #import "gpumapview.h"
 #import "trafficroute.h"
+#import "starlink.h"
+#import "starlinkview.h"
 #import "trainingwindow.h"
 #import <math.h>
 #import <zlib.h>
@@ -1161,6 +1163,7 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
 @property (nonatomic, strong) NSTimeZone *timeZone;
 // Local day of "now". Bands use the same midnight and the same Today/weekday labels as the day strip.
 @property (nonatomic, strong) NSDate *now;
+@property (nonatomic, copy) NSDate *(^referenceNow)(void);
 // Popover only: one date per day tile. The spans share those tiles' x ranges.
 @property (nonatomic, copy) NSArray<NSDate *> *bandDates;
 // Model frames inside the track. Ticks follow these times, so a 6 h step is wider than a 3 h step.
@@ -1187,7 +1190,6 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
     NSArray *_rulerDays, *_rulerHours;
     NSArray *_rulerTimes, *_rulerTicks;
     CGFloat _rulerWidth;
-    NSDateFormatter *_selectionFormatter;
     NSString *_rulerZone;
     NSTimeInterval _rulerNow;
 }
@@ -1559,24 +1561,16 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
         }
     }
     _rulerDays=days; _rulerHours=hours;
-    if (!_selectionFormatter) {
-        _selectionFormatter=[NSDateFormatter new];
-        _selectionFormatter.locale=[NSLocale localeWithLocaleIdentifier:@"en_AU_POSIX"];
-        _selectionFormatter.dateFormat=@"EEE h:mm a";
-    }
-    _selectionFormatter.timeZone=zone;
 }
 - (NSString *)clockTextForFraction:(double)fraction {
     if (self.times.count < 2) return @"";
     [self prepareRuler];
     NSDate *first = self.times.firstObject, *last = self.times.lastObject;
     NSTimeInterval span = [last timeIntervalSinceDate:first];
-    if (!(span > 0) || !_selectionFormatter) return @"";
+    if (!(span > 0)) return @"";
     fraction = MIN(1, MAX(0, isfinite(fraction) ? fraction : 0));
-    NSString *selected = [_selectionFormatter stringFromDate:[first dateByAddingTimeInterval:span * fraction]].lowercaseString;
-    if (!selected.length) return @"";
-    return [selected stringByReplacingCharactersInRange:NSMakeRange(0, 1)
-        withString:[[selected substringToIndex:1] uppercaseString]];
+    return MapPlayheadClockText([first dateByAddingTimeInterval:span * fraction],
+        self.referenceNow ? self.referenceNow() : (self.now ?: NSDate.date), self.timeZone);
 }
 - (NSRect)playheadClockFrame:(NSString *)text font:(NSFont *)font fraction:(double)fraction {
     if (!font) font = [NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightMedium];
@@ -1664,8 +1658,7 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
     NSDate *first=self.times.firstObject, *last=self.times.lastObject;
     NSTimeInterval span=[last timeIntervalSinceDate:first];
     if (span>0) {
-        NSString *selected=[_selectionFormatter stringFromDate:[first dateByAddingTimeInterval:span*fraction]].lowercaseString;
-        selected=[selected stringByReplacingCharactersInRange:NSMakeRange(0,1) withString:[[selected substringToIndex:1] uppercaseString]];
+        NSString *selected=[self clockTextForFraction:fraction];
         NSDictionary *style=@{NSFontAttributeName:[NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightMedium],NSForegroundColorAttributeName:accent};
         CGFloat w=[selected sizeWithAttributes:style].width;
         CGFloat x=MAX(start,MIN(start+width-w,cursor-w/2));
@@ -2308,8 +2301,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 
 @interface Controller : NSObject <FullscreenWindowController, NSApplicationDelegate, NSPopoverDelegate, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate, CLLocationManagerDelegate, NSTextFieldDelegate>
 @property (nonatomic, strong) NSPopover *popover;
-// Aviation hazards on the GPU map. Follows Fly until manually toggled;
-// that override lasts for this controller's session, never in preferences.
+// Optional aviation hazards on the GPU map; reset on every lens change.
 @property (nonatomic) BOOL hazardLayer;
 - (void)rebuildContent;
 - (void)noteChartImage:(NSImage *)image pdf:(NSData *)pdf issued:(NSDate *)issued offline:(BOOL)offline;
@@ -2363,7 +2355,6 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 @end
 
 @implementation Controller {
-    BOOL _hazardLayerChosen;
     NSStatusItem *_item;
     NSWindow *_chartWindow;
     NSScrollView *_singleScroll;
@@ -2536,11 +2527,22 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     NSString *_rainPlaceHash;
     NSInteger _forecastMode;
     // Shared map/lens selector: -1 pressure, 2 rain, 5 wind, 4 temp,
-    // 0 kite, 3 surf, 1 fly.  Forecast mode remains the panel ID above.
+    // 0 kite, 3 surf, 1 fly, 6 sat.  Forecast mode remains the panel ID above.
     NSInteger _selectedLens;
+    // Sat lens: polls the dish and paints satellites only while its panel shows.
+    StarlinkLink *_starlink;
+    StarlinkLensView *_starlinkLens;
+    NSTimer *_starlinkTimer;
     NSView *_forecastGraph;
     NSTextField *_forecastTime;
     AviationLensView *_flyLens;
+    // The last Fly panel and what it was built from. A lens switch back to
+    // Fly with the same inputs reuses it instead of rebuilding (0.3-1 s).
+    AviationLensView *_flyLensKept;
+    NSString *_flyLensKey;
+    // What the open popover was built from. A store update with the same
+    // structure updates text in place instead of rebuilding (200-320 ms).
+    NSArray *_popoverSignature;
     NSTextField *_forecastReading;
     NSMutableSet<NSNumber *> *_mapDetailModes;
     NSMutableDictionary *_mapDetailCache;
@@ -2601,7 +2603,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
         [[defaults stringForKey:@"chartSource"] isEqual:@"ecmwf"];
     // Every launch opens on the pressure chart. Saved field keys from older builds are ignored.
     _tempLayer = 0;
-    _barbs = fixture ? NO : ([defaults objectForKey:@"chartBarbs"] ? [defaults boolForKey:@"chartBarbs"] : NO);
+    _barbs = NO; // Ignore legacy saved overlays; each launch starts clear.
     _newMap = GPUMapEnabledInDefaults(defaults);
     _glanceBarbs = [defaults objectForKey:@"glanceBarbs"] ? [defaults boolForKey:@"glanceBarbs"] : NO;
     _kiteSpots = fixture ? NO : [defaults boolForKey:@"kiteSpots"];
@@ -2913,7 +2915,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
         if (_timelinePreviewing) fraction=_timelinePreviewFraction;
         else if (_motionPendingFraction) fraction=_motionPendingFraction.doubleValue;
         else if (_scrubHasFraction) fraction=_scrubFraction;
-        else if (_live.playhead && (_live.playing || _live.holding || _live.seaming || _live.baseImage)) return _live.playhead;
+        // The GPU clock is valid before an asynchronous classic bitmap arrives.
+        else if (_live.playhead && ([self livePlaybackAvailable] || _live.playing || _live.holding || _live.seaming || _live.baseImage)) return _live.playhead;
         else if (_motionHasCursor) return [self motionDateAtFrame:_motionCursor];
         if (isfinite(fraction)) return [_sequenceTimes.firstObject dateByAddingTimeInterval:
             [_sequenceTimes.lastObject timeIntervalSinceDate:_sequenceTimes.firstObject]*MIN(1,MAX(0,fraction))];
@@ -3300,6 +3303,9 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     if (!_live) _live = [IsobarLivePlayer new];
     if (_manualLiveClock && _liveClock) _live.clock = _liveClock;
     _live.hoursPerSecond = IsobarLiveHoursPerSecond(_liveSpeed);
+    // The GPU map draws its own frames from the shared clock; the hidden
+    // classic chart must not render, gate the playhead or delay the dissolve.
+    _live.clockOnly = [self gpuMapWanted];
     _live.scale = scale;
     _live.pixelSize = pixelSize;
     _live.layers = layers;
@@ -3344,9 +3350,10 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     if (_timelinePreviewing || _scrubHasFraction) return;
     if (_live.playhead && NSProcessInfo.processInfo.systemUptime - _timeLensChromeAt >= 0.2)
         [self syncTimeLens:_live.playhead];
-    if (!_live.baseImage) return;
+    if (!_live.baseImage && !_live.clockOnly) return;
     _liveDisplayTicks++;
-    [[self timelineChart] setLiveFrames:_live.baseImage next:_live.nextImage opacity:_live.nextOpacity];
+    if (_live.baseImage)
+        [[self timelineChart] setLiveFrames:_live.baseImage next:_live.nextImage opacity:_live.nextOpacity];
     NSDate *date = _live.playhead;
     if (!date) return;
     TimelineStrip *strip = [self activeTimeline];
@@ -4070,7 +4077,35 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 
 - (void)stepPopoverPair:(NSInteger)delta {
     _motionHasCursor = NO;
-    if (!_pair.valid || delta == 0) return;
+    if (delta == 0) return;
+    if ([self livePlaybackAvailable]) {
+        NSDate *selected = [self selectedForecastDate];
+        NSInteger index = 0;
+        NSTimeInterval closest = DBL_MAX;
+        for (NSInteger i=0; i<(NSInteger)_sequenceTimes.count; i++) {
+            NSTimeInterval distance = fabs([_sequenceTimes[i] timeIntervalSinceDate:selected]);
+            if (distance < closest) { closest = distance; index = i; }
+        }
+        NSInteger targetIndex = MAX(0,MIN((NSInteger)_sequenceTimes.count-1,index+delta));
+        NSDate *target = _sequenceTimes[targetIndex];
+        BOOL playing = _timelinePreviewing ? (_timelinePreviewWasPlaying && !_forecastPaused) : [self timelinePlaying];
+        [_scrubRestTimer invalidate]; _scrubRestTimer = nil;
+        _motionPendingFraction = nil;
+        _timelinePreviewing = NO;
+        _scrubHasFraction = NO; _scrubQuiet = NO;
+        _pair = (ChartPair){targetIndex,MIN(targetIndex+1,(NSInteger)_sequenceTimes.count-1),YES};
+        _pairPinned = YES;
+        if (playing) [self startLivePlaybackFromDate:target];
+        else {
+            [self ensureLivePlayer];
+            [_live holdAtDate:target];
+            [self pauseLivePlayback];
+            [self showStaticTimelineFraction:[self motionFractionForDate:target]];
+        }
+        _gpuMap.fractionalStep = [self liveModelIndexForDate:target];
+        return;
+    }
+    if (!_pair.valid) return;
     ChartPair next = StepChartPair(_pair, delta, (NSInteger)_sequenceTimes.count);
     if (next.left == _pair.left && next.right == _pair.right) return;
     _pair = next;
@@ -4543,9 +4578,10 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 // One control owns both the map field and the specialist panel.
-static NSString *const LensTitles[] = {@"Pressure", @"Rain", @"Wind", @"Temp", @"Kite", @"Surf", @"Fly"};
-static NSString *const LensSymbols[] = {@"barometer", @"cloud.rain", @"wind", @"thermometer.medium", @"figure.surfing", @"water.waves", @"airplane"};
-static NSInteger const LensModes[] = {-1, 2, 5, 4, 0, 3, 1};
+static NSString *const LensTitles[] = {@"Pressure", @"Rain", @"Wind", @"Temp", @"Kite", @"Surf", @"Fly", @"Sat"};
+static NSString *const LensSymbols[] = {@"barometer", @"cloud.rain", @"wind", @"thermometer.medium", @"figure.surfing", @"water.waves", @"airplane", @"antenna.radiowaves.left.and.right"};
+static NSInteger const LensModes[] = {-1, 2, 5, 4, 0, 3, 1, 6};
+static const NSInteger LensCount = 8;
 
 // A wind barb: staff pointing downwind, two feathers at the upwind end.
 static NSImage *WindBarbGlyph(void) {
@@ -4599,12 +4635,12 @@ static NSImage *WindBarbGlyph(void) {
     NSSegmentedControl *segments = _lensSegments[key];
     if (segments) return segments;
     segments = [NSSegmentedControl new];
-    segments.segmentCount = 7;
+    segments.segmentCount = LensCount;
     segments.trackingMode = NSSegmentSwitchTrackingSelectOne;
     segments.segmentStyle = NSSegmentStyleRounded;
     segments.font = [NSFont systemFontOfSize:12 weight:NSFontWeightMedium];
-    NSArray *tips = @[@"Pressure · map only", @"Rain · 24-hour total and forecast", @"Wind speed · map only", [self temperatureFieldName], @"Kite · wind forecast", @"Surf · marine forecast", @"Fly · aviation forecast"];
-    for (NSInteger i = 0; i < 7; i++) {
+    NSArray *tips = @[@"Pressure · map only", @"Rain · 24-hour total and forecast", @"Wind speed · map only", [self temperatureFieldName], @"Kite · wind forecast", @"Surf · marine forecast", @"Fly · aviation forecast", @"Sat · Starlink satellites, live"];
+    for (NSInteger i = 0; i < LensCount; i++) {
         NSImage *image = [NSImage imageWithSystemSymbolName:LensSymbols[i] accessibilityDescription:tips[i]];
         [segments setImage:image forSegment:i];
         [segments setImageScaling:NSImageScaleProportionallyDown forSegment:i];
@@ -4657,7 +4693,7 @@ static NSImage *WindBarbGlyph(void) {
         if (item.state != state) item.state = state;
     }
     NSInteger selected = -1;
-    for (NSInteger i = 0; i < 7; i++) if (LensModes[i] == activeLens) selected = i;
+    for (NSInteger i = 0; i < LensCount; i++) if (LensModes[i] == activeLens) selected = i;
     if (segments.selectedSegment != selected) segments.selectedSegment = selected;
     if (segments.enabled != available) segments.enabled = available;
     CGFloat segmentsH = MIN(height, 24);
@@ -4706,13 +4742,15 @@ static NSImage *WindBarbGlyph(void) {
 - (void)chooseTemperatureField:(NSMenuItem *)sender {
     if (!sender.enabled || ![self modelChartsReady]) return;
     _tempAloft = sender.tag == 1;
+    BOOL changedLens = _selectedLens != 4;
     _selectedLens = 4;
-    [self followLensHazards];
+    if (changedLens) [self resetOptionalOverlays];
     _forecastMode = 4;
     [self applyChartLayer:_tempAloft ? 1 : 2 rebuild:NO];
     [_warningPop close];
     [self rebuildContent];
     if (_expandedMap) [self layoutChartWindow];
+    [self syncStarlink];
 }
 
 - (void)toggleWindBarbs:(id)sender {
@@ -4725,13 +4763,14 @@ static NSImage *WindBarbGlyph(void) {
     [self selectChartLayer:3];
 }
 
-- (void)followLensHazards {
-    if (!_hazardLayerChosen) self.hazardLayer = _selectedLens == 1;
+- (void)resetOptionalOverlays {
+    _barbs = NO;
+    _gpuMap.windBarbs = NO;
+    self.hazardLayer = _selectedLens == 1; // Fly's default; discard manual choices on lens changes.
 }
 
 - (void)toggleHazards:(NSButton *)sender {
     if (!sender.enabled || ![self modelChartsReady] || ![self gpuMapWanted]) return;
-    _hazardLayerChosen = YES;
     self.hazardLayer = !_hazardLayer;
 }
 
@@ -4828,7 +4867,6 @@ static NSImage *WindBarbGlyph(void) {
         // temporarily detached popover. Updating its controls need not rebuild
         // the surface, so keep the drawing state in sync at the point of change.
         _gpuMap.windBarbs = _barbs;
-        [[self chartPreferences] setBool:_barbs forKey:@"chartBarbs"];
     } else {
         // A single colour field keeps the scale unambiguous; direction hints
         // and pressure contours remain independent overlays. The field is a
@@ -4937,7 +4975,7 @@ static NSImage *WindBarbGlyph(void) {
 
 - (void)chooseLens:(NSSegmentedControl *)sender {
     NSInteger segment = sender.selectedSegment;
-    if (segment < 0 || segment >= 7) return;
+    if (segment < 0 || segment >= LensCount) return;
     BOOL expanded = [sender.accessibilityIdentifier hasPrefix:@"fullscreen."];
     BOOL focused = sender.window.firstResponder == sender;
     [self applyLens:LensModes[segment] rebuild:YES];
@@ -4948,14 +4986,86 @@ static NSImage *WindBarbGlyph(void) {
     }
 }
 
+// The Sat lens runs only while its panel is on screen: the dish poll, the
+// orbit catalogue and the 1 s clock all stop when it closes.
+- (BOOL)starlinkActive {
+    BOOL window = _expandedMap && (_chartWindow.occlusionState & NSWindowOcclusionStateVisible);
+    return _forecastMode == 6 && (self.popover.shown || window);
+}
+
+// Offscreen harnesses set ISOBAR_STARLINK_FIXTURE (a TLE file): a dish that
+// never answers and that catalogue, never a download.
+- (StarlinkLink *)makeStarlinkLink {
+    NSString *fixture = NSProcessInfo.processInfo.environment[@"ISOBAR_STARLINK_FIXTURE"];
+    if (fixture.length)
+        return [[StarlinkLink alloc] initWithDishHost:@"" port:9201 catalogURL:nil cacheURL:[NSURL fileURLWithPath:fixture]];
+    return [StarlinkLink defaultLink];
+}
+
+- (void)syncStarlink {
+    if (![self starlinkActive]) {
+        [_starlink stop];
+        [_starlinkTimer invalidate];
+        _starlinkTimer = nil;
+        _starlinkLens = nil;
+        _gpuMap.starlinkSky = nil;
+        return;
+    }
+    if (!_starlink) {
+        _starlink = [self makeStarlinkLink];
+        __weak Controller *weak = self;
+        _starlink.onUpdate = ^{ [weak pushStarlink]; };
+    }
+    [self placeStarlink];
+    [_starlink start];
+    if (!_starlinkTimer) {
+        __weak Controller *weak = self;
+        _starlinkTimer = [NSTimer timerWithTimeInterval:1 repeats:YES block:^(NSTimer *timer) { (void)timer; [weak pushStarlink]; }];
+        _starlinkTimer.tolerance = 0.2;
+        [NSRunLoop.mainRunLoop addTimer:_starlinkTimer forMode:NSRunLoopCommonModes];
+    }
+    [self pushStarlink];
+}
+
+// The dish is where this Mac is, not the place being browsed: the located
+// place, else the saved place for this time zone.
+- (void)placeStarlink {
+    NSDictionary *place = _here ?: SavedPlaceForTimeZone(_locations, NSTimeZone.localTimeZone.name);
+    _starlink.latitude = [place[@"latitude"] isKindOfClass:NSNumber.class] ? [place[@"latitude"] doubleValue] : NAN;
+    _starlink.longitude = [place[@"longitude"] isKindOfClass:NSNumber.class] ? [place[@"longitude"] doubleValue] : NAN;
+}
+
+- (void)pushStarlink {
+    if (![self starlinkActive] || !_starlink) { _gpuMap.starlinkSky = nil; return; }
+    [self placeStarlink];
+    NSDate *now = NSDate.date;
+    StarlinkLensView *lens = _starlinkLens;
+    lens.catalog = _starlink.catalog;
+    lens.status = _starlink.status;
+    lens.obstructionMap = _starlink.obstructionMap;
+    lens.serving = _starlink.serving;
+    lens.dishError = _starlink.dishError;
+    lens.catalogError = _starlink.catalogError;
+    lens.latitude = _starlink.latitude;
+    lens.longitude = _starlink.longitude;
+    lens.now = now;
+    StarlinkCatalog *catalog = _starlink.catalog;
+    if (!catalog || !isfinite(_starlink.latitude)) { _gpuMap.starlinkSky = nil; return; }
+    // The map region with room to pan; anything the dish could see is kept too.
+    _gpuMap.starlinkSky = StarlinkSkyAt(catalog, now, _starlink.latitude, _starlink.longitude, -60, 10, 80, 180, 0);
+    NSDictionary *state = StarlinkServingState(catalog, _starlink.serving, now, _starlink.latitude, _starlink.longitude);
+    _gpuMap.starlinkServing = state ? (NSInteger)[catalog indexOfName:state[@"name"]] : -1;
+    _gpuMap.starlinkServingCurrent = [state[@"current"] boolValue];
+}
+
 - (void)applyLens:(NSInteger)mode rebuild:(BOOL)rebuild {
     if (![self modelChartsReady]) return;
     BOOL same = _selectedLens == mode;
     NSInteger next = same ? -1 : mode;
     if (next == 4 && _selectedLens != 4) _tempAloft = NO;
     _selectedLens = next;
-    [self followLensHazards];
-    _forecastMode = (next == 0 || next == 1 || next == 2 || next == 3 || next == 4) ? next : -1;
+    [self resetOptionalOverlays];
+    _forecastMode = (next == 0 || next == 1 || next == 2 || next == 3 || next == 4 || next == 6) ? next : -1;
     NSInteger fieldTag = 0;
     if (next == 2) fieldTag = 5;       // rain
     else if (next == 5 || next == 0) fieldTag = 6; // wind / kite
@@ -4963,8 +5073,11 @@ static NSImage *WindBarbGlyph(void) {
     [self applyChartLayer:fieldTag rebuild:NO];
     [self clearMapTraffic];
     [_warningPop close];
-    if (rebuild) [self rebuildContent];
+    // The expanded window swaps only its lens dock and field; the hidden
+    // popover is rebuilt when it next opens, not on every lens click.
+    if (rebuild && (!_expandedMap || self.popover.shown)) [self rebuildContent];
     if (_expandedMap) [self layoutChartWindow];
+    [self syncStarlink];
 }
 
 - (void)chooseForecastMode:(NSButton *)sender {
@@ -4979,14 +5092,16 @@ static NSImage *WindBarbGlyph(void) {
     _forecastMode = -1;
     [self clearMapTraffic];
     _selectedLens = -1;
-    [self followLensHazards];
+    [self resetOptionalOverlays];
     [self applyChartLayer:0 rebuild:NO];
     [self rebuildContent];
     if (_expandedMap) [self layoutChartWindow];
+    [self syncStarlink];
     [self focusForecastControl:mode];
 }
 
 - (void)escapePopover {
+    if ([_gpuMap closePointDetail]) return;
     if (_mapTrafficSession.selectedHexes.count) { [_mapTrafficSession clearSelections]; _gpuMap.trafficSession=_mapTrafficSession; [_gpuMap showTrafficNotice:@"Tracks cleared"]; return; }
     if (_forecastMode >= 0) [self closeForecast:nil];
     else [self.popover performClose:nil];
@@ -5075,7 +5190,8 @@ static NSImage *WindBarbGlyph(void) {
         _noticesWindow.contentView=_noticesView; [_noticesWindow center];
     }
     _noticesView.now=_chartNow ?: NSDate.date;
-    _noticesView.notacKeySaved=getenv("ISOBAR_FIXTURES") == NULL && [_notacConnection loadToken:nil] != nil;
+    NSError *keyError=nil; NSString *savedKey=getenv("ISOBAR_FIXTURES") == NULL ? [_notacConnection loadToken:&keyError] : nil;
+    _noticesView.notacKeySaved=getenv("ISOBAR_FIXTURES") == NULL && IsobarNotacKeyMayBeSaved(savedKey, keyError);
     _noticesView.timeZone=[self aviationTimeZone];
     _noticesView.notams=_notams ?: @{}; _noticesView.sigmets=_sigmets ?: @{};
     _noticesView.airport=[self flyAerodrome][@"code"]; _noticesView.showingSIGMET=sigmet;
@@ -5100,24 +5216,15 @@ static NSImage *WindBarbGlyph(void) {
         }
         [self->_noticesView setImportStatus:@"Importing…"];
         NSString *path=panel.URL.path, *root=[self->_storeRoot copy];
-        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
-            NSTask *task=[NSTask new]; task.executableURL=[NSURL fileURLWithPath:tool];
-            task.arguments=@[@"import-notams",@"--file",path,@"--source",@"Imported briefing",@"--data-dir",root];
-            NSPipe *output=[NSPipe pipe]; task.standardOutput=output; task.standardError=output;
-            NSError *error=nil; BOOL launched=[task launchAndReturnError:&error];
-            NSData *data=launched?[output.fileHandleForReading readDataToEndOfFile]:nil;
-            if (launched) [task waitUntilExit];
-            BOOL success=launched && task.terminationStatus==0;
-            NSString *message=success?@"":[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-            if (!message.length && !success) message=error.localizedDescription ?: @"Import failed";
-            if (message.length>240) message=[message substringToIndex:240];
+        [self->_notacConnection importBriefingAtPath:path dataDirectory:root executableURL:[NSURL fileURLWithPath:tool]
+            completion:^(BOOL success, NSString *message) {
             dispatch_async(dispatch_get_main_queue(),^{
                 [self->_noticesView setImportStatus:message];
                 if (!success) { [self prepareAviationNotices:NO]; return; }
                 [self->_collector refresh];
                 [self requestStoreReloadThen:^{ [self prepareAviationNotices:NO]; }];
             });
-        });
+        }];
     }];
 }
 
@@ -5139,7 +5246,8 @@ static NSImage *WindBarbGlyph(void) {
 }
 
 - (void)connectAviationNotices {
-    if ([_notacConnection loadToken:nil]) {
+    NSError *keyError=nil; NSString *savedKey=[_notacConnection loadToken:&keyError];
+    if (IsobarNotacKeyMayBeSaved(savedKey, keyError)) {
         NSAlert *choice=[NSAlert new]; choice.messageText=@"NOTAC";
         choice.informativeText=@"Refresh notices or remove this Mac's key.";
         [choice addButtonWithTitle:@"Refresh"]; [choice addButtonWithTitle:@"Remove key"]; [choice addButtonWithTitle:@"Cancel"];
@@ -5178,8 +5286,22 @@ static NSImage *WindBarbGlyph(void) {
 }
 
 - (NSView *)aviationLensWithFrame:(NSRect)frame sharedTimeline:(BOOL)sharedTimeline {
-    AviationLensView *lens = [[AviationLensView alloc] initWithFrame:frame];
     NSDictionary *field = [self flyAerodrome];
+    NSString *key = [NSString stringWithFormat:@"%@|%@|%p|%p|%p|%p|%.0f|%@|%d|%@", field[@"code"], [self hubPlace][@"geohash"],
+        _aviation, _upperAir, _notams, _sigmets, (_chartNow ?: NSDate.date).timeIntervalSince1970 / 60,
+        [self placeZone].name, sharedTimeline, [self detailStartDate]];
+    if (_flyLensKept && !_flyLensKept.superview && [_flyLensKey isEqual:key]) {
+        AviationLensView *kept = _flyLensKept;
+        kept.frame = frame;
+        kept.playhead = [self selectedForecastDate];
+        kept.forecast.selectedDate = [self selectedForecastDate];
+        _forecastGraph = kept.forecast;
+        _forecastTime = kept.timeField;
+        _flyLens = kept;
+        [kept layoutSubtreeIfNeeded];
+        return kept;
+    }
+    AviationLensView *lens = [[AviationLensView alloc] initWithFrame:frame];
     lens.place = [self hubPlace];
     lens.aerodrome = field;
     lens.aerodromes = [self tafAerodromes];
@@ -5225,6 +5347,8 @@ static NSImage *WindBarbGlyph(void) {
     _forecastGraph = timeline;
     _forecastTime = lens.timeField;
     _flyLens = lens;
+    _flyLensKept = lens;
+    _flyLensKey = key;
     [lens layoutSubtreeIfNeeded];
     return lens;
 }
@@ -5315,6 +5439,18 @@ static NSImage *WindBarbGlyph(void) {
     close.accessibilityLabel = @"Close forecast";
     close.toolTip = @"Back to map (Esc)";
     [root addSubview:close];
+    if (_forecastMode == 6) {
+        CGFloat w = MAX(1, width - 2 * pad);
+        StarlinkLensView *lens = [[StarlinkLensView alloc] initWithFrame:NSMakeRect(pad, y, w, 10)];
+        CGFloat fitted = MIN(MAX(1, height - y - pad), [lens fittingHeightForWidth:w]);
+        [lens setFrameSize:NSMakeSize(w, fitted)];
+        lens.accessibilityIdentifier = @"starlink.lens";
+        _starlinkLens = lens;
+        [root addSubview:lens positioned:NSWindowBelow relativeTo:close];
+        [root setFrameSize:NSMakeSize(width, y + fitted + pad)];
+        [self pushStarlink];
+        return root;
+    }
     if (_forecastMode == 1) {
         NSRect lensFrame = NSMakeRect(pad, y, MAX(1, width - 2 * pad), MAX(1, height - y - pad));
         AviationLensView *lens=(AviationLensView *)[self aviationLensWithFrame:lensFrame sharedTimeline:sharedTimeline];
@@ -5516,6 +5652,24 @@ static NSImage *WindBarbGlyph(void) {
     NSDate *noon = date ? [calendar dateBySettingHour:12 minute:0 second:0 ofDate:date options:0] : nil;
     if (!noon || _sequenceTimes.count < 2) return;
     [self previewPopoverMovieFraction:[self motionFractionForDate:noon]];
+}
+
+// Everything a store update can change that rebuildContent lays out: the run
+// and its ladder, the stale state, the place, its warnings and day strip
+// data, the open lens's data and the layout inputs. Value comparison: a
+// snapshot rereads equal content as new objects.
+- (NSArray *)popoverSignature {
+    NSDictionary *hub = [self hubPlace] ?: @{};
+    NSDictionary *lensPlace = (_forecastMode == 0 || _forecastMode == 3) ? [self windPlace] : [self rainPlace];
+    id none = NSNull.null;
+    NSSize budget = [self screenBudget];
+    return @[_runDate ?: none, _runSource ?: none, _frameIndices ?: none, _issued ?: none,
+        @(_dataStale), @(_storeLoadFailed), _storeError ?: none, _statusLabel ?: none,
+        hub, [self packFor:hub] ?: none, @(_forecastMode), @(_selectedLens),
+        _forecastMode >= 0 ? ([self packFor:lensPlace ?: @{}] ?: none) : none,
+        _forecastMode == 1 ? @[_aviation ?: none, _upperAir ?: none, _notams ?: none, _sigmets ?: none] : none,
+        _forecastMode == 0 ? (_kiteList ?: none) : none, _rainDots ?: none,
+        @(_sourceECMWF), @(_newMap), @(_hubDayIndex), [NSValue valueWithSize:budget]];
 }
 
 - (void)rebuildContent {
@@ -5818,6 +5972,7 @@ static NSImage *WindBarbGlyph(void) {
     strip.tickDates = [self forecastTickDates];
     strip.accessibilityIdentifier = @"popover.timeline";
     __weak Controller *weak = self;
+    strip.referenceNow = ^{ return [weak currentPlaybackNow]; };
     strip.onSelect = ^(NSInteger index) { [weak selectPopoverIndex:index]; };
     strip.onSeek = ^(double fraction) { [weak inspectPopoverMovieFraction:fraction]; };
     __weak TimelineStrip *weakStrip = strip;
@@ -5873,6 +6028,7 @@ static NSImage *WindBarbGlyph(void) {
     strip.preservesInteraction=NO;
     if (keepLive) [self applyLiveFrame];
     [self syncTimeLens:leftWhen];
+    _popoverSignature = [self popoverSignature];
     if (!_expandedMap && (_live.playing || _live.holding)) [self scheduleLiveResize];
     else if (_timelinePreviewing) [self showStaticTimelineFraction:_timelinePreviewFraction];
     else if (_scrubHasFraction) [self showStaticTimelineFraction:_scrubFraction];
@@ -6130,7 +6286,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     control(@"close", @"xmark", @"Close map (⌘W)", 8, width-40, 28);
     BOOL canCompare = [self earlierIssueForIndex:_panelIndex] >= 0;
     NSButton *compare = control(@"compare", @"rectangle.on.rectangle",
-        canCompare ? @"Compare previous forecast (D)" : @"No earlier chart available", 7, width-76, 28);
+        canCompare ? @"Compare previous forecast (C)" : @"No earlier chart available", 7, width-76, 28);
     compare.enabled = canCompare;
     compare.contentTintColor = _comparing ? NSColor.controlAccentColor : NSColor.labelColor;
     compare.state = _comparing ? NSControlStateValueOn : NSControlStateValueOff;
@@ -6227,6 +6383,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     _chartTimeline.bandDates = bands;
 
     __weak Controller *weak=self;
+    _chartTimeline.referenceNow = ^{ return [weak currentPlaybackNow]; };
     _chartTimeline.onSeek=^(double fraction) { [weak inspectPopoverMovieFraction:fraction]; };
     _chartTimeline.onPreview=^(double fraction) { [weak previewPopoverMovieFraction:fraction]; };
     if (_chartTimeline.superview!=_chartTransport) [_chartTransport addSubview:_chartTimeline];
@@ -6366,6 +6523,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
 }
 
 - (void)escapeFullscreen {
+    if ([_gpuMap closePointDetail]) return;
     if (_mapTrafficSession.selectedHexes.count) { [_mapTrafficSession clearSelections]; _gpuMap.trafficSession=_mapTrafficSession; [_gpuMap showTrafficNotice:@"Tracks cleared"]; return; }
     [self closeChartWindow];
 }
@@ -6489,6 +6647,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
 - (void)noteGPUPresentFailed {
     if (_gpuPresentFailed || !_gpuMap) return;
     _gpuPresentFailed = YES;
+    _live.clockOnly = NO; // The classic chart is the surface again.
     [_gpuMap removeFromSuperview];
     [_gpuMap stopRendering];
     if (_expandedMap) [self layoutChartWindow];
@@ -6496,6 +6655,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
 }
 
 - (void)syncGPUPlayhead {
+    if (_live) _live.clockOnly = [self gpuMapWanted];
     if (!_gpuMap) return;
     _gpuMap.timeline = _live;
     [self syncMapTraffic];
@@ -6571,6 +6731,10 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
         _gpuMap = [GPUMapView mapView];
         if (!_gpuMap) return;
         __weak Controller *weak = self;
+        _gpuMap.onPlainClick = ^(double lat, double lon) {
+            Controller *strong = weak;
+            if (strong) [strong->_gpuMap selectPointLatitude:lat longitude:lon];
+        };
         _gpuMap.onHoldChanged = ^(BOOL held) { [weak setMapHeld:held]; };
         _gpuMap.onCameraChanged = ^(IsobarCamera camera) {
             (void)camera;
@@ -6604,6 +6768,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
     _gpuMap.windBarbs = _barbs;
     [_gpuMap adoptRun:_ownRun temperature:(int)_tempLayer windFill:_windFill rain:_rainLayer];
     _gpuMap.hazards = self.hazardLayer;
+    [self pushStarlink];
     NSDictionary *place = [self hubPlace];
     id lat = place[@"latitude"], lon = place[@"longitude"];
     if ([lat isKindOfClass:NSNumber.class] && [lon isKindOfClass:NSNumber.class]) {
@@ -6633,6 +6798,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
     if (prefs) GPUMapSetEnabled(prefs, _newMap);
     if (_settingsNewMap && _settingsNewMap != sender)
         _settingsNewMap.state = _newMap ? NSControlStateValueOn : NSControlStateValueOff;
+    _live.clockOnly = [self gpuMapWanted];
     if (_expandedMap) [self layoutChartWindow];
     else if (self.popover.shown) [self rebuildContent];
 }
@@ -6668,6 +6834,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
         [_clock invalidate];
         _clock = nil;
     }
+    [self syncStarlink];
 }
 
 - (void)placeEscapeHint {
@@ -6750,6 +6917,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
 
 - (void)windowOcclusionChanged:(NSNotification *)note {
     if (note.object == _chartWindow) [self noteMapVisibility];
+    if (note.object == _chartWindow) [self syncStarlink];
 }
 
 - (void)openChartWindow {
@@ -6769,6 +6937,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
 - (void)popoverDidShow:(NSNotification *)notification {
     if (notification.object != self.popover || _keyMonitor) return;
     [self beginPopoverEvolution];
+    [self syncStarlink];
     __weak Controller *weak = self;
     _keyMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown handler:^NSEvent *(NSEvent *event) {
         Controller *strong = weak;
@@ -6826,9 +6995,10 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
     }
     _popoverClosedAt = [NSDate timeIntervalSinceReferenceDate];
     if (!_expandedMap) {
-        [self clearMapTraffic]; _forecastMode=-1; _selectedLens=-1; [self followLensHazards];
+        [self clearMapTraffic]; _forecastMode=-1; _selectedLens=-1; [self resetOptionalOverlays];
         _pairPinned=NO; _previewIndex=-1; [self applyChartLayer:0 rebuild:NO];
     }
+    [self syncStarlink];
     _scrollAccum=0;
     if (_keyMonitor) {
         [NSEvent removeMonitor:_keyMonitor];
@@ -6936,6 +7106,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
     ageField.font = font;
     ageField.textColor = stale ? NSColor.systemYellowColor : NSColor.secondaryLabelColor;
     warn.hidden = !stale;
+    if (_sourceECMWF) tip = [tip stringByAppendingString:@"\nECMWF open data, CC BY 4.0"];
     issued.toolTip = tip;
     issued.accessibilityLabel = tip;
     CGFloat h = NSHeight(issued.bounds);
@@ -7442,7 +7613,11 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
     // new bounds and keeps the playhead's time.
     if (!keepMotion && resumeEvolution) [self resetPopoverToNow];
     else if (keepMotion && _live && (![cachedFrames isEqual:_frameIndices] || cachedRun != _ownRun)) [self ensureLivePlayer];
-    if (self.popover.shown) [self rebuildContent];
+    if (self.popover.shown) {
+        // Same structure: refresh the text the update can change, in place.
+        if (cachedRun == _ownRun && [[self popoverSignature] isEqual:_popoverSignature]) [self tickSurfaces];
+        else [self rebuildContent];
+    }
     if (_expandedMap) [self layoutChartWindow];
     [self prepareChartImages];
 }
@@ -7574,6 +7749,10 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
     _loginToggle.allowsMixedState = YES;
     if (status == SMAppServiceStatusRequiresApproval) _loginToggle.state = NSControlStateValueMixed;
     [root addSubview:_loginToggle];
+    NSTextField *credit = [self label:@"ECMWF open data, CC BY 4.0" font:[NSFont systemFontOfSize:11]
+        color:NSColor.secondaryLabelColor frame:NSMakeRect(132,364,368,16)];
+    credit.accessibilityIdentifier = @"settings.attribution";
+    [root addSubview:credit];
     _settingsWindow.contentView = root;
     [_settingsWindow center];
     [_settingsWindow makeKeyAndOrderFront:nil];
@@ -7689,6 +7868,21 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
     [self pinFlyAerodrome:code];
 }
 
+// States with a bundled station catalogue (stations-<state>.json), sorted;
+// a new catalogue joins search and location without a code change.
+- (NSArray<NSString *> *)stationStates {
+    NSMutableSet *states = [NSMutableSet set];
+    NSMutableArray *dirs = [NSMutableArray array];
+    if (NSBundle.mainBundle.resourcePath) [dirs addObject:NSBundle.mainBundle.resourcePath];
+    NSString *root = NSProcessInfo.processInfo.environment[@"ISOBAR_FIXTURES"];
+    if (root.length) [dirs addObject:root.stringByExpandingTildeInPath];
+    for (NSString *dir in dirs)
+        for (NSString *file in [NSFileManager.defaultManager contentsOfDirectoryAtPath:dir error:nil] ?: @[])
+            if ([file hasPrefix:@"stations-"] && [file hasSuffix:@".json"])
+                [states addObject:[file substringWithRange:NSMakeRange(9, file.length - 14)].uppercaseString];
+    return [states.allObjects sortedArrayUsingSelector:@selector(compare:)];
+}
+
 - (NSArray *)stationsForState:(NSString *)state {
     NSString *code = state.lowercaseString;
     NSString *name = [@"stations-" stringByAppendingString:code];
@@ -7722,7 +7916,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
     NSString *q = [_searchField.stringValue stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     if (q.length < 2) { _searchResults = @[]; [_searchTable reloadData]; return; }
     NSMutableArray *hits = [NSMutableArray array];
-    for (NSString *state in @[@"WA", @"NSW", @"VIC"]) {
+    for (NSString *state in [self stationStates]) {
         for (NSDictionary *station in [self stationsForState:state]) {
             NSString *name = [station[@"name"] isKindOfClass:NSString.class] ? station[@"name"] : @"";
             if ([name rangeOfString:q options:NSCaseInsensitiveSearch].location == NSNotFound) continue;
@@ -7842,7 +8036,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
     NSString *timezone = nearestSaved[@"timezone"] ?: @"";
     if (!nearestSaved) {
         double nearestStationKm = 150;
-        for (NSString *candidate in @[@"WA", @"NSW", @"VIC"]) {
+        for (NSString *candidate in [self stationStates]) {
             NSDictionary *station = NearestStation([self stationsForState:candidate], lat, lon, nil);
             if (!station) continue;
             double km = HaversineKm(lat, lon, [station[@"lat"] doubleValue], [station[@"lon"] doubleValue]);

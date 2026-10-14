@@ -111,6 +111,15 @@ static void CheckCard(NSView *root, NSInteger mode, Controller *controller) {
         CGFloat need=[reading.stringValue sizeWithAttributes:@{NSFontAttributeName:reading.font}].width;
         Check(need<=NSWidth(reading.frame)-4 && ![reading.stringValue containsString:@"…"],@"value row fits without truncation");
     }
+    if (mode==6) {
+        // Sat is live, not on the forecast playhead: the dome and two rows.
+        StarlinkLensView *sat=(StarlinkLensView *)Find(card,@"starlink.lens");
+        Check(sat && NSContainsRect(card.bounds,[sat convertRect:sat.bounds toView:card]),@"Starlink panel fits inside card");
+        [sat displayIfNeeded];
+        Check(sat.readings[@"ping"].length && sat.readings[@"serving"].length,@"Starlink rows always show a value or a dash");
+        Check(!Find(card,@"forecast.reading"),@"Starlink panel has no forecast value row");
+        return;
+    }
     id graph=[controller valueForKey:@"forecastGraph"];
     Check([graph isDescendantOf:card],@"shared playhead targets the visible card");
     if (mode!=1) {
@@ -184,7 +193,7 @@ int main(int argc, const char **argv) {
         Check([c chartsReady],@"archive chart loads read-only");
         NSWindow *host=[[NSWindow alloc] initWithContentRect:NSMakeRect(-30000,-30000,1600,1200) styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
         host.releasedWhenClosed=NO;
-        NSArray *lenses=@[@[@"rain",@2],@[@"temp",@4],@[@"kite",@0],@[@"surf",@3],@[@"fly",@1]];
+        NSArray *lenses=@[@[@"rain",@2],@[@"temp",@4],@[@"kite",@0],@[@"surf",@3],@[@"fly",@1],@[@"sat",@6]];
         NSArray *looks=@[@[@"light",NSAppearanceNameAqua],@[@"dark",NSAppearanceNameDarkAqua]];
         @try {
             for (NSValue *size in @[[NSValue valueWithSize:NSMakeSize(1512,982)],[NSValue valueWithSize:NSMakeSize(1280,720)]]) {

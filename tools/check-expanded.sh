@@ -2,6 +2,11 @@
 # Offscreen expanded-window acceptance and screenshots. No network or visible windows.
 set -euo pipefail
 cd "${0:A:h}/.."
+# The Sat lens never reaches a dish or CelesTrak offscreen.
+export ISOBAR_STARLINK_FIXTURE="$PWD/Tests/fixtures/starlink.tle"
+# Terrain comes only from tests that name their fixture tiles: never the
+# owner's tile cache, whose contents would change what a recording shows.
+export ISOBAR_TERRAIN_TILES="$PWD/Tests/fixtures/no-terrain"
 MINIMUM_MACOS=$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' Info.plist)
 mkdir -p build/qa
 CHECK_DIR="$(mktemp -d "$PWD/build/qa/.expanded.XXXXXX")"
@@ -17,11 +22,11 @@ SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
     Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Sources/notices.m \
     Sources/notacconnection.m Sources/surfview.m Sources/motion.m Sources/rawmovie.m Sources/scrub.m Sources/mapdetail.m \
     Sources/collector.m Sources/archive.m Sources/ownchart.m Sources/daystrip.m Sources/fullscreenwindow.m Sources/playback.m \
-    Sources/storereload.m Sources/mapcamera.m Sources/gpumapview.m Sources/windmapview.m Sources/atmospheremapview.m   Sources/trafficroute.m Sources/hazard.m Sources/fieldrender.m \
-    Sources/trainingdata.m Sources/trainingwindow.m tools/own-chart.m tools/check-expanded.m \
+    Sources/storereload.m Sources/mapcamera.m Sources/terrain.m Sources/terrainmap.m Sources/terrainscene.m Sources/gpumapview.m Sources/windmapview.m Sources/atmospheremapview.m   Sources/trafficroute.m Sources/hazard.m Sources/fieldrender.m \
+    Sources/trainingdata.m Sources/trainingwindow.m Sources/starlink.m Sources/starlinkview.m tools/own-chart.m tools/check-expanded.m \
     -framework Cocoa -framework WebKit -framework Security -framework ServiceManagement -framework CoreLocation \
     -framework Vision -framework CoreVideo -framework CoreMedia -framework AVFoundation -framework QuartzCore \
-    -framework Metal -framework CoreText -framework Accelerate -lz -lsqlite3 -o "$CHECK_DIR/check-expanded"
+    -framework ImageIO -framework Metal -framework CoreText -framework Accelerate -lz -lsqlite3 -o "$CHECK_DIR/check-expanded"
 STORE="${1:-Tests/fixtures/store}"
 OUTPUT="${2:-build/qa/expanded}"
 ISOBAR_CHECK_NOW="${ISOBAR_CHECK_NOW:-2026-09-26T00:30:00Z}" \
