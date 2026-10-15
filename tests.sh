@@ -17,8 +17,8 @@ fi
 
 SHORT=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
 BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist)
-if [[ "$SHORT" != "1.11.5" || "$BUILD" != "41" ]]; then
-    echo "tests.sh: Info.plist version is ${SHORT} (${BUILD}); expected 1.11.5 (41)." >&2
+if [[ "$SHORT" != "1.11.6" || "$BUILD" != "42" ]]; then
+    echo "tests.sh: Info.plist version is ${SHORT} (${BUILD}); expected 1.11.6 (42)." >&2
     exit 1
 fi
 
@@ -36,6 +36,14 @@ if grep -nE -- '-mmacosx-version-min=[0-9]|^[[:space:]]*clang[[:space:]]' build.
     echo 'tests.sh: build with "$(xcrun --find clang)" and LSMinimumSystemVersion, as tools/check-app.sh does.' >&2
     exit 1
 fi
+
+python3 tools/run-python-tests.py Tests test_feedback.py
+"$CC" -fobjc-arc -Wall -Wextra -Werror -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
+    -DISOBAR_FEEDBACK_TESTING Sources/feedback.m Tests/test_feedback.m -framework Foundation -o "$WORK_DIR/feedback_tests"
+"$WORK_DIR/feedback_tests"
+"$CC" -fobjc-arc -Wall -Wextra -Werror -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
+    Sources/feedbackview.m Tests/test_feedbackview.m -framework Cocoa -o "$WORK_DIR/feedback_view_tests"
+"$WORK_DIR/feedback_view_tests"
 
 python3 tools/run-python-tests.py Tests test_check_store.py
 python3 tools/run-python-tests.py Tests test_check_bundle.py
@@ -252,6 +260,16 @@ for TEST in warnings archive; do
     "$WORK_DIR/${TEST}_tests"
 done
 
+# Shared E6-B math and native controls; all rendering remains offscreen.
+"$CC" -fobjc-arc -O2 -Wall -Wextra -Werror \
+    -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
+    Sources/e6b.m Tests/test_e6b.m -framework Foundation -o "$WORK_DIR/e6b_tests"
+ISOBAR_FIXTURES="$PWD/Tests/fixtures" "$WORK_DIR/e6b_tests"
+"$CC" -fobjc-arc -O2 -Wall -Wextra -Werror \
+    -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
+    Sources/e6b.m Sources/e6bview.m Tests/test_e6bview.m -framework Cocoa -o "$WORK_DIR/e6bview_tests"
+ISOBAR_FIXTURES="$PWD/Tests/fixtures" "$WORK_DIR/e6bview_tests"
+
 # Training mode. The web suite and the fixture snapshot always run. The
 # headless window against the real archive is opt-in, so this file does not
 # read ~/Data/isobar unless ISOBAR_QA_STORE is set.
@@ -344,8 +362,8 @@ cp Resources/ownchart-coast.bin Resources/world-coast.bin "$COAST_APP/Resources/
 "$CC" \
     -fobjc-arc -O2 -Wall -Wextra -Werror \
     -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources -DISOBAR_APP \
-    Sources/pure.m Sources/rain.m Sources/rainview.m Sources/aviation.m Sources/forecastview.m Sources/aviationview.m Sources/skyview.m Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Sources/trafficroute.m Sources/notices.m Sources/notacconnection.m Sources/surfview.m Sources/motion.m Sources/rawmovie.m Sources/scrub.m Sources/mapdetail.m Sources/collector.m Sources/archive.m Sources/ownchart.m tools/own-chart.m Sources/daystrip.m Sources/fullscreenwindow.m Sources/playback.m Sources/storereload.m     Sources/mapcamera.m Sources/terrain.m Sources/terrainmap.m Sources/terrainscene.m Sources/gpumapview.m Sources/windmapview.m Sources/hazard.m Sources/atmospheremapview.m Sources/fieldrender.m Sources/trainingdata.m Sources/trainingwindow.m Sources/starlink.m Sources/starlinkview.m Tests/test_store_refresh.m \
-    -framework Cocoa -framework WebKit -framework Security -framework ServiceManagement -framework CoreLocation -framework Vision -framework CoreVideo -framework CoreMedia -framework AVFoundation -framework QuartzCore -framework ImageIO -framework Metal -framework CoreText -framework Accelerate -lz -lsqlite3 \
+    Sources/pure.m Sources/rain.m Sources/rainview.m Sources/aviation.m Sources/forecastview.m Sources/aviationview.m Sources/skyview.m Sources/solar.m Sources/atmosphere.m Sources/atmosphereview.m Sources/aircraft.m Sources/traffic.m Sources/trafficroute.m Sources/notices.m Sources/notacconnection.m Sources/surfview.m Sources/motion.m Sources/rawmovie.m Sources/scrub.m Sources/mapdetail.m Sources/collector.m Sources/archive.m Sources/ownchart.m tools/own-chart.m Sources/daystrip.m Sources/fullscreenwindow.m Sources/playback.m Sources/storereload.m     Sources/mapcamera.m Sources/terrain.m Sources/terrainmap.m Sources/terrainscene.m Sources/gpumapview.m Sources/windmapview.m Sources/hazard.m Sources/atmospheremapview.m Sources/fieldrender.m Sources/feedback.m Sources/feedbackview.m Sources/trainingdata.m Sources/e6b.m Sources/e6bview.m Sources/trainingwindow.m Sources/starlink.m Sources/starlinkview.m Tests/test_store_refresh.m \
+    -framework Carbon -framework Cocoa -framework WebKit -framework Security -framework ServiceManagement -framework CoreLocation -framework Vision -framework CoreVideo -framework CoreMedia -framework AVFoundation -framework QuartzCore -framework ImageIO -framework Metal -framework CoreText -framework Accelerate -lz -lsqlite3 \
     -o "$WORK_DIR/store_refresh_tests"
 ISOBAR_FIXTURES="${0:A:h}/Tests/fixtures" \
     ISOBAR_COAST="${0:A:h}/Resources/ownchart-coast.bin" "$WORK_DIR/store_refresh_tests"

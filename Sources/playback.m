@@ -157,6 +157,8 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
     double _anchorRate;
     NSUInteger _playheadEpoch;
     BOOL _anchorReady;
+    BOOL _feedbackSuspended;
+    double _feedbackSuspendedHours;
 }
 
 + (void)retireEncodedMovies {
@@ -216,13 +218,41 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
 - (NSTimeInterval)clockNow {
     return _clock ? [_clock now] : NSProcessInfo.processInfo.systemUptime;
 }
+- (BOOL)feedbackSuspended { return _feedbackSuspended; }
+- (void)setFeedbackSuspended:(BOOL)value {
+    if (_feedbackSuspended == value) return;
+    NSTimeInterval now = [self clockNow];
+    if (value) {
+        // Re-anchor once before freezing so the visible frame is exactly the
+        // frame at the keypress, including a display tick just elapsed.
+        if (_anchorReady) {
+            _feedbackSuspendedHours = [self forecastHoursAtTime:now];
+            _hours = _feedbackSuspendedHours;
+        } else {
+            _feedbackSuspendedHours = _hours;
+        }
+        _feedbackSuspended = YES;
+        return;
+    }
+    _feedbackSuspended = NO;
+    // Keep the original rate and mode, but move the monotonic anchor past the
+    // time spent typing so the first resumed sample does not jump forward.
+    _hours = _feedbackSuspendedHours;
+    _anchorHours = _feedbackSuspendedHours;
+    _anchorTime = now;
+    _anchorReady = YES;
+    if (_playing && !_holding && !_seaming)
+        _anchorRate = _hoursPerSecond > 0 ? _hoursPerSecond : 0;
+    [self publish];
+    [self schedule];
+}
 - (void)setHoursPerSecond:(double)hoursPerSecond {
     _hoursPerSecond = hoursPerSecond;
     if (_playing || _seaming) [self reanchorFromSeek:NO];
 }
 - (NSTimeInterval)playheadAnchorTime { return _anchorTime; }
 - (double)playheadAnchorHours { return _anchorHours; }
-- (double)playheadRate { return _anchorRate; }
+- (double)playheadRate { return _feedbackSuspended ? 0 : _anchorRate; }
 - (NSUInteger)playheadEpoch { return _playheadEpoch; }
 
 // Re-base the shared timeline on the clock. A seek, a hold, or the jump from
@@ -276,6 +306,7 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
 }
 
 - (double)forecastHoursAtTime:(NSTimeInterval)time {
+    if (_feedbackSuspended) return _feedbackSuspendedHours;
     if (!_anchorReady) return _hours;
     double dt = time - _anchorTime;
     if (!isfinite(dt) || dt < 0) dt = 0;
@@ -671,6 +702,7 @@ static NSArray<NSValue *> *PointValues(const CGPoint *points, NSInteger count) {
 }
 
 - (void)tick:(NSTimeInterval)seconds {
+    if (_feedbackSuspended) return;
     _ticks++;
     if (seconds < 0) seconds = 0;
     BOOL realTime = fabs(_hoursPerSecond - 1.0/3600.0) < 1e-12;

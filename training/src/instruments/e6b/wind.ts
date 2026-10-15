@@ -100,22 +100,32 @@ export function readDot(state: WindState, slide: WindSlide = SLIDE): { tas: numb
 
 /** Exact wind triangle: heading and ground speed from course, TAS and wind. */
 export function solveHeading(tc: number, tas: number, windFrom: number, windKt: number): { wca: number; th: number; gs: number } {
+  if (![tc, tas, windFrom, windKt].every(Number.isFinite) || tas <= 0 || windKt < 0) {
+    return { wca: Number.NaN, th: Number.NaN, gs: Number.NaN };
+  }
   const angle = rad(windFrom - tc);
   const cross = windKt * Math.sin(angle);
+  if (Math.abs(cross) > tas) return { wca: Number.NaN, th: Number.NaN, gs: Number.NaN };
   const wca = deg(Math.asin(cross / tas));
   const gs = tas * Math.cos(rad(wca)) - windKt * Math.cos(angle);
+  if (!Number.isFinite(gs) || gs <= tas * 1e-12) return { wca: Number.NaN, th: Number.NaN, gs: Number.NaN };
   return { wca, th: wrap360(tc + wca), gs };
 }
 
 /** Exact wind from heading, course, TAS and ground speed. */
 export function solveWind(th: number, tc: number, tas: number, gs: number): { from: number; kt: number } {
+  if (![th, tc, tas, gs].every(Number.isFinite) || tas <= 0 || gs <= 0) {
+    return { from: Number.NaN, kt: Number.NaN };
+  }
   const gx = gs * Math.sin(rad(tc));
   const gy = gs * Math.cos(rad(tc));
   const ax = tas * Math.sin(rad(th));
   const ay = tas * Math.cos(rad(th));
   const wx = gx - ax; // wind blowing to
   const wy = gy - ay;
-  return { from: wrap360(deg(Math.atan2(-wx, -wy))), kt: Math.hypot(wx, wy) };
+  const kt = Math.hypot(wx, wy);
+  // Calm has no direction; use a stable convention across native/JS math.
+  return kt < 1e-12 ? { from: 180, kt: 0 } : { from: wrap360(deg(Math.atan2(-wx, -wy))), kt };
 }
 
 /** The computer's answer to the heading problem: set the instrument as the manual says and read it. */

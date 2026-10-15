@@ -51,6 +51,11 @@ NSString *GPUMapMenuTitle(NSString *title, BOOL classicOnly, BOOL note);
 // NO on mouse-up, cancellation, or window teardown; dragging remains camera-only.
 @property (nonatomic, copy) void (^onHoldChanged)(BOOL held);
 @property (nonatomic, copy) void (^onCameraChanged)(IsobarCamera camera);
+// Optional, dependency-free diagnostics seam. The controller owns the
+// recorder; this view only reports meaningful map events and a cheap snapshot
+// of its current camera/mode/GPU state.
+@property (nonatomic, copy) void (^onFeedbackEvent)(NSString *category, NSDictionary *details);
+@property (nonatomic, readonly, copy) NSDictionary *feedbackDiagnosticState;
 @property (nonatomic, weak) IsobarLivePlayer *timeline;
 @property (nonatomic) double fractionalStep;
 @property (nonatomic, readonly) double renderedStep;
@@ -80,6 +85,10 @@ NSString *GPUMapMenuTitle(NSString *title, BOOL classicOnly, BOOL note);
 - (void)showTrafficNotice:(NSString *)notice;
 // The popover hides the 2D/3D control. Recenter appears only after a move.
 @property (nonatomic) BOOL popoverChrome;
+// Suspends the display link and animated overlays while a feedback note is
+// being entered. Camera, morph target, and playhead state remain untouched;
+// copySnapshot remains available for the frozen capture.
+@property (nonatomic) BOOL feedbackSuspended;
 @property (nonatomic, readonly) BOOL userMovedMap;
 // The same geographic window as the classic popover chart.
 - (void)frameAustralia;

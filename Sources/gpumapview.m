@@ -572,10 +572,13 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
     CGContextRef _overlayScratch;
     double _lastQueueWaitMilliseconds;
     BOOL _popoverChrome;
+    BOOL _feedbackSuspended;
     BOOL _userMoved;
     BOOL _threeDMode;
     double _last3DGlobe;
     double _last3DBearing;
+    CFTimeInterval _lastFeedbackCameraEvent;
+    CFTimeInterval _lastFeedbackHitchEvent;
     double _fitW, _fitH;
     CAMetalLayer *_metal;
     NSUInteger _presentedCount;
@@ -831,12 +834,19 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 // window background. Pause only after a window that has been on screen is
 // covered. Snapshots never go through this path.
 - (BOOL)windowWantsFrames {
-    if (!self.window || self.hidden || self.isHiddenOrHasHiddenAncestor) return NO;
+    if (self.feedbackSuspended || !self.window || self.hidden || self.isHiddenOrHasHiddenAncestor) return NO;
     if (!self.window.isVisible) return NO;
     BOOL occlusionVisible = (self.window.occlusionState & NSWindowOcclusionStateVisible) != 0;
     if (occlusionVisible) _sawOcclusionVisible = YES;
     if (_sawOcclusionVisible && !occlusionVisible) return NO;
     return YES;
+}
+
+- (BOOL)feedbackSuspended { return _feedbackSuspended; }
+- (void)setFeedbackSuspended:(BOOL)value {
+    if (_feedbackSuspended == value) return;
+    _feedbackSuspended = value;
+    [self updateLink];
 }
 
 - (void)cancelPresentWatchdog {
@@ -902,7 +912,12 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     BOOL draw = [self windowWantsFrames];
     _link.paused = !draw;
     if (draw) [self presentNow];
-    else [self cancelPresentWatchdog];
+    else {
+        // Do not measure the hidden/occluded interval as a display hitch when
+        // this view becomes visible again.
+        _lastStamp = 0;
+        [self cancelPresentWatchdog];
+    }
 }
 
 - (void)viewDidMoveToWindow {
@@ -941,13 +956,42 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 
 - (void)setCamera:(IsobarCamera)camera {
     _camera = camera;
-    if (self.onCameraChanged) self.onCameraChanged(_camera);
+    [self notifyCameraChanged];
     IsobarCamera overlayCamera = camera;
     overlayCamera.viewportW = NSWidth(self.bounds);
     overlayCamera.viewportH = NSHeight(self.bounds);
     _atmosphereView.camera = overlayCamera;
     [_atmosphereView setNeedsDisplay:YES];
     [self syncVectorOverlays];
+}
+
+- (NSDictionary *)feedbackDiagnosticState {
+    IsobarCamera c = _camera;
+    NSString *mode = _threeDMode ? @"3d" : @"2d";
+    id gpu = _device.name.length ? _device.name : [NSNull null];
+    return @{ @"mode": mode,
+              @"camera": @{ @"centre_lat": @(c.centreLat),
+                              @"centre_lon": @(c.centreLon),
+                              @"zoom": @(c.zoom),
+                              @"tilt": @(c.pitch),
+                              @"orbit": @(c.bearing),
+                              @"globe": @(c.globe) },
+              @"gpu": gpu };
+}
+
+- (void)notifyCameraChanged {
+    if (self.onCameraChanged) self.onCameraChanged(_camera);
+    if (!self.onFeedbackEvent) return;
+    CFTimeInterval now = CACurrentMediaTime();
+    if (_lastFeedbackCameraEvent > 0 && now - _lastFeedbackCameraEvent < 0.25) return;
+    _lastFeedbackCameraEvent = now;
+    self.onFeedbackEvent(@"camera", self.feedbackDiagnosticState);
+}
+
+- (void)notifyMapModeChanged {
+    if (!self.onFeedbackEvent) return;
+    NSDictionary *state = self.feedbackDiagnosticState;
+    self.onFeedbackEvent(@"map_mode", state);
 }
 
 - (void)syncVectorOverlays {
@@ -1351,7 +1395,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _fitH = _camera.viewportH;
     [self syncSlider];
     [self placeMarker];
-    if (self.onCameraChanged) self.onCameraChanged(_camera);
+    [self notifyCameraChanged];
     [self layoutChrome];
 }
 
@@ -1587,7 +1631,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _userMoved = NO;
     [self syncSlider];
     [self placeMarker];
-    if (self.onCameraChanged) self.onCameraChanged(_camera);
+    [self notifyCameraChanged];
     [self layoutChrome];
 }
 
@@ -1597,7 +1641,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _camera = IsobarCameraClamp(_camera);
     [self noteUserMoved];
     [self placeMarker];
-    if (self.onCameraChanged) self.onCameraChanged(_camera);
+    [self notifyCameraChanged];
 }
 
 - (void)applyBudget {
@@ -1804,7 +1848,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
         [self syncSlider];
         [self syncModeControls];
         [self placeMarker];
-        if (self.onCameraChanged) self.onCameraChanged(_camera);
+        [self notifyCameraChanged];
         return;
     }
     _morphFrom = _camera.globe;
@@ -1895,7 +1939,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     [self syncSlider];
     [self syncModeControls];
     [self placeMarker];
-    if (self.onCameraChanged) self.onCameraChanged(_camera);
+    [self notifyCameraChanged];
 }
 
 - (void)moveGroundByForward:(double)forward right:(double)right {
@@ -1968,7 +2012,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
             _camera = IsobarCameraClamp(_camera);
             [self syncSlider];
             [self placeMarker];
-            if (self.onCameraChanged) self.onCameraChanged(_camera);
+            [self notifyCameraChanged];
         }
         [self syncModeControls];
         return;
@@ -1976,6 +2020,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _last3DGlobe = MIN(1.0, MAX(0.0, _camera.globe));
     _last3DBearing = _camera.bearing;
     _threeDMode = NO;
+    [self notifyMapModeChanged];
     _camera.bearing = 0;
     [self syncModeControls];
     [self animateGlobeTo:0 reducedMotion:[self reducedNow]];
@@ -1989,6 +2034,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
         return;
     }
     _threeDMode = YES;
+    [self notifyMapModeChanged];
     _camera.bearing = _last3DBearing;
     [self syncModeControls];
     [self animateGlobeTo:_last3DGlobe reducedMotion:[self reducedNow]];
@@ -2007,7 +2053,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     [self syncSlider];
     [self syncModeControls];
     [self placeMarker];
-    if (self.onCameraChanged) self.onCameraChanged(_camera);
+    [self notifyCameraChanged];
 }
 
 - (void)stepTiltBy:(double)delta {
@@ -2024,7 +2070,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     [self syncSlider];
     [self syncModeControls];
     [self placeMarker];
-    if (self.onCameraChanged) self.onCameraChanged(_camera);
+    [self notifyCameraChanged];
 }
 
 - (BOOL)anchorLat:(double)lat lon:(double)lon toX:(double)x y:(double)y {
@@ -2034,7 +2080,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     self.didPlaceCamera = YES;
     [self noteUserMoved];
     [self placeMarker];
-    if (self.onCameraChanged) self.onCameraChanged(_camera);
+    [self notifyCameraChanged];
     return YES;
 }
 
@@ -2116,7 +2162,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
             self.didPlaceCamera = YES;
             [self noteUserMoved];
             [self placeMarker];
-            if (self.onCameraChanged) self.onCameraChanged(_camera);
+            [self notifyCameraChanged];
             return;
         }
     }
@@ -2178,7 +2224,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     self.didPlaceCamera = YES;
     [self noteUserMoved];
     [self placeMarker];
-    if (self.onCameraChanged) self.onCameraChanged(_camera);
+    [self notifyCameraChanged];
     if (_threeDMode && !_pointerHeld) [self armAutoNorth];
     return YES;
 }
@@ -2438,6 +2484,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 }
 
 - (void)advanceDisplay:(double)dt {
+    if (self.feedbackSuspended) return;
     if (!(dt > 0) || !isfinite(dt)) dt = 1.0 / 60.0;
     if (dt > 1) dt = 1;
     if (_morphing) {
@@ -2471,6 +2518,16 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 
 - (void)onDisplay:(CADisplayLink *)link {
     if (![self windowWantsFrames]) return;
+    CFTimeInterval interval = (_lastStamp > 0) ? link.timestamp - _lastStamp : 0;
+    CFTimeInterval expected = link.duration > 0 ? link.duration : (1.0 / 60.0);
+    // updateLink resets the first sample after a hidden/suspended interval.
+    // Bound sustained hitch reports to one per second so interactions survive.
+    if (self.onFeedbackEvent && interval > expected * 2.0 &&
+        (_lastFeedbackHitchEvent == 0 || link.timestamp - _lastFeedbackHitchEvent >= 1.0)) {
+        _lastFeedbackHitchEvent = link.timestamp;
+        self.onFeedbackEvent(@"frame_hitch", @{ @"interval": @(interval),
+                                                 @"expected": @(expected) });
+    }
     NSTimeInterval sample = link.targetTimestamp;
     if (self.timeline) {
         double lead = link.targetTimestamp - link.timestamp;

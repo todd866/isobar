@@ -328,6 +328,39 @@ static void TestPlateRetentionIsBudgeted(void) {
         @"a failed flat-plate render cannot publish transparent pressure ink over an older map");
 }
 
+static void TestFeedbackSuspensionFreezesClock(void) {
+    IsobarLivePlayer *player = [IsobarLivePlayer new];
+    IsobarLiveClock *clock = [IsobarLiveClock manualClock];
+    player.clock = clock;
+    player.clockOnly = YES;
+    NSDate *start = [NSDate dateWithTimeIntervalSince1970:1700000000];
+    [player configureRun:nil start:start end:[start dateByAddingTimeInterval:24 * 3600]
+                    now:start modelIndex:^double(NSDate *date) { return [date timeIntervalSinceDate:start] / 3600.0; }];
+    player.hoursPerSecond = IsobarLiveHoursPerSecond(IsobarLiveSpeed8x);
+    [player playFromDate:start];
+    [clock advance:1]; [player tick:1];
+    double before = [player forecastHoursAtTime:[clock now]];
+    player.feedbackSuspended = YES;
+    Check(player.playing && !player.holding && player.playheadRate == 0, @"suspension preserves playing mode but reports zero rate");
+    [clock advance:10]; [player tick:10];
+    Check(fabs([player forecastHoursAtTime:[clock now]] - before) < 1e-12, @"suspended playing clock stays fixed");
+    player.feedbackSuspended = NO;
+    Check(fabs([player forecastHoursAtTime:[clock now]] - before) < 1e-12, @"resume does not jump over typing interval");
+    [clock advance:1];
+    Check([player forecastHoursAtTime:[clock now]] > before && player.playheadRate > 0, @"resume restores the original playing rate");
+
+    [player pause];
+    double paused = [player forecastHoursAtTime:[clock now]];
+    player.feedbackSuspended = YES; [clock advance:4]; [player tick:4]; player.feedbackSuspended = NO;
+    Check(fabs([player forecastHoursAtTime:[clock now]] - paused) < 1e-12 && !player.playing,
+          @"paused state remains paused across suspension");
+    [player holdAtDate:[start dateByAddingTimeInterval:2 * 3600]];
+    double held = [player forecastHoursAtTime:[clock now]];
+    player.feedbackSuspended = YES; [clock advance:4]; player.feedbackSuspended = NO;
+    Check(fabs([player forecastHoursAtTime:[clock now]] - held) < 1e-12 && player.holding,
+          @"held state remains held across suspension");
+}
+
 int main(void) {
     @autoreleasepool {
         TestSpacingChangeKeepsOldKeysUntilCalibrated();
@@ -338,6 +371,7 @@ int main(void) {
         TestFastLoopsDissolveForward();
         TestClockOnlyNeverWaitsForFrames();
         TestPlateRetentionIsBudgeted();
+        TestFeedbackSuspensionFreezesClock();
     }
     return failures ? 1 : 0;
 }

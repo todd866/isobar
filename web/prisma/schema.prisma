@@ -31,6 +31,20 @@ model User {
   @@index([clusterId])
 }
 
+// Owner feedback captures the map state and a short-lived screen image.
+// It is intentionally independent of User so records remain available when
+// an account is removed or the owner signs in with a new session.
+model Feedback {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  surface    String
+  note       String?  @db.Text
+  record     Json
+  screenshot Bytes?
+
+  @@index([createdAt])
+}
+
 // Provider references only. Payment methods and invoice details stay at Stripe.
 model Entitlement {
   userId                 String    @id

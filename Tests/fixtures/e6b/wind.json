@@ -1,0 +1,358 @@
+{
+  "schema": 1,
+  "cases": [
+    {
+      "id": "calm",
+      "kind": "heading",
+      "input": {
+        "tc": 0,
+        "tas": 100,
+        "windFrom": 270,
+        "windKt": 0
+      },
+      "expected": {
+        "wca": 0,
+        "th": 0,
+        "gs": 100
+      }
+    },
+    {
+      "id": "direct-headwind",
+      "kind": "heading",
+      "input": {
+        "tc": 90,
+        "tas": 120,
+        "windFrom": 90,
+        "windKt": 35
+      },
+      "expected": {
+        "wca": 0,
+        "th": 90,
+        "gs": 85
+      }
+    },
+    {
+      "id": "direct-tailwind",
+      "kind": "heading",
+      "input": {
+        "tc": 90,
+        "tas": 120,
+        "windFrom": 270,
+        "windKt": 35
+      },
+      "expected": {
+        "wca": 2.0465402120726727e-15,
+        "th": 90,
+        "gs": 155
+      }
+    },
+    {
+      "id": "direct-crosswind-right",
+      "kind": "heading",
+      "input": {
+        "tc": 0,
+        "tas": 120,
+        "windFrom": 90,
+        "windKt": 30
+      },
+      "expected": {
+        "wca": 14.477512185929923,
+        "th": 14.477512185929925,
+        "gs": 116.1895003862225
+      }
+    },
+    {
+      "id": "direct-crosswind-left",
+      "kind": "heading",
+      "input": {
+        "tc": 0,
+        "tas": 120,
+        "windFrom": 270,
+        "windKt": 30
+      },
+      "expected": {
+        "wca": -14.477512185929923,
+        "th": 345.5224878140701,
+        "gs": 116.1895003862225
+      }
+    },
+    {
+      "id": "wrap-near-360",
+      "kind": "heading",
+      "input": {
+        "tc": 359,
+        "tas": 140,
+        "windFrom": 10,
+        "windKt": 25
+      },
+      "expected": {
+        "wca": 1.9526190412554025,
+        "th": 0.9526190412553888,
+        "gs": 115.37802879318176
+      }
+    },
+    {
+      "id": "wrap-near-000",
+      "kind": "heading",
+      "input": {
+        "tc": 1,
+        "tas": 140,
+        "windFrom": 350,
+        "windKt": 25
+      },
+      "expected": {
+        "wca": -1.9526190412554025,
+        "th": 359.0473809587446,
+        "gs": 115.37802879318176
+      }
+    },
+    {
+      "id": "quartering-headwind",
+      "kind": "heading",
+      "input": {
+        "tc": 225,
+        "tas": 180,
+        "windFrom": 270,
+        "windKt": 70
+      },
+      "expected": {
+        "wca": 15.961178095971022,
+        "th": 240.96117809597104,
+        "gs": 123.56320831570946
+      }
+    },
+    {
+      "id": "quartering-tailwind",
+      "kind": "heading",
+      "input": {
+        "tc": 225,
+        "tas": 180,
+        "windFrom": 90,
+        "windKt": 70
+      },
+      "expected": {
+        "wca": -15.961178095971022,
+        "th": 209.03882190402896,
+        "gs": 222.55815768182612
+      }
+    },
+    {
+      "id": "strong-tailwind",
+      "kind": "heading",
+      "input": {
+        "tc": 180,
+        "tas": 100,
+        "windFrom": 0,
+        "windKt": 160
+      },
+      "expected": {
+        "wca": -1.1226734877655803e-14,
+        "th": 180,
+        "gs": 260
+      }
+    },
+    {
+      "id": "headwind-no-forward",
+      "kind": "heading",
+      "input": {
+        "tc": 0,
+        "tas": 100,
+        "windFrom": 0,
+        "windKt": 100
+      },
+      "expected": {
+        "wca": null,
+        "th": null,
+        "gs": null
+      }
+    },
+    {
+      "id": "crosswind-no-solution",
+      "kind": "heading",
+      "input": {
+        "tc": 0,
+        "tas": 100,
+        "windFrom": 90,
+        "windKt": 100
+      },
+      "expected": {
+        "wca": null,
+        "th": null,
+        "gs": null
+      }
+    },
+    {
+      "id": "crosswind-over-tas",
+      "kind": "heading",
+      "input": {
+        "tc": 0,
+        "tas": 100,
+        "windFrom": 90,
+        "windKt": 120
+      },
+      "expected": {
+        "wca": null,
+        "th": null,
+        "gs": null
+      }
+    },
+    {
+      "id": "headwind-over-tas",
+      "kind": "heading",
+      "input": {
+        "tc": 0,
+        "tas": 100,
+        "windFrom": 0,
+        "windKt": 140
+      },
+      "expected": {
+        "wca": null,
+        "th": null,
+        "gs": null
+      }
+    },
+    {
+      "id": "crosswind-left-no-forward",
+      "kind": "heading",
+      "input": {
+        "tc": 0,
+        "tas": 100,
+        "windFrom": 270,
+        "windKt": 100
+      },
+      "expected": {
+        "wca": null,
+        "th": null,
+        "gs": null
+      }
+    },
+    {
+      "id": "crosswind-boundary-tail",
+      "kind": "heading",
+      "input": {
+        "tc": 0,
+        "tas": 100,
+        "windFrom": 150,
+        "windKt": 200
+      },
+      "expected": {
+        "wca": 89.99999914622636,
+        "th": 89.99999914622634,
+        "gs": 173.20508224700387
+      }
+    },
+    {
+      "id": "invalid-tas",
+      "kind": "heading",
+      "input": {
+        "tc": 0,
+        "tas": 0,
+        "windFrom": 90,
+        "windKt": 20
+      },
+      "expected": {
+        "wca": null,
+        "th": null,
+        "gs": null
+      }
+    },
+    {
+      "id": "find-calm",
+      "kind": "wind",
+      "input": {
+        "th": 90,
+        "tc": 90,
+        "tas": 120,
+        "gs": 120
+      },
+      "expected": {
+        "from": 180,
+        "kt": 0
+      }
+    },
+    {
+      "id": "find-headwind",
+      "kind": "wind",
+      "input": {
+        "th": 90,
+        "tc": 90,
+        "tas": 120,
+        "gs": 85
+      },
+      "expected": {
+        "from": 90,
+        "kt": 35
+      }
+    },
+    {
+      "id": "find-tailwind",
+      "kind": "wind",
+      "input": {
+        "th": 90,
+        "tc": 90,
+        "tas": 120,
+        "gs": 155
+      },
+      "expected": {
+        "from": 270,
+        "kt": 35
+      }
+    },
+    {
+      "id": "find-crosswind",
+      "kind": "wind",
+      "input": {
+        "th": 10,
+        "tc": 0,
+        "tas": 100,
+        "gs": 100
+      },
+      "expected": {
+        "from": 95,
+        "kt": 17.43114854953163
+      }
+    },
+    {
+      "id": "find-wrap",
+      "kind": "wind",
+      "input": {
+        "th": 359,
+        "tc": 1,
+        "tas": 140,
+        "gs": 130
+      },
+      "expected": {
+        "from": 334.76611918867997,
+        "kt": 11.053230138964647
+      }
+    },
+    {
+      "id": "find-quartering",
+      "kind": "wind",
+      "input": {
+        "th": 220,
+        "tc": 180,
+        "tas": 180,
+        "gs": 210
+      },
+      "expected": {
+        "from": 301.9335350325663,
+        "kt": 136.33429539263136
+      }
+    },
+    {
+      "id": "find-zero-gs",
+      "kind": "wind",
+      "input": {
+        "th": 0,
+        "tc": 0,
+        "tas": 100,
+        "gs": 0
+      },
+      "expected": {
+        "from": null,
+        "kt": null
+      }
+    }
+  ]
+}

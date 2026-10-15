@@ -26,6 +26,7 @@ export const LIMITS = {
   // Claim/reply plus independent heartbeat/health, including restart bursts.
   agentToken: { max: 30, windowMs: 60_000 },
   chatThread: { max: 12, windowMs: 60_000 },
+  feedbackUser: { max: 12, windowMs: 60_000 },
   // Public weather connector. Anonymous callers share one bucket across REST and MCP.
   connectorIp: CONNECTOR_LIMITS.connectorIp,
   connectorIpDay: CONNECTOR_LIMITS.connectorIpDay,

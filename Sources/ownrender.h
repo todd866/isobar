@@ -38,6 +38,9 @@ typedef struct {
 @property (nonatomic, readonly) NSInteger hours;
 @property (nonatomic, readonly) NSDate *runDate;
 @property (nonatomic, readonly) NSDate *generated;
+// Identity of the loaded run, retained with a stale last-good chart.
+@property (nonatomic, readonly, copy) NSString *feedbackRunID;
+@property (nonatomic, readonly) NSNumber *feedbackSchema;
 @property (nonatomic, readonly, copy) NSString *attribution;
 - (OwnRunGeo)geo;
 - (NSDate *)timeAtIndex:(NSInteger)index;

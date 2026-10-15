@@ -22,6 +22,7 @@
 #import "atmosphereview.h"
 #import "skyview.h"
 #import "notices.h"
+#import "e6bview.h"
 #import "notacconnection.h"
 #import "fullscreenwindow.h"
 #import "daystrip.h"
@@ -32,6 +33,9 @@
 #import "starlink.h"
 #import "starlinkview.h"
 #import "trainingwindow.h"
+#import "feedback.h"
+#import "feedbackview.h"
+#import <Carbon/Carbon.h>
 #import <math.h>
 #import <zlib.h>
 
@@ -681,6 +685,7 @@ static NSColor *SeaColour(void) { return MSLPNSColour(MSLPColourSea()); }
 - (void)clearComparison;
 - (void)setLiveFrames:(NSImage *)base next:(NSImage *)next opacity:(CGFloat)opacity;
 - (void)clearLiveFrames;
+- (NSDictionary *)feedbackCamera;
 @end
 
 static CGImageRef ChartCropImage(CGPDFDocumentRef document, CGRect crop, size_t pw, size_t ph) {
@@ -744,7 +749,21 @@ static id LiveLayerContents(NSImage *image, NSSize viewSize, CGFloat *scaleOut) 
     BOOL _dragged;
     BOOL _pointerHeld;
     CGFloat _gestureScale;
+    NSTimeInterval _feedbackCameraAt;
     NSPoint _gestureOffset;
+}
+- (NSDictionary *)feedbackCamera {
+    NSRect visible = self.visibleRect;
+    return @{@"centre_lat": NSNull.null, @"centre_lon": NSNull.null,
+        @"zoom": @(_gestureScale > 0 ? _gestureScale : 1), @"tilt": @0, @"orbit": @0,
+        @"offset_points": @[@(_gestureOffset.x), @(_gestureOffset.y)],
+        @"visible_rect": @[@(visible.origin.x), @(visible.origin.y), @(visible.size.width), @(visible.size.height)]};
+}
+- (void)logFeedbackCamera {
+    NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
+    if (now - _feedbackCameraAt < .25) return;
+    _feedbackCameraAt = now;
+    FeedbackLog(@"camera", @{@"renderer": @"classic", @"camera": [self feedbackCamera]});
 }
 - (BOOL)isFlipped { return YES; }
 - (BOOL)acceptsFirstMouse:(NSEvent *)event { (void)event; return YES; }
@@ -1002,6 +1021,7 @@ static id LiveLayerContents(NSImage *image, NSSize viewSize, CGFloat *scaleOut) 
             self.needsDisplay = YES;
         }
     }
+    if (_dragged) [self logFeedbackCamera];
     _last = p;
 }
 - (void)mouseUp:(NSEvent *)event {
@@ -1042,6 +1062,7 @@ static id LiveLayerContents(NSImage *image, NSSize viewSize, CGFloat *scaleOut) 
     [self clampGestureViewport];
     [self applyGestureTransformToLiveLayers];
     self.needsDisplay = YES;
+    [self logFeedbackCamera];
 }
 - (void)scrollWheel:(NSEvent *)event {
     if (event.phase == NSEventPhaseCancelled || !isfinite(event.scrollingDeltaY)) return;
@@ -1064,6 +1085,7 @@ static id LiveLayerContents(NSImage *image, NSSize viewSize, CGFloat *scaleOut) 
     [self clampGestureViewport];
     [self applyGestureTransformToLiveLayers];
     self.needsDisplay = YES;
+    [self logFeedbackCamera];
 }
 @end
 
@@ -2323,6 +2345,12 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 - (void)commitStoreSnapshot:(StoreSnapshot *)snapshot;
 - (void)syncGPUAtmosphere;
 - (NSDictionary *)hubPlace;
+- (NSDictionary *)feedbackState;
+- (void)beginFeedbackCapture;
+- (void)finishFeedbackCapture;
+- (void)reportFeedback:(id)sender;
+- (BOOL)saveFeedbackNote:(NSString *)note error:(NSError **)error;
+- (NSURL *)feedbackInbox;
 - (NSTimeZone *)placeZone;
 - (void)toggleChartSource;
 - (BOOL)fullscreenReady;
@@ -2356,6 +2384,17 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 
 @implementation Controller {
     NSStatusItem *_item;
+    EventHotKeyRef _feedbackHotKey;
+    EventHandlerRef _feedbackHotKeyHandler;
+    BOOL _feedbackActive, _feedbackSaving;
+    NSTimeInterval _feedbackStarted;
+    NSDictionary *_feedbackRecord, *_feedbackImages;
+    FeedbackNotePanel *_feedbackPanel;
+    NSPopoverBehavior _feedbackPopoverBehavior;
+    __weak NSWindow *_feedbackPriorWindow;
+    __weak NSResponder *_feedbackPriorResponder;
+    id _feedbackInputMonitor;
+    StoreSnapshot *_feedbackPendingStore;
     NSWindow *_chartWindow;
     NSScrollView *_singleScroll;
     PDFCropView *_headerView;
@@ -2588,6 +2627,264 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     NSPopUpButton *_aerodromePopup;
 }
 
+// Feedback is captured on main before the editor exists. No screen APIs or
+// event taps: cache only our view trees, filling Metal's hole explicitly.
+static id FeedbackValue(id value) {
+    return !value || ([value isKindOfClass:NSString.class] && ![value length]) ? NSNull.null : value;
+}
+static id FeedbackNumber(double value) { return isfinite(value) ? @(value) : NSNull.null; }
+static id FeedbackDate(NSDate *date, NSTimeZone *zone) {
+    if (!date) return NSNull.null;
+    NSDateFormatter *format = [NSDateFormatter new];
+    format.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    format.timeZone = zone ?: [NSTimeZone timeZoneForSecondsFromGMT:0];
+    format.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ";
+    return [format stringFromDate:date];
+}
+static NSDictionary *FeedbackWindowState(NSWindow *window) {
+    if (!window) return nil;
+    NSRect r = window.frame;
+    NSString *appearance = [window.effectiveAppearance bestMatchFromAppearancesWithNames:@[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]];
+    return @{ @"frame": @[@(r.origin.x), @(r.origin.y), @(r.size.width), @(r.size.height)],
+        @"scale": @(window.backingScaleFactor),
+        @"appearance": [appearance isEqual:NSAppearanceNameDarkAqua] ? @"dark" : @"light" };
+}
+static NSData *FeedbackViewPNG(NSView *root, GPUMapView *gpu) {
+    if (!root || NSIsEmptyRect(root.bounds)) return nil;
+    NSBitmapImageRep *bitmap = [root bitmapImageRepForCachingDisplayInRect:root.bounds];
+    if (!bitmap) return nil;
+    [root cacheDisplayInRect:root.bounds toBitmapImageRep:bitmap];
+    if (gpu.superview && !gpu.hiddenOrHasHiddenAncestor) {
+        CGImageRef metal = [gpu copySnapshot];
+        // Never claim a blank Metal hole is the captured chart.
+        if (!metal) return nil;
+        [NSGraphicsContext saveGraphicsState];
+        NSGraphicsContext *context = [NSGraphicsContext graphicsContextWithBitmapImageRep:bitmap];
+        NSGraphicsContext.currentContext = context;
+        CGContextRef cg = context.CGContext;
+        // AppKit already maps bitmap.size (points) to its backing pixels.
+        // Applying the backing scale again displaces and enlarges Retina maps.
+        NSRect r = [gpu convertRect:gpu.bounds toView:root];
+        if (root.isFlipped) r.origin.y = NSHeight(root.bounds) - NSMaxY(r);
+        CGContextDrawImage(cg, NSRectToCGRect(r), metal);
+        CGImageRelease(metal);
+        // Metal snapshots include chart overlays. Repaint the native controls
+        // above them (mode, recenter, close) in their actual window positions.
+        for (NSView *child in gpu.subviews) {
+            if (child.hiddenOrHasHiddenAncestor || NSIsEmptyRect(child.bounds)) continue;
+            NSBitmapImageRep *rep = [child bitmapImageRepForCachingDisplayInRect:child.bounds];
+            if (!rep) continue;
+            [child cacheDisplayInRect:child.bounds toBitmapImageRep:rep];
+            NSRect box = [child convertRect:child.bounds toView:root];
+            if (root.isFlipped) box.origin.y = NSHeight(root.bounds) - NSMaxY(box);
+            if (rep.CGImage) CGContextDrawImage(cg, NSRectToCGRect(box), rep.CGImage);
+        }
+        [NSGraphicsContext restoreGraphicsState];
+    }
+    return [bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+}
+
+static NSData *FeedbackWindowPNG(NSWindow *window, GPUMapView *gpu) {
+    NSView *root = window.contentView.superview ?: window.contentView;
+    return FeedbackViewPNG(root, gpu.window == window ? gpu : nil);
+}
+
+- (NSDictionary *)feedbackState {
+    NSAssert(NSThread.isMainThread, @"Feedback state belongs to the main thread");
+    BOOL popover = self.popover.shown, expanded = _chartWindow.visible;
+    NSDictionary *place = [self hubPlace];
+    NSDate *date = [self selectedForecastDate];
+    BOOL metalVisible = _gpuMap.superview && !_gpuMap.hiddenOrHasHiddenAncestor && (popover || expanded);
+    if (metalVisible && _ownRun.hours > 0) {
+        double step = MIN(_ownRun.hours - 1, MAX(0, _gpuMap.renderedStep));
+        NSInteger lo = (NSInteger)floor(step), hi = MIN(lo + 1, _ownRun.hours - 1);
+        NSDate *start = [_ownRun timeAtIndex:lo], *end = [_ownRun timeAtIndex:hi];
+        if (start && end) date = [start dateByAddingTimeInterval:[end timeIntervalSinceDate:start] * (step - lo)];
+    }
+    NSDictionary *map = _gpuMap.feedbackDiagnosticState;
+    BOOL gpuSelected = _sourceECMWF && _newMap && !_gpuPresentFailed && _gpuMap;
+    NSMutableDictionary *classicCamera = [[self timelineChart].feedbackCamera mutableCopy];
+    if (classicCamera && _expandedMap) classicCamera[@"zoom"] = FeedbackNumber(_panelZoom);
+    id camera = gpuSelected ? FeedbackValue(map[@"camera"]) : FeedbackValue(classicCamera);
+    id gpuName = map[@"gpu"] ?: MTLCreateSystemDefaultDevice().name;
+    NSDictionary *lensNames = @{@(-1):@"Pressure", @2:@"Rain", @5:@"Wind", @4:@"Temp", @0:@"Kite", @3:@"Surf", @1:@"Fly", @6:@"Sat"};
+    NSMutableDictionary *windows = [NSMutableDictionary dictionary];
+    if (popover) windows[@"popover"] = FeedbackWindowState(self.popover.contentViewController.view.window) ?: (id)NSNull.null;
+    if (expanded) windows[@"expanded"] = FeedbackWindowState(_chartWindow) ?: (id)NSNull.null;
+    double load[3]; int count = getloadavg(load, 3);
+    NSMutableArray *loads = [NSMutableArray array];
+    for (int i = 0; i < 3; i++) [loads addObject:i < count ? FeedbackNumber(load[i]) : NSNull.null];
+    NSString *thermal = @{@(NSProcessInfoThermalStateNominal):@"nominal", @(NSProcessInfoThermalStateFair):@"fair",
+        @(NSProcessInfoThermalStateSerious):@"serious", @(NSProcessInfoThermalStateCritical):@"critical"}[@(NSProcessInfo.processInfo.thermalState)];
+    return @{ @"surface": popover && expanded ? @"both" : popover ? @"popover" : expanded ? @"expanded" : (id)NSNull.null,
+        @"place": @{ @"name": FeedbackValue(place[@"name"]), @"lat": FeedbackValue(place[@"latitude"]),
+            @"lon": FeedbackValue(place[@"longitude"]), @"tz": FeedbackValue([self placeZone].name) },
+        @"lens": FeedbackValue(lensNames[@(_selectedLens)]), @"field": @([self mapField]),
+        @"chart_source": _sourceECMWF ? @"ecmwf" : @"bureau", @"overlays": [[_mapDetailModes allObjects] sortedArrayUsingSelector:@selector(compare:)],
+        @"barbs": @(_barbs), @"hazards": @(self.hazardLayer), @"satellite": @(_selectedLens == 6),
+        @"mode": gpuSelected ? FeedbackValue(map[@"mode"]) : @"2d", @"camera": camera,
+        @"playhead_utc": FeedbackDate(date, nil), @"playhead_local": FeedbackDate(date, [self placeZone]),
+        @"playing": @([self timelinePlaying]), @"paused": @(_forecastPaused),
+        @"held": @(_mapHolding || _timelinePreviewing || _live.holding), @"rate": @(_liveSpeed),
+        @"rate_forecast_seconds_per_second": @(3600 * IsobarLiveHoursPerSecond(_liveSpeed)),
+        @"run_id": FeedbackValue(_ownRun.feedbackRunID), @"run_time": FeedbackDate(_runDate, nil),
+        @"schema": FeedbackValue(_ownRun.feedbackSchema), @"forecast_hours_count": _ownRun ? @(_ownRun.hours) : (id)NSNull.null,
+        @"data_age_seconds": _runDate ? FeedbackNumber(-_runDate.timeIntervalSinceNow) : NSNull.null,
+        @"stale": @(_dataStale || _storeLoadFailed), @"error": FeedbackValue(_storeError),
+        @"windows": windows, @"macos": NSProcessInfo.processInfo.operatingSystemVersionString,
+        @"gpu": FeedbackValue(gpuName), @"load_average": loads, @"thermal_state": FeedbackValue(thermal),
+        @"new_map": @(_newMap), @"gpu_fallback": @(_gpuPresentFailed),
+        @"rendered_model_index": metalVisible ? FeedbackNumber(_gpuMap.renderedStep) : NSNull.null };
+}
+
+- (NSURL *)feedbackInbox { return FeedbackDefaultInbox(); }
+
+- (void)beginFeedbackCapture {
+    NSAssert(NSThread.isMainThread, @"Capture belongs to main");
+    if (_feedbackActive) return;
+    NSDate *captured = NSDate.date;
+    NSDictionary *state = [self feedbackState];
+    NSArray *recent = FeedbackRecent();
+    _feedbackActive = YES;
+    _feedbackStarted = NSProcessInfo.processInfo.systemUptime;
+    _live.feedbackSuspended = YES;
+    _gpuMap.feedbackSuspended = YES;
+    _feedbackPopoverBehavior = self.popover.behavior;
+    self.popover.behavior = NSPopoverBehaviorApplicationDefined;
+    _feedbackPriorWindow = NSApp.keyWindow;
+    _feedbackPriorResponder = _feedbackPriorWindow.firstResponder;
+    NSMutableDictionary *images = [NSMutableDictionary dictionary];
+    NSMutableDictionary *screens = [NSMutableDictionary dictionary];
+    NSMutableDictionary *errors = [NSMutableDictionary dictionary];
+    BOOL popover = self.popover.shown, expanded = _chartWindow.visible;
+    if (popover) {
+        NSData *png = FeedbackWindowPNG(self.popover.contentViewController.view.window, _gpuMap);
+        NSString *name = @"screen.png";
+        screens[@"popover"] = png ? name : (id)NSNull.null;
+        if (png) images[name] = png; else errors[@"popover"] = @"Window snapshot unavailable";
+    }
+    if (expanded) {
+        NSData *png = FeedbackWindowPNG(_chartWindow, _gpuMap);
+        NSString *name = popover ? @"screen-expanded.png" : @"screen.png";
+        screens[@"expanded"] = png ? name : (id)NSNull.null;
+        if (png) images[name] = png; else errors[@"expanded"] = @"Window snapshot unavailable";
+    }
+    NSMutableDictionary *capturedState = [state mutableCopy];
+    capturedState[@"screen"] = images.count ? [[images.allKeys sortedArrayUsingSelector:@selector(compare:)] firstObject] : (id)NSNull.null;
+    capturedState[@"screens"] = screens;
+    capturedState[@"capture_errors"] = errors;
+    NSDictionary *info = NSBundle.mainBundle.infoDictionary;
+    NSDictionary *app = @{ @"version": FeedbackValue(info[@"CFBundleShortVersionString"]),
+        @"build": FeedbackValue(info[@"CFBundleVersion"]), @"commit": FeedbackValue(info[@"IsobarSourceRevision"]),
+        @"dirty": FeedbackValue(info[@"IsobarSourceDirty"]) };
+    _feedbackImages = [images copy];
+    _feedbackRecord = FeedbackRecord(capturedState, app, captured, [self placeZone], recent, nil,
+        [images.allKeys sortedArrayUsingSelector:@selector(compare:)], @"mac");
+    FeedbackLog(@"feedback_capture", @{ @"surface": state[@"surface"] });
+}
+
+- (void)finishFeedbackCapture {
+    if (!_feedbackActive) return;
+    [_feedbackPanel.parentWindow removeChildWindow:_feedbackPanel];
+    [_feedbackPanel orderOut:nil]; _feedbackPanel = nil;
+    if (_feedbackInputMonitor) { [NSEvent removeMonitor:_feedbackInputMonitor]; _feedbackInputMonitor = nil; }
+    _feedbackActive = NO; _feedbackSaving = NO;
+    _feedbackRecord = nil; _feedbackImages = nil;
+    self.popover.behavior = _feedbackPopoverBehavior;
+    _live.feedbackSuspended = NO;
+    _liveTickAt = [_live clockNow];
+    _motionEpoch += NSProcessInfo.processInfo.systemUptime - _feedbackStarted;
+    _gpuMap.feedbackSuspended = NO;
+    if (_feedbackPriorWindow.visible) {
+        [_feedbackPriorWindow makeKeyWindow];
+        if (_feedbackPriorResponder) [_feedbackPriorWindow makeFirstResponder:_feedbackPriorResponder];
+    }
+    _feedbackPriorWindow = nil; _feedbackPriorResponder = nil;
+    StoreSnapshot *pending = _feedbackPendingStore; _feedbackPendingStore = nil;
+    if (pending) { [self commitStoreSnapshot:pending]; [self notifyStoreWaiters]; }
+}
+
+- (BOOL)saveFeedbackNote:(NSString *)note error:(NSError **)error {
+    if (!_feedbackActive || !_feedbackRecord) return NO;
+    NSMutableDictionary *record = [_feedbackRecord mutableCopy];
+    record[@"note"] = note.length ? note : (id)NSNull.null;
+    return FeedbackWrite([self feedbackInbox], record, _feedbackImages, error) != nil;
+}
+
+- (void)reportFeedback:(id)sender {
+    (void)sender;
+    if (_feedbackActive) { [_feedbackPanel makeKeyAndOrderFront:nil]; return; }
+    [self beginFeedbackCapture];
+    NSImage *thumbnail = _feedbackImages.count ? [[NSImage alloc] initWithData:_feedbackImages[@"screen.png"]] : nil;
+    __weak Controller *weak = self;
+    _feedbackPanel = [[FeedbackNotePanel alloc] initWithThumbnail:thumbnail completion:^(NSString *note) {
+        Controller *strong = weak;
+        if (!strong || strong->_feedbackSaving) return;
+        if (!note) { [strong finishFeedbackCapture]; return; }
+        strong->_feedbackSaving = YES;
+        // Capture bytes are already immutable; disk writes never stall playback's main queue.
+        NSMutableDictionary *record = [strong->_feedbackRecord mutableCopy];
+        record[@"note"] = note.length ? note : (id)NSNull.null;
+        NSDictionary *images = strong->_feedbackImages;
+        NSURL *inbox = [strong feedbackInbox];
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            NSError *error = nil;
+            NSURL *written = FeedbackWrite(inbox, record, images, &error);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                Controller *current = weak;
+                if (!current || !current->_feedbackActive) return;
+                if (!written) {
+                    current->_feedbackSaving = NO;
+                    [current->_feedbackPanel showError:error.localizedDescription ?: @"Could not save feedback"];
+                    return;
+                }
+                [current->_feedbackPanel showSaved];
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.7 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    [weak finishFeedbackCapture];
+                });
+            });
+        });
+    }];
+    NSWindow *parent = _chartWindow.visible ? _chartWindow : self.popover.shown ? self.popover.contentViewController.view.window : nil;
+    NSRect screen = (parent.screen ?: NSScreen.mainScreen).visibleFrame;
+    NSRect frame = _feedbackPanel.frame;
+    frame.origin.x = parent ? NSMidX(parent.frame) - frame.size.width / 2 : NSMidX(screen) - frame.size.width / 2;
+    frame.origin.y = parent ? NSMinY(parent.frame) + 12 : NSMidY(screen) - frame.size.height / 2;
+    frame.origin.x = MAX(NSMinX(screen), MIN(frame.origin.x, NSMaxX(screen) - frame.size.width));
+    frame.origin.y = MAX(NSMinY(screen), MIN(frame.origin.y, NSMaxY(screen) - frame.size.height));
+    [_feedbackPanel setFrame:frame display:NO];
+    if (parent) [parent addChildWindow:_feedbackPanel ordered:NSWindowAbove];
+    _feedbackInputMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:(NSEventMaskKeyDown | NSEventMaskKeyUp | NSEventMaskLeftMouseDown | NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged | NSEventMaskRightMouseDown | NSEventMaskRightMouseUp | NSEventMaskMouseMoved | NSEventMaskScrollWheel | NSEventMaskMagnify | NSEventMaskRotate | NSEventMaskSwipe) handler:^NSEvent *(NSEvent *event) {
+        Controller *strong = weak;
+        if (!strong || !strong->_feedbackActive || event.window == strong->_feedbackPanel) return event;
+        // Freeze our map's pointer/keyboard interactions without touching other apps.
+        if (event.window) return nil;
+        return event;
+    }];
+    [_feedbackPanel makeKeyAndOrderFront:nil];
+    [_feedbackPanel makeFirstResponder:_feedbackPanel.noteField];
+}
+
+static OSStatus FeedbackHotKeyHandler(EventHandlerCallRef next, EventRef event, void *context) {
+    (void)next;
+    EventHotKeyID identifier;
+    if (GetEventParameter(event, kEventParamDirectObject, typeEventHotKeyID, NULL, sizeof(identifier), NULL, &identifier) != noErr ||
+        identifier.signature != 'IsFb' || identifier.id != 1) return eventNotHandledErr;
+    [(__bridge Controller *)context reportFeedback:nil];
+    return noErr;
+}
+
+- (void)installFeedbackShortcut {
+    EventTypeSpec type = { kEventClassKeyboard, kEventHotKeyPressed };
+    OSStatus handler = InstallApplicationEventHandler(FeedbackHotKeyHandler, 1, &type, (__bridge void *)self, &_feedbackHotKeyHandler);
+    OSStatus status = handler == noErr ? RegisterEventHotKey(kVK_ANSI_F, controlKey | optionKey | cmdKey,
+        (EventHotKeyID){'IsFb', 1}, GetApplicationEventTarget(), 0, &_feedbackHotKey) : handler;
+    if (status != noErr) FeedbackLog(@"feedback_hotkey_error", @{ @"status": @(status) });
+    // LSUIElement has a status button instead of a conventional app menu.
+    // Keep normal left-click behavior; right-click exposes Report… and Settings.
+    [_item.button sendActionOn:NSEventMaskLeftMouseUp | NSEventMaskRightMouseUp];
+}
+
 - (instancetype)init {
     self = [super init];
     if (!self) return nil;
@@ -2675,6 +2972,10 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (void)dealloc {
+    if (_feedbackHotKey) UnregisterEventHotKey(_feedbackHotKey);
+    if (_feedbackHotKeyHandler) RemoveEventHandler(_feedbackHotKeyHandler);
+    if (_feedbackInputMonitor) [NSEvent removeMonitor:_feedbackInputMonitor];
+    [_feedbackPanel orderOut:nil];
     [NSNotificationCenter.defaultCenter removeObserver:self name:NSWindowDidChangeOcclusionStateNotification object:nil];
     [_chartPreparationQueue cancelAllOperations];
     [self invalidateSurfaceTimers];
@@ -3346,6 +3647,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (void)applyLiveFrame {
+    if (_feedbackActive) return;
     [self syncGPUPlayhead];
     if (_timelinePreviewing || _scrubHasFraction) return;
     if (_live.playhead && NSProcessInfo.processInfo.systemUptime - _timeLensChromeAt >= 0.2)
@@ -3448,6 +3750,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (void)startLivePlaybackFromDate:(NSDate *)date {
+    FeedbackLog(@"resume", @{@"time": FeedbackDate(date, nil), @"rate": @(_liveSpeed)});
     if (![self livePlaybackAvailable]) return;
     if (date && fabs([date timeIntervalSinceDate:[self currentPlaybackNow]])>1) _trafficFollowNow=NO;
     [self ensureLivePlayer];
@@ -3466,6 +3769,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (void)pauseLivePlayback {
+    FeedbackLog(@"pause", @{@"time": FeedbackDate([self selectedForecastDate], nil)});
     _trafficFollowNow=NO;
     [_liveSizeTimer invalidate];
     _liveSizeTimer = nil;
@@ -3482,6 +3786,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (void)setMapHeld:(BOOL)held {
+    if (_feedbackActive) return;
+    if (held != _mapHolding) FeedbackLog(@"hold", @{@"held": @(held)});
     if (held == _mapHolding) return;
     _mapHolding = held;
     if (held) {
@@ -3520,6 +3826,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (void)noteMapVisibility {
+    if (_feedbackActive) return;
     [self syncMapTraffic];
     if (![self mapIsVisible]) {
         [_liveTimer invalidate];
@@ -3536,6 +3843,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (void)applyPlaybackSpeed:(NSInteger)speed {
+    if (IsobarLiveSpeedIsValid(speed) && speed != _liveSpeed) FeedbackLog(@"rate", @{@"rate": @(speed)});
     if (!IsobarLiveSpeedIsValid(speed)) return;
     _liveSpeed = (IsobarLiveSpeed)speed;
     [[self chartPreferences] setInteger:speed forKey:kPlaybackSpeedKey];
@@ -3686,6 +3994,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (void)advancePopoverPlayback {
+    if (_feedbackActive) return;
     if (_popoverPlaying) [self showPopoverMotionFrame:[self motionFrameNow]];
 }
 
@@ -3882,6 +4191,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (void)inspectPopoverMovieFraction:(double)fraction {
+    if (_feedbackActive) return;
+    FeedbackLog(@"seek", @{@"fraction": FeedbackNumber(fraction)});
     [self endChartComparison];
     BOOL keep = [self timelinePlaying];
     _timelinePreviewing = NO;
@@ -3966,7 +4277,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
     [_scrubRenderer requestIndex:modelIndex completion:^(NSImage *image, double renderedIndex) {
         Controller *strong = weak;
         PDFCropView *surface = chart;
-        if (!strong || !image || surface != [strong timelineChart] || !surface.superview ||
+        if (!strong || strong->_feedbackActive || !image || surface != [strong timelineChart] || !surface.superview ||
             !strong->_scrubHasFraction || strong->_ownRun != run ||
             ![strong->_scrubKey isEqual:key]) return;
         NSInteger lower = (NSInteger)floor(renderedIndex), upper = MIN(lower+1, run.hours-1);
@@ -3983,6 +4294,8 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (void)previewPopoverMovieFraction:(double)fraction {
+    if (_feedbackActive) return;
+    FeedbackLog(@"scrub", @{@"fraction": FeedbackNumber(fraction), @"released": @(!isfinite(fraction))});
     if (_sequenceTimes.count < 2) return;
     if (!isfinite(fraction)) {
         if (!_timelinePreviewing) return;
@@ -4538,6 +4851,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 }
 
 - (void)seekPopoverMovieFraction:(double)fraction {
+    FeedbackLog(@"seek", @{@"fraction": FeedbackNumber(fraction)});
     fraction = MIN(1.0, MAX(0.0, fraction));
     if ([self livePlaybackAvailable]) {
         NSDate *date = [self dateForMotionFraction:fraction];
@@ -4565,6 +4879,7 @@ static CGFloat PlotY(NSRect plot, double value, double lo, double hi) {
 - (NSUserDefaults *)chartPreferences { return NSUserDefaults.standardUserDefaults; }
 
 - (void)saveMapDetails {
+    FeedbackLog(@"overlays", @{@"modes": [_mapDetailModes allObjects]});
     [_mapDetailCache removeAllObjects];
     [[self chartPreferences] removeObjectForKey:@"mapDetailModes"];
     if (_expandedMap) [self layoutChartWindow];
@@ -4657,6 +4972,13 @@ static NSImage *WindBarbGlyph(void) {
         item.target = self; item.tag = tag.integerValue;
         item.toolTip = tag.integerValue == 2 ? @"Surface temperature" : @"Temperature aloft · 850 hPa";
     }
+    NSMenu *flightTools=[NSMenu new];
+    flightTools.autoenablesItems=NO;
+    NSMenuItem *windTriangle=[flightTools addItemWithTitle:@"E6-B Wind Triangle…"
+        action:@selector(openE6B:) keyEquivalent:@""];
+    windTriangle.target=self; windTriangle.representedObject=prefix;
+    [segments setMenu:flightTools forSegment:6];
+    [segments setShowsMenuIndicator:YES forSegment:6];
     [segments setMenu:temperature forSegment:3];
     if (@available(macOS 10.13, *)) [segments setShowsMenuIndicator:YES forSegment:3];
     segments.selectedSegment = -1;
@@ -4857,6 +5179,7 @@ static NSImage *WindBarbGlyph(void) {
 - (void)selectChartLayer:(NSInteger)tag { [self applyChartLayer:tag rebuild:YES]; }
 
 - (void)applyChartLayer:(NSInteger)tag rebuild:(BOOL)rebuild {
+    FeedbackLog(@"layer", @{@"layer": @(tag)});
     if (tag < 0 || tag > 6 || tag == 4 || ![self modelChartsReady]) return;
     BOOL wasPlaying = [self timelinePlaying];
     NSDate *playingAt = _live.playhead ?: [self selectedForecastDate];
@@ -4908,6 +5231,7 @@ static NSImage *WindBarbGlyph(void) {
 }
 
 - (void)chooseWindSpot:(NSPopUpButton *)sender {
+    FeedbackLog(@"kite_place", @{@"name": FeedbackValue(sender.titleOfSelectedItem)});
     [_mapDetailCache removeAllObjects];
     _windSpotHash = sender.selectedItem.representedObject ?: @"";
     [NSUserDefaults.standardUserDefaults setObject:_windSpotHash forKey:@"windSpot"];
@@ -5059,6 +5383,7 @@ static NSImage *WindBarbGlyph(void) {
 }
 
 - (void)applyLens:(NSInteger)mode rebuild:(BOOL)rebuild {
+    FeedbackLog(@"lens", @{@"lens": @(mode)});
     if (![self modelChartsReady]) return;
     BOOL same = _selectedLens == mode;
     NSInteger next = same ? -1 : mode;
@@ -5114,6 +5439,7 @@ static NSImage *WindBarbGlyph(void) {
 }
 
 - (void)chooseRainPlace:(NSPopUpButton *)sender {
+    FeedbackLog(@"rain_place", @{@"name": FeedbackValue(sender.titleOfSelectedItem)});
     [_mapDetailCache removeAllObjects];
     _rainPlaceHash = sender.selectedItem.representedObject ?: @"";
     [_warningPop close];
@@ -5549,6 +5875,7 @@ static NSImage *WindBarbGlyph(void) {
 }
 
 - (void)chooseHubPlace:(NSPopUpButton *)sender {
+    FeedbackLog(@"place", @{@"name": FeedbackValue(sender.titleOfSelectedItem)});
     NSString *before = [self flyAerodromeCode];
     _hubHash = sender.selectedItem.representedObject ?: @"";
     _hubDayIndex = -1;
@@ -5673,6 +6000,7 @@ static NSImage *WindBarbGlyph(void) {
 }
 
 - (void)rebuildContent {
+    if (_feedbackActive) return;
     double seekingProgress = _scrubHasFraction ? _scrubFraction : (_motionPendingFraction ? _motionPendingFraction.doubleValue : NAN);
     PDFCropView *retainedMap=_leftChart;
     TimelineStrip *retainedTimeline=_popoverTimeline;
@@ -6048,6 +6376,7 @@ static NSImage *WindBarbGlyph(void) {
 }
 
 - (void)tickSurfaces {
+    if (_feedbackActive) return;
     // Fresh data rebuilds the controls. A clock tick only updates text, leaving
     // hover capture, the decoder and its presentation layer undisturbed.
     if (self.popover.shown) {
@@ -6392,6 +6721,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
 }
 
 - (void)layoutChartWindow {
+    if (_feedbackActive) return;
     if (!_chartWindow || !_expandedMap) return;
     if (![self chartsReady]) {
         // A failed-closed reload can arrive while the expanded map is visible.
@@ -6577,6 +6907,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
 }
 
 - (void)loopTick {
+    if (_feedbackActive) return;
     if (_panelIndex < 0 || !_looping || !_motionFrames.count) return;
     NSUInteger frame = [self motionFrameNow];
     NSInteger index = _motionStartIndex + (NSInteger)(frame / kMotionIntervals);
@@ -6709,6 +7040,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
 }
 
 - (void)setHazardLayer:(BOOL)hazardLayer {
+    FeedbackLog(@"hazards", @{@"enabled": @(hazardLayer)});
     _hazardLayer = hazardLayer;
     _gpuMap.hazards = hazardLayer;
     // Update in place so a toggle keeps keyboard focus. Both surfaces share it.
@@ -6731,6 +7063,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
         _gpuMap = [GPUMapView mapView];
         if (!_gpuMap) return;
         __weak Controller *weak = self;
+        _gpuMap.onFeedbackEvent = ^(NSString *category, NSDictionary *details) { FeedbackLog(category, details); };
         _gpuMap.onPlainClick = ^(double lat, double lon) {
             Controller *strong = weak;
             if (strong) [strong->_gpuMap selectPointLatitude:lat longitude:lon];
@@ -6789,6 +7122,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
 }
 
 - (void)toggleNewMap:(NSButton *)sender {
+    FeedbackLog(@"new_map", @{@"enabled": @(sender.state == NSControlStateValueOn)});
     _newMap = sender.state == NSControlStateValueOn;
     if (_newMap) {
         _gpuPresentFailed = NO;
@@ -6811,10 +7145,12 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
         if (direction == 0) [_gpuMap resetZoom];
         else [_gpuMap zoomBy:direction > 0 ? 1.25 : 1.0 / 1.25];
     }
+    if (!_gpuMap.superview) FeedbackLog(@"camera", @{@"renderer": @"classic", @"zoom": @(_panelZoom)});
     [self layoutChartWindow];
 }
 
 - (void)closeChartWindow {
+    FeedbackLog(@"window", @{@"surface": @"expanded", @"open": @NO});
     [self clearMapTraffic];
     [_chartTimeline finishPreviewAtCurrentTime];
     [self stopChartLoop];
@@ -6875,6 +7211,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
 }
 
 - (void)presentChartWindowInFrame:(NSRect)frame {
+    FeedbackLog(@"window", @{@"surface": @"expanded", @"open": @YES});
     if (![self chartsReady]) return;
     NSDate *selected=[self playbackStartDate];
     double fraction=[self motionFractionForDate:selected];
@@ -6924,6 +7261,16 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
     [self openChartOnFrame:-1];
 }
 
+- (void)openE6B:(NSMenuItem *)sender {
+    BOOL inPopover=[sender.representedObject isEqual:@"popover"];
+    NSWindow *parent=inPopover ? self.popover.contentViewController.view.window : _chartWindow;
+    if (!parent || parent.attachedSheet) return;
+    NSPopoverBehavior behavior=self.popover.behavior;
+    if (inPopover) self.popover.behavior=NSPopoverBehaviorApplicationDefined;
+    __weak Controller *weak=self;
+    E6BWindowPresent(parent, ^{ if (inPopover) weak.popover.behavior=behavior; });
+}
+
 - (void)openTraining:(id)sender {
     (void)sender;
     NSString *root = _storeRoot.length ? _storeRoot : [self defaultStoreRoot];
@@ -6935,6 +7282,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
 }
 
 - (void)popoverDidShow:(NSNotification *)notification {
+    FeedbackLog(@"window", @{@"surface": @"popover", @"open": @YES});
     if (notification.object != self.popover || _keyMonitor) return;
     [self beginPopoverEvolution];
     [self syncStarlink];
@@ -6988,6 +7336,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
 }
 
 - (void)popoverWillClose:(NSNotification *)notification {
+    FeedbackLog(@"window", @{@"surface": @"popover", @"open": @NO});
     if (notification.object != self.popover) return;
     if (!_expandedMap) {
         [self stopPopoverPlayback];
@@ -7012,6 +7361,16 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
 
 - (void)togglePopover:(id)sender {
     (void)sender;
+    if (_feedbackActive) return;
+    if (NSApp.currentEvent.type == NSEventTypeRightMouseUp) {
+        NSMenu *menu = [NSMenu new];
+        NSMenuItem *report = [menu addItemWithTitle:@"Report…" action:@selector(reportFeedback:) keyEquivalent:@"f"];
+        report.keyEquivalentModifierMask = NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagCommand;
+        report.target = self;
+        [menu addItemWithTitle:@"Settings…" action:@selector(openSettings:) keyEquivalent:@""].target = self;
+        [menu popUpMenuPositioningItem:nil atLocation:NSMakePoint(0, NSHeight(_item.button.bounds)) inView:_item.button];
+        return;
+    }
     if (_chartWindow.isVisible) {
         [self closeChartWindow];
         return;
@@ -7035,6 +7394,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
 }
 
 - (void)applicationDidResignActive:(NSNotification *)note {
+    if (_feedbackActive) return;
     (void)note;
     [_warningPop close];
     if (self.popover.shown) [self.popover performClose:nil];
@@ -7487,6 +7847,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
 }
 
 - (void)notifyStoreWaiters {
+    if (_feedbackActive) return;
     NSArray *waiters = _storeWaiters;
     _storeWaiters = nil;
     for (void (^then)(void) in waiters) then();
@@ -7497,6 +7858,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
 // never replaced by a run that did not load. Weather always follows the
 // snapshot: missing files mean missing readings.
 - (void)commitStoreSnapshot:(StoreSnapshot *)snapshot {
+    if (_feedbackActive) { _feedbackPendingStore = snapshot; return; }
     StoreReloadNote("commit");
     // A map that was evolving keeps evolving after a new run, even when a
     // hover held it as the run arrived. A map the user stopped (Pause, a run
@@ -7539,6 +7901,9 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
     // encode, restart the moving map, or discard an inspected hour.
     if (!keepMotion) [self invalidateMotion];
     _dataStale = StoreRunIsStale(_runDate, now, _storeStatusOK && !_storeLoadFailed);
+    FeedbackLog(@"store_reload", @{@"run_id": FeedbackValue(_ownRun.feedbackRunID),
+        @"result": !_ownRun ? @"fail" : (_dataStale || _storeLoadFailed) ? @"stale" : @"success",
+        @"error": FeedbackValue(_storeError)});
     _statusLabel = _runDate ? StoreRunStatusLine(_runDate, now) : (_storeError ?: @"Chart unavailable");
     if (_runDate && _dataStale) _statusLabel = [_statusLabel stringByAppendingString:@" · stale"];
     if (_storeLoadFailed) _statusLabel = [_statusLabel stringByAppendingFormat:
@@ -8067,6 +8432,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
     _item = [NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];
     _item.button.target = self;
     _item.button.action = @selector(togglePopover:);
+    [self installFeedbackShortcut];
     [_item.button addObserver:self forKeyPath:@"effectiveAppearance" options:0 context:NULL];
     _watchingAppearance = YES;
     _offline = NO;

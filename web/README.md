@@ -216,3 +216,19 @@ render, revise, and repeat before release. `perf.spec.ts` records and asserts
 warm first-chart ≤1500 ms and p95 rAF interval ≤16.7 ms (rounded to 0.01 ms),
 including pressure, rain, barbs and the open tour. These intervals measure
 presentation cadence, not isolated GPU execution time.
+
+## Owner feedback
+
+Set `ISOBAR_OWNER_EMAIL` on the server to enable capture for that signed-in account.
+Ctrl–Option–Command–F / Ctrl–Alt–Shift–F captures state and the map before the note
+row appears. Phones hold the owner-only build stamp for 800 ms. Enter saves and
+Escape discards. Canvas JPEGs are capped at 400,000 bytes; DOM panels are described
+in the record. No screenshot permission is requested.
+
+`POST /api/feedback` stores `isobar-feedback/1`; owner-only `GET /api/feedback?since=ISO`
+lists records. Apply the additive feedback migration only through the separately
+authorized database migration process. It is not applied by this feature or build.
+Pull records from the repository root with
+`~/.local/state/isobar-auth/bin/with-env node tools/feedback-pull.mjs`.
+The default destination is `~/Library/Application Support/Isobar/feedback/`;
+`--since ISO` and `--inbox PATH` are optional. Existing records are skipped.

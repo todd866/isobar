@@ -5,6 +5,7 @@
   "scripts": {
     "build": "node build.mjs",
     "test": "tsc --noEmit && node --experimental-strip-types --test test/*.test.ts",
+    "e6b:fixtures": "node --experimental-strip-types generate-e6b-fixtures.ts",
     "b727:generate": "node --experimental-strip-types src/b727/generate.ts",
     "b727:handbook": "node --experimental-strip-types src/b727/handbook.ts"
   },

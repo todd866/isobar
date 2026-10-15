@@ -91,6 +91,9 @@ typedef double (^IsobarLiveModelIndex)(NSDate *date);
 // Nil until first use, then a wall clock. Tests install a manual clock.
 @property (nonatomic, strong) IsobarLiveClock *clock;
 - (NSTimeInterval)clockNow;
+// Freezes the shared forecast clock without changing playing, holding,
+// seaming, or rate state. Used while a feedback note is being entered.
+@property (nonatomic) BOOL feedbackSuspended;
 
 - (void)configureRun:(OwnRun *)run start:(NSDate *)start end:(NSDate *)end now:(NSDate *)now
           modelIndex:(IsobarLiveModelIndex)modelIndex;

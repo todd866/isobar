@@ -3512,6 +3512,8 @@ double OwnChartMapAspect(void) { return (double)kPanelW / (double)kMapH; }
     NSDate *_generated;
     NSDate *_runDate;
     NSString *_attribution;
+    NSString *_feedbackRunID;
+    NSNumber *_feedbackSchema;
 }
 
 - (void)dealloc {
@@ -3537,6 +3539,8 @@ double OwnChartMapAspect(void) { return (double)kPanelW / (double)kMapH; }
 - (NSDate *)runDate { return _runDate; }
 - (NSDate *)generated { return _generated; }
 - (NSString *)attribution { return _attribution; }
+- (NSString *)feedbackRunID { return _feedbackRunID; }
+- (NSNumber *)feedbackSchema { return _feedbackSchema; }
 
 - (NSDate *)timeAtIndex:(NSInteger)index {
     if (index < 0 || index >= _cube.nHours || !_cube.times) return nil;
@@ -3572,6 +3576,9 @@ double OwnChartMapAspect(void) { return (double)kPanelW / (double)kMapH; }
 - (BOOL)readDirectory:(NSString *)dir coast:(NSString *)coastPath error:(NSString **)error {
     NSDictionary *manifest = nil;
     if (!LoadRunDirectory(dir, &_cube, &manifest, error)) return NO;
+    int schema = PublishedSchema(manifest);
+    _feedbackSchema = schema > 0 ? @(schema) : nil;
+    _feedbackRunID = [manifest[@"run"] isKindOfClass:NSString.class] ? manifest[@"run"] : nil;
     NSString *selectedCoastPath = coastPath;
     if (_cube.nLon == 720 && _cube.nLat == 361 && fabs(_cube.step - 0.5) < 1e-6) {
         NSString *world = OwnWorldCoastPath();
@@ -3631,6 +3638,9 @@ double OwnChartMapAspect(void) { return (double)kPanelW / (double)kMapH; }
     } else
         loaded = LoadPublishedCube(root, runID, previousRuns, &_cube, &date, error);
     if (!loaded) return NO;
+    _feedbackRunID = [runID copy];
+    int version = PublishedRunSchemaAt(root, runID);
+    _feedbackSchema = version > 0 ? @(version) : nil;
     NSString *selectedCoastPath = coastPath;
     if (_cube.nLon == 720 && _cube.nLat == 361 && fabs(_cube.step - 0.5) < 1e-6) {
         NSString *world = OwnWorldCoastPath();

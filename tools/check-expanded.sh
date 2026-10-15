@@ -23,8 +23,8 @@ SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
     Sources/notacconnection.m Sources/surfview.m Sources/motion.m Sources/rawmovie.m Sources/scrub.m Sources/mapdetail.m \
     Sources/collector.m Sources/archive.m Sources/ownchart.m Sources/daystrip.m Sources/fullscreenwindow.m Sources/playback.m \
     Sources/storereload.m Sources/mapcamera.m Sources/terrain.m Sources/terrainmap.m Sources/terrainscene.m Sources/gpumapview.m Sources/windmapview.m Sources/atmospheremapview.m   Sources/trafficroute.m Sources/hazard.m Sources/fieldrender.m \
-    Sources/trainingdata.m Sources/trainingwindow.m Sources/starlink.m Sources/starlinkview.m tools/own-chart.m tools/check-expanded.m \
-    -framework Cocoa -framework WebKit -framework Security -framework ServiceManagement -framework CoreLocation \
+    Sources/feedback.m Sources/feedbackview.m Sources/trainingdata.m Sources/e6b.m Sources/e6bview.m Sources/trainingwindow.m Sources/starlink.m Sources/starlinkview.m tools/own-chart.m tools/check-expanded.m \
+    -framework Carbon -framework Cocoa -framework WebKit -framework Security -framework ServiceManagement -framework CoreLocation \
     -framework Vision -framework CoreVideo -framework CoreMedia -framework AVFoundation -framework QuartzCore \
     -framework ImageIO -framework Metal -framework CoreText -framework Accelerate -lz -lsqlite3 -o "$CHECK_DIR/check-expanded"
 STORE="${1:-Tests/fixtures/store}"

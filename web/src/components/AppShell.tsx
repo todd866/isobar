@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
+import { FeedbackCapture } from './FeedbackCapture';
 import { Navigation } from './Navigation';
 import { AccountProvider } from './Account';
 import { TimesProvider } from './TimesControl';
@@ -14,6 +15,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const isMap = pathname === '/' || pathname === '/history' || pathname === '/historical';
   return (
     <AccountProvider>
+      <FeedbackCapture />
       <UnitsProvider>
         <TimesProvider>
           <a href="#main-content" className="fixed left-3 top-3 z-[100] -translate-y-20 rounded-md bg-[var(--md-primary)] px-4 py-2 font-medium text-[var(--md-on-primary)] focus:translate-y-0">

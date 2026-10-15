@@ -1,5 +1,8 @@
 'use client';
 
+import { registerFeedbackSource, feedbackEvent, feedbackHeld } from '@/lib/feedback/runtime';
+import { captureMap } from '@/lib/feedback/screen';
+import { localISO } from '@/lib/feedback/snapshot';
 import { atmosphereHeightGuideBoxes } from '@/lib/atmosphere-height-guide';
 import {pressureTextureSample} from '@/lib/pressure-label';
 import {sampleMonotoneBicubic} from '@/lib/cyclone-environment';
@@ -277,6 +280,9 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const transitAppliedRef=useRef(false);
   const transitReadRef=useRef<boolean|null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const feedbackCaptureRef = useRef<(() => string | null) | null>(null);
+  const feedbackStateRef = useRef<() => Record<string, unknown>>(() => ({}));
+  useEffect(() => registerFeedbackSource({ state: () => feedbackStateRef.current(), capture: () => feedbackCaptureRef.current?.() ?? null }), []);
   const glCanvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const windCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -632,6 +638,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const togglePlayback = useCallback(() => {
     if (teachingRef.current) return;
     clockRef.current = { ...clockRef.current, followNow: false, playing: !clockRef.current.playing };
+    feedbackEvent(clockRef.current.playing ? 'resume' : 'pause', { minute: clockRef.current.minute });
     setPlaying(clockRef.current.playing);
     setMinute(clockRef.current.minute);
   }, []);
@@ -916,6 +923,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
         setMinute(minuteNow);
         setPlaying(clockRef.current.playing);
       }
+      feedbackEvent(loaded ? 'data_load_success' : 'data_load_fail', { run: loaded?.manifest.run ?? null });
       setChart(loaded);
       if (!loaded) return;
       chartRef.current = loaded;
@@ -937,7 +945,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       setSpeed(storedSpeed);
       }
     }).catch((reason:unknown) => {
-      if (!obsolete()) {const message=reason instanceof Error?reason.message:'Archive unavailable';if(preserveHistoryView)notifyMap(message);else setChart(null);setHistoryError(message);}
+      if (!obsolete()) {const message=reason instanceof Error?reason.message:'Archive unavailable';feedbackEvent('data_load_fail', { message });if(preserveHistoryView)notifyMap(message);else setChart(null);setHistoryError(message);}
     });
     return () => { cancel = true; };
   }, [historical,historyRequest]);
@@ -1825,6 +1833,10 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const elapsed = Math.max(0, (now - lastStamp) / 1000);
       const dt = Math.min(0.05, elapsed);
       lastStamp = now;
+      if (feedbackHeld()) {
+        if (cameraMoveRef.current) cameraMoveRef.current.start += elapsed * 1000;
+        return;
+      }
       if (!holdingRef.current && clockRef.current.playing) {
         const prior = clockRef.current;
         let next = advancePlayback(prior, prior.wrapSeconds !== undefined || speedRef.current === REAL_TIME ? elapsed : dt, speedRef.current, span, nowMinute());
@@ -2071,6 +2083,11 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       })) : null,
       flowSample: () => flowLayer?.sample() ?? null,
     };
+    feedbackCaptureRef.current = () => {
+      if (dead) return null;
+      paintGl(); paintOverlay(); paintPressureLabels();
+      return captureMap(stage);
+    };
     redrawRef.current = () => { if (!dead) api.redraw(); };
     stage.dataset.api = '1';
     (stage as HTMLDivElement & { chartApi?: typeof api }).chartApi = api;
@@ -2079,6 +2096,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       dead = true;
       loaded.listeners.delete(dataArrived);
       redrawRef.current = null;
+      feedbackCaptureRef.current = null;
       cancelAnimationFrame(raf);
       reduceQuery.removeEventListener('change', onReduce);
       flowLayer?.destroy();
@@ -2305,6 +2323,10 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   }, [chatOpen, phone, placeId, GEO]);
 
   const lens: Lens = fly ? 'fly' : coastalLens ?? (field === 'none' ? 'pressure' : field);
+  useEffect(() => { feedbackEvent('lens', { lens, field }); }, [lens, field]);
+  useEffect(() => { feedbackEvent('layers', { windBarbs, satellite, trafficOn, graticule, marineMode, photoTerrain, historyLayers }); }, [windBarbs, satellite, trafficOn, graticule, marineMode, photoTerrain, historyLayers]);
+  useEffect(() => { feedbackEvent('mode', threeD ? '3d' : '2d'); }, [threeD]);
+  useEffect(() => { feedbackEvent('place', placeId); }, [placeId]);
 
   townsRef.current = pointPlaces;
   airportsRef.current = airportRows;
@@ -2389,6 +2411,26 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chart, minute, dataVersion]);
   const pendingField = legend === 'loading' ? (field === 'none' ? 'Pressure' : FIELD_LABEL[field]) : pressureLegend === 'loading' ? 'Pressure' : null;
+
+  feedbackStateRef.current = () => {
+    const loaded = chart ? chartRef.current : null;
+    const run = loaded?.manifest.run ?? null;
+    const runTime = run ? Date.parse(run) : NaN;
+    const valid = loaded ? runTime + (loaded.manifest.forecastHours[0] * 60 + clockRef.current.minute) * 60000 : NaN;
+    const age = Number.isFinite(runTime) ? (Date.now() - runTime) / 1000 : null;
+    return {
+      place: place ? { id: place.id, name: place.name, lat: place.lat, lon: place.lon } : null, zone,
+      lens, field: fieldRef.current, overlays: { wind_barbs: windRef.current, satellite: satelliteRef.current, traffic: trafficRef.current, graticule: graticuleRef.current, history: historical ? historyLayersRef.current : null, marine: marineModeRef.current, photo_terrain: photoTerrain, teaching: teachingRef.current },
+      camera: cameraRef.current ? { ...cameraRef.current, tilt: tiltRef.current, slice: sliceRef.current ?? null } : null,
+      mode: threeDRef.current ? '3d' : '2d', playhead: { utc: Number.isFinite(valid) ? new Date(valid).toISOString() : null, local: localISO(valid, zone) },
+      playing: clockRef.current.playing, rate: speedRef.current, run_id: run,
+      data_age_seconds: age, stale: historyError && loaded ? true : age === null ? null : !historical && age > 18 * 3600,
+      data_status: chart === undefined ? 'loading' : chart === null ? 'failed' : historyError ? 'stale' : 'loaded',
+      data_error: historyError || null,
+      data_frames: loaded ? Object.fromEntries(Object.entries(loaded.state).map(([name, states]) => [name, { pending: states.filter(v => v === 0).length, ready: states.filter(v => v === 1).length, missing: states.filter(v => v === 2).length, failed: states.filter(v => v === 3).length }])) : null,
+      renderer, point: pointRef.current,
+    };
+  };
 
   const placeKey = place?.id ?? '';
   const placeLat = place?.lat ?? 0;
@@ -2558,6 +2600,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     }
     if (next.speed !== undefined) {
       if (next.speed !== REAL_TIME) clockRef.current.followNow = false;
+      feedbackEvent('rate', next.speed);
       speedRef.current = next.speed;
       setSpeed(next.speed);
       if (persist) setPref('speed', next.speed);
@@ -2655,6 +2698,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   }, [chip]);
 
   function seek(nextMinute: number, hold: boolean) {
+    feedbackEvent('seek', { minute: nextMinute, hold });
     lastLiveTrafficRef.current = null;
     heldTrafficRef.current = null;
     clockRef.current = { ...clockRef.current, minute: Math.min(span, Math.max(0, nextMinute)), wrapSeconds: undefined, followNow: false, playing: hold ? false : clockRef.current.playing };

@@ -1,0 +1,8 @@
+.stamp { position: fixed; bottom: env(safe-area-inset-bottom); left: 0; z-index: 60; font: 9px/1 monospace; color: var(--md-on-surface-variant); background: transparent; opacity: .55; padding: 1px 4px; border-radius: 0; touch-action: none; user-select: none; }
+.shield { position: fixed; inset: 0; z-index: 200; }
+.row { position: absolute; top: max(8px, env(safe-area-inset-top)); left: 8px; right: 8px; max-width: 720px; margin: 0 auto; display: flex; align-items: center; gap: 6px; padding: 6px; border: 1px solid var(--md-outline-variant); border-radius: 6px; background: var(--md-surface); color: var(--md-on-surface); box-shadow: 0 2px 12px #0003; }
+.row input { min-width: 0; flex: 1; font-size: 16px; height: 40px; padding: 0 8px; background: var(--md-surface-container); border-radius: 3px; }
+.row button { flex: 0 0 40px; height: 40px; font-size: 22px; }
+.row span { font-size: 12px; }
+.thumb { width: 48px; height: 36px; object-fit: cover; border-radius: 2px; }
+.saved { position: fixed; z-index: 201; top: max(16px, env(safe-area-inset-top)); left: 16px; background: var(--md-surface); color: var(--md-on-surface); padding: 6px 10px; border-radius: 4px; font-size: 14px; }

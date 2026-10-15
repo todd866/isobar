@@ -3392,10 +3392,148 @@ static void TestFieldLegends(void) {
     }
 }
 
+// Exercise the compositor with a deterministic Metal stand-in. Real windows are
+// colour-managed (Display P3 reads pure red back near 0.94/0.29/0.18), so the
+// checks test for a dominant channel, not exact device values. Windows remain
+// ordered out; both map sizes and nested coordinates use the production path.
+// Force bitmap backing scales independently of the host display so Retina
+// composition is exercised even in a headless 1x session.
+@interface FeedbackBitmapRoot : NSView
+@property(nonatomic) NSInteger captureScale;
+@end
+@implementation FeedbackBitmapRoot
+- (NSBitmapImageRep *)bitmapImageRepForCachingDisplayInRect:(NSRect)rect {
+    NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+        pixelsWide:(NSInteger)NSWidth(rect) * self.captureScale
+        pixelsHigh:(NSInteger)NSHeight(rect) * self.captureScale
+        bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
+        colorSpaceName:NSCalibratedRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+    rep.size = rect.size;
+    return rep;
+}
+@end
+@interface FeedbackPixelView : NSView
+@end
+@implementation FeedbackPixelView
+- (void)drawRect:(NSRect)dirty { (void)dirty; [NSColor.blueColor setFill]; NSRectFill(self.bounds); }
+@end
+@interface FeedbackSnapshotMap : GPUMapView
+@end
+@implementation FeedbackSnapshotMap
+- (CGImageRef)copySnapshot {
+    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+    CGContextRef context = CGBitmapContextCreate(NULL, 64, 48, 8, 0, space, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+    CGColorSpaceRelease(space);
+    CGContextSetRGBFillColor(context, 1, 0, 0, 1);
+    CGContextFillRect(context, CGRectMake(0, 0, 64, 48));
+    CGImageRef image = CGBitmapContextCreateImage(context);
+    CGContextRelease(context);
+    return image;
+}
+@end
+static void CheckFeedbackCompositor(void) {
+    for (NSNumber *width in @[@480, @900]) for (NSNumber *scale in @[@0, @1, @2]) {
+        NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, width.doubleValue, 360)
+            styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
+        window.releasedWhenClosed = NO;
+        FeedbackBitmapRoot *captureRoot = [[FeedbackBitmapRoot alloc] initWithFrame:window.contentView.bounds];
+        captureRoot.captureScale = MAX(1, scale.integerValue);
+        [window.contentView addSubview:captureRoot];
+        FlippedView *nested = [[FlippedView alloc] initWithFrame:NSMakeRect(20, 30, width.doubleValue - 40, 280)];
+        [captureRoot addSubview:nested];
+        FeedbackSnapshotMap *map = [[FeedbackSnapshotMap alloc] initWithFrame:NSMakeRect(25, 40, 200, 150)];
+        [nested addSubview:map];
+        FeedbackPixelView *control = [[FeedbackPixelView alloc] initWithFrame:NSMakeRect(60, 50, 40, 30)];
+        [map addSubview:control];
+        NSData *png = scale.integerValue ? FeedbackViewPNG(captureRoot, map) : FeedbackWindowPNG(window, map);
+        NSBitmapImageRep *bitmap = png ? [NSBitmapImageRep imageRepWithData:png] : nil;
+        Check(bitmap != nil, @"feedback compositor produces a PNG");
+        if (!bitmap) { [map removeFromSuperview]; [window close]; continue; }
+        NSView *root = scale.integerValue ? captureRoot : (window.contentView.superview ?: window.contentView);
+        NSPoint point = [map convertPoint:NSMakePoint(20, 20) toView:root];
+        if (!root.isFlipped) point.y = NSHeight(root.bounds) - point.y;
+        NSInteger x = (NSInteger)(point.x * bitmap.pixelsWide / NSWidth(root.bounds));
+        NSInteger y = (NSInteger)(point.y * bitmap.pixelsHigh / NSHeight(root.bounds));
+        NSColor *red = bitmap ? [[bitmap colorAtX:x y:y] colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace] : nil;
+        Check(red && red.redComponent > .85 && red.redComponent - MAX(red.greenComponent, red.blueComponent) > .5, @"own-window snapshot composites nested Metal pixels at map position");
+        point = [control convertPoint:NSMakePoint(20, 15) toView:root];
+        if (!root.isFlipped) point.y = NSHeight(root.bounds) - point.y;
+        x = (NSInteger)(point.x * bitmap.pixelsWide / NSWidth(root.bounds));
+        y = (NSInteger)(point.y * bitmap.pixelsHigh / NSHeight(root.bounds));
+        NSColor *blue = bitmap ? [[bitmap colorAtX:x y:y] colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace] : nil;
+        Check(blue && blue.blueComponent > .85 && blue.blueComponent - MAX(blue.redComponent, blue.greenComponent) > .5, @"native controls remain above the Metal snapshot");
+        Check(!window.visible, @"feedback compositor QA never opens a window");
+        [map removeFromSuperview];
+        [window close];
+    }
+}
+
+@interface FeedbackTestController : TestController
+@property(nonatomic, strong) NSURL *testInbox;
+@end
+@implementation FeedbackTestController
+- (NSURL *)feedbackInbox { return self.testInbox; }
+@end
+
+static void CheckFeedbackCapture(void) {
+    FeedbackTestController *c = [FeedbackTestController new];
+    c.testInbox = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString] isDirectory:YES];
+    IsobarLivePlayer *live = [IsobarLivePlayer new];
+    IsobarLiveClock *clock = [IsobarLiveClock manualClock];
+    live.clock = clock; live.clockOnly = YES;
+    NSDate *start = [NSDate dateWithTimeIntervalSince1970:1792022400];
+    [live configureRun:nil start:start end:[start dateByAddingTimeInterval:86400] now:start modelIndex:nil];
+    live.hoursPerSecond = IsobarLiveHoursPerSecond(IsobarLiveSpeed8x);
+    [live playFromDate:start];
+    [c setValue:live forKey:@"live"];
+    [c setValue:@YES forKey:@"popoverPlaying"];
+    [c setValue:@(IsobarLiveSpeed8x) forKey:@"liveSpeed"];
+    FeedbackLog(@"before_capture", @{@"test": @YES});
+    @try {
+        [c beginFeedbackCapture];
+        NSDictionary *frozen = [c valueForKey:@"feedbackRecord"];
+        Check(frozen[@"state"][@"screen"] == NSNull.null && [frozen[@"files"] count] == 0,
+            @"hidden app captures state and recent log without a screenshot");
+        Check([frozen[@"recent"] count] > 0 && [frozen[@"state"][@"rate"] integerValue] == 8,
+            @"keypress captures recent events and selected rate");
+        double hours = [live forecastHoursAtTime:clock.now];
+        [clock advance:30]; [live tick:30];
+        [c inspectPopoverMovieFraction:.7]; // input must not seek behind the note
+        Check(live.feedbackSuspended && fabs([live forecastHoursAtTime:clock.now] - hours) < 1e-12,
+            @"note entry freezes the playhead and ignores background seeks");
+        FeedbackLog(@"after_capture", @{});
+        NSError *error = nil;
+        Check([c saveFeedbackNote:@"  Jumped — here  " error:&error], @"frozen record saves after note entry");
+        NSArray<NSURL *> *dirs = [NSFileManager.defaultManager contentsOfDirectoryAtURL:c.testInbox includingPropertiesForKeys:nil options:0 error:nil];
+        NSData *json = [NSData dataWithContentsOfURL:[dirs.firstObject URLByAppendingPathComponent:@"feedback.json"]];
+        NSDictionary *saved = json ? [NSJSONSerialization JSONObjectWithData:json options:0 error:nil] : nil;
+        Check([saved[@"note"] isEqual:@"  Jumped — here  "] && [saved[@"state"] isEqual:frozen[@"state"]]
+            && [saved[@"recent"] isEqual:frozen[@"recent"]], @"saved state/log stay frozen and owner words stay verbatim");
+        [c finishFeedbackCapture];
+        Check(live.playing && !live.feedbackSuspended && fabs(live.playheadRate - IsobarLiveHoursPerSecond(IsobarLiveSpeed8x)) < 1e-12
+            && fabs([live forecastHoursAtTime:clock.now] - hours) < 1e-12, @"save resumes at the same instant and rate");
+        [clock advance:1];
+        Check([live forecastHoursAtTime:clock.now] > hours, @"playback advances again after feedback");
+        [live pause];
+        [c setValue:@NO forKey:@"popoverPlaying"];
+        [c setValue:@YES forKey:@"forecastPaused"];
+        [c beginFeedbackCapture]; [clock advance:5]; [c finishFeedbackCapture];
+        Check(!live.playing && [[c valueForKey:@"forecastPaused"] boolValue], @"discard preserves a paused chart");
+        Check([NSFileManager.defaultManager contentsOfDirectoryAtURL:c.testInbox includingPropertiesForKeys:nil options:0 error:nil].count == 1,
+            @"discard creates no complaint directory");
+    } @finally {
+        [c finishFeedbackCapture];
+        [NSFileManager.defaultManager removeItemAtURL:c.testInbox error:nil];
+    }
+}
+
 int main(void) {
     @autoreleasepool {
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
+        CheckFeedbackCompositor();
+        CheckFeedbackCapture();
+        if (getenv("ISOBAR_TEST_FEEDBACK_ONLY")) return failures ? 1 : 0;
         TestFieldLegends();
         if (getenv("ISOBAR_TEST_FIELD_LEGENDS_ONLY")) return failures ? 1 : 0;
         NSMutableString *linearized=[NSMutableString stringWithString:@"%PDF-1.5\ntrailer << /Root 5 0 R >>\n"];
