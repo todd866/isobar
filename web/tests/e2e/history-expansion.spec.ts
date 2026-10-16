@@ -14,10 +14,10 @@ for(const [event,date,label] of [
  const labels=()=>stage.evaluate((e:any)=>e.chartApi.labels() as {text:string}[]);
  await expect.poll(async()=>(await labels()).some(l=>l.text===label)).toBe(true);
  if(event==='gallipoli-1915')await expect.poll(async()=>(await labels()).some(l=>l.text==='River Clyde · V Beach')).toBe(true);
- await page.getByRole('button',{name:'Data sources',exact:true}).click();
+ await page.getByRole('button',{name:'Map details',exact:true}).click();
  const control=page.getByLabel(event==='shackleton-1916'?'Ships':event==='gallipoli-1915'?'Military':'Routes',{exact:true});
  await control.uncheck();await expect.poll(async()=>(await labels()).some(l=>l.text===label)).toBe(false);
- await control.check();await page.getByRole('button',{name:'Data sources',exact:true}).click();
+ await control.check();await page.getByRole('button',{name:'Map details',exact:true}).click();
  await expect.poll(async()=>(await labels()).some(l=>l.text===label)).toBe(true);
  if(event==='shackleton-1916'){await page.setViewportSize({width:844,height:390});await expect.poll(async()=>(await labels()).some(l=>l.text==='James Caird')).toBe(true);}
  await page.getByRole('button',{name:'3D map',exact:true}).click();await expect(stage).toHaveAttribute('data-map-mode','3d');

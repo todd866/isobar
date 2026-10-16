@@ -11,10 +11,6 @@
 .earth-stage canvas { width:100%; height:100%; display:block; touch-action:none; }
 .earth-caption { position:absolute; top:.8rem; left:1rem; right:1rem; color:#b4c4d1; font-size:.8rem; pointer-events:none; text-shadow:0 1px 3px black; }
 .earth-message { position:absolute; inset:0; display:flex; flex-wrap:wrap; align-content:center; gap:1rem; align-items:center; justify-content:center; padding:1rem; background:#020407e8; }
-.earth-sources { position:absolute; top:0; right:0; bottom:0; width:min(25rem,100%); overflow:auto; padding:1rem; background:var(--md-surface,#11161a); color:var(--md-on-surface,#e5ebef); z-index:3; }
-.earth-sources>button { float:right; font-size:1.5rem; min-width:44px; min-height:44px; }
-.earth-sources p { margin:1rem 0; line-height:1.5; overflow-wrap:anywhere; }
-.earth-sources a { text-decoration:underline; }
 .earth-time { padding:.5rem 1rem max(.5rem,env(safe-area-inset-bottom)); display:flex; flex-wrap:wrap; align-items:center; gap:.25rem 1rem; background:#0b111a; font-variant-numeric:tabular-nums; font-size:.85rem; }
 .earth-time time { flex:1; }
 .earth-time input { flex:1 0 100%; width:100%; min-height:30px; accent-color:#b3cad9; }

@@ -191,7 +191,7 @@ async function boot(page: Page, width: number, height: number, theme: 'light' | 
 async function settledMap(page: Page) {
   // ResizeObserver and the forecast header animation must finish before saving
   // a view or converting a fractional canvas position to a screen tap.
-  await expect(page.locator('.map-chrome-body')).not.toHaveAttribute('data-anim', '1');
+  await expect(page.locator('.map-chrome-body')).toHaveCount(0);
   await page.evaluate(() => new Promise<void>((resolve) => {
     let previous = '', stable = 0;
     const check = () => {

@@ -116,10 +116,10 @@ test('pressure streaks move, and satellite is observed only up to now', async ({
   await expect(page.locator('[data-cloud-legend="satellite"]')).toHaveText(/^Satellite \d{2}:\d{2}Z$/);
   await page.waitForTimeout(400);
   await page.screenshot({ path: path.join(OUT, 'satellite-light.png') });
-  await page.getByRole('button', { name: 'Data sources' }).click();
+  await page.getByRole('button', { name: 'Map details' }).click();
   await expect(page.getByRole('note')).toContainText('NASA GIBS');
   await page.screenshot({ path: path.join(OUT, 'sources-light.png') });
-  await page.getByRole('button', { name: 'Data sources' }).click();
+  await page.getByRole('button', { name: 'Map details' }).click();
 
   const slider = page.getByRole('slider', { name: 'Forecast time' });
   const atNow = chart.gibs.length;

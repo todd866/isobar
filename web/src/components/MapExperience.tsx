@@ -21,9 +21,8 @@ import { EVEREST_IMAGERY, loadEverestImagery } from '@/lib/terrain/imagery-loade
 import { MAP_TRANSIT_KEY, parseMapTransit, type MapTransit } from '@/lib/map-transit';
 import { loadHistoricalChart } from '@/lib/history-chart';
 import type { HistoricalCatalog } from '@/lib/history';
-import { ATTRIBUTION } from '@/components/Attribution';
-import { australiaAspects, clampToData, frameData, insetBox, panBy, zoomWithinData, type DataFrame } from '@/lib/camera';
-import { EVEREST_DETAILS, EVEREST_EVENTS, EVEREST_ROUTE, EVEREST_SOURCE, everestAtmosphere } from '@/lib/everest';
+import { clampToData, frameData, insetBox, panBy, zoomWithinData, type DataFrame } from '@/lib/camera';
+import { EVEREST_DETAILS, EVEREST_EVENTS, EVEREST_ROUTE, everestAtmosphere } from '@/lib/everest';
 import { MOUNTAIN_RELIEF_M, mountainTile, tileRelief } from '@/lib/mountain-wind';
 import { drawHistoricalScene, historicalShipBoxes } from '@/lib/historical-scene-renderer';
 import { sceneForPlace, historicalScene, type HistoryLayer } from '@/lib/historical-scenes';
@@ -57,7 +56,7 @@ import { frameBlend } from '@/lib/interpolate';
 import { createPressureLabelLayer } from '@/lib/pressure-label-layer';
 import { createLoopDissolve } from '@/lib/loop-dissolve';
 import { LOOP_HOLD_SECONDS, LOOP_DISSOLVE_SECONDS, advancePlayback, DEFAULT_SPEED, REAL_TIME, isSpeed, type Playback, type Speed } from '@/lib/playback';
-import { chartTitle, clockZone, formatClock, localDayKey, localMidnight, localNoon } from '@/lib/time-label';
+import { chartTitle, clockZone, formatClock, zuluLabel, localDayKey, localMidnight } from '@/lib/time-label';
 import { fieldBase, type FieldId } from '@/lib/field-color';
 import { distanceBearing } from '@/lib/metar-view';
 import { daySummaries, readingAt } from '@/lib/points';
@@ -105,7 +104,7 @@ import { cameraDuringMove, exposedMap, pointCamera, projectPoint, reframeCamera,
 import { DESKTOP_MQ } from './MapSheet';
 import type { GeoPoint } from '@/lib/chart-teaching';
 import { forecastDaySummaries, forecastReading, forecastUv, loadPlaceForecast, overlayUv, peekPointModel, pointSurfaceAt, type PlaceForecast } from '@/lib/point/openmeteo';
-import { ChromeToggle, CompactForecast, DayTiles, LensBar, MapHeader, PressNote, SatelliteIcon, Timeline, TrafficIcon, Transport, usePressNote, type Lens } from './MapChrome';
+import { LensBar, MapHeader, PressNote, Timeline, TrafficIcon, Transport, usePressNote, type Lens } from './MapChrome';
 import { useTimes } from './TimesControl';
 import { PhoneHoldNames } from './MapHints';
 import { ScaleBar } from './ScaleBar';
@@ -260,7 +259,7 @@ function rasterLand(chart: LoadedChart): LandRaster {
 /** Camera controls and the legend, padded, in stage CSS pixels. */
 function chromeAvoid(stage: Element): { x: number; y: number; w: number; h: number }[] {
   const host = stage.getBoundingClientRect();
-  return ['.map-tools', '.map-legend', '.map-sources', '.traffic-selection', '.traffic-replay-status'].flatMap((selector) => {
+  return ['.map-tools', '.map-legend', '.map-details', '.traffic-selection', '.traffic-replay-status'].flatMap((selector) => {
     const node = stage.querySelector(selector);
     if (!(node instanceof HTMLElement)) return [];
     const rect = node.getBoundingClientRect();
@@ -324,12 +323,12 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const [stageSize, setStageSize] = useState({ width: 1, height: 1 });
   const [decluttered, setDecluttered] = useState(false);
   const [mapToolsOpen, setMapToolsOpen] = useState(false);
-  const [compactForecastOpen, setCompactForecastOpen] = useState(false);
+  const mapPageRef = useRef<HTMLDivElement>(null);
   const mapToolsToggleRef = useRef<HTMLButtonElement>(null);
   const mapToolsRef = useRef<HTMLDivElement>(null);
   const [historyLayers, setHistoryLayers] = useState<Record<HistoryLayer,boolean>>({political:true,military:true,ships:true,routes:true});
   const historyLayersRef=useRef(historyLayers);historyLayersRef.current=historyLayers;
-  const [showSources, setShowSources] = useState(false);
+  const [showMapDetails, setShowMapDetails] = useState(false);
   const [photoTerrain,setPhotoTerrain]=useState(false);
   const [photoStatus,setPhotoStatus]=useState('off');
   useEffect(()=>{try{const query=new URLSearchParams(location.search).get('terrain');const enabled=query?query==='photo':sessionStorage.getItem('isobar.terrain-photo')==='1';setPhotoTerrain(enabled);sessionStorage.setItem('isobar.terrain-photo',enabled?'1':'0');}catch{}},[]);
@@ -364,10 +363,6 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const cameraMoveRef = useRef<(CameraMove & { restore?: { camera: Camera; frame: DataFrame } }) | null>(null);
   const lastFrameRef = useRef<{ width: number; height: number } | null>(null);
   /** True for the whole header-height animation, so a resize keeps the map centre. */
-  const holdMapCentreRef = useRef(false);
-  const chromeRef = useRef<HTMLDivElement>(null);
-  const chromeBodyRef = useRef<HTMLDivElement>(null);
-  const chromeHeightRef = useRef<number | null>(null);
   const pointViewRef = useRef<{ camera: Camera; frame: DataFrame } | null>(null);
   const pointRef = useRef<MapPoint | null>(null);
   const pointSeenCamRef = useRef('');
@@ -389,7 +384,9 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
       const smallSurface = window.innerWidth < 700 || window.innerHeight < 620;
       const inheritedPx = probe ? Math.max(parseFloat(getComputedStyle(probe).fontSize) || 0, probe.getBoundingClientRect().height) : 0;
-      setDecluttered(Math.max(rootPx, inheritedPx) >= 24 && smallSurface);
+      const enlarged = Math.max(rootPx, inheritedPx) >= 24;
+      if (mapPageRef.current) mapPageRef.current.dataset.mapText = enlarged ? 'enlarged' : 'normal';
+      setDecluttered(enlarged && smallSurface);
     };
     const probe = document.createElement('span');
     probe.textContent = 'Aa';
@@ -411,7 +408,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       if ((event.target as HTMLElement | null)?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [data-atmosphere-instrument]')) return;
       event.preventDefault();
       setMapToolsOpen(false);
-      setShowSources(false);
+      setShowMapDetails(false);
       mapToolsToggleRef.current?.focus({ preventScroll: true });
     };
     window.addEventListener('keydown', onKey);
@@ -419,12 +416,12 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       const target = event.target as Node | null;
       if (target && (mapToolsRef.current?.contains(target) || (target as HTMLElement).closest?.('[data-atmosphere-instrument]'))) return;
       setMapToolsOpen(false);
-      setShowSources(false);
+      setShowMapDetails(false);
     };
     document.addEventListener('pointerdown', onPointerDown, true);
     return () => { window.removeEventListener('keydown', onKey); document.removeEventListener('pointerdown', onPointerDown, true); };
   }, [mapToolsOpen]);
-  useEffect(() => { if (!decluttered) { setMapToolsOpen(false); setShowSources(false); } }, [decluttered]);
+  useEffect(() => { if (!decluttered) { setMapToolsOpen(false); setShowMapDetails(false); } }, [decluttered]);
   useEffect(() => { redrawRef.current?.(); }, [graticule]);
   useEffect(() => {
     let dead = false;
@@ -474,6 +471,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const hoverLatestXRef = useRef(0);
   const hoverRestorePlayingRef = useRef(true);
   const scrubRestorePlayingRef = useRef(true);
+  const touchScrollClockRef = useRef<Playback | null>(null);
   const recoveryRef = useRef(new CameraRecovery());
   const panStartRef = useRef<{ camera: Camera; last: Camera; pitch: number; x: number; y: number; moving: boolean } | null>(null);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
@@ -661,9 +659,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const [fly, setFly] = useState(false);
   const [flyDetail, setFlyDetail] = useState(false);
   /** Remembered per browser. Absent means expanded, including for a new visitor. */
-  const [userCollapsed, setUserCollapsed] = useState(false);
   /** Temporary expand while a sheet is holding the bar closed. Not persisted. */
-  const [chromeLifted, setChromeLifted] = useState(false);
   const [coastalLens, setCoastalLens] = useState<'kite' | 'surf' | null>(null);
   const [kiteBand, setKiteBand] = useState<KiteBand>(DEFAULT_KITE_BAND);
   const kiteTintRef = useRef<KiteBand | null>(null);
@@ -722,9 +718,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const [explainHost, setExplainHost] = useState<HTMLElement | null>(null);
   const [autoTour, setAutoTour] = useState(false);
   const recenterNote = usePressNote();
-  const chromeNote = usePressNote();
   const { mode: clockMode } = useTimes();
-  const satelliteNote = usePressNote();
   const trafficNote = usePressNote();
   const chatPanelRef = useRef<HTMLElement>(null);
   const chatFocusRef = useRef<{ lat: number; lon: number } | null>(null);
@@ -738,143 +732,21 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     return () => query.removeEventListener('change', update);
   }, []);
 
-  const autoChrome = (fly && flyDetail) || selectedTraffic.length > 0 || (!!point && !fly && !teaching);
-  // Enlarged text keeps the full header, place search and menu in flow even
-  // when a point or traffic sheet is active. The normal auto-collapse remains
-  // unchanged when density returns to the ordinary layout.
-  const chromeCollapsed = decluttered ? false : autoChrome ? !chromeLifted : userCollapsed;
-  const focusToggleRef = useRef(false);
-  const collapseToRef = useRef<(next: boolean) => void>(() => {});
-  collapseToRef.current = (next: boolean) => {
-    if (decluttered) { setCompactForecastOpen(!next); return; }
-    focusToggleRef.current = true;
-    setUserCollapsed(next);
-    setChromeLifted(!next);
-    try {
-      if (next) localStorage.setItem('isobar.header-collapsed', '1');
-      else localStorage.removeItem('isobar.header-collapsed');
-    } catch { /* this visit still holds the choice */ }
-    chromeNote.show(next ? 'Days hidden' : 'Days shown');
-  };
-  const autoChromeRef = useRef(autoChrome);
-  useEffect(() => {
-    try {
-      if (localStorage.getItem('isobar.header-collapsed') === '1') setUserCollapsed(true);
-    } catch { /* stay expanded */ }
-  }, []);
-  useEffect(() => {
-    if (autoChromeRef.current !== autoChrome) setChromeLifted(false);
-    autoChromeRef.current = autoChrome;
-  }, [autoChrome]);
-  useLayoutEffect(() => {
-    const node = chromeBodyRef.current;
-    if (!node) return;
-    const next = node.scrollHeight;
-    const previous = chromeHeightRef.current;
-    chromeHeightRef.current = next;
-    if (previous == null || Math.abs(previous - next) < 1) {
-      node.style.height = '';
-      node.style.transition = '';
-      delete node.dataset.anim;
-      holdMapCentreRef.current = false;
-      return;
-    }
-    holdMapCentreRef.current = true;
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    let released = false;
-    const release = () => {
-      if (released) return;
-      released = true;
-      node.style.height = '';
-      node.style.transition = '';
-      delete node.dataset.anim;
-      // The height clear lays out once more. Keep the centre until that pass.
-      requestAnimationFrame(() => { holdMapCentreRef.current = false; });
-    };
-    node.dataset.anim = '1';
-    node.style.transition = 'none';
-    node.style.height = `${previous}px`;
-    const start = requestAnimationFrame(() => {
-      if (reduced) {
-        node.style.height = `${next}px`;
-        requestAnimationFrame(() => requestAnimationFrame(release));
-        return;
-      }
-      node.style.transition = 'height 220ms ease';
-      node.style.height = `${next}px`;
-    });
-    const timer = window.setTimeout(release, 400);
-    const onEnd = (event: TransitionEvent) => {
-      if (event.propertyName === 'height') release();
-    };
-    node.addEventListener('transitionend', onEnd);
-    return () => {
-      cancelAnimationFrame(start);
-      window.clearTimeout(timer);
-      node.removeEventListener('transitionend', onEnd);
-      if (!released) {
-        node.style.height = '';
-        node.style.transition = '';
-        delete node.dataset.anim;
-        holdMapCentreRef.current = false;
-      }
-    };
-  }, [chromeCollapsed]);
-  useLayoutEffect(() => {
-    if (!focusToggleRef.current) return;
-    focusToggleRef.current = false;
-    chromeRef.current?.querySelector<HTMLElement>('[data-chrome-toggle]')?.focus();
-  }, [chromeCollapsed]);
-  useEffect(() => {
-    const node = chromeRef.current;
-    if (!node) return;
-    let start: { x: number; y: number; id: number } | null = null;
-    const ignore = (event: Event) => (event.target as Element | null)?.closest('input, select, a, [data-timeline], [data-chrome-toggle]');
-    const down = (event: PointerEvent) => {
-      if (event.pointerType !== 'touch' || ignore(event)) return;
-      start = { x: event.clientX, y: event.clientY, id: event.pointerId };
-      try { node.setPointerCapture(event.pointerId); } catch { /* a synthetic swipe has no capture */ }
-    };
-    const up = (event: PointerEvent) => {
-      if (!start || event.pointerId !== start.id) return;
-      const dx = event.clientX - start.x;
-      const dy = event.clientY - start.y;
-      start = null;
-      if (Math.abs(dy) < 36 || Math.abs(dy) < Math.abs(dx)) return;
-      const stopClick = (click: Event) => {
-        click.preventDefault();
-        click.stopPropagation();
-        node.removeEventListener('click', stopClick, true);
-      };
-      node.addEventListener('click', stopClick, true);
-      window.setTimeout(() => node.removeEventListener('click', stopClick, true), 400);
-      collapseToRef.current(dy < 0);
-    };
-    const cancel = () => { start = null; };
-    node.addEventListener('pointerdown', down);
-    node.addEventListener('pointerup', up);
-    node.addEventListener('pointercancel', cancel);
-    return () => {
-      node.removeEventListener('pointerdown', down);
-      node.removeEventListener('pointerup', up);
-      node.removeEventListener('pointercancel', cancel);
-    };
-  }, []);
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('tour') === '1') setAutoTour(true);
   }, []);
   useEffect(() => {
-    if (!showSources) return;
+    if (!showMapDetails) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
       if (document.querySelector('[data-teach-card], [data-chat-panel], [data-point-panel], [data-fly-panel], [data-coastal-panel], [data-account-sheet], [data-map-menu]:not([hidden]), [data-place-open="true"], [data-map-chip]')) return;
       event.preventDefault();
-      setShowSources(false);
-      document.querySelector<HTMLButtonElement>('[aria-label="Data sources"]')?.focus();
+      setShowMapDetails(false);
+      document.querySelector<HTMLButtonElement>('[aria-label="Map details"]')?.focus();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [showSources]);
+  }, [showMapDetails]);
 
   useEffect(() => {
     trackUsage('session-start', {});
@@ -1302,13 +1174,9 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
             halfWidth: (xPerPx * frameW) / 2,
             halfHeight: (yPerPx * frameH) / 2,
           };
-          const fitted = clampToData(GEO, raw, frame);
-          // A collapsing bar must not slide or zoom the chart. Preserve the
-          // geographic centre and horizontal scale throughout its animation;
-          // intermediate layouts must not accumulate a width drift.
-          return holdMapCentreRef.current ? raw : fitted;
+          return clampToData(GEO, raw, frame);
         };
-        if ((!move && untouched && !holdMapCentreRef.current) || !prev) {
+        if ((!move && untouched) || !prev) {
           cameraRef.current = frame.home;
           if (!prev) cameraMoveRef.current = null;
         } else {
@@ -1356,7 +1224,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
         if (rect.width < 2 || rect.height < 2) return null;
         return { x: rect.left - stageRect.left - pad, y: rect.top - stageRect.top - pad, w: rect.width + pad * 2, h: rect.height + pad * 2 };
       };
-      const uiAvoid = [...atmosphereHeightGuideBoxes(stage.querySelector('[data-atmosphere-layer]'), GEO, camera, width, height), uiBox('.map-tools', 8), uiBox('.map-legend', 8), uiBox('.map-chat-float', 6), uiBox('.map-sources', 8), uiBox('.traffic-replay-status', 8), uiBox('[data-atmosphere-instrument]', 8)].filter((box): box is LabelBox => !!box);
+      const uiAvoid = [...atmosphereHeightGuideBoxes(stage.querySelector('[data-atmosphere-layer]'), GEO, camera, width, height), uiBox('.map-tools', 8), uiBox('.map-legend', 8), uiBox('.map-chat-float', 6), uiBox('.map-details', 8), uiBox('.traffic-replay-status', 8), uiBox('[data-atmosphere-instrument]', 8)].filter((box): box is LabelBox => !!box);
       // Positions matter: a control that mounts or moves (the chat float follows
       // the exposed map) must re-run label placement, not just a size change.
       const lonSpan = GEO.projection === 'equirectangular' ? (camera.halfWidth * 2) / GEO.F : (camera.halfWidth * 2 * 180) / Math.PI;
@@ -1860,7 +1728,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       if (move) {
         cameraRef.current = cameraDuringMove(move, now);
         cameraMoved = true;
-        if (now >= move.start + move.duration && !(move.restore && holdMapCentreRef.current)) cameraMoveRef.current = null;
+        if (now >= move.start + move.duration) cameraMoveRef.current = null;
       }
       if(threeDRef.current && cameraRef.current) {
         const heading=recoveryRef.current.sample(now,pointersRef.current.size>0||mapKeysRef.current.size>0||!!cameraMoveRef.current,reducedMotion);
@@ -2223,13 +2091,8 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     observer.observe(node);
     return () => observer.disconnect();
   }, [chart]);
-  const aspects = useMemo(() => (chart && !chart.manifest.wrapsLongitude ? australiaAspects(GEO, insetBox(chart.manifest, EDGE_FADE_DEG + 0.25)) : null), [chart, GEO]);
   const pointVisible = !!point && !fly && !teaching;
-  // The map fills the content width under the timeline. A point panel overlays
-  // the right edge and does not narrow the canvas. Fly's in-flow column does.
-  const sidePanel = fly && flyDetail && !chatOpen && typeof window !== 'undefined' && window.matchMedia(DESKTOP_MQ).matches;
-  const stageWidth = Math.max(0, panel.width - (sidePanel ? 400 : 0));
-  const groupWidth = panel.width > 0 ? panel.width : 0;
+  // Every inspection panel overlays the full-size map; none narrows the canvas.
 
   const pointFramedRef = useRef<string | null>(null);
   useLayoutEffect(() => {
@@ -2368,7 +2231,6 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   const forecastStartMs = chart ? runMs + chart.manifest.forecastHours[0] * 3_600_000 : 0;
   const forecastEndMs = chart ? runMs + chart.manifest.forecastHours[chart.manifest.forecastHours.length - 1] * 3_600_000 : 0;
   const forecastNow = shownForecast ? forecastReading(shownForecast, nowMs) : null;
-  const forecastAt = shownForecast ? forecastReading(shownForecast, validMs) : null;
 
   // Tiles start at today. Collector places keep their export; any other place uses its own forecast.
   const days = useMemo(() => {
@@ -2379,16 +2241,15 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     }
     if (shownForecast) {
       const today = localMidnight(Date.now(), shownForecast.zone || 'UTC');
-      return forecastDaySummaries(shownForecast).filter((day) => day.dayEnd > today);
+      return forecastDaySummaries(shownForecast).filter((day) => day.dayEnd > today).slice(0, 7);
     }
     if (!chart?.points || !place?.manifest) return [];
     const today = localMidnight(Date.now(), place.zone || 'UTC');
-    const base = daySummaries(chart.points, place.id, place.zone).filter((day) => day.dayEnd > today);
+    const base = daySummaries(chart.points, place.id, place.zone).filter((day) => day.dayEnd > today).slice(0, 7);
     return placeForecast ? overlayUv(base, placeForecast) : base;
   }, [historyCatalog,historyEvent,historical,chart, place?.id, place?.manifest, place?.zone, shownForecast, placeForecast]);
-  const reading = place?.manifest && chart?.points ? readingAt(chart.points, place.id, validMs) : forecastAt?.reading ?? null;
   const nowReading = place?.manifest && chart?.points ? readingAt(chart.points, place.id, nowMs) : forecastNow?.reading ?? null;
-  const headerMs = nearNow ? nowMs : validMs;
+  const headerMs = nowMs;
   const uv = placeForecast ? forecastUv(placeForecast, headerMs) : null;
   const todayKey = localDayKey(nowMs, zone);
   const selectedKey = days.find((day) => validMs >= day.dayStart && validMs < day.dayEnd)?.key ?? null;
@@ -2770,6 +2631,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => {
       if (teachingRef.current) return;
       cancelTimelineHoverArm();
+      touchScrollClockRef.current = event.pointerType === 'touch' && !(event.target as Element).closest('.timeline-scrub-hit') ? { ...clockRef.current } : null;
       scrubRestorePlayingRef.current = hoverHoldRef.current ? hoverRestorePlayingRef.current : clockRef.current.playing;
       hoverHoldRef.current = false;
       holdingRef.current = true;
@@ -2809,6 +2671,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     },
     onPointerUp: (event: React.PointerEvent<HTMLDivElement>) => {
       if (teachingRef.current) return;
+      touchScrollClockRef.current = null;
       holdingRef.current = false;
       hoverHoldRef.current = false;
       trackUsage('scrub', {});
@@ -2821,11 +2684,14 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       cancelTimelineHoverArm();
       if (!holdingRef.current && !hoverHoldRef.current) return;
       const restore = hoverHoldRef.current ? hoverRestorePlayingRef.current : scrubRestorePlayingRef.current;
+      const beforeScroll = touchScrollClockRef.current;
+      touchScrollClockRef.current = null;
       holdingRef.current = false;
       hoverHoldRef.current = false;
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-      clockRef.current = { ...clockRef.current, playing: restore };
-      setPlaying(restore);
+      clockRef.current = beforeScroll ?? { ...clockRef.current, playing: restore };
+      setMinute(clockRef.current.minute);
+      setPlaying(clockRef.current.playing);
     },
     onPointerLeave: () => {
       if (teachingRef.current) return;
@@ -3102,9 +2968,30 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
     redrawCamera();
   }
 
-  const transportNode = (compact: boolean) => (
+  useLayoutEffect(() => {
+    const page = mapPageRef.current;
+    if (!page) return;
+    const header = page.querySelector<HTMLElement>('.map-header');
+    const bar = page.querySelector<HTMLElement>('.map-bottom-bar');
+    const lenses = page.querySelector<HTMLElement>('.map-lens-wrap');
+    const measure = () => {
+      const rect = page.getBoundingClientRect();
+      if (lenses) {
+        const lensRect = lenses.getBoundingClientRect();
+        page.style.setProperty('--map-lens-width', `${lensRect.width}px`);
+        page.style.setProperty('--map-lens-height', `${lensRect.height}px`);
+      }
+      if (header) page.style.setProperty('--map-top-clearance', `${header.getBoundingClientRect().bottom - rect.top + 8}px`);
+      if (bar) page.style.setProperty('--map-bottom-clearance', `${rect.bottom - bar.getBoundingClientRect().top + 8}px`);
+    };
+    const observer = new ResizeObserver(measure);
+    for (const node of [page, header, bar, lenses]) if (node) observer.observe(node);
+    measure();
+    return () => observer.disconnect();
+  }, [!!chart]);
+
+  const transportNode = () => (
     <Transport
-      compact={compact}
       held={teaching}
       playing={playing}
       onToggle={togglePlayback}
@@ -3114,18 +3001,19 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
       nowLabel={historical?'Start':'Now'}
     />
   );
-  const timelineNode = (bare: boolean) => chart ? (
+  const timelineNode = () => chart ? (
     <Timeline
-      bare={bare}
       startMs={stripStart}
       endMs={stripEnd}
-      dayMarks={days.slice(1).map((day) => day.dayStart)}
+      days={days}
+      todayKey={todayKey}
       forecastStartMs={forecastStartMs}
       forecastEndMs={forecastEndMs}
       validMs={validMs}
-      zone={displayZone}
+      zone={zone}
+      aviation={fly}
       timeState={historical?{live:false,label:'HISTORY'}:mapTimeState(validMs, nowMs)}
-      valueText={chartTitle(validMs, displayZone, nearNow)}
+      valueText={`${formatClock(validMs, zone)}${fly ? ` ${zuluLabel(validMs)}` : ''}`}
       span={span}
       minute={minute}
       onPointer={timelinePointer}
@@ -3133,29 +3021,10 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
   ) : null;
 
   const historyPicker = historical ? <div className="history-picker flex min-w-0 items-center gap-2">{historyCatalog ? <select aria-label="Historical event" value={historyEvent} onChange={e=>{clearSlice();setHistoryRequest({event:e.target.value,version:++historySelectionVersion.current});setPoint(null);}} className="min-w-0 rounded-md bg-[var(--md-surface-container-high)] px-2 py-1 text-sm">{historyCatalog.collections.map(c=><option key={c.id} value={c.id}>{c.title}{c.title.includes(c.days[0]?.date.slice(0,4)??"—")?"":` · ${c.days[0]?.date.slice(0,4)??""}`}</option>)}</select> : null}<a href="/" data-history-exit aria-label="Back to present day" className="history-exit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5 3 12l7 7M3 12h18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg><span>Present day</span></a></div> : null;
-  const timeState = chart ? historical?{live:false,label:'HISTORY'}:mapTimeState(validMs, nowMs) : null;
   const heldTraffic = !playing && heldTrafficRef.current && Math.abs(validMs - heldTrafficRef.current.selectedMs) < 1 ? heldTrafficRef.current : null;
   const trafficLive = liveTrafficAtTime(clockRef.current.followNow, playing, validMs, nowMs);
   return (
-    <div className="flex min-h-0 flex-1 flex-col" data-map-page data-map-density={decluttered ? 'compact' : 'normal'} data-map-tools-open={mapToolsOpen ? 'true' : 'false'} data-history-mode={historical?'true':undefined}>
-      <div ref={chromeRef} data-map-chrome data-collapsed={chromeCollapsed ? 'true' : 'false'} className="map-chrome shrink-0">
-        <PressNote text={chromeNote.note} />
-        <div ref={chromeBodyRef} className="map-chrome-body">
-          {chromeCollapsed ? historyPicker : null}
-          {chromeCollapsed ? (
-            <CompactForecast
-              placeName={place?.name ?? ''}
-              onPlace={() => collapseToRef.current(false)}
-              reading={nearNow ? nowReading : reading}
-              transport={transportNode(true)}
-              timeline={timelineNode(true)}
-              validMs={chart ? validMs : null}
-              zone={zone}
-              timeState={timeState}
-              toggle={<ChromeToggle collapsed onToggle={() => collapseToRef.current(false)} />}
-            />
-          ) : (
-            <>
+    <div ref={mapPageRef} className="relative flex min-h-0 flex-1 flex-col" data-map-page data-map-density={decluttered ? 'compact' : 'normal'} data-map-tools-open={mapToolsOpen ? 'true' : 'false'} data-history-mode={historical?'true':undefined}>
               <MapHeader
                 leading={historyPicker}
                 historical={historical}
@@ -3167,8 +3036,8 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
           writeGraticule(window.localStorage, next);
           notifyMap(next ? 'Lat long on' : 'Lat long off');
         }}
-                uv={uv}
                 phone={phone}
+                uv={uv}
                 placeName={place?.name ?? ''}
                 place={(
                   <PlaceField
@@ -3179,56 +3048,35 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                     towns={pointPlaces}
                     airports={airportRows}
                     denied={locateDenied}
-                    hint={historical ? false : placeHint}
+                    hint={placeHint}
                     located={locatedTick}
                     onSelect={(next) => selectPlace(next, 'user')}
                     onToggleSaved={toggleSaved}
                     onLocate={locate}
                   />
                 )}
-                reading={nearNow ? nowReading : reading}
+                reading={nowReading}
                 forecast={shownForecast ? {
                   source: shownForecast.provenance.source,
                   model: shownForecast.provenance.model,
                   run: shownForecast.provenance.run,
                   cycle: shownForecast.provenance.cycle,
-                  valid: (nearNow ? forecastNow : forecastAt)?.valid ?? null,
+                  valid: forecastNow?.valid ?? null,
                 } : null}
-                validMs={chart ? validMs : null}
-                zone={zone}
                 runMs={runMs}
+                zone={zone}
                 nowMs={nowMs}
                 phoneWind={chart?.manifest.variables.u10 && chart.manifest.variables.v10 ? <button type="button" aria-label="Wind barbs" aria-pressed={windBarbs}
                   onClick={() => toggleWindBarbs(!windBarbs)}>Wind barbs<span aria-hidden="true" className="ml-auto">{windBarbs ? '✓' : ''}</span></button> : null}
                 onMenuOpen={() => { closeChat(true, false); }}
                 onMenuChange={setMenuOpen}
               />
-              {chart ? (
-                <div className="map-deck grid shrink-0 grid-cols-1 gap-x-4 px-3 md:grid-cols-[minmax(176px,auto)_1fr] md:px-4">
-                  <div className="transport-side flex items-center max-md:hidden md:row-span-2 md:pt-6">{transportNode(false)}</div>
-                  {historical ? <select className="history-day rounded-md bg-[var(--md-surface-container-high)] px-2" aria-label="Historical day" value={selectedKey ?? days[0]?.key} onChange={event=>{const day=days.find(d=>d.key===event.target.value);if(day&&!teachingRef.current){const version=++historySelectionVersion.current;setHistoryError('');if(day.dayStart<forecastStartMs||day.dayStart>forecastEndMs)setHistoryRequest({event:historyEvent,date:day.key,version});else seek((day.dayStart-runMs)/60000-chart.manifest.forecastHours[0]*60,false);if(day.event)notifyMap(day.event.detail);}}}>{days.map(day=><option key={day.key} value={day.key}>{day.weekday}{day.event?` · ${day.event.title}`:''}</option>)}</select> : decluttered && !compactForecastOpen ? null : <DayTiles
-                    days={days}
-                    todayKey={todayKey}
-                    selectedKey={selectedKey}
-                    nowTemp={nowReading?.tempC ?? null}
-                    onDay={(day) => {
-                      if (teachingRef.current) return;
-                      const at = historical ? day.dayStart : localNoon(day.key, zone);
-                      if(day.event)notifyMap(day.event.detail);
-                      seek((at - runMs) / 60000 - chart.manifest.forecastHours[0] * 60, false);
-                    }}
-                  />}
-                  <div className="time-block flex min-w-0 items-center gap-2 pt-1">
-                    <div className="transport-inline shrink-0 md:hidden">{transportNode(false)}</div>
-                    <div className="min-w-0 flex-1">{timelineNode(false)}</div>
-                    <ChromeToggle collapsed={decluttered ? !compactForecastOpen : false} onToggle={() => decluttered ? setCompactForecastOpen(value => !value) : collapseToRef.current(true)} />
-                  </div>
-                </div>
-              ) : null}
-            </>
-          )}
-        </div>
-      </div>
+      {chart ? <div className="map-bottom-bar">
+        {transportNode()}
+        {historical ? <select className="history-day rounded-md bg-[var(--md-surface-container-high)] px-2" aria-label="Historical day" value={selectedKey ?? days[0]?.key} onChange={event=>{const day=days.find(d=>d.key===event.target.value);if(day&&!teachingRef.current){const version=++historySelectionVersion.current;setHistoryError('');if(day.dayStart<forecastStartMs||day.dayStart>forecastEndMs)setHistoryRequest({event:historyEvent,date:day.key,version});else seek((day.dayStart-runMs)/60000-chart.manifest.forecastHours[0]*60,false);if(day.event)notifyMap(day.event.detail);}}}>{days.map(day=><option key={day.key} value={day.key}>{day.weekday}{day.event?` · ${day.event.title}`:''}</option>)}</select> : null}
+        {timelineNode()}
+        <ChatButton open={chatOpen} onClick={toggleChat} />
+      </div> : null}
 
       {chart === undefined ? (
         <p className="px-4 py-6 text-sm text-[var(--md-on-surface-variant)]">Loading chart</p>
@@ -3240,8 +3088,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
           <div
             ref={panelRef}
             data-map-panel
-            className="relative mx-3 mt-2 flex min-h-[160px] flex-1 justify-center overflow-hidden md:mx-4"
-            style={!phone && aspects && panel.width > 0 ? { maxHeight: Math.floor(panel.width / aspects.min) } : undefined}
+            className="absolute inset-0 flex min-h-0 justify-center overflow-hidden"
           >
             <div
               ref={stageRef}
@@ -3463,7 +3310,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
               })() : null}
               {ghost ? <span className="map-chip-float" style={{ left: `${ghost.left}%`, top: `${ghost.top}%` }} role="status">{ghost.note}</span> : null}
               {!teaching ? <div ref={mapToolsRef} className="map-tools" data-map-tools data-tools-open={mapToolsOpen ? 'true' : 'false'} aria-label="Map camera">
-                {decluttered ? <button ref={mapToolsToggleRef} type="button" className="map-tools-toggle" aria-label="Map tools" aria-expanded={mapToolsOpen} onClick={() => { setMapToolsOpen(value => !value); setShowSources(false); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg><span>Tools</span></button> : null}
+                {decluttered ? <button ref={mapToolsToggleRef} type="button" className="map-tools-toggle" aria-label="Map tools" aria-expanded={mapToolsOpen} onClick={() => { setMapToolsOpen(value => !value); setShowMapDetails(false); }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg><span>Tools</span></button> : null}
                 <div className="map-tool-buttons">
                 <div className="map-zoom" data-secondary-control="zoom">
                   <button type="button" aria-label="Zoom in" onClick={() => zoomCamera(1 / 1.25)}><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" d="M12 7v10M7 12h10" /></svg></button>
@@ -3477,11 +3324,18 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                 {threeD ? <div className="map-slice-control" data-secondary-control="slice" data-active={sliced ? 'true' : 'false'}><button type="button" className="map-slice" aria-label="Terrain and atmosphere slice" disabled={!sliced&&(cameraRef.current?.halfHeight??10)>1} aria-pressed={sliced} aria-busy={sliced&&!sliceReady} title={!sliced&&(cameraRef.current?.halfHeight??10)>1?"Zoom in for a terrain and atmosphere slice":sliced&&!sliceReady?"Preparing terrain slice · click to cancel":"Narrow terrain and atmosphere slice"} onClick={toggleSlice}>Slice</button>{sliced ? <input className="map-slice-position" type="range" min={-100} max={100} step={1} value={sliceOffset} aria-label="Slice position" aria-valuetext={`${Math.round(sliceOffset/100*(sliceOriginRef.current?.halfWidthM??0)*.6)} metres from centre`} title="Move the slice back and forth" onChange={event=>moveSlice(Number(event.target.value))} /> : null}</div> : null}
                 <span className="relative grid" data-secondary-control="recenter"><button type="button" aria-label="Recenter map" title={place?.name ? `Return to ${place.name}` : 'Recenter map'} className="map-return" data-at-home={!cameraRef.current || !homeRef.current?.home || (Math.abs(cameraRef.current.centerX - homeRef.current.home.centerX) < homeRef.current.home.halfWidth * 0.02 && Math.abs(cameraRef.current.centerY - homeRef.current.home.centerY) < homeRef.current.home.halfHeight * 0.02 && Math.abs(Math.log(cameraRef.current.halfHeight / homeRef.current.home.halfHeight)) < 0.03 && Math.abs(cameraRef.current.bearingRadians ?? 0) < 0.02 && tilt < 0.02) ? 'true' : 'false'} onClick={recenterMap}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.7" /><path fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" d="M12 3v3M12 18v3M3 12h3M18 12h3" /></svg><span>{place?.name ?? 'Home'}</span></button><PressNote text={recenterNote.note} /></span>
                 {/* One control per viewport: phones carry the lens-scoped overlay toggles here; wider surfaces keep them in the lens row. */}
-                {phone && (!historical || !!marineForEvent(historyEvent)?.satellites.length) && ['pressure', 'rain', 'temp'].includes(lens) ? <span className="relative grid" data-secondary-control="satellite"><button type="button" aria-label="Satellite" aria-pressed={satellite} onClick={() => { satelliteNote.show(satellite ? 'Satellite off' : 'Satellite on'); toggleSatellite(!satellite); }}><SatelliteIcon /></button><PressNote text={satelliteNote.note} /></span> : null}
                 {phone && lens === 'fly' ? <span className="relative grid" data-secondary-control="traffic"><button type="button" aria-label="Traffic" aria-pressed={trafficOn} onClick={() => { trafficNote.show(trafficOn ? 'Traffic off' : 'Traffic on'); toggleTraffic(!trafficOn); }}><TrafficIcon /></button><PressNote text={trafficNote.note} /></span> : null}
-                <button type="button" data-secondary-control="sources" aria-label="Data sources" title="Data sources" aria-expanded={showSources} onClick={() => setShowSources((v) => !v)}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.7" /><path fill="currentColor" d="M11.2 10.2h1.6V16h-1.6zM11.2 7.4h1.6V9h-1.6z" /></svg></button>
+                <button type="button" data-secondary-control="details" aria-label="Map details" title="Map details" aria-expanded={showMapDetails} onClick={() => setShowMapDetails((v) => !v)}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.7" /><path fill="currentColor" d="M11.2 10.2h1.6V16h-1.6zM11.2 7.4h1.6V9h-1.6z" /></svg></button>
                 </div>
-                {showSources ? <div className="map-sources" style={{maxWidth:'calc(100vw - 7rem)',maxHeight:Math.max(80,(stageRef.current?.clientHeight??panel.height)-24),overflowY:'auto'}}><label className="flex items-center gap-2 px-2 py-1"><input type="checkbox" checked={photoTerrain} onChange={togglePhotoTerrain} />Photo terrain</label>{photoTerrain?<p>Everest · {EVEREST_IMAGERY.acquisition_datetime.slice(0,10)} · {EVEREST_IMAGERY.attribution} Modern surface imagery; historical weather retains its selected date.{photoStatus==='unavailable'?' Imagery unavailable; switch off and on to retry.':''}</p>:null}{historyEvent==='everest-1953'?<p>{EVEREST_DETAILS} <a href={EVEREST_SOURCE} target="_blank" rel="noreferrer">Expedition observations</a> · <a href="https://teara.govt.nz/en/interactive/28428/final-ascent-of-everest" target="_blank" rel="noreferrer">Ascent route</a></p>:null}{marineForEvent(historyEvent)?<details className="px-2 py-1"><summary>Sea &amp; satellite sources</summary><p>Wave height is significant wave height at the buoy, with dominant period and observation time. Surge marks are event maxima above normal astronomical tide, at approximate named locations.</p>{marineForEvent(historyEvent)!.stations.map(station=><p key={station.id}><a href={station.source_url} target="_blank" rel="noreferrer">NDBC {station.id}</a></p>)}{marineForEvent(historyEvent)!.satellites.map(picture=><p key={picture.date}><a href={picture.source_url} target="_blank" rel="noreferrer">NASA MODIS · {picture.date}</a> · daily composite</p>)}{marineForEvent(historyEvent)!.surge.map(mark=><p key={mark.id}><a href={mark.source_url} target="_blank" rel="noreferrer">{mark.name}</a> · {mark.value_m.toFixed(1)} m · {mark.datum}</p>)}</details>:null}{chart.cyclone?<p>Best-track cyclone reconstruction over ERA5. The {chart.cyclone.rmwKm} km maximum-wind radius, radial profile and 15° inflow are synthetic; track and intensity follow the linked best-track records. <a href={chart.cyclone.source} target="_blank" rel="noreferrer">Best track</a></p>:null}{historicalScene(historyEvent)?<HistoricalSceneControls scene={historicalScene(historyEvent)!} layers={historyLayers} onToggle={layer=>setHistoryLayers(v=>({...v,[layer]:!v[layer]}))}/>:null}<div ref={setExplainHost} /><p role="note">{flowWindLegend(flowSource)}. {threeD ? 'Atmospheric layers use synthetic data with scale-adapted height and emphasised vertical motion. ' : ''}{historical?chart.manifest.attribution.map(a=>`${a.source} · ${a.licence}`).join('; '):ATTRIBUTION}</p></div> : null}
+                {showMapDetails ? <div className="map-details" style={{maxWidth:'calc(100vw - 7rem)',maxHeight:Math.max(80,(stageRef.current?.clientHeight??panel.height)-24),overflowY:'auto'}}>
+                  <label className="flex items-center gap-2 px-2 py-1"><input type="checkbox" checked={photoTerrain} onChange={togglePhotoTerrain} />Photo terrain</label>
+                  {photoTerrain ? <p>Everest · {EVEREST_IMAGERY.acquisition_datetime.slice(0,10)} · Modern surface imagery; historical weather retains its selected date.{photoStatus==='unavailable'?' Imagery unavailable; switch off and on to retry.':''}</p> : null}
+                  {historyEvent==='everest-1953' ? <p>{EVEREST_DETAILS}</p> : null}
+                  {chart.cyclone ? <p>Best-track cyclone reconstruction over ERA5. The {chart.cyclone.rmwKm} km maximum-wind radius, radial profile and 15° inflow are synthetic.</p> : null}
+                  {historicalScene(historyEvent) ? <HistoricalSceneControls scene={historicalScene(historyEvent)!} layers={historyLayers} onToggle={layer=>setHistoryLayers(v=>({...v,[layer]:!v[layer]}))}/> : null}
+                  <div ref={setExplainHost} />
+                  <p role="note">{flowWindLegend(flowSource)}. {threeD ? 'Atmospheric layers use synthetic data with scale-adapted height and emphasised vertical motion.' : ''}</p>
+                </div> : null}
               </div> : null}
               {teachHere || teaching ? <MapTeaching geo={GEO} chart={chart} complete={complete} minute={minute} camera={cameraRef.current} width={stageSize.width} height={stageSize.height}
                 onActive={(active, at) => {
@@ -3494,8 +3348,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                   if (active) { toggleTraffic(false); for (const item of [...optionalRef.current]) disableOptional(item); }
                   if (active) closeChat(false);
                 }}
-                onFocus={focusFeature} onField={(f) => remember({ field: f })} explainHost={explainHost} autoTour={autoTour} onStarted={() => setShowSources(false)} /> : null}
-              {phone && !decluttered && !teaching ? <div className="map-chat-float"><ChatButton open={chatOpen} onClick={toggleChat} /></div> : null}
+                onFocus={focusFeature} onField={(f) => remember({ field: f })} explainHost={explainHost} autoTour={autoTour} onStarted={() => setShowMapDetails(false)} /> : null}
               <PhoneHoldNames active={phone} />
               {windBarbs ? <span className="map-barb-note pointer-events-none absolute bottom-16 right-2 rounded border border-[var(--md-outline-soft)] bg-[var(--md-surface)]/95 px-2 py-1 text-[10px] sm:bottom-6">10 m wind · barb = 10 kt · half = 5</span> : null}
               <div className="map-legend pointer-events-none absolute bottom-2 left-2 flex items-center gap-2 px-2 py-0.5 text-[11px] tabular-nums" data-pressure-legend={units.pressure} data-pressure-state={pressureLegend} aria-busy={!!pendingField}>
@@ -3513,7 +3366,7 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
                 {legend === 'error' || pressureLegend === 'error' ? <button type="button" className="pointer-events-auto underline" onClick={() => chart.retry?.(clockRef.current.minute, [field === 'none' ? 'mslp' : FIELD_VARIABLE[field], 'u10', 'v10', ...(satellite ? ['tcc'] : [])])} aria-label="Retry weather for selected time">Retry ↻</button> : null}
                 {cloudLegend ? <span title={cloudLegend} style={{minWidth:0,overflow:'hidden',textOverflow:'ellipsis'}} data-cloud-legend={cloudLegend === 'model' ? 'model' : 'satellite'}>{phone&&cloudLegend.startsWith('MODIS')?'MODIS · daily':cloudLegend}</span> : null}
               </div>
-              {/* Sources are credited in the page footer; only a synthetic test chart is marked on the map. */}
+              {/* Credits live on About; only a synthetic test chart is marked on the map. */}
               {chart.manifest.attribution.some((a) => a.source.startsWith('Synthetic')) ? <span className="chart-fixture-note pointer-events-none text-[10px] font-medium text-[var(--md-on-surface-variant)]">Synthetic chart · test data</span> : null}
             </div>
             {!menuOpen && fly && flyDetail && !chatOpen && airport ? <FlyPanel airport={airport} place={place ?? null} zone={displayZone} validMs={validMs} nowMs={nowMs} onSeek={(ms) => { if (!teachingRef.current) seek(Math.max(0, Math.min(span, (ms - runMs) / 60_000 - chart.manifest.forecastHours[0] * 60)), false); }} onClose={() => toggleSection(false)} anchorRef={panelRef} /> : null}
@@ -3568,8 +3421,8 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
             />
           </div>
 
-          <div className="mx-3 flex justify-center md:mx-4">
-          <div className="map-lens-wrap flex min-w-0 flex-1 items-center gap-1" style={groupWidth > 0 ? { maxWidth: groupWidth } : undefined}>
+          <div className="map-lens-position">
+          <div className="map-lens-wrap">
           <LensBar
             lens={lens}
             availableLenses={historical ? ['pressure', 'wind', ...(chart.manifest.variables.rain24 ? ['rain' as const] : []), ...(chart.manifest.variables.t2m ? ['temp' as const] : [])] : undefined}
@@ -3589,7 +3442,6 @@ export function MapExperience({ initialGeo = null, historical=false }: { initial
             onTraffic={toggleTraffic}
           />
           {marineForEvent(historyEvent)?<select aria-label="Sea layer" title="Historical sea observations" className="h-9 max-w-[8rem] rounded-md bg-[var(--md-surface-container)] px-2 text-sm" value={marineMode} onChange={e=>{const mode=e.target.value as MarineMode;setMarineMode(mode);marineModeRef.current=mode;redrawCamera();}}><option value="off">Sea</option><option value="waves">Wave height</option>{marineForEvent(historyEvent)!.surge.length?<option value="surge">Surge · peak</option>:null}</select>:null}
-          {!phone || decluttered ? <ChatButton open={chatOpen} onClick={toggleChat} /> : null}
           </div>
           </div>
         </>

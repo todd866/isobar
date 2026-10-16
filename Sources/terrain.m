@@ -59,14 +59,6 @@ int TerrainElevationsFromWebP(NSData *webp, uint16_t *out, int capacity, int *wi
     if (height) *height = 512;
     return 512*512;
 }
-NSString *IsobarTerrainAttribution(void) {
-    return @"ECMWF Open Data (CC BY 4.0). Terrain: Mapterhorn (https://mapterhorn.com/attribution/), "
-        "Copernicus GLO-30 (© DLR e.V. 2010–2014 and © Airbus Defence and Space GmbH 2014–2018; "
-        "provided under COPERNICUS by the European Union and ESA), and national elevation models "
-        "including Geoscience Australia (CC BY 4.0). Source-specific licences: https://download.mapterhorn.com/attribution.json.";
-}
-NSString *IsobarTerrainCredit(void) { return @"Mapterhorn"; }
-
 @implementation TerrainTileSnapshot
 - (instancetype)initWithZoom:(int)z x:(int)x y:(int)y samples:(NSData *)samples {
     if (!(self = [super init]) || z<0 || z>kTerrainMaxZoom || y<0 || y>=(int)Pow2(z) || samples.length!=kTileBytes) return nil;

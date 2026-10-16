@@ -7,11 +7,10 @@ test('Katrina uses the shared map and both prepared days offline',async({page,co
  await page.getByRole('button',{name:'Pause',exact:true}).click();
  await expect(page.getByLabel('Historical day',{exact:true})).toHaveValue('2005-08-29');
  const camera=await stage.evaluate((e:any)=>e.chartApi.camera());expect(camera.halfHeight).toBeCloseTo(3.2);
- await page.getByRole('button',{name:'Data sources',exact:true}).click();
- await expect(page.getByRole('link',{name:'Best track',exact:true})).toHaveAttribute('href','https://www.nhc.noaa.gov/data/tcr/AL122005_Katrina.pdf');
- await expect(page.locator('.map-sources')).toContainText('55 km');
+ await page.getByRole('button',{name:'Map details',exact:true}).click();
+ await expect(page.locator('.map-details')).toContainText('55 km');
  await page.getByLabel('Routes',{exact:true}).uncheck();await page.getByLabel('Routes',{exact:true}).check();
- await page.getByRole('button',{name:'Data sources',exact:true}).click();
+ await page.getByRole('button',{name:'Map details',exact:true}).click();
  await context.setOffline(true);
  for(const date of ['2005-08-28','2005-08-29']){
   await page.getByLabel('Historical day',{exact:true}).selectOption(date);

@@ -45,7 +45,6 @@ export function CoastalPanel({ lens, point, name, detail, isPlace, onMakePlace, 
   const currentTime = useRef(nowMs); currentTime.current = nowMs;
   const [result, setResult] = useState<{ key: string; wind: CoastalForecast | null; marine: CoastalForecast | null; windDone: boolean; marineDone: boolean }>({ key: '', wind: null, marine: null, windDone: false, marineDone: false });
   const [retry, setRetry] = useState(0);
-  const [sources, setSources] = useState(false);
   const [draft, setDraft] = useState({ min: String(band.min), max: String(band.max) });
   const closeRef = useRef<HTMLButtonElement>(null);
   const closeAction = useRef(onClose); closeAction.current = onClose;
@@ -134,7 +133,7 @@ export function CoastalPanel({ lens, point, name, detail, isPlace, onMakePlace, 
       if (node) observer.observe(node);
     }
     return () => observer.disconnect();
-  }, [desktop, panelRef, shown.length, lens, sources, failed]);
+  }, [desktop, panelRef, shown.length, lens, failed]);
   const commit = () => {
     const next = { min: draft.min.trim() ? Number(draft.min) : NaN, max: draft.max.trim() ? Number(draft.max) : NaN };
     if (validKiteBand(next)) onBand(next);
@@ -176,12 +175,9 @@ export function CoastalPanel({ lens, point, name, detail, isPlace, onMakePlace, 
         </button>
         <PressNote text={placeNote.note} />
       </span>
-      <button type="button" className={styles.info} aria-label="Coastal data sources" aria-expanded={sources} onClick={() => setSources((v) => !v)}>ⓘ</button>
       <button ref={closeRef} type="button" aria-label={`Close ${lens}`} title={`Close ${lens}`} onClick={onClose}>×</button>
     </div>
-    {sources ? <div className={styles.sources} role="note" onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setSources(false); } }}>
-      <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> · <a href="https://open-meteo.com/en/docs/marine-weather-api" target="_blank" rel="noreferrer">Marine</a> (CC BY 4.0). Natural Earth coastline and lake shores (public domain). Latest point forecast; independent of the chart run. Shore directions use the generalized coastline and lake shores.
-    </div> : null}
+
     {!spot ? <p className={styles.status} data-coastal-status>no coast within 50 km</p> : <>
       <div className={styles.best} data-coastal-best-row title={lens === 'kite' ? 'Longest daylight window: wind in band, gusts no higher than the upper limit, no offshore component' : 'Longest daylight window: swell ≥10 s, wind offshore or ≤8 kt'}>
         <span data-coastal-best className={best && onSeek ? styles.bestInteractive : undefined} onClick={best && onSeek ? () => { initialValidRef.current = undefined; onSeek(best.start); } : undefined}>{bestLabel(best, zone, lens, band)}</span>

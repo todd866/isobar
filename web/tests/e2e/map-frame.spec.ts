@@ -142,16 +142,16 @@ for (const [label, width, height] of [['desktop', 1440, 900], ['tablet', 1024, 7
   });
 }
 
-test('day tiles fit a 393 pt phone without overlap', async ({ page }) => {
+test('day segments fit the map-first timeline without overlap', async ({ page }) => {
   await open(page, 393, 659);
   const problems = await page.evaluate(() => {
     const out: string[] = [];
-    const tiles = [...document.querySelectorAll('[aria-label="Forecast days"] > button')].map((tile) => tile.getBoundingClientRect());
+    const tiles = [...document.querySelectorAll('.timeline .forecast-day')].map((tile) => tile.getBoundingClientRect());
     tiles.forEach((tile, index) => {
       const next = tiles[index + 1];
       if (next && tile.right > next.left + 0.5) out.push(`tile ${index} overlaps ${index + 1}`);
     });
-    for (const tile of document.querySelectorAll('[aria-label="Forecast days"] > button')) {
+    for (const tile of document.querySelectorAll('.timeline .forecast-day')) {
       const t = tile.getBoundingClientRect();
       for (const el of tile.querySelectorAll('span')) {
         if (!el.textContent?.trim() || getComputedStyle(el).visibility === 'hidden') continue;
@@ -171,7 +171,9 @@ test('lens row: one lens at a time, never truncated', async ({ page }) => {
     const lens = page.getByRole('radiogroup', { name: 'Lens' });
     await expect(lens.getByRole('radio')).toHaveCount(7);
     for (const label of ['Pressure', 'Rain', 'Wind', 'Temp', 'Kite', 'Surf', 'Fly']) {
-      await expect(lens.getByRole('radio', { name: label, exact: true }).getByText(label, { exact: true })).toBeVisible();
+      const control = lens.getByRole('radio', { name: label, exact: true });
+      await expect(control).toBeAttached();
+      if (width > 600) await expect(control.getByText(label, { exact: true })).toBeVisible();
     }
     await expect(lens.getByRole('radio', { name: 'Pressure' })).toHaveAttribute('aria-checked', 'true');
     await lens.getByRole('radio', { name: 'Rain' }).click();
@@ -198,7 +200,7 @@ test('zero page errors, including when opened hours after the build', async ({ p
   await page.clock.runFor(3000);
   await page.waitForSelector('[data-isobars="true"]', { timeout: 60_000 });
   expect(errors).toEqual([]);
-  // No credit text on the map until its ⓘ is opened, and no teaching buttons on the map surface.
+  // No credit text or Sources control on the map, and no teaching buttons on the map surface.
   await expect(page.locator('[data-map-ready]').getByText('CC BY 4.0')).toHaveCount(0);
   await expect(page.locator('[data-map-ready]').getByRole('button', { name: /Explain|tour/ })).toHaveCount(0);
 });

@@ -31,7 +31,7 @@ async function open(page: Page, components = true) {
 for (const components of [true, false]) test(`wind source legend: ${components ? 'model' : 'estimate'}`, async ({ page }) => {
   test.skip(real, 'Source-switch regression uses the synthetic fixture.');
   await open(page, components);
-  await page.getByRole('button', { name: 'Data sources' }).click();
+  await page.getByRole('button', { name: 'Map details' }).click();
   await expect(page.getByRole('note')).toContainText(components ? 'Wind streaks: model 10 m wind' : 'Wind streaks: estimated from isobars');
   await expect(page.locator('canvas[data-flow-layer]')).toHaveAttribute('data-wind-source', components ? 'model' : 'estimate');
 });
@@ -49,7 +49,7 @@ test('pending model frames keep estimated streaks visible, then crossfade with a
     const canvas = page.locator('canvas[data-flow-layer]');
     await expect(canvas).toHaveAttribute('data-wind-source', 'estimate');
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
-    await page.getByRole('button', { name: 'Data sources' }).click();
+    await page.getByRole('button', { name: 'Map details' }).click();
     await expect(page.getByRole('note')).toContainText('Wind streaks: estimated from isobars');
     const visibleInk = () => canvas.evaluate((node) => {
       const c = node as HTMLCanvasElement;
@@ -92,7 +92,7 @@ for (const [width, height] of [[390, 844], [1440, 900]]) {
           const { auditViewport } = await import(pathToFileURL(process.env.ISOBAR_VIEWPORT_HELPER).href);
           const report = await auditViewport(page, {
             primary: [{ selector: '[data-map-ready]', minWidth: 280, minHeight: 160 }],
-            controls: [{ selector: '[aria-label="Data sources"]', minWidth: 24, minHeight: 24 },
+            controls: [{ selector: '[aria-label="Map details"]', minWidth: 24, minHeight: 24 },
               { selector: '[aria-label="Forecast time"]', minWidth: 160 }],
           });
           fs.writeFileSync(path.join(dir, 'viewport.json'), JSON.stringify(report, null, 2));

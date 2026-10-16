@@ -39,7 +39,7 @@ for (const action of ['chat time', 'teaching']) test(`${action} cancels a paused
     await page.getByRole('button', {name:'Send', exact:true}).click();
     await page.locator('[data-chat-time]').click();
   } else {
-    await page.getByRole('button', {name:'Data sources', exact:true}).click();
+    await page.getByRole('button', {name:'Map details', exact:true}).click();
     await page.getByRole('button', {name:'Explain this chart', exact:true}).click();
   }
   const stage = page.locator('[data-api="1"]');

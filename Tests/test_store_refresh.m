@@ -55,17 +55,11 @@ static NSView *FindView(NSView *view, NSString *identifier) {
     return nil;
 }
 
-static NSSegmentedControl *LensControl(Controller *c) {
-    return (NSSegmentedControl *)FindView(c.popover.contentViewController.view, @"popover.lens");
-}
-
 static void ClickLens(Controller *c, NSInteger tag) {
-    NSSegmentedControl *row = LensControl(c);
-    for (NSInteger i = 0; i < row.segmentCount; i++) {
-        if ([row tagForSegment:i] != tag) continue;
-        row.selectedSegment = i;
-        [NSApp sendAction:row.action to:row.target from:row];
-        return;
+    NSView *row = FindView(c.popover.contentViewController.view, @"popover.lensRow");
+    for (NSInteger i = 0; i < 8; i++) {
+        NSButton *button = (NSButton *)FindView(row, [NSString stringWithFormat:@"popover.lens.%ld", (long)i]);
+        if ([button isKindOfClass:NSButton.class] && button.tag == tag) { [button performClick:nil]; return; }
     }
 }
 
@@ -78,25 +72,18 @@ static void SeedForecastMode(Controller *c, NSInteger mode) {
 
 static BOOL MapsLeadDetails(NSView *view) {
     NSView *map = FindView(view, @"popover.chart");
-    NSView *right = FindView(view, @"popover.chart.right");
     NSView *layers = FindView(view, @"popover.lensRow");
-    NSView *legend = FindView(view, @"chart.legend");
-    NSView *timeline = FindView(view, @"popover.timeline");
-    // Header, day tiles, one slider row, map, then the lens bar.
     NSView *days = FindView(view, @"hub.days");
-    if (!map || map.hidden || !days || !layers || !timeline || timeline.hidden || FindView(view, @"forecast.back")) return NO;
-    CGFloat mapBottom = right ? MAX(NSMaxY(map.frame), NSMaxY(right.frame)) : NSMaxY(map.frame);
-    if (legend) {
-        if (NSIntersectsRect(legend.frame, layers.frame)) return NO;
-        for (NSView *label in legend.subviews)
-            if (!NSContainsRect(legend.bounds, label.frame)) return NO;
+    if (!map || map.hidden || !days || !layers || FindView(view, @"forecast.back")) return NO;
+    NSRect content = view.bounds;
+    NSRect mapRect = [map convertRect:map.bounds toView:view];
+    NSRect hit = NSIntersectionRect(content, mapRect);
+    CGFloat fill = NSWidth(hit) * NSHeight(hit) / MAX(1, NSWidth(content) * NSHeight(content));
+    for (NSUInteger i = 0; i < 7; i++) {
+        NSView *day = FindView(days, [NSString stringWithFormat:@"hub.day.%lu", (unsigned long)i]);
+        if (!day || day.hiddenOrHasHiddenAncestor || NSWidth(day.bounds) < 1) return NO;
     }
-    BOOL fits = NSMaxY(days.frame) <= NSMinY(timeline.frame) + 1 &&
-        NSMaxY(timeline.frame) <= NSMinY(map.frame) + 1 &&
-        mapBottom <= NSMinY(layers.frame) + 1;
-    if (!fits) fprintf(stderr, "layout map %.1f timeline %.1f lens %.1f\\n",
-        mapBottom, NSMinY(timeline.frame), NSMinY(layers.frame));
-    return fits;
+    return fill >= .99 && !FindView(view, @"hub.playheadDot") && !FindView(view, @"hub.hourly");
 }
 
 static BOOL DetailFollowsMaps(NSView *view, NSString *identifier) {
@@ -104,20 +91,13 @@ static BOOL DetailFollowsMaps(NSView *view, NSString *identifier) {
     NSView *detail = FindView(view, identifier);
     NSView *inspector = FindView(view, @"forecast.inspector");
     NSView *lens = FindView(view, @"popover.lensRow");
-    NSView *timeline = FindView(view, @"popover.timeline");
-    if (!detail || !map || map.hidden || !inspector || !lens || !timeline || timeline.hidden || FindView(view, @"forecast.back")) return NO;
-    NSRect mapRect = [map convertRect:map.bounds toView:view];
+    if (!detail || !map || map.hidden || !inspector || !lens || FindView(view, @"forecast.back")) return NO;
     NSRect inspectorRect = [inspector convertRect:inspector.bounds toView:view];
     NSRect detailRect = [detail convertRect:detail.bounds toView:view];
-    NSRect timelineRect = [timeline convertRect:timeline.bounds toView:view];
     NSRect lensRect = [lens convertRect:lens.bounds toView:view];
     if (!NSContainsRect(NSInsetRect(view.bounds, -1, -1), inspectorRect) ||
         !NSContainsRect(NSInsetRect(inspectorRect, -1, -1), detailRect)) return NO;
-    if (NSMaxY(timelineRect) > NSMinY(mapRect) + 1 || NSMaxY(lensRect) + 20 < NSHeight(view.bounds)) return NO;
-    BOOL beside = NSMinX(inspectorRect) + 1 >= NSMaxX(mapRect) && !NSIntersectsRect(inspectorRect, mapRect);
-    if (beside) return NSMinX(inspectorRect) >= NSMaxX(mapRect) + 9;
-    NSRect overlap = NSIntersectionRect(inspectorRect, mapRect);
-    return !NSIsEmptyRect(overlap) && NSHeight(overlap) <= NSHeight(mapRect) * 0.55 + 1;
+    return NSContainsRect(NSInsetRect(view.bounds, -1, -1), lensRect);
 }
 
 // Observe the close request without showing a real popover during tests.
@@ -175,10 +155,12 @@ static void Capture(NSView *root, NSString *name) {
 }
 
 static NSUInteger BlueInk(NSView *view) {
-    [view display];
-    NSBitmapImageRep *rep = [view bitmapImageRepForCachingDisplayInRect:view.bounds];
+    NSRect rect=view.bounds;
+    if ([view.accessibilityIdentifier hasPrefix:@"hub.day."]) { rect=view.frame; view=view.superview; }
+    [view layoutSubtreeIfNeeded];
+    NSBitmapImageRep *rep = [view bitmapImageRepForCachingDisplayInRect:rect];
     if (!rep) return 0;
-    [view cacheDisplayInRect:view.bounds toBitmapImageRep:rep];
+    [view cacheDisplayInRect:rect toBitmapImageRep:rep];
     NSUInteger count = 0;
     for (NSInteger y = 0; y < (NSInteger)rep.pixelsHigh; y++) {
         for (NSInteger x = 0; x < (NSInteger)rep.pixelsWide; x++) {
@@ -1720,7 +1702,7 @@ static void CheckTimeLens(NSString *root) {
         Check(NSEqualPoints(header.frame.origin, headerFrame.origin) && NSEqualRects(mark.frame, markFrame) &&
             header.attributedTitle.size.width <= NSWidth(header.frame),
             @"the reading keeps its origin and fits as the playhead moves");
-        TimelineStrip *timeline = (TimelineStrip *)FindView(rootView, @"popover.timeline");
+        TimelineStrip *timeline = (TimelineStrip *)[controller valueForKey:@"popoverTimeline"];
         NSArray *bands = [timeline dayBandLabels];
         BOOL aligned = bands.count >= 4;
         for (NSUInteger i = 0; i < bands.count && i < strip.days.count; i++)
@@ -1752,7 +1734,7 @@ static void CheckTimeLens(NSString *root) {
         readingIndex = ReadingAttributeIndex(narrow.attributedTitle);
         NSFont *nowFont = readingIndex != NSNotFound ?
             [narrow.attributedTitle attribute:NSFontAttributeName atIndex:readingIndex effectiveRange:NULL] : nil;
-        Check(NSHeight(kept) <= 36 && fits && aheadFont.pointSize >= 11 && aheadFont.pointSize <= 13 && nowFont.pointSize <= 13,
+        Check(NSHeight(kept) <= 40 && fits && aheadFont.pointSize >= 11 && aheadFont.pointSize <= 24 && nowFont.pointSize <= 24,
             [NSString stringWithFormat:@"the popover header is one row and the reading fits (%.0f pt, now %.0f pt)",
                 aheadFont.pointSize, nowFont.pointSize]);
         narrow.accessibilityIdentifier = @"fullscreen.temperature";
@@ -2201,7 +2183,9 @@ static void CheckColdStartFailsClosed(NSString *fixtures, NSString *base, NSDate
         @"a manifest without readable chart data cannot advertise a fresh forecast");
     [cold setValue:@NO forKey:@"sourceECMWF"];
     [cold rebuildContent];
-    Check([cold chartsReady] && HasText(PopoverRoot(cold), @"Bureau") &&
+    Check([cold chartsReady] && [cold valueForKey:@"chartPDF"] &&
+          FindView(PopoverRoot(cold), @"popover.chart") &&
+          [FindView(PopoverRoot(cold), @"mapfirst.place").toolTip containsString:@"Bureau issue time is unavailable"] &&
           !HasText(PopoverRoot(cold), @"Chart unavailable") && !HasText(PopoverRoot(cold), @"18Z"),
         @"the Bureau alternate remains available without borrowing an ECMWF timestamp");
 
@@ -2292,9 +2276,11 @@ static void CheckLegacyFailedReloadKeepsLastGood(NSString *fixtures, NSString *b
     NSView *view = PopoverRoot(c);
     NSView *issuedCue = FindView(view, @"popover.issued");
     NSTextField *runCue = (NSTextField *)FindView(issuedCue, @"popover.issued.run");
-    NSView *warnCue = FindView(issuedCue, @"popover.issued.warn");
+    NSTextField *ageCue = (NSTextField *)FindView(issuedCue, @"popover.issued.age");
     Check([c chartsReady] && [c valueForKey:@"ownRun"] == run && SameDate([c valueForKey:@"runDate"], runDate) &&
-          [runCue.stringValue isEqual:@"18Z"] && warnCue && !warnCue.hidden &&
+          runCue.hidden && !ageCue.hidden && [ageCue.stringValue isEqual:[c chartFreshnessAt:[c valueForKey:@"chartNow"]]] &&
+          [ageCue.textColor isEqual:NSColor.systemOrangeColor] &&
+          [issuedCue.toolTip containsString:[c valueForKey:@"storeError"]] &&
           [issuedCue.toolTip containsString:@"stale"] && !HasText(view, @"stale") && !HasText(view, @"Chart unavailable"),
         @"a truncated legacy field keeps the last good chart, with the age and a warning");
     BOOL dropped = YES;
@@ -2319,8 +2305,8 @@ static void CheckSurfaceTeardownAndExpandedUnavailable(NSString *fixtures, NSStr
     [c rebuildContent];
     [c presentChartWindowInFrame:NSMakeRect(0, 0, 1280, 720)];
     NSView *expanded = c.chartWindow.contentView;
-    Check(FindView(expanded, @"window.chart") != nil && FindView(expanded, @"fullscreen.timeline") != nil,
-        @"expanded map starts with its map and transport attached");
+    Check(FindView(expanded, @"window.chart") != nil && FindView(expanded, @"fullscreen.days") != nil,
+        @"expanded map starts with its map and day scrubber attached");
     PDFCropView *expandedChart = (PDFCropView *)FindView(expanded, @"window.chart");
     Check(expandedChart && !expandedChart.handlesGestures && expandedChart.enclosingScrollView == [c valueForKey:@"singleScroll"],
         @"expanded fallback keeps its scroll-view gesture path");
@@ -2330,7 +2316,7 @@ static void CheckSurfaceTeardownAndExpandedUnavailable(NSString *fixtures, NSStr
     [c reloadStoreAtPath:broken];
     Check(FindView(expanded, @"fullscreen.chartUnavailable") != nil &&
           FindView(expanded, @"window.chart") == nil &&
-          FindView(expanded, @"fullscreen.timeline") == nil,
+          FindView(expanded, @"fullscreen.days") == nil,
         @"a failed expanded reload replaces stale map controls with one unavailable cue");
     NSScrollView *scroll = [c valueForKey:@"singleScroll"];
     Check(scroll.hidden, @"an unavailable expanded map hides its old scroll surface");
@@ -2340,10 +2326,10 @@ static void CheckSurfaceTeardownAndExpandedUnavailable(NSString *fixtures, NSStr
         @"a valid root restores the run and frame ladder after failure");
     Check(!scroll.hidden, @"a valid root unhides the old scroll surface");
     Check(FindView(expanded, @"window.chart") != nil, @"a valid root restores the expanded map view");
-    Check(FindView(expanded, @"fullscreen.timeline") != nil, @"a valid root restores the expanded timeline");
+    Check(FindView(expanded, @"fullscreen.days") != nil, @"a valid root restores the expanded day strip");
     Check(FindView(expanded, @"fullscreen.chartUnavailable") == nil, @"a valid root removes the unavailable cue");
     Check(!scroll.hidden && FindView(expanded, @"window.chart") != nil &&
-          FindView(expanded, @"fullscreen.timeline") != nil &&
+          FindView(expanded, @"fullscreen.days") != nil &&
           FindView(expanded, @"fullscreen.chartUnavailable") == nil,
         @"a valid reload restores the expanded map and transport after failure");
 
@@ -2580,7 +2566,7 @@ static void CheckFailedPublishKeepsLastGoodRun(StoreSpyController *c, NSString *
         NSView *view = PopoverRoot(c);
         NSString *error = [c valueForKey:@"storeError"];
         NSView *issued = FindView(view, @"popover.issued");
-        NSView *warnCue = FindView(issued, @"popover.issued.warn");
+        NSTextField *ageCue = (NSTextField *)FindView(issued, @"popover.issued.age");
         double moved = FractionChanged(before, after);
         Check([c chartsReady] && run && [c valueForKey:@"ownRun"] == run && SameDate([c valueForKey:@"runDate"], runDate) &&
               [[c valueForKey:@"sequenceTimes"] isEqual:times] && [[c valueForKey:@"frameIndices"] isEqual:frames],
@@ -2588,8 +2574,10 @@ static void CheckFailedPublishKeepsLastGoodRun(StoreSpyController *c, NSString *
         Check(c.invalidates == invalidates && live && [c valueForKey:@"live"] == live && live.playing &&
               [[c valueForKey:@"popoverPlaying"] boolValue],
             [NSString stringWithFormat:@"%@: the same player keeps playing", how]);
-        Check(warnCue && !warnCue.hidden && [issued.toolTip containsString:@"stale"] &&
-              !HasText(view, @"stale") && !HasText(view, @"Chart unavailable") && HasText(view, @"Z"),
+        Check(ageCue && !ageCue.hidden && [ageCue.stringValue isEqual:[c chartFreshnessAt:[c valueForKey:@"chartNow"]]] &&
+              [ageCue.textColor isEqual:NSColor.systemOrangeColor] &&
+              [issued.toolTip containsString:@"stale"] && !HasText(view, @"stale") &&
+              !HasText(view, @"Chart unavailable") && !HasText(view, @"Z"),
             [NSString stringWithFormat:@"%@: the header keeps the run and marks its age", how]);
         Check(error.length && [issued.toolTip containsString:error],
             [NSString stringWithFormat:@"%@: the read error is in the tooltip (%@)", how, error]);
@@ -2617,7 +2605,9 @@ static void CheckFailedPublishKeepsLastGoodRun(StoreSpyController *c, NSString *
     NSView *recovered = FindView(view, @"popover.issued");
     NSView *recoveredWarn = FindView(recovered, @"popover.issued.warn");
     Check(SameDate([c valueForKey:@"runDate"], next) && ![[c valueForKey:@"storeError"] length] &&
-          HasText(view, @"Z") && (!recoveredWarn || recoveredWarn.hidden) && !HasText(view, @"stale"),
+          recovered.hidden && ((NSTextField *)FindView(recovered, @"popover.issued.age")).hidden &&
+          !((NSTextField *)FindView(recovered, @"popover.issued.age")).stringValue.length && !HasText(view, @"Forecast ") &&
+          (!recoveredWarn || recoveredWarn.hidden) && ![recovered.toolTip containsString:@"stale"],
         @"a complete newer run replaces the kept run and clears the warning");
     Check(c.starts == starts + 1 && SameDate(c.startDates.lastObject, [c valueForKey:@"chartNow"]),
         @"the recovered run plays once, from now");
@@ -2978,10 +2968,10 @@ static void CheckPopoverSpeedAndWarnings(NSString *root) {
     NSImageView *age = (NSImageView *)FindView(issued, @"popover.issued.warn");
     NSTextField *ageField = (NSTextField *)FindView(issued, @"popover.issued.age");
     NSButton *bureau = (NSButton *)FindView(view, @"hub.warning");
-    Check([age isKindOfClass:NSImageView.class] && !age.hidden, @"old run keeps the age glyph");
+    Check(age.hidden && !issued.hidden && [ageField.stringValue isEqual:@"Forecast 23 h old"], @"old run shows one plain-language age in the place chip");
     Check([ageField isKindOfClass:NSTextField.class] && [ageField.stringValue containsString:@"h"], @"age readout stays");
     NSColor *ink = [ageField.textColor colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
-    NSColor *orange = [NSColor.systemYellowColor colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+    NSColor *orange = [NSColor.systemOrangeColor colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
     Check(ink && orange && fabs(ink.redComponent - orange.redComponent) < 0.05 &&
         fabs(ink.greenComponent - orange.greenComponent) < 0.05 &&
         fabs(ink.blueComponent - orange.blueComponent) < 0.05, @"old age is amber");
@@ -2992,7 +2982,7 @@ static void CheckPopoverSpeedAndWarnings(NSString *root) {
         [bureau.image.name isEqual:@"exclamationmark.circle"] &&
         ![age.image.accessibilityDescription isEqual:bureau.image.accessibilityDescription],
         @"chart age and the bureau warning are different marks");
-    TimelineStrip *timeline = (TimelineStrip *)FindView(view, @"popover.timeline");
+    TimelineStrip *timeline = (TimelineStrip *)[c valueForKey:@"popoverTimeline"];
     if ([timeline isKindOfClass:TimelineStrip.class] && timeline.times.count >= 2) {
         CGFloat end = [timeline cursorXForFraction:1];
         Check(fabs(NSMaxX(timeline.trackRect) - end) < 1.5, @"popover track end maps to the last frame time");
@@ -3016,7 +3006,7 @@ static void WritePopoverShot(NSView *view, NSString *name) {
 
 static void ShootPopover(TestController *c, NSString *stem) {
     NSView *view = PopoverRoot(c);
-    TimelineStrip *timeline = (TimelineStrip *)FindView(view, @"popover.timeline");
+    TimelineStrip *timeline = (TimelineStrip *)[c valueForKey:@"popoverTimeline"];
     if (timeline) {
         timeline.progress = 1;
         [c refreshPopoverClock];
@@ -3159,7 +3149,7 @@ static void CheckWeekGrid(void) {
         Check(fabs(rate.hoursPerSecond - 8.0 / 60.0) < 1e-9, @"8 min/s playback keeps its existing physical rate");
         NSView *view = PopoverRoot(c);
         [view layoutSubtreeIfNeeded];
-        TimelineStrip *timeline = (TimelineStrip *)FindView(view, @"popover.timeline");
+        TimelineStrip *timeline = (TimelineStrip *)[c valueForKey:@"popoverTimeline"];
         NSArray<NSDate *> *ticks = timeline.tickDates;
         NSArray<NSNumber *> *xs = [timeline tickXs];
         double x141 = NAN, x144 = NAN, x150 = NAN;
@@ -3175,18 +3165,17 @@ static void CheckWeekGrid(void) {
             [NSString stringWithFormat:@"a 6 h step is twice a 3 h step on the same day (%.1f vs %.1f)", gap6, gap3]);
         NSUInteger tiles = 0;
         while (FindView(view, [NSString stringWithFormat:@"hub.day.%lu", (unsigned long)tiles])) tiles++;
-        Check(tiles == 7 && timeline.daySpanCount == tiles, @"day bands match the seven day tiles");
-        BOOL aligned = tiles == timeline.daySpanCount;
+        DayStripView *dayStrip = (DayStripView *)FindView(view, @"hub.days");
+        Check(tiles == 7 && dayStrip.days.count == tiles, @"day scrubber exposes seven day segments");
+        BOOL aligned = tiles == dayStrip.days.count;
+        CGFloat segmentWidth = NSWidth(dayStrip.bounds) / MAX(1, tiles);
         for (NSUInteger i = 0; i < tiles && aligned; i++) {
             NSView *tile = FindView(view, [NSString stringWithFormat:@"hub.day.%lu", (unsigned long)i]);
             NSRect tileRect = [tile convertRect:tile.bounds toView:view];
-            NSRect span = [timeline convertRect:[timeline daySpanFrameAtIndex:i] toView:view];
-            if (fabs(NSMinX(tileRect) - NSMinX(span)) > 2 || fabs(NSMaxX(tileRect) - NSMaxX(span)) > 2) aligned = NO;
+            NSRect stripRect = [dayStrip convertRect:NSMakeRect(i * segmentWidth, 0, segmentWidth, NSHeight(dayStrip.bounds)) toView:view];
+            if (fabs(NSMinX(tileRect) - NSMinX(stripRect)) > 2 || fabs(NSWidth(tileRect) - NSWidth(stripRect)) > 2) aligned = NO;
         }
-        Check(aligned, @"each day band shares its tile's x range");
-        NSRect lastBand = [timeline daySpanFrameAtIndex:timeline.daySpanCount - 1];
-        CGFloat endX = [timeline cursorXForFraction:1];
-        Check(NSMaxX(lastBand) - endX > 4, [NSString stringWithFormat:@"the track ends at the last frame and leaves the rest of the last day grey (%.1f px)", NSMaxX(lastBand) - endX]);
+        Check(aligned, @"each day segment fills its scrubber share");
         ShootPopover(c, @"schema2");
 
         OwnRun *kept = run;
@@ -3272,11 +3261,12 @@ static void CheckHazardControls(NSString *root) {
     [c reloadStoreAtPath:root];
     [c setValue:@YES forKey:@"newMap"];
     [c rebuildContent];
+    BOOL gpuAvailable = [c valueForKey:@"gpuMap"] != nil;
     NSButton *(^toggle)(void) = ^{
         return (NSButton *)FindView(c.popover.contentViewController.view, @"popover.hazards");
     };
-    Check(toggle() && toggle().enabled && !c.hazardLayer && toggle().state == NSControlStateValueOff,
-        @"Pressure starts with an enabled Hazards toggle off");
+    Check(toggle() && toggle().enabled == gpuAvailable && !c.hazardLayer && toggle().state == NSControlStateValueOff,
+        @"Pressure starts with Hazards off and availability follows the renderer");
     Check([toggle().toolTip isEqual:@"CB potential (model) · SIGMETs (official)"] &&
         [toggle().accessibilityLabel isEqual:@"Hazards"] && toggle().image,
         @"Hazards has its source tooltip, symbol and accessible name");
@@ -3300,7 +3290,7 @@ static void CheckHazardControls(NSString *root) {
     Check(!c.hazardLayer, @"Temp's menu also leaves the Fly hazard default");
     ClickLens(c, 1);
     [toggle() performClick:nil];
-    Check(!c.hazardLayer, @"Fly hazards can be explicitly turned off");
+    Check(gpuAvailable ? !c.hazardLayer : (!toggle().enabled && c.hazardLayer), @"Fly hazards toggle only when the renderer supports them");
     GPUMapView *chosenGPU = [c valueForKey:@"gpuMap"];
     Check(!chosenGPU || !chosenGPU.hazards, @"explicit Hazards choice reaches the GPU");
     [c toggleWindBarbs:nil];
@@ -3317,42 +3307,43 @@ static void CheckHazardControls(NSString *root) {
     Check(!c.hazardLayer && toggle().state == NSControlStateValueOff,
         @"reopening on Pressure does not silently restore optional overlays");
     [toggle() performClick:nil];
-    NSView *expanded = [[ChartRoot alloc] initWithFrame:NSMakeRect(0, 0, 1440, 36)];
-    [c layoutStatusBar:nil bar:(MSLPRect){0, 0, 1440, 36} in:expanded];
+    [c presentChartWindowInFrame:NSMakeRect(-20000, -20000, 1440, 900)];
+    [c layoutChartWindow];
+    NSView *expanded = c.chartWindow.contentView;
     NSButton *full = (NSButton *)FindView(expanded, @"fullscreen.hazards");
-    Check(full && full.enabled && full.state == NSControlStateValueOn && [full.title isEqual:@"Hazards"],
-        @"expanded lens row shares the session choice and full label");
+    Check(full && full.enabled == gpuAvailable && full.state == (c.hazardLayer ? NSControlStateValueOn : NSControlStateValueOff) && full.imagePosition == NSImageOnly,
+        @"expanded lens column shares session state and GPU availability");
     for (NSArray *look in @[@[NSAppearanceNameAqua, @"light"], @[NSAppearanceNameDarkAqua, @"dark"]]) {
         expanded.appearance = [NSAppearance appearanceNamed:look[0]];
         WritePopoverShot(expanded, [NSString stringWithFormat:@"hazards-expanded-wide-%@.png", look[1]]);
     }
-    [full performClick:nil];
+    if (full) [full performClick:nil];
     Check(!c.hazardLayer && toggle().state == NSControlStateValueOff && full.state == NSControlStateValueOff,
         @"expanded hazard action updates both surfaces in place");
     ClickLens(c, 1);
     Check(c.hazardLayer, @"changing to Fly restores Hazards on");
     c.availableSize = NSMakeSize(640, 600); [c rebuildContent];
     NSView *row = FindView(c.popover.contentViewController.view, @"popover.lensRow");
-    Check([row.identifier isEqual:@"symbols"] && toggle().title.length == 0 &&
-        [LensControl(c) labelForSegment:6].length == 0 && NSContainsRect(row.superview.bounds, row.frame) &&
-        NSContainsRect(row.bounds, toggle().frame), @"narrow popover keeps one symbol-only lens row without clipping");
+    NSButton *flyLens = (NSButton *)FindView(row, @"popover.lens.6");
+    Check(toggle().imagePosition == NSImageOnly &&
+        flyLens && NSContainsRect(row.superview.bounds, row.frame) &&
+        NSContainsRect(row.bounds, toggle().frame), @"narrow popover keeps the lens column without clipping");
     for (NSNumber *labels in @[@YES, @NO]) {
         NSView *testRow = [c lensControlsWithIdentifier:@"test" height:28 labels:labels.boolValue];
         NSButton *hazard = (NSButton *)FindView(testRow, @"test.hazards");
         NSButton *barbs = (NSButton *)FindView(testRow, @"test.barbs");
-        Check(NSMinX(hazard.frame) > NSMaxX(barbs.frame) &&
-            NSContainsRect(testRow.bounds, hazard.frame) && ![hazard.title containsString:@"…"] &&
+        Check(fabs(NSMinY(hazard.frame) - NSMinY(barbs.frame)) < 1 && NSMinX(hazard.frame) > NSMaxX(barbs.frame) &&
+            NSContainsRect(testRow.bounds, hazard.frame) && NSContainsRect(testRow.bounds, barbs.frame) && ![hazard.title containsString:@"…"] &&
             (!labels.boolValue || NSWidth(hazard.frame) >= hazard.intrinsicContentSize.width),
             @"Hazards ends the row and fits its complete title or symbol");
     }
-    expanded.frame = NSMakeRect(0, 0, 640, 36);
-    [c layoutStatusBar:nil bar:(MSLPRect){0, 0, 640, 36} in:expanded];
+    [c.chartWindow setFrame:NSMakeRect(-20000, -20000, 640, 600) display:NO];
+    [c layoutChartWindow];
+    expanded = c.chartWindow.contentView;
     row = FindView(expanded, @"fullscreen.lensRow");
     full = (NSButton *)FindView(row, @"fullscreen.hazards");
-    // Labels stay when the whole row fits (the GPU map has no Barbs button);
-    // otherwise the row drops to symbols. Either way nothing is cut off.
-    Check(NSContainsRect(NSInsetRect(expanded.bounds, 12, 0), row.frame) &&
-        ([row.identifier isEqual:@"symbols"] ? full.title.length == 0 : [row.identifier isEqual:@"labels"]) &&
+    // The narrow window retains the same labelled vertical lens column.
+    Check(NSContainsRect(expanded.bounds, row.frame) &&
         ![full.title containsString:@"…"], @"narrow expanded lens row fits without truncation");
     for (NSArray *look in @[@[NSAppearanceNameAqua, @"light"], @[NSAppearanceNameDarkAqua, @"dark"]]) {
         expanded.appearance = [NSAppearance appearanceNamed:look[0]];
@@ -3445,6 +3436,8 @@ static void CheckFeedbackCompositor(void) {
         [nested addSubview:map];
         FeedbackPixelView *control = [[FeedbackPixelView alloc] initWithFrame:NSMakeRect(60, 50, 40, 30)];
         [map addSubview:control];
+        FeedbackPixelView *floating=[[FeedbackPixelView alloc] initWithFrame:NSMakeRect(150,90,35,25)];
+        [nested addSubview:floating];
         NSData *png = scale.integerValue ? FeedbackViewPNG(captureRoot, map) : FeedbackWindowPNG(window, map);
         NSBitmapImageRep *bitmap = png ? [NSBitmapImageRep imageRepWithData:png] : nil;
         Check(bitmap != nil, @"feedback compositor produces a PNG");
@@ -3462,6 +3455,13 @@ static void CheckFeedbackCompositor(void) {
         y = (NSInteger)(point.y * bitmap.pixelsHigh / NSHeight(root.bounds));
         NSColor *blue = bitmap ? [[bitmap colorAtX:x y:y] colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace] : nil;
         Check(blue && blue.blueComponent > .85 && blue.blueComponent - MAX(blue.redComponent, blue.greenComponent) > .5, @"native controls remain above the Metal snapshot");
+        point=[floating convertPoint:NSMakePoint(15,10) toView:root];
+        if (!root.isFlipped) point.y=NSHeight(root.bounds)-point.y;
+        x=(NSInteger)(point.x*bitmap.pixelsWide/NSWidth(root.bounds));
+        y=(NSInteger)(point.y*bitmap.pixelsHigh/NSHeight(root.bounds));
+        NSColor *overlay=[[bitmap colorAtX:x y:y] colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
+        Check(overlay.blueComponent>.85 && overlay.blueComponent-overlay.redComponent>.5,
+            @"floating sibling chip remains above the full-bleed Metal snapshot");
         Check(!window.visible, @"feedback compositor QA never opens a window");
         [map removeFromSuperview];
         [window close];
@@ -3527,6 +3527,98 @@ static void CheckFeedbackCapture(void) {
     }
 }
 
+static void CheckMapFirstDayAccessibility(NSString *root) {
+    TestController *c = [TestController new];
+    c.availableSize = NSMakeSize(980, 620);
+    [c useManualLiveClock];
+    [c replaceLocations:DefaultLocations()];
+    [c setChartNow:[[NSISO8601DateFormatter new] dateFromString:@"2026-09-26T00:30:00Z"]];
+    [c reloadStoreAtPath:root];
+    [c rebuildContent];
+    NSView *view = c.popover.contentViewController.view;
+    DayStripView *strip = (DayStripView *)FindView(view, @"hub.days");
+    NSView *day = FindView(strip, @"hub.day.1");
+    BOOL pressed = [day respondsToSelector:@selector(accessibilityPerformPress)] &&
+        [[day valueForKey:@"dayAccessibilityIdentifier"] isEqual:@"hub.day.1"];
+    if (pressed) [day performSelector:@selector(accessibilityPerformPress)];
+    Pump(.1);
+    Check(pressed && strip.highlightedDayIndex == 1 && !FindView(view, @"hub.hourly"),
+        @"DayStrip accessibility press seeks the shared clock without creating an hourly row");
+}
+
+static void CheckForecastFreshness(NSString *root) {
+    TestController *c = [TestController new];
+    c.availableSize = NSMakeSize(1024, 600);
+    [c useManualLiveClock];
+    [c replaceLocations:DefaultLocations()];
+    NSDate *run = [[NSISO8601DateFormatter new] dateFromString:@"2026-09-25T18:00:00Z"];
+    [c setChartNow:[run dateByAddingTimeInterval:6*3600]];
+    WriteStatus(root, YES);
+    [c reloadStoreAtPath:root];
+    for (NSNumber *hours in @[@6, @22, @40]) {
+        [c setChartNow:[run dateByAddingTimeInterval:hours.doubleValue*3600]];
+        [c rebuildContent];
+        [c stopPopoverPlayback];
+        NSView *view = PopoverRoot(c);
+        NSView *issued = FindView(view, @"popover.issued");
+        NSTextField *age = (NSTextField *)FindView(issued, @"popover.issued.age");
+        NSString *expected = hours.intValue == 6 ? @"" : hours.intValue == 22 ? @"Forecast 22 h old" : @"Forecast from Sat 2 am";
+        Check([age.stringValue isEqual:expected] && issued.hidden == (hours.intValue == 6), @"freshness phrase and visibility");
+        Check(!HasText(view, @"00Z") && !HasText(view, @"18Z"), @"default surface has no cycle label");
+        Check([issued.toolTip containsString:@"18Z"] && [issued.superview.toolTip containsString:@"18Z"], @"cycle remains reachable in place tooltip even when fresh");
+        for (NSArray *look in @[@[NSAppearanceNameAqua, @"light"], @[NSAppearanceNameDarkAqua, @"dark"]]) {
+            view.appearance = [NSAppearance appearanceNamed:look[0]];
+            [c syncTimeLens:[c selectedForecastDate]];
+            NSView *chip = FindView(view, @"mapfirst.place");
+            Check(NSContainsRect(view.bounds, chip.frame), @"freshness place chip fits short laptop");
+            if (!issued.hidden) {
+                Check(NSContainsRect(chip.bounds, issued.frame) && age.attributedStringValue.size.width <= NSWidth(age.bounds)+1, @"freshness phrase fits without clipping");
+                Check([age.textColor isEqual:NSColor.systemOrangeColor], @"stale phrase is amber");
+            }
+            WritePopoverShot(view, [NSString stringWithFormat:@"freshness-%@h-%@.png", hours, look[1]]);
+        }
+        TimelineStrip *timeline = (TimelineStrip *)[c valueForKey:@"popoverTimeline"];
+        Check(![[timeline clockTextForFraction:0] hasSuffix:@"Z"], @"general weather clock is local only");
+        SeedForecastMode(c, 1); [c rebuildContent];
+        timeline = (TimelineStrip *)[c valueForKey:@"popoverTimeline"];
+        Check([[timeline clockTextForFraction:0] hasSuffix:@"Z"], @"Fly clock retains Zulu");
+        SeedForecastMode(c, -1); [c rebuildContent];
+        [c presentChartWindowInFrame:NSMakeRect(0,0,1024,600)];
+        NSView *expanded = c.chartWindow.contentView;
+        NSTextField *expandedAge = (NSTextField *)FindView(expanded, @"fullscreen.issued.age");
+        Check([expandedAge.stringValue isEqual:expected], @"expanded freshness matches popover");
+        TimelineStrip *expandedTimeline = (TimelineStrip *)[c valueForKey:@"chartTimeline"];
+        Check(![[expandedTimeline clockTextForFraction:0] hasSuffix:@"Z"], @"expanded general clock is local");
+        for (NSArray *look in @[@[NSAppearanceNameAqua, @"light"], @[NSAppearanceNameDarkAqua, @"dark"]]) {
+            expanded.appearance = [NSAppearance appearanceNamed:look[0]];
+            WritePopoverShot(expanded, [NSString stringWithFormat:@"freshness-expanded-%@h-%@.png", hours, look[1]]);
+        }
+        [c closeChartWindow];
+        SeedForecastMode(c, 1); [c rebuildContent];
+        [c presentChartWindowInFrame:NSMakeRect(0,0,1024,600)];
+        expandedTimeline = (TimelineStrip *)[c valueForKey:@"chartTimeline"];
+        Check([[expandedTimeline clockTextForFraction:0] hasSuffix:@"Z"], @"expanded Fly clock retains Zulu");
+        [c closeChartWindow]; SeedForecastMode(c, -1);
+    }
+    NSDictionary *sydney = nil;
+    for (NSDictionary *place in DefaultLocations()) if ([ZoneForPlace(place).name isEqual:@"Australia/Sydney"]) sydney = place;
+    Check(sydney != nil, @"Sydney fixture available");
+    if (sydney) {
+        [c replaceLocations:@[sydney]]; [c rebuildContent];
+        NSTextField *age = (NSTextField *)FindView(PopoverRoot(c), @"popover.issued.age");
+        Check([age.stringValue isEqual:@"Forecast from Sat 4 am"], @"place change updates older forecast local time");
+    }
+    // A failed fetch retains a usable chart and exposes its actual age.
+    [c setChartNow:[run dateByAddingTimeInterval:6*3600]];
+    WriteStatus(root, NO); [c reloadStoreAtPath:root]; [c rebuildContent];
+    Check([c chartsReady] && [[c chartFreshnessAt:[run dateByAddingTimeInterval:6*3600]] isEqual:@"Forecast 6 h old"], @"failed fetch retains chart with plain age");
+    TestController *empty = [TestController new]; empty.availableSize = NSMakeSize(1024,600);
+    [empty replaceLocations:DefaultLocations()];
+    [empty reloadStoreAtPath:[root stringByAppendingPathComponent:@"missing"]]; [empty rebuildContent];
+    Check(FindView(PopoverRoot(empty), @"popover.chartUnavailable") && !FindView(PopoverRoot(empty), @"mapfirst.bottom"), @"cold failure retains Chart unavailable and removes controls");
+    [c stopPopoverPlayback];
+}
+
 int main(void) {
     @autoreleasepool {
         [NSApplication sharedApplication];
@@ -3549,6 +3641,11 @@ int main(void) {
         NSFileManager *fm = NSFileManager.defaultManager;
         if (![fm copyItemAtPath:[fixtures stringByAppendingPathComponent:@"store"] toPath:root error:nil]) return 1;
         @try {
+            if (getenv("ISOBAR_TEST_FRESHNESS_ONLY")) {
+                CheckForecastFreshness(root);
+                fprintf(stderr, "freshness failures: %d\n", failures);
+                return failures ? 1 : 0;
+            }
             if (getenv("ISOBAR_TEST_TIMELENS_ONLY")) {
                 CheckTimeLens(root);
                 fprintf(stderr, "time lens failures: %d\n", failures);
@@ -3564,6 +3661,14 @@ int main(void) {
             if (getenv("ISOBAR_TEST_HAZARD_CONTROLS")) {
                 CheckHazardControls(root);
                 fprintf(stderr, "hazard controls failures: %d\n", failures);
+                return failures ? 1 : 0;
+            }
+            if (getenv("ISOBAR_TEST_MAPFIRST_ONLY")) {
+                CheckPopoverSpeedAndWarnings(root);
+                CheckTimeLens(root);
+                CheckHazardControls(root);
+                CheckMapFirstDayAccessibility(root);
+                fprintf(stderr, "map-first failures: %d\n", failures);
                 return failures ? 1 : 0;
             }
             CheckTimelineEndsAtLastFrame();
@@ -3658,22 +3763,21 @@ int main(void) {
                     @"Temp switches to its model field and opens beside the map without adding a chip");
                 Check(FindView(layers.popover.contentViewController.view,@"popover.temperature")!=nil,@"Temperature graph is available");
                 NSView *row=FindView(layers.popover.contentViewController.view,@"popover.lensRow");
-                NSSegmentedControl *field=(NSSegmentedControl *)FindView(row,@"popover.lens");
-                Check(row && ![row isKindOfClass:NSPopUpButton.class] && [field isKindOfClass:NSSegmentedControl.class] &&
-                    field.segmentCount==8 && FindView(row,@"popover.barbs"),
-                    @"the map row has one lens control and a barb toggle, no Layers menu");
+                NSButton *field=(NSButton *)FindView(row,@"popover.lens.0");
+                Check(row && field && FindView(row,@"popover.lens.7") && FindView(row,@"popover.barbs"),
+                    @"the map row has eight concrete lens buttons and a barb toggle, no Layers menu");
                 [layers toggleMapDetail:2]; [layers toggleMapDetail:4];
                 NSDate *future=[NSDate dateWithTimeIntervalSince1970:2000000000];
                 NSArray *missing=[layers mapDetailsAtTime:future];
                 Check(missing.count==2 && [missing[0][@"value"] isEqual:@"—"] && [missing[1][@"value"] isEqual:@"—"],@"uncovered future map never borrows a current reading");
                 [layers toggleMapDetail:2]; [layers toggleMapDetail:4];
                 [layers setValue:@YES forKey:@"sourceECMWF"]; [layers setValue:@2 forKey:@"tempLayer"]; [layers rebuildContent];
-                field=(NSSegmentedControl *)FindView(layers.popover.contentViewController.view,@"popover.lens");
-                Check(field.selectedSegment>=0 && [field tagForSegment:field.selectedSegment] == 4,@"the Temp lens shows the temperature field");
-                field.selectedSegment=0; [NSApp sendAction:field.action to:field.target from:field];
+                field=(NSButton *)FindView(layers.popover.contentViewController.view,@"popover.lens.3");
+                Check(field.state == NSControlStateValueOn,@"the Temp lens shows the temperature field");
+                [(NSButton *)FindView(layers.popover.contentViewController.view,@"popover.lens.0") performClick:nil];
                 Check(![[layers valueForKey:@"rainLayer"] boolValue] && ![[layers valueForKey:@"windFill"] boolValue] &&
                     [[layers valueForKey:@"tempLayer"] integerValue]==0 && [[layers valueForKey:@"forecastMode"] integerValue] == -1 &&
-                    field.selectedSegment == 0,@"Pressure clears the colour field and panel");
+                    ((NSButton *)FindView(layers.popover.contentViewController.view,@"popover.lens.0")).state == NSControlStateValueOn,@"Pressure clears the colour field and panel");
                 [layers stopPopoverPlayback];
             }
             NSView *view = c.popover.contentViewController.view;
@@ -3689,15 +3793,16 @@ int main(void) {
                 @"the hub shows a seven-day strip for the selected place");
             NSView *dry = FindView(view, @"hub.day.0");
             NSView *wet = FindView(view, @"hub.day.5");
-            NSUInteger dryInk = BlueInk(dry), wetInk = BlueInk(wet);
-            fprintf(stderr, "blue ink dry %lu wet %lu\n", (unsigned long)dryInk, (unsigned long)wetInk);
-            Check(dry && wet && wetInk > dryInk + 12,
-                @"a day with at least a millimetre of rain draws that amount in the strip");
+            Check(BlueInk(wet)>12, @"wet-day amount is drawn in rain ink");
+            Check(dry && wet && [days accessibilityLabelForDay:5].length &&
+                [[days accessibilityLabelForDay:5] containsString:@"millimetres"] &&
+                ![[days accessibilityLabelForDay:0] containsString:@"millimetres"],
+                @"a wet day exposes its rain amount in the strip accessibility label");
             Check([[c valueForKey:@"mapDetailModes"] count] == 0, @"lenses are closed chips on a fresh popover");
-            NSButton *day = (NSButton *)FindView(view, @"hub.day.1");
-            [day performClick:nil];
+            NSView *day = FindView(view, @"hub.day.1");
+            [day performSelector:@selector(accessibilityPerformPress)];
             view = c.popover.contentViewController.view;
-            TimelineStrip *afterDay = (TimelineStrip *)FindView(view, @"popover.timeline");
+            TimelineStrip *afterDay = (TimelineStrip *)[c valueForKey:@"popoverTimeline"];
             NSArray *week = [c packFor:[c hubPlace]][@"daily"];
             NSCalendar *calendar = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
             calendar.timeZone = [c placeZone];
@@ -3705,9 +3810,10 @@ int main(void) {
             NSArray *sequence = [c valueForKey:@"sequenceTimes"];
             double span = [sequence.lastObject timeIntervalSinceDate:sequence.firstObject];
             double expected = span > 0 ? MIN(1, MAX(0, [noon timeIntervalSinceDate:sequence.firstObject] / span)) : 0;
-            Check([[c valueForKey:@"hubDayIndex"] integerValue] == 1 && FindView(view, @"hub.hourly") &&
+            DayStripView *selectedStrip = (DayStripView *)FindView(view, @"hub.days");
+            Check(selectedStrip.highlightedDayIndex == 1 && !FindView(view, @"hub.hourly") &&
                   afterDay && fabs(afterDay.progress - expected) < 0.02,
-                @"choosing a day seeks local midday and shows that day's hours");
+                @"choosing a day seeks local midday without a separate hours row");
             NSString *hubSuite = [@"com.isobar.hub-test." stringByAppendingString:NSUUID.UUID.UUIDString];
             HubDefaults = [[NSUserDefaults alloc] initWithSuiteName:hubSuite];
             [HubDefaults setObject:@[@2, @0] forKey:@"mapDetailModes"];
@@ -3974,14 +4080,14 @@ int main(void) {
                 SeedForecastMode(c, -1); [c rebuildContent];
                 NSView *closed = c.popover.contentViewController.view;
                 NSView *closedMap = FindView(closed,@"popover.chart");
-                NSView *closedStrip=FindView(closed,@"popover.timeline");
+                TimelineStrip *closedStrip=(TimelineStrip *)[c valueForKey:@"popoverTimeline"];
                 NSRect closedRect = [closedMap convertRect:closedMap.bounds toView:closed];
                 NSNumber *selectedBefore = [[c valueForKey:@"shownLeft"] copy];
                 for (NSNumber *mode in @[@0,@1,@2,@3,@4]) {
                     SeedForecastMode(c, mode.integerValue); [c rebuildContent];
                     NSView *open = c.popover.contentViewController.view;
                     NSView *map = FindView(open,@"popover.chart");
-                    Check(open==closed && map==closedMap && FindView(open,@"popover.timeline")==closedStrip,
+                    Check(open==closed && map==closedMap && (TimelineStrip *)[c valueForKey:@"popoverTimeline"]==closedStrip,
                         @"non-movie mode changes retain root, map and scrub target at every breakpoint");
                     Check(map && !map.hidden, @"a lens leaves the map on screen");
                     if (map && !map.hidden) {
@@ -4015,7 +4121,7 @@ int main(void) {
             NSTextField *freshRun = (NSTextField *)FindView(freshIssued, @"popover.issued.run");
             NSTextField *freshAge = (NSTextField *)FindView(freshIssued, @"popover.issued.age");
             NSView *freshWarn = FindView(freshIssued, @"popover.issued.warn");
-            Check([freshRun.stringValue isEqual:@"18Z"] && [freshAge.stringValue isEqual:@"6 h"] &&
+            Check(freshRun.stringValue.length == 0 && freshAge.stringValue.length == 0 && freshIssued.hidden &&
                   freshWarn.hidden && !HasText(view, @"updated just now") && !HasText(view, @"stale"),
                 @"a new daemon status cannot relabel an older loaded chart");
             NSDictionary *primary = DefaultLocations().firstObject;
@@ -4036,7 +4142,7 @@ int main(void) {
             NSView *failedIssued = FindView(c.popover.contentViewController.view, @"popover.issued");
             NSTextField *failedAge = (NSTextField *)FindView(failedIssued, @"popover.issued.age");
             NSView *failedWarn = FindView(failedIssued, @"popover.issued.warn");
-            Check([failedAge.stringValue isEqual:@"6 h"] && failedWarn && !failedWarn.hidden &&
+            Check([failedAge.stringValue isEqual:@"Forecast 6 h old"] && failedWarn.hidden &&
                   [failedIssued.toolTip containsString:@"stale"] &&
                   !HasText(c.popover.contentViewController.view, @"stale"),
                 @"a failed chart source tints the age and shows a warning");
@@ -4064,32 +4170,31 @@ int main(void) {
                 [c.chartWindow setFrame:NSMakeRect(0,0,dimensions.width,dimensions.height) display:NO];
                 [c layoutChartWindow];
                 NSView *fullscreen=c.chartWindow.contentView;
-                NSView *transport=FindView(fullscreen,@"fullscreen.timeline");
-                NSScrollView *map=[c valueForKey:@"singleScroll"];
-                NSRect transportRect=transport?[transport convertRect:transport.bounds toView:fullscreen]:NSZeroRect;
+                NSView *map=FindView(fullscreen,@"window.chart");
                 NSView *strip = FindView(fullscreen, @"fullscreen.days");
                 NSPopUpButton *place = (NSPopUpButton *)FindView(fullscreen, @"fullscreen.place");
+                if (!place) place = (NSPopUpButton *)FindView(fullscreen, @"hub.place");
                 NSButton *temperature = (NSButton *)FindView(fullscreen, @"fullscreen.temperature");
                 NSUInteger readingIndex = ReadingAttributeIndex(temperature.attributedTitle);
                 NSFont *tempFont = readingIndex != NSNotFound ?
                     [temperature.attributedTitle attribute:NSFontAttributeName atIndex:readingIndex effectiveRange:NULL] : nil;
-                Check(transport && NSHeight(transport.frame)==28 &&
-                    NSContainsRect(fullscreen.bounds,transportRect) &&
-                    NSWidth(map.frame)>=400 && NSMinY(map.frame)>=NSMaxY(transportRect) &&
+                BOOL mapFullBleed = map && NSWidth([map convertRect:map.bounds toView:fullscreen]) * NSHeight([map convertRect:map.bounds toView:fullscreen]) >=
+                    NSWidth(fullscreen.bounds) * NSHeight(fullscreen.bounds) * .99;
+                Check(mapFullBleed &&
                     strip && NSWidth(strip.frame) > NSHeight(strip.frame) && FindView(strip, @"hub.day.0") &&
                     place.titleOfSelectedItem.length &&
-                    [temperature.attributedTitle.string containsString:@"°"] && tempFont.pointSize >= 28 &&
-                    FindView(fullscreen, @"fullscreen.lens") && FindView(fullscreen, @"fullscreen.issued") && !HasText(fullscreen, @"stale"),
-                    [NSString stringWithFormat:@"expanded map and tile-aligned scrubber fit %.0fx%.0f",
+                    [temperature.attributedTitle.string containsString:@"°"] && tempFont.pointSize >= 24 &&
+                    FindView(fullscreen, @"fullscreen.lensRow") && FindView(fullscreen, @"fullscreen.issued") && !HasText(fullscreen, @"stale"),
+                    [NSString stringWithFormat:@"expanded map-first scrubber fits %.0fx%.0f",
                         dimensions.width,dimensions.height]);
                 Capture(fullscreen,[NSString stringWithFormat:@"expanded-%.0fx%.0f.png",
                     dimensions.width,dimensions.height]);
             }
             NSView *backdrop = c.chartWindow.contentView;
             backdrop.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
-            double darkBackdrop = LuminanceAt(backdrop, 6, 180);
+            double darkBackdrop = LuminanceAt(FindView(backdrop, @"mapfirst.place"), 12, 4);
             backdrop.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
-            double lightBackdrop = LuminanceAt(backdrop, 6, 180);
+            double lightBackdrop = LuminanceAt(FindView(backdrop, @"mapfirst.place"), 12, 4);
             fprintf(stderr, "fullscreen backdrop light %.2f dark %.2f\n", lightBackdrop, darkBackdrop);
             Check(darkBackdrop < 0.45 && lightBackdrop > 0.7, @"fullscreen follows light and dark appearance");
             [c closeChartWindow];
@@ -4102,8 +4207,8 @@ int main(void) {
             NSTextField *agedRun = (NSTextField *)FindView(agedIssued, @"popover.issued.run");
             NSTextField *agedAge = (NSTextField *)FindView(agedIssued, @"popover.issued.age");
             NSView *agedWarn = FindView(agedIssued, @"popover.issued.warn");
-            Check([agedRun.stringValue isEqual:@"18Z"] && [agedAge.stringValue isEqual:@"19 h"] &&
-                  agedWarn && !agedWarn.hidden && [agedIssued.toolTip containsString:@"stale"] &&
+            Check(agedRun.stringValue.length == 0 && [agedAge.stringValue isEqual:@"Forecast 19 h old"] &&
+                  agedWarn.hidden && [agedIssued.toolTip containsString:@"stale"] &&
                   !HasText(c.popover.contentViewController.view, @"stale"),
                 @"an open surface ages into a warning without waiting for another disk refresh");
 
@@ -4127,7 +4232,7 @@ int main(void) {
             Check([[NSData data] writeToFile:field atomically:YES], @"truncate a disposable chart field");
             [c reloadStoreAtPath:root];
             [c rebuildContent];
-            Check([c chartsReady] && HasText(c.popover.contentViewController.view, @"18Z") &&
+            Check([c chartsReady] && HasText(c.popover.contentViewController.view, @"Forecast 19 h old") &&
                   !HasText(c.popover.contentViewController.view, @"Chart unavailable") &&
                   [[c valueForKey:@"storeError"] length],
                 @"a field truncated under a loaded run keeps the last good chart");

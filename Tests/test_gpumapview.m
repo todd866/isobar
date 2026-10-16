@@ -1665,6 +1665,21 @@ static void CheckStarlink(void) {
     [view stopRendering];
 }
 
+static void CheckNoMapCredits(void) {
+    for (NSNumber *compact in @[@YES, @NO]) {
+        GPUMapView *map = [GPUMapView mapView];
+        if (!map) { fprintf(stderr, "SKIP attribution GPU integration: Metal unavailable\n"); continue; }
+        map.frame = compact.boolValue ? NSMakeRect(0,0,720,520) : NSMakeRect(0,0,1024,720);
+        map.popoverChrome = compact.boolValue;
+        [map layoutSubtreeIfNeeded];
+        Check(!FindID(map, @"map.sources") && !map.toolTip.length && !map.accessibilityHelp.length,
+            @"map surfaces have no attribution control or licence tooltip");
+        map.hazards = YES; map.hazards = NO;
+        Check(!map.toolTip.length, @"turning hazards off leaves no licence tooltip");
+        [map stopRendering];
+    }
+}
+
 int main(void) {
     @autoreleasepool {
         if (!getenv("ISOBAR_TERRAIN_TILES")) {
@@ -1674,6 +1689,8 @@ int main(void) {
         setenv("ISOBAR_TERRAIN_OFFLINE", "1", 0);
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
+        CheckNoMapCredits();
+        if (getenv("ISOBAR_TEST_NO_CREDITS_ONLY")) return failures ? 1 : 0;
         CheckPointCardHitTesting();
         CheckToggleAndLayers();
         CheckHazardLowFollowsDrawnCentre();

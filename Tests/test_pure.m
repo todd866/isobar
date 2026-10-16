@@ -843,8 +843,8 @@ int main(void) {
 
         NSTimeZone *sydneyClock = [NSTimeZone timeZoneWithName:@"Australia/Sydney"];
         NSDate *perthClockNow = Date(@"2026-09-26T05:16:00Z");
-        check([MapPlayheadClockText(perthClockNow, perthClockNow, perth) isEqual:@"NOW · Sat 1:16 pm AWST · 0516Z"],
-              @"map clock formats Perth NOW and Zulu");
+        check([MapPlayheadClockText(perthClockNow, perthClockNow, perth) isEqual:@"NOW · Sat 1:16 pm AWST"],
+              @"map clock formats Perth NOW without Zulu");
         check([MapPlayheadClockText([perthClockNow dateByAddingTimeInterval:90], perthClockNow, perth) hasPrefix:@"FORECAST · Sat 1:17 pm AWST"],
               @"map clock leaves NOW at 90 seconds");
         check([MapPlayheadClockText([perthClockNow dateByAddingTimeInterval:89], perthClockNow, perth) hasPrefix:@"NOW · Sat 1:17 pm AWST"],
@@ -853,21 +853,21 @@ int main(void) {
               @"map clock labels past playheads");
         NSDate *sydneyBeforeDST = Date(@"2026-10-03T15:00:00Z");
         NSDate *sydneyAfterDST = Date(@"2026-10-04T16:00:00Z");
-        check([MapPlayheadClockText(sydneyBeforeDST, sydneyBeforeDST, sydneyClock) isEqual:@"NOW · Sun 1:00 am AEST · 1500Z"],
+        check([MapPlayheadClockText(sydneyBeforeDST, sydneyBeforeDST, sydneyClock) isEqual:@"NOW · Sun 1:00 am AEST"],
               @"map clock formats Sydney AEST before DST");
-        check([MapPlayheadClockText(sydneyAfterDST, sydneyAfterDST, sydneyClock) isEqual:@"NOW · Mon 3:00 am AEDT · 1600Z"],
+        check([MapPlayheadClockText(sydneyAfterDST, sydneyAfterDST, sydneyClock) isEqual:@"NOW · Mon 3:00 am AEDT"],
               @"map clock formats Sydney AEDT after DST");
         NSDate *sydneyJumpBefore = Date(@"2026-10-03T15:59:00Z");
         NSDate *sydneyJumpAfter = Date(@"2026-10-03T16:00:00Z");
-        check([MapPlayheadClockText(sydneyJumpBefore, sydneyJumpBefore, sydneyClock) isEqual:@"NOW · Sun 1:59 am AEST · 1559Z"],
+        check([MapPlayheadClockText(sydneyJumpBefore, sydneyJumpBefore, sydneyClock) isEqual:@"NOW · Sun 1:59 am AEST"],
               @"Sydney is AEST immediately before the DST jump");
-        check([MapPlayheadClockText(sydneyJumpAfter, sydneyJumpAfter, sydneyClock) isEqual:@"NOW · Sun 3:00 am AEDT · 1600Z"],
+        check([MapPlayheadClockText(sydneyJumpAfter, sydneyJumpAfter, sydneyClock) isEqual:@"NOW · Sun 3:00 am AEDT"],
               @"Sydney is AEDT immediately after the DST jump");
-        check([MapPlayheadClockText(sydneyJumpBefore, sydneyJumpBefore, perth) isEqual:@"NOW · Sat 11:59 pm AWST · 1559Z"],
+        check([MapPlayheadClockText(sydneyJumpBefore, sydneyJumpBefore, perth) isEqual:@"NOW · Sat 11:59 pm AWST"],
               @"Perth stays AWST across Sydney DST");
         check([MapPlayheadClockText(nil, sydneyJumpBefore, sydneyClock) isEqual:@"—"],
               @"map clock renders a missing playhead as a dash");
-        check([MapPlayheadClockText(Date(@"2026-09-26T00:00:00Z"), nil, nil) isEqual:@"FORECAST · Sat 12:00 am UTC · 0000Z"],
+        check([MapPlayheadClockText(Date(@"2026-09-26T00:00:00Z"), nil, nil) isEqual:@"FORECAST · Sat 12:00 am UTC"],
               @"map clock defaults nil zone to UTC");
 
         NSString *warnLine = PopoverWarningSummary(@[
@@ -1015,17 +1015,25 @@ int main(void) {
             @"a run past the stale age is kept and marked");
         check(StoreRunIsStale(run, sixHours, NO), @"a failed status is stale even when the run is young");
         check(StoreRunIsStale(nil, sixHours, YES), @"an empty store is stale");
-        check([StoreForecastFreshness(run, sixHours, YES) isEqual:@"Forecast updated 6 h ago"],
+        check([StoreForecastFreshness(run, sixHours, YES, perth) isEqual:@""],
             @"freshness names the loaded chart age");
-        check([StoreForecastFreshness(run, sixHours, NO) isEqual:@"Forecast updated 6 h ago · stale"],
+        check([StoreForecastFreshness(run, sixHours, NO, perth) isEqual:@"Forecast 6 h old"],
             @"a failed fetch remains visible alongside the retained chart age");
-        check([StoreForecastFreshness(run, [run dateByAddingTimeInterval:19 * 3600], YES) hasSuffix:@" · stale"],
+        check([StoreForecastFreshness(run, [run dateByAddingTimeInterval:19 * 3600], YES, perth) isEqual:@"Forecast 19 h old"],
             @"the freshness cue becomes stale as time passes without a reload");
-        check([StoreForecastFreshness(nil, sixHours, YES) isEqual:@"Chart unavailable"],
+        check([StoreForecastFreshness(nil, sixHours, YES, perth) isEqual:@"Chart unavailable"],
             @"an unreadable chart cannot claim a successful update");
+        NSDate *cycle = Date(@"2026-10-14T00:00:00Z");
+        check([StoreForecastFreshness(cycle, [cycle dateByAddingTimeInterval:18*3600], YES, perth) isEqual:@""], @"18 h boundary stays fresh");
+        check([StoreForecastFreshness(cycle, [cycle dateByAddingTimeInterval:22*3600], YES, perth) isEqual:@"Forecast 22 h old"], @"plain stale age");
+        check([StoreForecastFreshness(cycle, [cycle dateByAddingTimeInterval:36*3600], YES, perth) isEqual:@"Forecast 36 h old"], @"36 h boundary keeps age");
+        check([StoreForecastFreshness(cycle, [cycle dateByAddingTimeInterval:36*3600+1], YES, perth) isEqual:@"Forecast from Wed 8 am"], @"older forecast uses Perth local time");
+        check([StoreForecastFreshness(cycle, [cycle dateByAddingTimeInterval:40*3600], YES, sydneyClock) isEqual:@"Forecast from Wed 11 am"], @"older forecast uses Sydney DST");
+        check(![StoreForecastFreshness(cycle, [cycle dateByAddingTimeInterval:40*3600], YES, perth) containsString:@"00Z"], @"no cycle label on default surface");
+        check([MapPlayheadZuluText(perthClockNow) isEqual:@"0516Z"], @"Fly retains Zulu companion");
         NSString *computed = StoreRunStatusLine(run, sixHours);
         check([computed isEqual:@"ECMWF 18Z · 6 h ago"], [@"computed status " stringByAppendingString:computed ?: @"nil"]);
-        check([StoreRunCompareTitle(run, [run dateByAddingTimeInterval:-12 * 3600]) isEqual:@"18Z vs previous 06Z"],
+        check([StoreRunCompareTitle(run, [run dateByAddingTimeInterval:-12 * 3600]) isEqual:@"Latest vs previous forecast"],
             @"compare names the two cycles");
 
         NSArray<NSNumber *> *frames = StoreFrameIndices(manifest[@"times"], sixHours);

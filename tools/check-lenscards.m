@@ -140,7 +140,7 @@ static void CheckCard(NSView *root, NSInteger mode, Controller *controller) {
         rain.outlook=original; [controller updateForecastInspection:selected];
     }
     if (mode==4) {
-        Check([reading.stringValue containsString:@"ECMWF"] && [reading.stringValue containsString:@"°C"],@"temperature identifies model source and units");
+        Check(![reading.stringValue containsString:@"ECMWF"] && [reading.stringValue containsString:@"°C"] && [reading.toolTip containsString:@"ECMWF"],@"temperature shows units and keeps model source in tooltip");
         NSArray *series=[controller packFor:[controller rainPlace]][@"series"];
         Check([[graph valueForKey:@"rows"] isEqual:series],@"temperature card uses model series, with observations kept in the header");
         NSDate *selected=[controller selectedForecastDate];
@@ -148,7 +148,7 @@ static void CheckCard(NSView *root, NSInteger mode, Controller *controller) {
             NSDictionary *sample=MapDetailSample(series,instant);
             [controller updateForecastInspection:instant];
             if ([sample[@"temp"] isKindOfClass:NSNumber.class])
-                Check([reading.stringValue isEqual:[NSString stringWithFormat:@"%.0f °C · ECMWF",[sample[@"temp"] doubleValue]]],@"current and future card values both identify their model source");
+                Check([reading.stringValue isEqual:[NSString stringWithFormat:@"%.0f °C",[sample[@"temp"] doubleValue]]],@"current and future temperature values omit model jargon");
         }
         [controller updateForecastInspection:selected];
     }

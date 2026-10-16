@@ -11,9 +11,11 @@ NSDate *IssueTimeFromHTTPDate(NSString *httpDate);
 NSString *AgeText(NSDate *then, NSDate *now);
 // "16:00" when then is the same local day as now, otherwise "25 Sep 16:00".
 NSString *ClockText(NSDate *date, NSTimeZone *tz, NSDate *now);
-// Compact map playhead clock: "NOW · Tue 9:16 pm AWST · 1316Z". A playhead
+// Compact map playhead clock: "NOW · Tue 9:16 pm AWST". A playhead
 // 90 seconds or more from now is labelled FORECAST or PAST. A nil playhead is —.
 NSString *MapPlayheadClockText(NSDate *valid, NSDate *now, NSTimeZone *tz);
+// Aviation-only companion to the local map clock.
+NSString *MapPlayheadZuluText(NSDate *valid);
 
 // IDW60901-style latest-observations product for a state abbreviation. Nil if unknown.
 NSString *ObservationProductForState(NSString *state);
@@ -338,11 +340,12 @@ NSTimeInterval StoreStaleAge(void);
 // Stale when statusOK is NO, or the run is missing, or now is more than StoreStaleAge after the run.
 BOOL StoreRunIsStale(NSDate *run, NSDate *now, BOOL statusOK);
 // Age of the successfully loaded chart, never a newer run mentioned by status.
-// Adds "stale" for old/failed/unknown data, or "Chart unavailable" without a chart.
-NSString *StoreForecastFreshness(NSDate *loadedRun, NSDate *now, BOOL statusOK);
+// Empty when fresh; plain age through 36 h, then place-local day/time.
+// Failed status retains the chart age; a missing chart is "Chart unavailable".
+NSString *StoreForecastFreshness(NSDate *loadedRun, NSDate *now, BOOL statusOK, NSTimeZone *zone);
 // Same sentence as status.json when the file has no label. Hours are whole hours since the run, UTC cycle.
 NSString *StoreRunStatusLine(NSDate *run, NSDate *now);
-// "18Z vs previous 06Z".
+// "Latest vs previous forecast".
 NSString *StoreRunCompareTitle(NSDate *run, NSDate *previous);
 
 // Indices into `times` for one run. The anchor is the latest time at or before now (a model step of slack).

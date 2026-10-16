@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cloudLayers, ceilingFt, distanceBearing, hazards, metarRow } from '../../src/lib/metar-view';
-import { compass, daySummaries, rainLabel, readingAt, type PointsFile } from '../../src/lib/points';
+import { compass, daySummaries, readingAt, type PointsFile } from '../../src/lib/points';
 
 const RUN = '2026-10-06T12:00:00Z'; // 8 pm Tue AWST
 const hours = Array.from({ length: 17 }, (_, index) => index * 3); // 0..48 h
@@ -52,14 +52,7 @@ describe('day tiles', () => {
     expect(wed.icon).toBe('rain');
   });
 
-  it('shows rain to one decimal under 10 mm and hides a dry day', () => {
-    expect(rainLabel(0.1)).toBeNull();
-    expect(rainLabel(0.99)).toBeNull();
-    expect(rainLabel(null)).toBeNull();
-    expect(rainLabel(1)).toBe('1.0');
-    expect(rainLabel(2.94)).toBe('2.9');
-    expect(rainLabel(21.4)).toBe('21');
-  });
+
 });
 
 describe('METAR row', () => {

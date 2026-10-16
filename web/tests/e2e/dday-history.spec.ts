@@ -10,11 +10,11 @@ test('D-Day shares the map clock, camera and on-demand layer controls',async({pa
  await expect.poll(async()=>(await labels()).some(l=>l.text==='Omaha Beach')).toBe(true);
  await expect.poll(async()=>(await labels()).some(l=>l.text==='USS Texas')).toBe(true);
  const camera=await stage.evaluate((e:any)=>e.chartApi.camera());
- await page.getByRole('button',{name:'Data sources',exact:true}).click();
+ await page.getByRole('button',{name:'Map details',exact:true}).click();
  await page.getByLabel('Ships',{exact:true}).uncheck();
  await expect.poll(async()=>(await labels()).some(l=>l.text.startsWith('USS '))).toBe(false);
  await page.getByLabel('Ships',{exact:true}).check();
- await page.getByRole('button',{name:'Data sources',exact:true}).click();
+ await page.getByRole('button',{name:'Map details',exact:true}).click();
  await page.getByLabel('Historical day',{exact:true}).selectOption('1944-06-05');
  await expect.poll(async()=>(await labels()).some(l=>l.text==='Omaha Beach')).toBe(false);
  expect(await stage.evaluate((e:any)=>e.chartApi.camera())).toEqual(camera);

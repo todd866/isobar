@@ -2986,17 +2986,19 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
         CGContextSetRGBFillColor(ctx, titleColour.red, titleColour.green, titleColour.blue, 1);
         CGContextFillRect(ctx, CGRectMake(0, kMapH, kPanelW, kTitleH));
         NSFont *titleFont = [NSFont fontWithName:@"Helvetica-Bold" size:13] ?: [NSFont boldSystemFontOfSize:13];
-        NSString *mark = @"ECMWF · CC BY 4.0";
         [title drawAtPoint:NSMakePoint(8, kMapH + 6) withAttributes:@{
             NSFontAttributeName: titleFont,
             NSForegroundColorAttributeName: NSColor.whiteColor,
         }];
+#ifndef ISOBAR_APP
+        NSString *mark = @"ECMWF · CC BY 4.0";
         NSFont *markFont = [NSFont fontWithName:@"Helvetica" size:9] ?: [NSFont systemFontOfSize:9];
         NSSize markSize = [mark sizeWithAttributes:@{NSFontAttributeName: markFont}];
         [mark drawAtPoint:NSMakePoint(kPanelW - markSize.width - 8, kMapH + 8) withAttributes:@{
             NSFontAttributeName: markFont,
             NSForegroundColorAttributeName: [NSColor colorWithWhite:1 alpha:0.85],
         }];
+#endif
     }
 
     CGContextSaveGState(ctx);

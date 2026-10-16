@@ -61,12 +61,6 @@ static NSView *Find(NSView *view, NSString *identifier) {
     return nil;
 }
 
-static NSUInteger CountID(NSView *view, NSString *identifier) {
-    NSUInteger count = [view.accessibilityIdentifier isEqual:identifier] ? 1 : 0;
-    for (NSView *child in view.subviews) count += CountID(child, identifier);
-    return count;
-}
-
 static void Pump(NSTimeInterval seconds) {
     NSDate *until = [NSDate dateWithTimeIntervalSinceNow:seconds];
     while (until.timeIntervalSinceNow > 0)
@@ -122,96 +116,113 @@ static NSData *PNGRegion(NSView *view, NSRect bounds) {
 
 static int CheckExpandedGeometry(NSView *root, NSSize size, NSRect intendedMap) {
     int failures = 0;
-    NSView *toolbar = Find(root, @"fullscreen.toolbar");
-    NSView *transport = Find(root, @"fullscreen.transport");
-    NSView *days = Find(root, @"fullscreen.days");
-    TimelineStrip *timeline = (TimelineStrip *)Find(root, @"fullscreen.timeline");
-    NSView *status = Find(root, @"fullscreen.statusBar");
-    NSView *lens = Find(root, @"fullscreen.lensRow");
     NSView *gpu = Find(root, @"fullscreen.gpu");
     NSString *clipped = nil;
-    if (!toolbar || NSHeight(toolbar.frame) > 44 || IsClippedText(toolbar, &clipped)) {
-        fprintf(stderr, "expanded header row/truncation failed (%s)\n", clipped.UTF8String ?: "missing"); failures++;
-    }
-    NSMutableArray *headerControls = [NSMutableArray array];
-    for (NSView *v in toolbar.subviews) {
-        if (v.hidden || NSIsEmptyRect(v.frame)) continue;
-        if (!NSContainsRect(toolbar.bounds, v.frame) || fabs(NSMidY(v.frame) - NSMidY(toolbar.bounds)) > 2) {
-            fprintf(stderr, "header control is outside its single row: %s\n", v.accessibilityIdentifier.UTF8String); failures++;
-        }
-        for (NSView *other in headerControls) if (NSIntersectsRect(v.frame, other.frame)) {
-            fprintf(stderr, "header controls overlap: %s / %s\n", v.accessibilityIdentifier.UTF8String, other.accessibilityIdentifier.UTF8String); failures++;
-        }
-        [headerControls addObject:v];
-    }
     NSPopUpButton *speed = (NSPopUpButton *)Find(root, @"fullscreen.speed");
     for (NSMenuItem *item in speed.itemArray) {
         CGFloat needed = [item.title sizeWithAttributes:@{NSFontAttributeName:speed.font}].width + 26;
         if (needed > NSWidth(speed.frame) || [item.title containsString:@"…"]) failures++;
     }
-    NSButton *reading = (NSButton *)Find(toolbar, @"fullscreen.temperature");
+    NSButton *reading = (NSButton *)Find(root, @"fullscreen.temperature");
     if ([reading.attributedTitle.string.lowercaseString containsString:@"now"] ||
         [reading.attributedTitle attribute:NSAttachmentAttributeName atIndex:0 effectiveRange:NULL]) failures++;
     for (NSString *identifier in @[@"fullscreen.newMap", @"fullscreen.zoomIn", @"fullscreen.zoomOut",
-        @"fullscreen.zoomReset", @"fullscreen.zoom", @"fullscreen.timeTitle"])
+        @"fullscreen.zoomReset", @"fullscreen.zoom"])
         if (Find(root, identifier)) { fprintf(stderr, "forbidden expanded control %s\n", identifier.UTF8String); failures++; }
-    if (!transport || !days || !timeline || !status || !lens || CountID(status, @"fullscreen.lensRow") != 1) {
-        fprintf(stderr, "expanded deck/transport/lens row missing\n"); failures++;
-    } else {
-        NSRect dayRect = [days convertRect:days.bounds toView:root];
-        NSRect trackRect = [timeline convertRect:timeline.bounds toView:root];
-        if (fabs(NSMinX(dayRect) - NSMinX(trackRect)) > 2 || fabs(NSWidth(dayRect) - NSWidth(trackRect)) > 2) {
-            fprintf(stderr, "days and track misaligned %.1f %.1f\n", NSMinX(dayRect), NSMinX(trackRect)); failures++;
+    // Map-first contract: the map owns the entire content rect and chrome floats
+    // above it. The old deck/column assertions intentionally disappeared here.
+    NSView *mapView = gpu ?: Find(root, @"window.chart");
+    if (!mapView && intendedMap.size.width > 0) mapView = root;
+    NSRect map = mapView ? [mapView convertRect:mapView.bounds toView:root] : intendedMap;
+    NSRect content = root.bounds;
+    NSRect hit = NSIntersectionRect(map, content);
+    CGFloat fill = NSWidth(hit) * NSHeight(hit) / MAX(1, NSWidth(content) * NSHeight(content));
+    if (!mapView || fill < .99) {
+        fprintf(stderr, "map-first expanded map fill %.3f rect=%s content=%s\n", fill,
+            NSStringFromRect(map).UTF8String, NSStringFromRect(content).UTF8String); failures++;
+    }
+    NSArray *chips = @[@"mapfirst.place", @"fullscreen.lensRow", @"mapfirst.bottom", @"mapfirst.actions"];
+    NSMutableArray *chipViews = [NSMutableArray array];
+    for (NSString *identifier in chips) {
+        NSView *chip = Find(root, identifier);
+        if (!chip) { fprintf(stderr, "missing expanded chip %s\n", identifier.UTF8String); failures++; continue; }
+        [chipViews addObject:chip];
+        NSArray *appearances=@[NSAppearanceNameAqua,NSAppearanceNameDarkAqua];
+        if (chip.appearance || ![[chip.effectiveAppearance bestMatchFromAppearancesWithNames:appearances]
+                isEqual:[root.window.effectiveAppearance bestMatchFromAppearancesWithNames:appearances]]) {
+            fprintf(stderr, "chip does not inherit window appearance: %s\n", identifier.UTF8String); failures++;
         }
-        for (NSUInteger i = 0; i < timeline.daySpanCount; i++) {
-            NSView *tile = Find(root, [NSString stringWithFormat:@"hub.day.%lu", (unsigned long)i]);
-            if (!tile) { fprintf(stderr, "missing expanded day tile %lu\n", (unsigned long)i); failures++; break; }
-            NSRect tileRect = [tile convertRect:tile.bounds toView:root];
-            NSRect spanRect = [timeline convertRect:[timeline daySpanFrameAtIndex:i] toView:root];
-            if (fabs(NSMinX(tileRect) - NSMinX(spanRect)) > 2 || fabs(NSMaxX(tileRect) - NSMaxX(spanRect)) > 2) {
-                fprintf(stderr, "expanded day %lu misaligned\n", (unsigned long)i); failures++; break;
-            }
-        }
-        if (timeline.daySpanCount && fabs(NSMaxX([timeline trackRect]) - [timeline cursorXForFraction:1]) > 2) {
-            fprintf(stderr, "timeline does not end at final frame\n"); failures++;
-        }
-        NSRect lensRect = [lens convertRect:lens.bounds toView:root];
-        if (NSMinY(lensRect) < NSMinY(status.frame) || NSMaxY(lensRect) > NSMaxY(status.frame) + 1) {
-            fprintf(stderr, "lens row is not docked in footer\n"); failures++;
+        if (IsClippedText(chip, &clipped)) { fprintf(stderr, "chip %s truncates %s\n", identifier.UTF8String, clipped.UTF8String); failures++; }
+    }
+    for (NSUInteger i = 0; i < chipViews.count; i++) for (NSUInteger j = i + 1; j < chipViews.count; j++) {
+        NSView *first = chipViews[i], *second = chipViews[j];
+        NSRect a = [first convertRect:first.bounds toView:root];
+        NSRect b = [second convertRect:second.bounds toView:root];
+        if (NSIntersectsRect(a, b)) { fprintf(stderr, "chips overlap: %s / %s\n", first.accessibilityIdentifier.UTF8String, second.accessibilityIdentifier.UTF8String); failures++; }
+    }
+    for (NSView *chip in chipViews) for (NSString *identifier in @[@"gpumap.flat", @"gpumap.sphere", @"gpumap.recenter", @"gpumap.north"]) {
+        NSView *control = Find(root, identifier);
+        if (!control || control.hiddenOrHasHiddenAncestor) continue;
+        NSRect a = [chip convertRect:chip.bounds toView:root];
+        NSRect b = [control convertRect:control.bounds toView:root];
+        if (NSIntersectsRect(a, b)) { fprintf(stderr, "chip %s overlaps map control %s\n", chip.accessibilityIdentifier.UTF8String, identifier.UTF8String); failures++; }
+    }
+    NSUInteger dayCount = 0;
+    for (NSUInteger i = 0; i < 7; i++) {
+        NSView *day = Find(root, [NSString stringWithFormat:@"hub.day.%lu", (unsigned long)i]);
+        if (!day || day.hiddenOrHasHiddenAncestor || NSWidth(day.bounds) < 1) { fprintf(stderr, "missing visible expanded day %lu\n", (unsigned long)i); failures++; }
+        else dayCount++;
+    }
+    if (dayCount != 7) failures++;
+    NSView *lensColumn = Find(root, @"fullscreen.lensRow");
+    if (!lensColumn) { fprintf(stderr, "missing expanded floating lens column\n"); failures++; }
+    for (NSUInteger i = 0; i < 8; i++) {
+        NSString *identifier = [NSString stringWithFormat:@"fullscreen.lens.%lu", (unsigned long)i];
+        NSView *button = Find(root, identifier);
+        if (!button || button.hiddenOrHasHiddenAncestor || NSWidth(button.bounds) < 1) {
+            fprintf(stderr, "missing visible lens button %s\n", identifier.UTF8String); failures++;
         }
     }
-    NSRect map = intendedMap;
-    if (gpu) map = [gpu convertRect:gpu.bounds toView:root];
-    CGFloat expectedTop = NSMaxY(transport.frame) + 2;
-    NSRect work = NSMakeRect(0, expectedTop, size.width, NSMinY(status.frame) - expectedTop);
-    NSView *dock = Find(root, @"fullscreen.lensDock");
-    CGFloat availableWidth = dock ? NSMinX(dock.frame) - 8 : NSWidth(work);
-    if (NSIsEmptyRect(map) || fabs(NSMinX(map)) > 1 || fabs(NSMinY(map) - NSMinY(work)) > 1 ||
-        fabs(NSWidth(map) - availableWidth) > 1 || fabs(NSHeight(map) - NSHeight(work)) > 1) {
-        fprintf(stderr, "map does not fill allocated column: %s\n", NSStringFromRect(map).UTF8String); failures++;
+    if (Find(root, @"hub.playheadDot") || Find(root, @"fullscreen.range") || Find(root, @"hub.range")) {
+        fprintf(stderr, "obsolete day range/dot element remains\n"); failures++;
     }
-    CGFloat fill = NSWidth(map) * NSHeight(map) / MAX(1, size.width * size.height);
-    if (!dock && size.width == 1512 && fill < .85) { fprintf(stderr, "map fill %.3f below .85\n", fill); failures++; }
-    if (dock && (NSIntersectsRect(map, dock.frame) || NSMaxX(dock.frame) > size.width ||
-        fabs(NSMinY(dock.frame) - NSMinY(work)) > 1 || fabs(NSMaxY(dock.frame) - NSMaxY(work)) > 1)) {
-        fprintf(stderr, "lens dock overlaps map or escapes work area\n"); failures++;
-    }
-    NSView *card = Find(dock, @"forecast.inspector");
-    if (dock && (!card || !NSContainsRect(dock.bounds, card.frame))) {
-        fprintf(stderr, "lens card escapes dock\n"); failures++;
-    }
-    if (NSHeight(timeline.frame) != 28 || NSHeight(days.frame) != 50 ||
-        fabs(NSMinY(timeline.frame) + NSMinY(transport.frame) - NSMaxY(days.frame)) > 1) failures++;
-    printf("layout %.0fx%.0f: header 1 row, deck 2 rows, map %.2f%%, dock %s\n", size.width, size.height, fill*100, dock ? "yes" : "no");
+    printf("layout %.0fx%.0f: map %.2f%%, chips %lu, days %lu\n", size.width, size.height, fill*100,
+        (unsigned long)chipViews.count, (unsigned long)dayCount);
     return failures;
 }
 
 static int CheckPopover(NSView *root) {
     NSString *clipped = nil;
-    int failures = IsClippedText(root, &clipped) ? 1 : 0;
-    if (failures) fprintf(stderr, "popover truncation: %s\n", clipped.UTF8String ?: "unknown");
+    int failures = 0;
+    if (IsClippedText(root, &clipped)) { fprintf(stderr, "popover compact readout clipped: %s\n", clipped.UTF8String ?: "unknown"); failures++; }
     if (Find(root, @"popover.windDirectionText") && Find(root, @"popover.windArrow")) failures++;
     if (Find(root, @"popover.nowFiller")) failures++;
+    NSView *map = Find(root, @"popover.gpu") ?: Find(root, @"popover.chart");
+    NSRect content = root.bounds;
+    NSRect mapRect = map ? [map convertRect:map.bounds toView:root] : NSZeroRect;
+    NSRect hit = NSIntersectionRect(content, mapRect);
+    CGFloat fill = NSWidth(hit) * NSHeight(hit) / MAX(1, NSWidth(content) * NSHeight(content));
+    if (!map || fill < .99) { fprintf(stderr, "popover map-first fill %.3f\n", fill); failures++; }
+    NSMutableArray *chips = [NSMutableArray array];
+    for (NSString *identifier in @[@"mapfirst.place", @"popover.lensRow", @"mapfirst.bottom", @"mapfirst.actions"]) {
+        NSView *chip = Find(root, identifier);
+        if (!chip) { fprintf(stderr, "missing popover chip %s\n", identifier.UTF8String); failures++; }
+        else [chips addObject:chip];
+    }
+    for (NSUInteger i = 0; i < chips.count; i++) for (NSUInteger j = i + 1; j < chips.count; j++) {
+        NSView *aView = chips[i], *bView = chips[j];
+        if (NSIntersectsRect([aView convertRect:aView.bounds toView:root], [bView convertRect:bView.bounds toView:root])) failures++;
+    }
+    for (NSUInteger i = 0; i < 7; i++) {
+        NSView *day = Find(root, [NSString stringWithFormat:@"hub.day.%lu", (unsigned long)i]);
+        if (!day || day.hiddenOrHasHiddenAncestor || NSWidth(day.bounds) < 1) failures++;
+    }
+    if (!Find(root, @"popover.lensRow")) failures++;
+    for (NSUInteger i = 0; i < 8; i++) {
+        NSView *button = Find(root, [NSString stringWithFormat:@"popover.lens.%lu", (unsigned long)i]);
+        if (!button || button.hiddenOrHasHiddenAncestor || NSWidth(button.bounds) < 1) failures++;
+    }
+    if (Find(root, @"hub.playheadDot") || Find(root, @"popover.range") || Find(root, @"hub.range")) failures++;
     return failures;
 }
 
@@ -276,20 +287,13 @@ static int CheckSettings(ExpandedAcceptanceController *c) {
 }
 
 static int Capture(NSView *view, NSString *path) {
-    NSMutableArray *standins = [NSMutableArray array];
-    for (NSView *child in view.subviews.copy) if ([child isKindOfClass:GPUMapView.class] && !child.hidden) {
-        GPUMapView *gpu = (GPUMapView *)child;
-        [gpu waitForUploads];
-        CGImageRef shot = [gpu copySnapshot];
-        if (!shot) { fprintf(stderr, "GPU snapshot failed\n"); return 1; }
-        NSImageView *image = [NSImageView imageViewWithImage:[[NSImage alloc] initWithCGImage:shot size:gpu.bounds.size]];
-        CGImageRelease(shot);
-        image.frame = gpu.frame; image.imageScaling = NSImageScaleAxesIndependently;
-        [view addSubview:image positioned:NSWindowAbove relativeTo:gpu];
-        [standins addObject:image];
-    }
-    NSData *png = PNGRegion(view, view.bounds);
-    for (NSView *standin in standins) [standin removeFromSuperview];
+    GPUMapView *gpu = (GPUMapView *)Find(view, @"fullscreen.gpu");
+    if (!gpu) gpu = (GPUMapView *)Find(view, @"popover.gpu");
+    if ([gpu isKindOfClass:GPUMapView.class]) [gpu waitForUploads];
+    // Use the production feedback compositor so a full-bleed Metal map and
+    // every native chip/control are captured in their real z-order.
+    NSData *png = FeedbackViewPNG(view, [gpu isKindOfClass:GPUMapView.class] ? gpu : nil);
+    if (!png) png = PNGRegion(view, view.bounds);
     if (!png.length || ![png writeToFile:path atomically:YES]) return 1;
     printf("wrote %s\n", path.UTF8String);
     return 0;
@@ -353,12 +357,13 @@ int main(int argc, const char **argv) {
         failures += Capture(settings.contentView, [output stringByAppendingPathComponent:@"settings-light.png"]);
         settings.contentView.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
         failures += Capture(settings.contentView, [output stringByAppendingPathComponent:@"settings-dark.png"]);
-        [c presentChartWindowInFrame:NSMakeRect(-30000, -30000, 1512, 982)];
-        for (NSValue *value in @[[NSValue valueWithSize:NSMakeSize(1512, 982)], [NSValue valueWithSize:NSMakeSize(1280, 720)], [NSValue valueWithSize:NSMakeSize(1024, 768)]]) {
+        [c presentChartWindowInFrame:NSMakeRect(-30000, -30000, 1600, 1000)];
+        for (NSValue *value in @[[NSValue valueWithSize:NSMakeSize(1600, 1000)], [NSValue valueWithSize:NSMakeSize(1280, 720)], [NSValue valueWithSize:NSMakeSize(1512, 982)], [NSValue valueWithSize:NSMakeSize(1024, 768)]]) {
             NSSize size = value.sizeValue;
             [c.chartWindow setFrame:NSMakeRect(-30000, -30000, size.width, size.height) display:NO];
             for (NSArray *look in @[@[NSAppearanceNameAqua, @"light"], @[NSAppearanceNameDarkAqua, @"dark"]]) {
-                c.chartWindow.contentView.appearance = [NSAppearance appearanceNamed:look[0]];
+                c.chartWindow.appearance = [NSAppearance appearanceNamed:look[0]];
+                c.chartWindow.contentView.appearance = nil;
                 for (NSArray *mode in @[@[@(-1), @"pressure"], @[@1, @"fly"], @[@2, @"rain"], @[@4, @"temp"]]) {
                     [c applyLens:[mode[0] integerValue] rebuild:YES];
                     [c layoutChartWindow]; Pump(.15);

@@ -17,8 +17,8 @@ fi
 
 SHORT=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
 BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist)
-if [[ "$SHORT" != "1.11.6" || "$BUILD" != "42" ]]; then
-    echo "tests.sh: Info.plist version is ${SHORT} (${BUILD}); expected 1.11.6 (42)." >&2
+if [[ "$SHORT" != "1.11.7" || "$BUILD" != "43" ]]; then
+    echo "tests.sh: Info.plist version is ${SHORT} (${BUILD}); expected 1.11.7 (43)." >&2
     exit 1
 fi
 
@@ -36,6 +36,10 @@ if grep -nE -- '-mmacosx-version-min=[0-9]|^[[:space:]]*clang[[:space:]]' build.
     echo 'tests.sh: build with "$(xcrun --find clang)" and LSMinimumSystemVersion, as tools/check-app.sh does.' >&2
     exit 1
 fi
+
+"$CC" -fobjc-arc -Wall -Wextra -Werror -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \
+    Tests/test_aboutwindow.m -framework Cocoa -Wl,-sectcreate,__TEXT,__info_plist,Info.plist -o "$WORK_DIR/about_tests"
+"$WORK_DIR/about_tests"
 
 python3 tools/run-python-tests.py Tests test_feedback.py
 "$CC" -fobjc-arc -Wall -Wextra -Werror -isysroot "$SDKROOT" "-mmacosx-version-min=$MINIMUM_MACOS" -ISources \

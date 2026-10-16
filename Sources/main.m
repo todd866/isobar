@@ -1,3 +1,4 @@
+#import "aboutwindow.h"
 // Isobar — local rain, wind, aviation weather and Bureau synoptic charts.
 #import <Cocoa/Cocoa.h>
 #import <CoreLocation/CoreLocation.h>
@@ -133,6 +134,46 @@ static CGFloat TextWidth(NSString *text, NSFont *font) {
 @implementation FlippedView
 - (BOOL)isFlipped { return YES; }
 @end
+
+@interface MapChipTint : NSView
+@end
+@implementation MapChipTint
+- (NSView *)hitTest:(NSPoint)point { (void)point; return nil; }
+- (void)drawRect:(NSRect)dirty {
+    BOOL dark=[[self.effectiveAppearance bestMatchFromAppearancesWithNames:@[NSAppearanceNameAqua,NSAppearanceNameDarkAqua]] isEqual:NSAppearanceNameDarkAqua];
+    [[NSColor colorWithWhite:dark?.06:.98 alpha:.86] setFill]; NSRectFill(dirty);
+}
+- (void)viewDidChangeEffectiveAppearance { [super viewDidChangeEffectiveAppearance]; self.needsDisplay=YES; }
+@end
+
+// Floating AppKit material; coordinates match the map's flipped root.
+@interface MapChrome : NSVisualEffectView
+@end
+@implementation MapChrome
+- (BOOL)isFlipped { return YES; }
+- (void)drawRect:(NSRect)dirty {
+    [super drawRect:dirty];
+    BOOL dark=[[self.effectiveAppearance bestMatchFromAppearancesWithNames:@[NSAppearanceNameAqua,NSAppearanceNameDarkAqua]] isEqual:NSAppearanceNameDarkAqua];
+    [[NSColor colorWithWhite:dark?.07:.98 alpha:.82] setFill];
+    NSRectFillUsingOperation(NSIntersectionRect(dirty,self.bounds),NSCompositingOperationSourceOver);
+}
+- (void)viewDidChangeEffectiveAppearance { [super viewDidChangeEffectiveAppearance]; self.needsDisplay=YES; }
+@end
+static MapChrome *MapChip(NSRect frame, NSString *identifier) {
+    MapChrome *chip = [[MapChrome alloc] initWithFrame:frame];
+    chip.material = NSVisualEffectMaterialPopover;
+    chip.blendingMode = NSVisualEffectBlendingModeWithinWindow;
+    chip.state = NSVisualEffectStateActive;
+    chip.wantsLayer = YES;
+    chip.layer.cornerRadius = 8;
+    chip.layer.masksToBounds = YES;
+    chip.accessibilityIdentifier = identifier;
+    MapChipTint *tint=[[MapChipTint alloc] initWithFrame:chip.bounds];
+    tint.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
+    tint.accessibilityElement=NO;
+    [chip addSubview:tint];
+    return chip;
+}
 
 @interface ChartRoot : FlippedView
 @property (nonatomic, copy) void (^onBackgroundClick)(void);
@@ -835,8 +876,8 @@ static id LiveLayerContents(NSImage *image, NSSize viewSize, CGFloat *scaleOut) 
         _liveNext = [CALayer layer];
         _liveBase.actions = actions;
         _liveNext.actions = actions;
-        _liveBase.contentsGravity = kCAGravityResize;
-        _liveNext.contentsGravity = kCAGravityResize;
+        _liveBase.contentsGravity = kCAGravityResizeAspect;
+        _liveNext.contentsGravity = kCAGravityResizeAspect;
         [self.layer addSublayer:_liveBase];
         [self.layer addSublayer:_liveNext];
     }
@@ -929,10 +970,17 @@ static id LiveLayerContents(NSImage *image, NSSize viewSize, CGFloat *scaleOut) 
     _compareW = pw;
     _compareH = ph;
 }
+- (NSRect)chartContentRect {
+    NSSize size=_chartImage ? _chartImage.size : NSMakeSize(_crop.size.width,_crop.size.height);
+    if (size.width<=0 || size.height<=0) return self.bounds;
+    CGFloat scale=MIN(NSWidth(self.bounds)/size.width,NSHeight(self.bounds)/size.height);
+    return NSMakeRect((NSWidth(self.bounds)-size.width*scale)/2,(NSHeight(self.bounds)-size.height*scale)/2,size.width*scale,size.height*scale);
+}
 - (void)drawPins {
     if (_pins.count == 0 || _crop.size.width < 1 || _crop.size.height < 1) return;
-    CGFloat width = NSWidth(self.bounds);
-    CGFloat height = NSHeight(self.bounds);
+    NSRect content=[self chartContentRect];
+    CGFloat width = NSWidth(content);
+    CGFloat height = NSHeight(content);
     // A small unlabelled dot: the owner knows where he lives, and a name label covers the isobars.
     NSColor *blue = MSLPNSColour(MSLPColourTitle());
     for (NSDictionary *pin in _pins) {
@@ -941,6 +989,7 @@ static id LiveLayerContents(NSImage *image, NSSize viewSize, CGFloat *scaleOut) 
         CGFloat vx = (pdfX - _crop.origin.x) / _crop.size.width * width;
         CGFloat vy = (_crop.origin.y + _crop.size.height - pdfY) / _crop.size.height * height;
         if (vx < 1 || vy < 1 || vx > width - 1 || vy > height - 1) continue;
+        vx+=NSMinX(content); vy+=NSMinY(content);
         [NSColor.whiteColor setFill];
         [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(vx - 4, vy - 4, 8, 8)] fill];
         [blue setFill];
@@ -957,10 +1006,10 @@ static id LiveLayerContents(NSImage *image, NSSize viewSize, CGFloat *scaleOut) 
     if (_handlesGestures && (scale != 1 || _gestureOffset.x != 0 || _gestureOffset.y != 0))
         CGContextConcatCTM(transformContext, CGAffineTransformMake(scale, 0, 0, scale, _gestureOffset.x, _gestureOffset.y));
     if (_chartImage) {
-        [_chartImage drawInRect:self.bounds fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1 respectFlipped:YES hints:nil];
+        [_chartImage drawInRect:[self chartContentRect] fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1 respectFlipped:YES hints:nil];
         if (_compareImage && _compareAlpha > 0)
-            [_compareImage drawInRect:self.bounds fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:_compareAlpha respectFlipped:YES hints:nil];
-        DrawMapDetails(self.mapDetails, self.bounds);
+            [_compareImage drawInRect:[self chartContentRect] fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:_compareAlpha respectFlipped:YES hints:nil];
+        DrawMapDetails(self.mapDetails, [self chartContentRect]);
         if (self.drawsFrame) {
             [[NSColor colorWithSRGBRed:0x26 / 255.0 green:0x23 / 255.0 blue:0x22 / 255.0 alpha:0.55] setStroke];
             NSBezierPath *frame = [NSBezierPath bezierPathWithRect:NSInsetRect(self.bounds, 0.5, 0.5)];
@@ -975,15 +1024,15 @@ static id LiveLayerContents(NSImage *image, NSSize viewSize, CGFloat *scaleOut) 
     CGContextSaveGState(ctx);
     CGContextTranslateCTM(ctx, 0, NSHeight(self.bounds));
     CGContextScaleCTM(ctx, 1, -1);
-    if (_cache) CGContextDrawImage(ctx, CGRectMake(0, 0, NSWidth(self.bounds), NSHeight(self.bounds)), _cache);
+    if (_cache) CGContextDrawImage(ctx, NSRectToCGRect([self chartContentRect]), _cache);
     [self ensureCompareCacheInContext:ctx];
     if (_compareCache && _compareAlpha > 0) {
         CGContextSetAlpha(ctx, _compareAlpha);
-        CGContextDrawImage(ctx, CGRectMake(0, 0, NSWidth(self.bounds), NSHeight(self.bounds)), _compareCache);
+        CGContextDrawImage(ctx, NSRectToCGRect([self chartContentRect]), _compareCache);
     }
     CGContextRestoreGState(ctx);
     [self drawPins];
-    DrawMapDetails(self.mapDetails, self.bounds);
+    DrawMapDetails(self.mapDetails, [self chartContentRect]);
     if (self.drawsFrame) {
         [[NSColor colorWithSRGBRed:0x26 / 255.0 green:0x23 / 255.0 blue:0x22 / 255.0 alpha:0.55] setStroke];
         NSBezierPath *frame = [NSBezierPath bezierPathWithRect:NSInsetRect(self.bounds, 0.5, 0.5)];
@@ -1183,6 +1232,7 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
 @property (nonatomic, copy) void (^onSeek)(double fraction);
 @property (nonatomic, copy) void (^onPreview)(double fraction);
 @property (nonatomic, strong) NSTimeZone *timeZone;
+@property BOOL aviationClock;
 // Local day of "now". Bands use the same midnight and the same Today/weekday labels as the day strip.
 @property (nonatomic, strong) NSDate *now;
 @property (nonatomic, copy) NSDate *(^referenceNow)(void);
@@ -1591,8 +1641,9 @@ static NSString *ForecastDay(NSDate *date, NSDate *now, NSTimeZone *zone) {
     NSTimeInterval span = [last timeIntervalSinceDate:first];
     if (!(span > 0)) return @"";
     fraction = MIN(1, MAX(0, isfinite(fraction) ? fraction : 0));
-    return MapPlayheadClockText([first dateByAddingTimeInterval:span * fraction],
-        self.referenceNow ? self.referenceNow() : (self.now ?: NSDate.date), self.timeZone);
+    NSDate *valid = [first dateByAddingTimeInterval:span * fraction];
+    NSString *local = MapPlayheadClockText(valid, self.referenceNow ? self.referenceNow() : (self.now ?: NSDate.date), self.timeZone);
+    return self.aviationClock ? [local stringByAppendingFormat:@" · %@", MapPlayheadZuluText(valid)] : local;
 }
 - (NSRect)playheadClockFrame:(NSString *)text font:(NSFont *)font fraction:(double)fraction {
     if (!font) font = [NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightMedium];
@@ -2679,6 +2730,21 @@ static NSData *FeedbackViewPNG(NSView *root, GPUMapView *gpu) {
             if (root.isFlipped) box.origin.y = NSHeight(root.bounds) - NSMaxY(box);
             if (rep.CGImage) CGContextDrawImage(cg, NSRectToCGRect(box), rep.CGImage);
         }
+        for (NSView *branch = gpu; branch && branch != root; branch = branch.superview) {
+            NSArray<NSView *> *siblings = branch.superview.subviews;
+            NSUInteger index = [siblings indexOfObjectIdenticalTo:branch];
+            if (index == NSNotFound) continue;
+            for (NSUInteger i = index + 1; i < siblings.count; i++) {
+                NSView *child = siblings[i];
+                if (child.hiddenOrHasHiddenAncestor || NSIsEmptyRect(child.bounds)) continue;
+                NSBitmapImageRep *rep = [child bitmapImageRepForCachingDisplayInRect:child.bounds];
+                if (!rep) continue;
+                [child cacheDisplayInRect:child.bounds toBitmapImageRep:rep];
+                NSRect box = [child convertRect:child.bounds toView:root];
+                if (root.isFlipped) box.origin.y = NSHeight(root.bounds) - NSMaxY(box);
+                if (rep.CGImage) CGContextDrawImage(cg, NSRectToCGRect(box), rep.CGImage);
+            }
+        }
         [NSGraphicsContext restoreGraphicsState];
     }
     return [bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
@@ -3327,7 +3393,31 @@ static OSStatus FeedbackHotKeyHandler(EventHandlerCallRef next, EventRef event, 
             [title appendAttributedString:[[NSAttributedString alloc] initWithString:@" " attributes:attrs]];
             [title appendAttributedString:[NSAttributedString attributedStringWithAttachment:attachment]];
         }
-        if (tail.length) [title appendAttributedString:[[NSAttributedString alloc] initWithString:tail attributes:attrs]];
+        if (tail.length) {
+            NSDictionary *wind=forecast ? sample : FooterWindModel([self packFor:[self hubPlace]][@"obs"]);
+            id bearing=forecast?wind[@"windFrom"]:wind[@"toDeg"];
+            if ([bearing isKindOfClass:NSNumber.class] && isfinite([bearing doubleValue])) {
+                double angle=(forecast?WindToDegrees([bearing doubleValue]):[bearing doubleValue])*M_PI/180;
+                NSImage *arrow=[NSImage imageWithSize:NSMakeSize(14,14) flipped:YES drawingHandler:^BOOL(NSRect rect) {
+                    (void)rect;
+                    NSPoint head=NSMakePoint(7+sin(angle)*5,7-cos(angle)*5);
+                    NSPoint back=NSMakePoint(7-sin(angle)*4,7+cos(angle)*4);
+                    NSBezierPath *path=[NSBezierPath bezierPath]; path.lineWidth=1.4;
+                    [path moveToPoint:back]; [path lineToPoint:head];
+                    for (NSNumber *side in @[@(-1),@1]) {
+                        [path moveToPoint:NSMakePoint(head.x-sin(angle)*4+side.doubleValue*cos(angle)*3,
+                            head.y+cos(angle)*4+side.doubleValue*sin(angle)*3)];
+                        [path lineToPoint:head];
+                    }
+                    [ink setStroke]; [path stroke]; return YES;
+                }];
+                NSTextAttachment *attachment=[NSTextAttachment new]; attachment.image=arrow;
+                attachment.bounds=NSMakeRect(0,-2,14,14);
+                [title appendAttributedString:[[NSAttributedString alloc] initWithString:@" " attributes:attrs]];
+                [title appendAttributedString:[NSAttributedString attributedStringWithAttachment:attachment]];
+                [title appendAttributedString:[[NSAttributedString alloc] initWithString:[tail stringByReplacingOccurrencesOfString:@" · " withString:@" "] attributes:attrs]];
+            } else [title appendAttributedString:[[NSAttributedString alloc] initWithString:tail attributes:attrs]];
+        }
         if (valueSize > size) {
             // The temperature token (digits, sign and degree, or a dash) is the big value.
             NSString *text = title.string;
@@ -3345,7 +3435,7 @@ static OSStatus FeedbackHotKeyHandler(EventHandlerCallRef next, EventRef event, 
         }
         return title;
     };
-    NSMutableAttributedString *title = build(size, expanded ? 28 : 0);
+    NSMutableAttributedString *title = build(size, expanded ? 28 : 24);
     button.attributedTitle = title;
     if (expanded || [button.accessibilityIdentifier isEqual:@"popover.obs"]) {
         [button setFrameSize:NSMakeSize(ceil(title.size.width) + 12, NSHeight(button.frame))];
@@ -3432,6 +3522,40 @@ static OSStatus FeedbackHotKeyHandler(EventHandlerCallRef next, EventRef event, 
         _timeLensHash = hash;
         _timeLensHeaderAt = uptime;
     }
+    if (_expandedMap && _chartTimeline) _timeTitle.stringValue=[_chartTimeline clockTextForFraction:[self motionFractionForDate:date]] ?: @"";
+    for (NSButton *reading in @[_timeLensButton ?: [NSButton new], _fullscreenLens ?: [NSButton new]]) {
+        NSView *chip=reading.superview;
+        if (![chip.accessibilityIdentifier isEqual:@"mapfirst.place"]) continue;
+        CGFloat cursor=NSMaxX(reading.frame)+8;
+        NSTextField *clock=reading==_fullscreenLens?_timeTitle:_popoverClock;
+        if (clock.superview!=chip) [chip addSubview:clock];
+        for (NSView *child in chip.subviews) {
+            if ([child.accessibilityIdentifier hasSuffix:@"warning"] && !child.hidden) cursor=MAX(cursor,NSMaxX(child.frame)+8);
+            if ([child.accessibilityIdentifier hasSuffix:@".clock"] || [child.accessibilityIdentifier hasSuffix:@".timeTitle"]) clock=(NSTextField *)child;
+        }
+        for (NSView *child in chip.subviews) if ([child.accessibilityIdentifier hasSuffix:@".issued"] && !child.hidden) {
+            [self fillPopoverIssued:child];
+            child.frame=NSMakeRect(cursor,12,NSWidth(child.frame),18); cursor+=NSWidth(child.frame)+6;
+        }
+        if (clock) {
+            CGFloat width=ceil([clock.stringValue sizeWithAttributes:@{NSFontAttributeName:clock.font}].width)+8;
+            clock.frame=NSMakeRect(cursor,13,width,16);
+            [chip setFrameSize:NSMakeSize(NSMaxX(clock.frame)+8,40)];
+        }
+    }
+    NSView *activeRoot=_expandedMap?_chartWindow.contentView:self.popover.contentViewController.view;
+    for (NSView *child in activeRoot.subviews.copy)
+        if ([child.accessibilityIdentifier isEqual:@"mapfirst.scrubTime"]) [child removeFromSuperview];
+    if (_timelinePreviewing) {
+        DayStripView *days=_expandedMap?_fullscreenDays:_dayStrip;
+        NSTextField *clock=_expandedMap?_timeTitle:_popoverClock;
+        CGFloat width=NSWidth(clock.frame)+16;
+        NSPoint dot=[days convertPoint:NSMakePoint([days positionForDate:date]*NSWidth(days.bounds),0) toView:activeRoot];
+        CGFloat x=MIN(NSWidth(activeRoot.bounds)-width-10,MAX(10,dot.x-width/2));
+        MapChrome *bubble=MapChip(NSMakeRect(x,NSHeight(activeRoot.bounds)-82,width,26),@"mapfirst.scrubTime");
+        clock.frame=NSMakeRect(8,5,width-16,16);
+        [bubble addSubview:clock]; [activeRoot addSubview:bubble];
+    }
     // A lens cursor tracks the playhead. During play it moves a fraction of a
     // point per frame, so a few updates a second stay smooth without redrawing
     // the graph on every tick.
@@ -3487,7 +3611,7 @@ static OSStatus FeedbackHotKeyHandler(EventHandlerCallRef next, EventRef event, 
         }
         NSString *amount=known==24 ? [NSString stringWithFormat:@"%.0f",total] : @"—";
         reading=[NSString stringWithFormat:@"%@ mm/h · %@ mm / 24 h",reading,amount];
-    } else if (_forecastMode==4) reading=valid(row[@"temp"]) ? [NSString stringWithFormat:@"%.0f °C · ECMWF",[row[@"temp"] doubleValue]] : @"— °C · ECMWF";
+    } else if (_forecastMode==4) reading=valid(row[@"temp"]) ? [NSString stringWithFormat:@"%.0f °C",[row[@"temp"] doubleValue]] : @"— °C";
     else if (_forecastMode==0 && valid(row[@"windKt"])) {
         reading=[NSString stringWithFormat:@"%.0f kt",[row[@"windKt"] doubleValue]];
         if (valid(row[@"gustKt"]) && [row[@"gustKt"] doubleValue]>[row[@"windKt"] doubleValue])
@@ -3495,7 +3619,7 @@ static OSStatus FeedbackHotKeyHandler(EventHandlerCallRef next, EventRef event, 
     }
     _forecastReading.stringValue=reading;
     _forecastReading.toolTip=[NSString stringWithFormat:@"%@ · %@ · %@%@",ForecastDay(date,_chartNow ?: NSDate.date,zone),SituationClock(date,zone),reading,
-        _forecastMode==2 ? @" · accumulation for the 24 hours from the selected hour; — requires a complete window" : @""];
+        _forecastMode==2 ? @" · accumulation for the 24 hours from the selected hour; — requires a complete window" : _forecastMode==4 ? @" · ECMWF" : @""];
 }
 
 - (void)updatePopoverPlayControl {
@@ -3643,7 +3767,7 @@ static OSStatus FeedbackHotKeyHandler(EventHandlerCallRef next, EventRef event, 
         _popoverClock.stringValue = text;
         _popoverClock.toolTip = text;
     }
-    _popoverClock.frame = [_popoverTimeline playheadClockFrame:text font:_popoverClock.font fraction:_popoverTimeline.progress];
+    // The compact time stays in the floating place chip; it never consumes a row.
 }
 
 - (void)applyLiveFrame {
@@ -3849,16 +3973,15 @@ static OSStatus FeedbackHotKeyHandler(EventHandlerCallRef next, EventRef event, 
     [[self chartPreferences] setInteger:speed forKey:kPlaybackSpeedKey];
     _live.hoursPerSecond = IsobarLiveHoursPerSecond(_liveSpeed);
     // Refresh existing controls without rebuilding the map or moving its clock.
+    NSMutableArray<NSView *> *pending=[NSMutableArray array];
     for (NSView *root in @[self.popover.contentViewController.view ?: [NSView new],
-        _chartToolbar ?: [NSView new], _chartTransport ?: [NSView new],
-        _settingsWindow.contentView ?: [NSView new]]) {
-        for (NSView *view in root.subviews) if ([view isKindOfClass:NSPopUpButton.class]) {
-            NSPopUpButton *button = (NSPopUpButton *)view;
-            if ([button.accessibilityIdentifier isEqual:@"settings.playbackSpeed"] ||
-                [button.accessibilityIdentifier isEqual:@"popover.speed"] ||
-                [button.accessibilityIdentifier isEqual:@"fullscreen.speed"])
-                [button selectItemWithTag:speed];
-        }
+        _chartWindow.contentView ?: [NSView new], _settingsWindow.contentView ?: [NSView new]]) [pending addObject:root];
+    while (pending.count) {
+        NSView *view=pending.lastObject; [pending removeLastObject];
+        if ([view isKindOfClass:NSPopUpButton.class] &&
+            ([@[@"settings.playbackSpeed",@"popover.speed",@"fullscreen.speed"] containsObject:view.accessibilityIdentifier ?: @""]))
+            [(NSPopUpButton *)view selectItemWithTag:speed];
+        [pending addObjectsFromArray:view.subviews];
     }
 }
 
@@ -4053,7 +4176,7 @@ static OSStatus FeedbackHotKeyHandler(EventHandlerCallRef next, EventRef event, 
     _motionPreparation = progress;
     NSUInteger generation = ++_motionGeneration;
     [self updatePopoverPlayControl];
-    if (_chartWindow.isVisible) [self layoutChartToolbarIn:_chartWindow.contentView height:40];
+    if (_chartWindow.isVisible) [self layoutChartWindow];
     __weak Controller *weak = self;
     static dispatch_queue_t motionQueue;
     static dispatch_once_t once;
@@ -4099,7 +4222,7 @@ static OSStatus FeedbackHotKeyHandler(EventHandlerCallRef next, EventRef event, 
                 [strong stopPopoverPlayback]; [strong stopChartLoop];
             } else { strong->_motionFrames = frames; [strong startPreparedMotion]; }
             [strong updatePopoverPlayControl];
-            if (strong->_chartWindow.isVisible) [strong layoutChartToolbarIn:strong->_chartWindow.contentView height:56];
+            if (strong->_chartWindow.isVisible) [strong layoutChartWindow];
         });
     });
 }
@@ -4125,7 +4248,7 @@ static OSStatus FeedbackHotKeyHandler(EventHandlerCallRef next, EventRef event, 
     if (!_comparing) return;
     _comparing=NO;
     [[self timelineChart] clearComparison];
-    if (_expandedMap) [self layoutChartToolbarIn:_chartWindow.contentView height:40];
+    if (_expandedMap) [self layoutChartWindow];
 }
 
 - (NSDate *)dateForMotionFraction:(double)fraction {
@@ -4998,66 +5121,57 @@ static NSImage *WindBarbGlyph(void) {
     return segments;
 }
 
-// One segmented control picks the field and panel together, followed by
-// independent barbs and hazards. Labels are removed as a group when narrow.
+// The menu model is shared with existing keyboard callers. The visible lenses
+// are standard native toggle buttons in one floating column.
 - (NSView *)lensControlsWithIdentifier:(NSString *)prefix height:(CGFloat)height labels:(BOOL)labels {
-    BOOL available = [self modelChartsReady];
-    NSInteger activeLens = _selectedLens;
-    NSSegmentedControl *segments = [self lensSegmentsWithIdentifier:prefix labels:labels];
-    NSString *temperatureTip = [self temperatureFieldName];
-    if (![[segments toolTipForSegment:3] isEqual:temperatureTip]) {
-        [segments setImage:[NSImage imageWithSystemSymbolName:LensSymbols[3] accessibilityDescription:temperatureTip] forSegment:3];
-        [segments setToolTip:temperatureTip forSegment:3];
+    (void)height; (void)labels;
+    NSSegmentedControl *model=[self lensSegmentsWithIdentifier:prefix labels:YES];
+    model.enabled=[self modelChartsReady];
+    MapChrome *box=MapChip(NSMakeRect(0,0,100,8+LensCount*30+30), [prefix stringByAppendingString:@".lensRow"]);
+    box.accessibilityLabel=@"Map lenses";
+    for (NSInteger i=0;i<LensCount;i++) {
+        NSButton *button=[NSButton buttonWithTitle:LensTitles[i]
+            image:[NSImage imageWithSystemSymbolName:LensSymbols[i] accessibilityDescription:LensTitles[i]]
+            target:self action:@selector(chooseForecastMode:)];
+        button.buttonType=NSButtonTypePushOnPushOff; button.bezelStyle=NSBezelStyleRounded;
+        button.bordered=NO; button.imagePosition=NSImageLeft; button.imageScaling=NSImageScaleProportionallyDown;
+        button.font=[NSFont systemFontOfSize:12 weight:NSFontWeightMedium];
+        button.alignment=NSTextAlignmentLeft; button.tag=LensModes[i];
+        button.state=_selectedLens==LensModes[i]?NSControlStateValueOn:NSControlStateValueOff;
+        button.contentTintColor=button.state?NSColor.controlAccentColor:NSColor.labelColor;
+        button.wantsLayer=YES; button.layer.cornerRadius=5;
+        button.layer.backgroundColor=[NSColor.controlAccentColor colorWithAlphaComponent:button.state?.18:0].CGColor;
+        button.enabled=model.enabled;
+        button.accessibilityIdentifier=[prefix stringByAppendingFormat:@".lens.%ld",(long)i];
+        button.accessibilityLabel=LensTitles[i]; button.toolTip=[model toolTipForSegment:i];
+        button.frame=NSMakeRect(5,4+i*30,90,28);
+        [box addSubview:button];
+        NSMenu *menu=[model menuForSegment:i];
+        if (menu) {
+            NSPopUpButton *options=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(77,7+i*30,18,22) pullsDown:YES];
+            options.bordered=NO; [options addItemWithTitle:@""];
+            for (NSMenuItem *item in menu.itemArray) {
+                NSMenuItem *copy=[item copy]; copy.enabled=model.enabled;
+                if (i==3) copy.state=((copy.tag==1)==_tempAloft)?NSControlStateValueOn:NSControlStateValueOff;
+                [options.menu addItem:copy];
+            }
+            options.accessibilityLabel=[LensTitles[i] stringByAppendingString:@" options"];
+            [box addSubview:options]; button.frame=NSMakeRect(5,4+i*30,72,28);
+        }
     }
-    for (NSMenuItem *item in [segments menuForSegment:3].itemArray) {
-        NSControlStateValue state = (item.tag == 1) == _tempAloft ? NSControlStateValueOn : NSControlStateValueOff;
-        if (item.enabled != available) item.enabled = available;
-        if (item.state != state) item.state = state;
+    NSButton *barbs=[NSButton buttonWithImage:WindBarbGlyph() target:self action:@selector(toggleWindBarbs:)];
+    NSButton *hazards=[NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"cloud.bolt" accessibilityDescription:@"Hazards"] target:self action:@selector(toggleHazards:)];
+    NSInteger i=0;
+    for (NSButton *button in @[barbs,hazards]) {
+        button.buttonType=NSButtonTypePushOnPushOff; button.bezelStyle=NSBezelStyleRounded;
+        button.frame=NSMakeRect(7+i*45,6+LensCount*30,40,24);
+        button.accessibilityIdentifier=[prefix stringByAppendingString:i?@".hazards":@".barbs"];
+        button.accessibilityLabel=i?@"Hazards":@"Wind barbs";
+        button.toolTip=i?@"CB potential (model) · SIGMETs (official)":@"Wind barbs";
+        button.state=(i?_hazardLayer:_barbs)?NSControlStateValueOn:NSControlStateValueOff;
+        button.enabled=model.enabled && (i?[self gpuMapWanted]:[self barbsShownOnCurrentMap]);
+        [box addSubview:button]; i++;
     }
-    NSInteger selected = -1;
-    for (NSInteger i = 0; i < LensCount; i++) if (LensModes[i] == activeLens) selected = i;
-    if (segments.selectedSegment != selected) segments.selectedSegment = selected;
-    if (segments.enabled != available) segments.enabled = available;
-    CGFloat segmentsH = MIN(height, 24);
-    NSButton *barbs = [NSButton buttonWithImage:WindBarbGlyph() target:self action:@selector(toggleWindBarbs:)];
-    // One toggle shape on this row: the system push-on/push-off button, as Hazards.
-    // The same wind-vector toggle controls the classic and tilted GPU maps.
-    barbs.buttonType = NSButtonTypePushOnPushOff;
-    barbs.bezelStyle = NSBezelStyleRounded;
-    barbs.imagePosition = NSImageOnly;
-    BOOL drawn = [self barbsShownOnCurrentMap];
-    barbs.state = _sourceECMWF && _barbs && drawn ? NSControlStateValueOn : NSControlStateValueOff;
-    barbs.enabled = available && drawn;
-    barbs.hidden = !drawn;
-    barbs.toolTip = @"Wind barbs";
-    barbs.accessibilityLabel = @"Wind barbs";
-    barbs.accessibilityIdentifier = [prefix stringByAppendingString:@".barbs"];
-    CGFloat barbsW = drawn ? 30 : -6;
-    NSButton *hazards = [NSButton buttonWithTitle:labels ? @"Hazards" : @""
-        image:[NSImage imageWithSystemSymbolName:@"cloud.bolt" accessibilityDescription:@"Hazards"]
-        target:self action:@selector(toggleHazards:)];
-    hazards.buttonType = NSButtonTypePushOnPushOff;
-    hazards.bezelStyle = NSBezelStyleRounded;
-    hazards.font = segments.font;
-    hazards.imagePosition = labels ? NSImageLeft : NSImageOnly;
-    hazards.imageScaling = NSImageScaleProportionallyDown;
-    hazards.toolTip = @"CB potential (model) · SIGMETs (official)";
-    hazards.accessibilityLabel = @"Hazards";
-    hazards.accessibilityIdentifier = [prefix stringByAppendingString:@".hazards"];
-    hazards.enabled = available && [self gpuMapWanted];
-    hazards.state = _hazardLayer ? NSControlStateValueOn : NSControlStateValueOff;
-    [hazards sizeToFit];
-    CGFloat hazardsW = labels ? ceil(MAX(NSWidth(hazards.frame), hazards.intrinsicContentSize.width)) + 4 : 30;
-    FlippedView *box = [[FlippedView alloc] initWithFrame:NSMakeRect(0, 0, NSWidth(segments.frame) + 6 + barbsW + 6 + hazardsW, height)];
-    segments.frame = NSMakeRect(0, floor((height - segmentsH) / 2), NSWidth(segments.frame), segmentsH);
-    barbs.frame = NSMakeRect(NSMaxX(segments.frame) + 6, floor((height - segmentsH) / 2), MAX(barbsW, 0), segmentsH);
-    if (!drawn) barbs.frame = NSMakeRect(NSMaxX(segments.frame), barbs.frame.origin.y, 0, segmentsH);
-    hazards.frame = NSMakeRect(NSMaxX(barbs.frame) + 6, floor((height - segmentsH) / 2), hazardsW, segmentsH);
-    [box addSubview:segments];
-    [box addSubview:barbs];
-    [box addSubview:hazards];
-    box.accessibilityIdentifier = [prefix stringByAppendingString:@".lensRow"];
-    box.accessibilityLabel = @"Map lenses";
     return box;
 }
 
@@ -5097,7 +5211,7 @@ static NSImage *WindBarbGlyph(void) {
 }
 
 - (void)refreshMapFieldControls {
-    for (NSView *root in @[self.popover.contentViewController.view ?: [NSView new], _statusBar ?: [NSView new]]) {
+    for (NSView *root in @[self.popover.contentViewController.view ?: [NSView new], _chartWindow.contentView ?: [NSView new]]) {
         for (NSString *prefix in @[@"popover", @"fullscreen"]) {
             NSView *old = nil;
             for (NSView *view in root.subviews)
@@ -5747,7 +5861,7 @@ static NSImage *WindBarbGlyph(void) {
         places.accessibilityIdentifier = _forecastMode == 4 ? @"temperature.place" : @"rain.place";
         places.accessibilityLabel = @"Forecast location";
         [root addSubview:places];
-        NSButton *source = [NSButton buttonWithTitle:@"ECMWF  ›" target:self action:@selector(showRainDetails:)];
+        NSButton *source = [NSButton buttonWithTitle:@"Hourly  ›" target:self action:@selector(showRainDetails:)];
         source.bordered = NO;
         source.font = [NSFont systemFontOfSize:11];
         source.alignment = NSTextAlignmentRight;
@@ -5963,6 +6077,10 @@ static NSImage *WindBarbGlyph(void) {
     __weak Controller *weak = self;
     strip.onSelect = ^(NSInteger index) { [weak selectHubDay:index]; };
     strip.onHover = ^(NSInteger index) { [weak previewHubDay:index]; };
+    strip.timelineStart = _sequenceTimes.firstObject;
+    strip.timelineEnd = _sequenceTimes.lastObject;
+    strip.onPreviewFraction = ^(double fraction) { [weak previewPopoverMovieFraction:fraction]; };
+    strip.onSelectFraction = ^(double fraction) { [weak inspectPopoverMovieFraction:fraction]; };
     return strip;
 }
 
@@ -5999,6 +6117,99 @@ static NSImage *WindBarbGlyph(void) {
         @(_sourceECMWF), @(_newMap), @(_hubDayIndex), [NSValue valueWithSize:budget]];
 }
 
+- (void)searchMapPlace:(id)sender {
+    (void)sender;
+    NSView *root=_expandedMap?_chartWindow.contentView:self.popover.contentViewController.view;
+    for (NSView *chip in root.subviews) for (NSView *view in chip.subviews)
+        if ([view.accessibilityIdentifier isEqual:_expandedMap?@"fullscreen.place":@"hub.place"])
+            [self openPlaceSearch:(NSButton *)view];
+}
+
+- (void)placeMapInspectorIn:(NSView *)root expanded:(BOOL)expanded {
+    for (NSView *child in root.subviews.copy)
+        if ([child.accessibilityIdentifier isEqual:@"forecast.inspector"] ||
+            [child.accessibilityIdentifier isEqual:@"fullscreen.lensDock"]) [child removeFromSuperview];
+    if (_forecastMode < 0) return;
+    CGFloat width = MIN(expanded ? 360 : 400, NSWidth(root.bounds)-132);
+    CGFloat height = MAX(80, NSHeight(root.bounds)-192);
+    NSView *inspector = [self forecastInspectorWithWidth:width height:height sharedTimeline:YES];
+    inspector.frame = NSMakeRect(NSWidth(root.bounds)-width-10, 132, width, MIN(height,NSHeight(inspector.frame)));
+    [root addSubview:inspector];
+}
+
+// The map owns the viewport. All working controls are peers above it.
+- (void)arrangeMapChromeIn:(NSView *)root expanded:(BOOL)expanded {
+    NSString *prefix = expanded ? @"fullscreen" : @"popover";
+    NSMutableDictionary<NSString *,NSView *> *views = [NSMutableDictionary dictionary];
+    NSMutableArray<NSView *> *pending=[NSMutableArray arrayWithObject:root];
+    while (pending.count) {
+        NSView *view=pending.firstObject; [pending removeObjectAtIndex:0];
+        if (view.accessibilityIdentifier.length) views[view.accessibilityIdentifier]=view;
+        [pending addObjectsFromArray:view.subviews];
+    }
+    for (NSView *child in root.subviews.copy)
+        if ([child isKindOfClass:MapChrome.class]) [child removeFromSuperview];
+    NSView *place = views[expanded ? @"fullscreen.place" : @"hub.place"];
+    NSView *reading = views[expanded ? @"fullscreen.temperature" : @"popover.obs"];
+    NSView *warning = views[expanded ? @"fullscreen.warning" : @"hub.warning"];
+    NSView *issued = views[[prefix stringByAppendingString:@".issued"]];
+    MapChrome *top = MapChip(NSMakeRect(10,10,360,40), @"mapfirst.place");
+    CGFloat x = 8;
+    if (place) {
+        NSPopUpButton *picker=(NSPopUpButton *)place;
+        [picker.menu addItem:NSMenuItem.separatorItem];
+        NSMenuItem *search=[picker.menu addItemWithTitle:@"Search and save place…" action:@selector(searchMapPlace:) keyEquivalent:@""];
+        search.target=self;
+        place.frame = NSMakeRect(x,8,MIN(160,MAX(64,[((NSPopUpButton *)place).titleOfSelectedItem sizeWithAttributes:@{NSFontAttributeName:((NSPopUpButton *)place).font}].width+24)),24);
+        [top addSubview:place]; x = NSMaxX(place.frame)+4;
+    }
+    if (reading) {
+        reading.frame = NSMakeRect(x,2,NSWidth(reading.frame),36);
+        [top addSubview:reading]; x = NSMaxX(reading.frame)+6;
+    }
+    if (warning) { warning.frame=NSMakeRect(x,8,NSWidth(warning.frame),24); [top addSubview:warning]; x=NSMaxX(warning.frame)+6; }
+    // Source age is available in the reading tooltip; stale needs a visible badge.
+    if (issued) {
+        issued.hidden = !(_dataStale || _storeLoadFailed || (_runDate && StoreRunIsStale(_runDate,_chartNow ?: NSDate.date,_storeStatusOK)));
+        issued.frame=NSMakeRect(x,12,100,18); [top addSubview:issued];
+        [self fillPopoverIssued:issued];
+        if (!issued.hidden) x+=NSWidth(issued.frame)+6;
+    }
+    NSTextField *clock = expanded ? [self timeTitleField] : _popoverClock;
+    clock.font=[NSFont monospacedDigitSystemFontOfSize:10 weight:NSFontWeightMedium];
+    clock.alignment=NSTextAlignmentLeft;
+    clock.frame=NSMakeRect(x,13,MIN(260,MAX(0,NSWidth(root.bounds)-x-130)),16);
+    [top addSubview:clock];
+    top.frame=NSMakeRect(10,10,MIN(NSWidth(root.bounds)-120,NSMaxX(clock.frame)+8),40);
+    [root addSubview:top];
+    MapChrome *actions=MapChip(NSMakeRect(NSWidth(root.bounds)-(expanded?86:100),10,expanded?76:90,36),@"mapfirst.actions");
+    x=5;
+    for (NSString *name in expanded ? @[@"compare",@"close"] : @[@"train",@"expand",@"settings"]) {
+        NSView *control=views[[prefix stringByAppendingFormat:@".%@",name]];
+        if (!control) continue;
+        control.frame=NSMakeRect(x,4,26,28); [actions addSubview:control]; x+=28;
+    }
+    [root addSubview:actions];
+    MapChrome *bottom=MapChip(NSMakeRect(10,NSHeight(root.bounds)-50,NSWidth(root.bounds)-20,40),@"mapfirst.bottom");
+    x=6;
+    for (NSString *name in @[@"play",@"speed",@"now"]) {
+        NSView *control=views[[prefix stringByAppendingFormat:@".%@",name]];
+        if (!control) continue;
+        CGFloat w=[name isEqual:@"speed"]?[self playbackSpeedFittedWidth]:([name isEqual:@"now"]?56:28);
+        control.frame=NSMakeRect(x,6,w,28); [bottom addSubview:control]; x+=w+3;
+    }
+    DayStripView *days=expanded?_fullscreenDays:_dayStrip;
+    days.frame=NSMakeRect(x,3,MAX(1,NSWidth(bottom.bounds)-x-8),34);
+    [bottom addSubview:days]; [root addSubview:bottom];
+    NSView *lenses=views[[prefix stringByAppendingString:@".lensRow"]];
+    lenses.frame=NSMakeRect(10,60,NSWidth(lenses.frame),NSHeight(lenses.frame));
+    [root addSubview:lenses];
+    if (expanded) { [_chartToolbar removeFromSuperview]; [_chartTransport removeFromSuperview]; [_statusBar removeFromSuperview]; }
+    TimelineStrip *adapter=expanded?_chartTimeline:_popoverTimeline;
+    [adapter removeFromSuperview];
+    [self refreshPopoverClock];
+}
+
 - (void)rebuildContent {
     if (_feedbackActive) return;
     double seekingProgress = _scrubHasFraction ? _scrubFraction : (_motionPendingFraction ? _motionPendingFraction.doubleValue : NAN);
@@ -6018,53 +6229,17 @@ static NSImage *WindBarbGlyph(void) {
     [self ensurePair];
     NSDate *now = _chartNow ?: NSDate.date;
     NSSize budget = [self screenBudget];
-    BOOL compact = budget.height < 640;
     NSFont *issuedFont = [NSFont monospacedDigitSystemFontOfSize:12 weight:NSFontWeightMedium];
-    CGFloat pad = compact ? 8 : 12;
-    CGFloat gutter = compact ? 3 : 8;
-    CGFloat headerH = 32;
-    CGFloat stripH = (compact ? 50 : 64) + (_hubDayIndex >= 0 ? 22 : 0);
-    CGFloat layerH = compact ? 24 : 28;
-    CGFloat timelineH = compact ? 64 : 112;
-    // Four gutters: under the header, the strip, the map and the timeline.
-    CGFloat chrome = pad + headerH + 4 * gutter + stripH + timelineH + layerH + pad;
-    CGFloat maxChartH = MAX(64, budget.height - chrome - (compact ? 4 : 0));
-    CGFloat aspect = _sourceECMWF ? OwnChartMapAspect() : MSLPPopoverMapAspect();
-    if (!(aspect > 0.4 && aspect < 4)) aspect = 1.33;
+    CGFloat pad = 10, gutter = 0, headerH = 36, stripH = 34, layerH = 28, sliderH = 0;
     NSInteger leftIndex = _pair.valid ? _pair.left : 0;
-    // The popover is a single-map viewer. The pair still drives stepping and
-    // compatibility with the existing timeline model, but only its left
-    // (selected) index is rendered here.
-    CGFloat contentCap = MIN(budget.width, 980);
-    CGFloat panelW = MIN(contentCap - 2 * pad, floor(maxChartH * aspect));
-    // The map keeps its frame when a lens opens. A wide screen puts the lens
-    // beside it; a narrow screen lays the lens over the lower part of the map.
-    CGFloat width = MAX(360,2*pad+panelW);
-    width=MIN(width,budget.width);
-    CGFloat panelH = panelW / aspect;
-    // Two columns under the header. The left column is the place width and
-    // holds transport. The right column is the day tiles, with the track
-    // directly under them. The map keeps the height the old ruler used.
+    CGFloat width = MIN(budget.width, 980), panelW = width;
+    CGFloat panelH = MIN(budget.height, 620);
     BOOL rawMotion = _sourceECMWF && _ownRun.hours > 0;
-    CGFloat sliderH = 40;
-    CGFloat playW = (rawMotion || MotionEnabled()) ? 26 : 0;
-    CGFloat speedW = rawMotion ? [self playbackSpeedFittedWidth] : 0;
-    CGFloat placeW = width < 640 ? 148 : 164;
-    if (playW + speedW + 64 > placeW) placeW = playW + speedW + 64;
-    // Three 22 pt symbols. The issued cluster is 30 pt narrower than the
-    // two-symbol header, so its left edge — and the reading — stay put.
-    CGFloat issuedW = width < 640 ? 88 : 106;
-    CGFloat gear = 82;
-    CGFloat colGap = 8;
-    CGFloat rightX = pad + placeW + colGap;
-    CGFloat rightW = MAX(80, width - pad - rightX);
-    CGFloat nowW = MAX(28, placeW - playW - speedW);
-    panelH += MAX(0, timelineH - sliderH);
-    // A lens card takes a side column beside the map when the screen allows, so it never covers the place.
-    CGFloat inspectorGap=9;
-    CGFloat inspectorW=MIN(480,budget.width-width-inspectorGap);
-    BOOL sideInspector=_forecastMode>=0 && inspectorW>=300;
-    CGFloat totalWidth=sideInspector?width+inspectorGap+inspectorW:width;
+    CGFloat playW = 28, speedW = [self playbackSpeedFittedWidth];
+    CGFloat placeW = 140, issuedW = 88, gear = 82, colGap = 8;
+    CGFloat rightX = 10 + playW + speedW + 60;
+    CGFloat rightW = width - rightX - 18, nowW = 56;
+    CGFloat totalWidth = width;
 
     // Keep the live map's view/layer tree attached while changing inspectors.
     PopoverRootView *root=(id)self.popover.contentViewController.view;
@@ -6143,8 +6318,7 @@ static NSImage *WindBarbGlyph(void) {
     CGFloat sliderY = y;
     y += sliderH + gutter;
     leftChart = retainedMap ?: [self popoverChartView:@"popover.chart"];
-    CGFloat mapX = MAX(pad, floor((width - panelW) / 2.0));
-    NSRect mapFrame=NSMakeRect(mapX,y,panelW,panelH);
+    NSRect mapFrame=NSMakeRect(0,0,panelW,panelH);
     if (keepLive) {
         leftChart.frame=mapFrame;
         if (leftChart.superview!=root) [root addSubview:leftChart];
@@ -6231,7 +6405,7 @@ static NSImage *WindBarbGlyph(void) {
         layers = [self lensControlsWithIdentifier:@"popover" height:layerH labels:NO];
         layers.identifier = @"symbols";
     }
-    layers.frame = NSMakeRect(pad, lensY, NSWidth(layers.frame), layerH);
+    layers.frame = NSMakeRect(pad, lensY, NSWidth(layers.frame), NSHeight(layers.frame));
     [root addSubview:layers];
     // Transport sits in the left column, centred across the day tiles and the track.
     CGFloat bandH = stripH + gutter + sliderH;
@@ -6251,7 +6425,7 @@ static NSImage *WindBarbGlyph(void) {
         NSMakeRect(pad+playW, transportY+(transportH-26)/2, speedW, 26) identifier:@"popover.speed"]];
     _popoverPlayButton = play;
     [self updatePopoverPlayControl];
-    NSButton *nowButton=[NSButton buttonWithTitle:(nowW >= 64 ? @"⏮ Now" : @"⏮") target:self action:@selector(resetPopoverToNow)];
+    NSButton *nowButton=[NSButton buttonWithTitle:@"⏮ Now" target:self action:@selector(resetPopoverToNow)];
     nowButton.bordered=NO; nowButton.font=[NSFont systemFontOfSize:12 weight:NSFontWeightSemibold];
     nowButton.contentTintColor=NSColor.controlAccentColor;
     nowButton.frame=NSMakeRect(pad+playW+speedW, transportY, nowW, transportH);
@@ -6278,8 +6452,10 @@ static NSImage *WindBarbGlyph(void) {
     }
     TimelineStrip *strip=retainedTimeline ?: [TimelineStrip new];
     strip.frame=NSMakeRect(rightX, sliderY, rightW, sliderH);
+    strip.hidden=YES;
     _popoverTimeline = strip;
     strip.timeZone = [self placeZone];
+    strip.aviationClock = _forecastMode == 1;
     strip.now = now;
     strip.times = _sequenceTimes;
     strip.labels = ticks;
@@ -6328,31 +6504,24 @@ static NSImage *WindBarbGlyph(void) {
     clock.toolTip = clockText;
     [strip addSubview:clock];
     _popoverClock = clock;
-    y = lensY + layerH + pad;
-
-    [self placeChartKeyIn:root mapFrame:leftChart.frame window:NO];
-    if (_forecastMode>=0) {
-        NSView *inspector=nil;
-        if (sideInspector) {
-            CGFloat naturalH=_forecastMode==1?480:440;
-            inspector=[self forecastInspectorWithWidth:inspectorW height:MIN(NSMaxY(leftChart.frame),naturalH) sharedTimeline:YES];
-            inspector.frame=NSMakeRect(width+inspectorGap,0,inspectorW,NSHeight(inspector.frame));
-        } else {
-            // No room beside the map: the card overlays the map's right side or, when narrow, its bottom.
-            CGFloat cardW=MIN(480,NSWidth(leftChart.frame));
-            BOOL rightOverlay=NSWidth(leftChart.frame)>=800;
-            CGFloat cardH=rightOverlay ? MIN(NSHeight(leftChart.frame),_forecastMode==1?480:300) : NSHeight(leftChart.frame)*.55;
-            if (!rightOverlay) cardW=NSWidth(leftChart.frame);
-            inspector=[self forecastInspectorWithWidth:cardW height:cardH sharedTimeline:YES];
-            inspector.frame=NSMakeRect(NSMaxX(leftChart.frame)-cardW,
-                rightOverlay?NSMinY(leftChart.frame):NSMaxY(leftChart.frame)-NSHeight(inspector.frame),cardW,NSHeight(inspector.frame));
-        }
-        [root addSubview:inspector];
-    }
-    root.frame = NSMakeRect(0, 0, totalWidth, y);
-    if (!NSEqualSizes(self.popover.contentSize,NSMakeSize(totalWidth,y)))
-        self.popover.contentSize=NSMakeSize(totalWidth,y);
+    root.frame = NSMakeRect(0, 0, totalWidth, panelH);
+    if (!NSEqualSizes(self.popover.contentSize,root.frame.size)) self.popover.contentSize=root.frame.size;
     if (self.popover.contentViewController.view!=root) self.popover.contentViewController.view=root;
+    [self applyTimeLensButton:hubObs mark:nil date:leftWhen announce:NO];
+    [self arrangeMapChromeIn:root expanded:NO];
+    [self placeChartKeyIn:root mapFrame:root.bounds window:NO];
+    [self placeMapInspectorIn:root expanded:NO];
+    if (![self chartsReady]) {
+        for (NSView *view in root.subviews.copy)
+            if ([view.accessibilityIdentifier isEqual:@"mapfirst.bottom"] ||
+                [view.accessibilityIdentifier isEqual:@"popover.lensRow"] ||
+                [view.accessibilityIdentifier isEqual:@"forecast.inspector"]) [view removeFromSuperview];
+        NSTextField *cue=[NSTextField labelWithString:@"Chart unavailable"];
+        cue.alignment=NSTextAlignmentCenter; cue.toolTip=_storeError;
+        cue.frame=NSMakeRect(16,panelH/2-12,width-32,24);
+        cue.accessibilityIdentifier=@"popover.chartUnavailable";
+        [root addSubview:cue];
+    }
     strip.preservesInteraction=NO;
     if (keepLive) [self applyLiveFrame];
     [self syncTimeLens:leftWhen];
@@ -6377,6 +6546,10 @@ static NSImage *WindBarbGlyph(void) {
 
 - (void)tickSurfaces {
     if (_feedbackActive) return;
+    for (NSView *root in @[self.popover.contentViewController.view ?: [NSView new], _chartWindow.contentView ?: [NSView new]])
+        for (NSView *chip in root.subviews) for (NSView *view in chip.subviews)
+            if ([view.accessibilityIdentifier hasSuffix:@".issued"]) [self fillPopoverIssued:view];
+    [self syncTimeLens:[self selectedForecastDate]];
     // Fresh data rebuilds the controls. A clock tick only updates text, leaving
     // hover capture, the decoder and its presentation layer undisturbed.
     if (self.popover.shown) {
@@ -6515,7 +6688,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
         layers = [self lensControlsWithIdentifier:@"fullscreen" height:lensH labels:NO];
         layers.identifier = @"symbols";
     }
-    layers.frame = NSMakeRect(inset, floor((bar.height - lensH) / 2), NSWidth(layers.frame), lensH);
+    layers.frame = NSMakeRect(inset, 0, NSWidth(layers.frame), NSHeight(layers.frame));
     [_statusBar addSubview:layers];
 }
 
@@ -6683,6 +6856,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     now.toolTip = @"Return to now"; [_chartTransport addSubview:now];
     if (!_chartTimeline) _chartTimeline=[TimelineStrip new];
     _chartTimeline.frame=NSMakeRect(rightX, height - 28, width - rightX - 12, 28);
+    _chartTimeline.hidden=YES;
     _chartTimeline.accessibilityIdentifier=@"fullscreen.timeline";
     _chartTimeline.times=_sequenceTimes;
     NSMutableArray *labels=[NSMutableArray array], *clocks=[NSMutableArray array], *days=[NSMutableArray array], *tips=[NSMutableArray array];
@@ -6701,6 +6875,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
         [tips addObject:SituationOffset(date,_chartNow ?: NSDate.date) ?: @""];
     }
     _chartTimeline.timeZone=[self placeZone];
+    _chartTimeline.aviationClock = _forecastMode == 1;
     _chartTimeline.now=_chartNow ?: NSDate.date;
     _chartTimeline.labels=labels; _chartTimeline.clocks=clocks;
     _chartTimeline.dayKeys=days; _chartTimeline.tips=tips;
@@ -6749,27 +6924,21 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     [self rebuildSequence];
     NSView *root=_chartWindow.contentView;
     for (NSView *child in root.subviews.copy)
+        if ([child isKindOfClass:MapChrome.class]) [child removeFromSuperview];
+    for (NSView *child in root.subviews.copy)
         if ([child.accessibilityIdentifier isEqual:@"fullscreen.chartUnavailable"]) [child removeFromSuperview];
     NSRect bounds=root.bounds;
     if (NSWidth(bounds)<200 || NSHeight(bounds)<200) return;
     _panelIndex=MIN(MAX(0,_panelIndex),(NSInteger)_sequenceTimes.count-1);
-    CGFloat toolbarH=40, stripH=50, timelineH=78, footerH=26;
-    CGFloat mapTop=toolbarH+timelineH+2;
+    CGFloat toolbarH=40, stripH=34, timelineH=40, footerH=26;
     // Keep the Fly instrument row intact at the supported laptop sizes.
-    CGFloat sideW = _forecastMode >= 0 ? MIN(360, MAX(300, NSWidth(bounds) * .36)) : 0;
-    NSRect area=NSMakeRect(0,mapTop,NSWidth(bounds)-(sideW ? sideW+8 : 0),NSHeight(bounds)-footerH-mapTop);
-    double sw=580,sh=444;
-    if (!_sourceECMWF) {
-        CGRect crop=CGRectZero;
-        if ([self documentForPopoverIndex:_panelIndex crop:&crop pins:NULL] && crop.size.width>1 && crop.size.height>1) { sw=crop.size.width; sh=crop.size.height; }
-    }
-    MSLPRect fitted=MSLPAspectFit(sw,sh,(MSLPRect){area.origin.x,area.origin.y,area.size.width,area.size.height});
+    NSRect area=bounds;
     NSScrollView *scroll=[self singleScroll];
     scroll.hidden=NO;
     if (scroll.superview!=root) [root addSubview:scroll];
     PDFCropView *panel=[self panelViewAt:_panelIndex];
     panel.hidden=NO;
-    NSRect scrollFrame=_panelZoom<=1.001?RectOf(fitted):area;
+    NSRect scrollFrame=area;
     if (!NSEqualRects(scroll.frame,scrollFrame)) scroll.frame=scrollFrame;
     [self attachGPUMapIn:root frame:area popover:NO];
     [self layoutChartToolbarIn:root height:toolbarH];
@@ -6789,9 +6958,13 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     __weak Controller *weakDays = self;
     _fullscreenDays.onSelect = ^(NSInteger index) { [weakDays selectHubDay:index]; };
     _fullscreenDays.onHover = ^(NSInteger index) { [weakDays previewHubDay:index]; };
+    _fullscreenDays.timelineStart = _sequenceTimes.firstObject;
+    _fullscreenDays.timelineEnd = _sequenceTimes.lastObject;
+    _fullscreenDays.onPreviewFraction = ^(double fraction) { [weakDays previewPopoverMovieFraction:fraction]; };
+    _fullscreenDays.onSelectFraction = ^(double fraction) { [weakDays inspectPopoverMovieFraction:fraction]; };
     if (_fullscreenDays.superview != root) [root addSubview:_fullscreenDays];
     if (scroll.documentView!=panel) scroll.documentView=panel;
-    NSSize mapSize=NSMakeSize(fitted.width*MAX(1,_panelZoom),fitted.height*MAX(1,_panelZoom));
+    NSSize mapSize=NSMakeSize(NSWidth(area)*MAX(1,_panelZoom),NSHeight(area)*MAX(1,_panelZoom));
     if (!NSEqualSizes(panel.frame.size,mapSize)) [panel setFrameSize:mapSize];
     panel.sequenceIndex=_panelIndex;
     BOOL hasLive=_live.playing && !_comparing && !_timelinePreviewing && !_scrubHasFraction;
@@ -6799,30 +6972,9 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     [self layoutStatusBar:[self cardPlaces] bar:(MSLPRect){0,NSHeight(bounds)-footerH,NSWidth(bounds),footerH} in:root];
     [self layoutChartTransportIn:root y:toolbarH height:timelineH];
     [root addSubview:_fullscreenDays];
-    [self placeChartKeyIn:root mapFrame:_gpuMap.superview == root ? area : scroll.frame window:YES];
-    for (NSView *child in root.subviews.copy)
-        if ([child.accessibilityIdentifier isEqual:@"forecast.inspector"] ||
-            [child.accessibilityIdentifier isEqual:@"fullscreen.lensDock"]) [child removeFromSuperview];
-    if (sideW > 0) {
-        NSRect inspectorFrame = NSMakeRect(NSMaxX(area) + 8, NSMinY(area), sideW, NSHeight(area));
-        FlippedView *dock = [[FlippedView alloc] initWithFrame:inspectorFrame];
-        dock.accessibilityIdentifier = @"fullscreen.lensDock";
-        NSView *inspector = [self forecastInspectorWithWidth:sideW height:NSHeight(area) sharedTimeline:YES];
-        CGFloat contentHeight = 0;
-        for (NSView *child in inspector.subviews) {
-            if (child.hidden) continue;
-            CGFloat childHeight = NSHeight(child.frame);
-            if ([child isKindOfClass:AviationLensView.class]) {
-                childHeight = MIN(childHeight, [(AviationLensView *)child fittingHeightForWidth:NSWidth(child.frame)]);
-                [child setFrameSize:NSMakeSize(NSWidth(child.frame), childHeight)];
-            }
-            contentHeight = MAX(contentHeight, NSMinY(child.frame) + childHeight);
-        }
-        inspector.frame = NSMakeRect(0, 0, sideW, MIN(NSHeight(area), contentHeight + 14));
-        inspector.clipsToBounds = YES;
-        [dock addSubview:inspector];
-        [root addSubview:dock];
-    }
+    [self arrangeMapChromeIn:root expanded:YES];
+    [self placeChartKeyIn:root mapFrame:bounds window:YES];
+    [self placeMapInspectorIn:root expanded:YES];
     if (hasLive) [self applyLiveFrame];
     else if (!_comparing && _scrubHasFraction) [self updateTimelineHeading:[self selectedForecastDate]];
     [self syncTimeLens:[self selectedForecastDate]];
@@ -6886,7 +7038,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
         [self setForecastPaused:YES];
         [self stopChartLoop];
         _popoverPlaying = NO;
-        [self layoutChartToolbarIn:_chartWindow.contentView height:40];
+        [self layoutChartWindow];
         [self updateTimelineHeading:[self selectedForecastDate]];
         return;
     }
@@ -6894,7 +7046,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     [self endChartComparison];
     if ([self livePlaybackAvailable]) {
         [self startLivePlaybackFromDate:[self selectedForecastDate]];
-        [self layoutChartToolbarIn:_chartWindow.contentView height:40];
+        [self layoutChartWindow];
         return;
     }
     double fraction=[self activeTimeline].progress;
@@ -6902,7 +7054,7 @@ static CGRect CropOf(MSLPRect r) { return CGRectMake(r.x, r.y, r.width, r.height
     _motionPendingFraction=isfinite(fraction)?@(fraction):nil;
     _looping = YES;
     [self prepareMotion];
-    [self layoutChartToolbarIn:_chartWindow.contentView height:40];
+    [self layoutChartWindow];
     [self updatePopoverPlayControl];
 }
 
@@ -7044,7 +7196,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
     _hazardLayer = hazardLayer;
     _gpuMap.hazards = hazardLayer;
     // Update in place so a toggle keeps keyboard focus. Both surfaces share it.
-    for (NSView *root in @[self.popover.contentViewController.view ?: [NSView new], _statusBar ?: [NSView new]])
+    for (NSView *root in @[self.popover.contentViewController.view ?: [NSView new], _chartWindow.contentView ?: [NSView new]])
         for (NSView *row in root.subviews) for (NSView *control in row.subviews)
             if ([control isKindOfClass:NSButton.class] && [control.accessibilityIdentifier hasSuffix:@".hazards"])
                 ((NSButton *)control).state = hazardLayer ? NSControlStateValueOn : NSControlStateValueOff;
@@ -7061,7 +7213,12 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
     }
     if (!_gpuMap) {
         _gpuMap = [GPUMapView mapView];
-        if (!_gpuMap) return;
+        if (!_gpuMap) {
+            _gpuPresentFailed=YES;
+            if (popover && _leftChart.superview==root)
+                [self placePopoverChart:_leftChart index:_shownLeft frame:frame in:root];
+            return;
+        }
         __weak Controller *weak = self;
         _gpuMap.onFeedbackEvent = ^(NSString *category, NSDictionary *details) { FeedbackLog(category, details); };
         _gpuMap.onPlainClick = ^(double lat, double lon) {
@@ -7300,7 +7457,8 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
         }
         if (([event.window.firstResponder isKindOfClass:AviationForecastView.class] ||
              [event.window.firstResponder isKindOfClass:RainForecastView.class] ||
-             [event.window.firstResponder isKindOfClass:TimelineStrip.class]) &&
+             [event.window.firstResponder isKindOfClass:TimelineStrip.class] ||
+             [event.window.firstResponder isKindOfClass:DayStripView.class]) &&
             (event.keyCode == 123 || event.keyCode == 124)) return event;
         ChartKeyAction action = ChartKeyActionFor(event.keyCode, event.charactersIgnoringModifiers, event.modifierFlags,
             event.isARepeat, NSDate.timeIntervalSinceReferenceDate, &strong->_lastArrowStep);
@@ -7368,6 +7526,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
         report.keyEquivalentModifierMask = NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagCommand;
         report.target = self;
         [menu addItemWithTitle:@"Settings…" action:@selector(openSettings:) keyEquivalent:@""].target = self;
+        [menu addItemWithTitle:@"About Isobar" action:@selector(openAbout:) keyEquivalent:@""].target = self;
         [menu popUpMenuPositioningItem:nil atLocation:NSMakePoint(0, NSHeight(_item.button.bounds)) inView:_item.button];
         return;
     }
@@ -7436,79 +7595,38 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
         else if ([child.accessibilityIdentifier hasSuffix:@".issued.warn"]) warn = (NSImageView *)child;
     }
     NSDate *now = _chartNow ?: NSDate.date;
-    NSString *run = @"", *age = @"", *tip = @"";
-    BOOL stale = NO;
-    if (!_sourceECMWF) {
-        run = [self chartsReady] ? @"Bureau" : @"Chart unavailable";
-        tip = @"Bureau issue time is unavailable in the local store";
-    } else if (!_runDate) {
-        run = @"Chart unavailable";
-        tip = _statusLabel.length ? _statusLabel : @"Chart unavailable";
-    } else {
-        NSCalendar *cal = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
-        cal.timeZone = [NSTimeZone timeZoneWithName:@"UTC"];
-        NSInteger hour = [cal component:NSCalendarUnitHour fromDate:_runDate];
-        NSInteger hours = 0;
-        NSTimeInterval seconds = [now timeIntervalSinceDate:_runDate];
-        if (seconds > 0) hours = (NSInteger)floor(seconds / 3600.0);
-        run = [NSString stringWithFormat:@"%02ldZ", (long)hour];
-        age = [NSString stringWithFormat:@"%ld h", (long)hours];
-        stale = StoreRunIsStale(_runDate, now, _storeStatusOK && !_storeLoadFailed);
-        tip = _statusLabel.length ? _statusLabel : StoreRunStatusLine(_runDate, now);
-        if (stale && [tip rangeOfString:@"stale"].location == NSNotFound)
-            tip = [tip stringByAppendingString:@" · stale"];
-    }
-    NSFont *font = runField.font ?: [NSFont monospacedDigitSystemFontOfSize:12 weight:NSFontWeightMedium];
-    runField.stringValue = run ?: @"";
-    runField.font = font;
-    runField.textColor = NSColor.secondaryLabelColor;
-    ageField.stringValue = age ?: @"";
-    ageField.font = font;
-    ageField.textColor = stale ? NSColor.systemYellowColor : NSColor.secondaryLabelColor;
-    warn.hidden = !stale;
-    if (_sourceECMWF) tip = [tip stringByAppendingString:@"\nECMWF open data, CC BY 4.0"];
+    NSString *text = [self chartFreshnessAt:now];
+    NSString *tip = !_sourceECMWF ? @"Bureau issue time is unavailable in the local store" :
+        (_statusLabel.length ? _statusLabel : StoreRunStatusLine(_runDate, now));
+    if (_storeLoadFailed && _storeError.length) tip = [tip stringByAppendingFormat:@"\n%@", _storeError];
+    if (text.length && _runDate) tip = [tip stringByAppendingString:@" · stale"];
+    runField.stringValue = @"";
+    runField.hidden = YES;
+    warn.hidden = YES;
+    ageField.stringValue = text ?: @"";
+    ageField.hidden = !text.length;
+    ageField.textColor = [self chartsReady] ? NSColor.systemOrangeColor : NSColor.secondaryLabelColor;
+    ageField.alignment = NSTextAlignmentLeft;
+    issued.hidden = !text.length;
     issued.toolTip = tip;
     issued.accessibilityLabel = tip;
-    CGFloat h = NSHeight(issued.bounds);
-    CGFloat limit = NSWidth(issued.bounds);
-    CGFloat ageW = age.length ? ceil([age sizeWithAttributes:@{NSFontAttributeName: font}].width) + 1 : 0;
-    CGFloat runW = ceil([run sizeWithAttributes:@{NSFontAttributeName: font}].width) + 1;
-    CGFloat glyph = stale ? 16 : 0;
-    CGFloat gap = ageW > 0 ? 6 : 0;
-    CGFloat used = runW + gap + glyph + (glyph && ageW ? 2 : 0) + ageW;
-    if (used > limit && run.length > 4) {
-        font = [NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightMedium];
-        runField.font = font;
-        ageField.font = font;
-        ageW = age.length ? ceil([age sizeWithAttributes:@{NSFontAttributeName: font}].width) + 1 : 0;
-        runW = ceil([run sizeWithAttributes:@{NSFontAttributeName: font}].width) + 1;
+    if ([issued.superview.accessibilityIdentifier isEqual:@"mapfirst.place"]) {
+        issued.superview.toolTip = tip;
+        issued.superview.accessibilityHelp = tip;
     }
-    CGFloat x = limit;
-    if (ageW > 0) {
-        ageField.hidden = NO;
-        ageField.frame = NSMakeRect(MAX(0, x - ageW), (h - 16) / 2.0, MIN(ageW, limit), 16);
-        x = NSMinX(ageField.frame) - 2;
-    } else {
-        ageField.hidden = YES;
-        ageField.frame = NSZeroRect;
-    }
-    if (stale) {
-        warn.frame = NSMakeRect(MAX(0, x - 14), (h - 13) / 2.0, 13, 13);
-        x = NSMinX(warn.frame) - 4;
-    }
-    runField.frame = NSMakeRect(MAX(0, x - runW), (h - 16) / 2.0, MIN(runW, MAX(0, x)), 16);
+    CGFloat width = text.length ? ceil([text sizeWithAttributes:@{NSFontAttributeName:ageField.font}].width) + 2 : 0;
+    issued.frame = NSMakeRect(NSMinX(issued.frame), NSMinY(issued.frame), width, NSHeight(issued.frame));
+    ageField.frame = NSMakeRect(0, (NSHeight(issued.bounds)-16)/2, width, 16);
 }
 
 - (NSString *)chartFreshnessAt:(NSDate *)now {
     if (_sourceECMWF) {
         if (!_runDate) return @"Chart unavailable";
-        NSString *line = StoreRunStatusLine(_runDate, now);
-        // A kept run after a failed load is stale whatever its age.
-        return StoreRunIsStale(_runDate, now, _storeStatusOK && !_storeLoadFailed) ? [line stringByAppendingString:@" · stale"] : line;
+        return StoreForecastFreshness(_runDate, now, _storeStatusOK && !_storeLoadFailed, [self placeZone]);
     }
     // The local Bureau PDF has no issue metadata. Its timestamp cannot be
     // inferred from the separately published ECMWF model cycle.
-    return [self chartsReady] ? @"Bureau chart" : @"Chart unavailable";
+    return [self chartsReady] ? @"" : @"Chart unavailable";
 }
 
 - (NSInteger)hourForSequenceIndex:(NSInteger)index {
@@ -7567,7 +7685,7 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
         if ([child.accessibilityIdentifier isEqual:@"chart.legend"]) [child removeFromSuperview];
     ChartKeyView *key = (ChartKeyView *)[self makeChartKeyMaxWidth:NSWidth(map)-16 window:window];
     if (key && NSHeight(map) >= NSHeight(key.frame)+16) {
-        CGFloat y = NSMaxY(map) - NSHeight(key.frame) - 10;
+        CGFloat y = NSMaxY(map) - NSHeight(key.frame) - 62;
         key.frame = NSMakeRect(NSMinX(map)+10, y, NSWidth(key.frame), NSHeight(key.frame));
         [root addSubview:key];
     }
@@ -7996,6 +8114,11 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
     [NSUserDefaults.standardUserDefaults setObject:ArchiveLocations(_locations) forKey:@"locations"];
 }
 
+- (void)openAbout:(id)sender {
+    NSWindow *parent = [sender isKindOfClass:NSView.class] ? [(NSView *)sender window] : NSApp.keyWindow;
+    AboutWindowPresent(parent);
+}
+
 - (void)openSettings:(id)sender {
     (void)sender;
     if (_settingsWindow) {
@@ -8114,10 +8237,11 @@ static double GPUAtmosphereDistanceKm(double aLat, double aLon, double bLat, dou
     _loginToggle.allowsMixedState = YES;
     if (status == SMAppServiceStatusRequiresApproval) _loginToggle.state = NSControlStateValueMixed;
     [root addSubview:_loginToggle];
-    NSTextField *credit = [self label:@"ECMWF open data, CC BY 4.0" font:[NSFont systemFontOfSize:11]
-        color:NSColor.secondaryLabelColor frame:NSMakeRect(132,364,368,16)];
-    credit.accessibilityIdentifier = @"settings.attribution";
-    [root addSubview:credit];
+    NSButton *about = [NSButton buttonWithTitle:@"About Isobar" target:self action:@selector(openAbout:)];
+    about.frame = NSMakeRect(128, 360, 150, 24);
+    about.bezelStyle = NSBezelStyleRounded;
+    about.accessibilityIdentifier = @"settings.about";
+    [root addSubview:about];
     _settingsWindow.contentView = root;
     [_settingsWindow center];
     [_settingsWindow makeKeyAndOrderFront:nil];

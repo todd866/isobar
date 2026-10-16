@@ -123,7 +123,19 @@ void TrainingWindowConfigure(NSWindow *window) {
     window.contentMinSize = NSMakeSize(960, 640);
     // Full-screen stays available from the green button. Opening does not enter it.
     window.collectionBehavior = NSWindowCollectionBehaviorFullScreenPrimary;
-    [window setContentSize:NSMakeSize(1280, 820)];
+    // 1280×820 content, shrunk to fit a small display's visible frame (a 13" Air
+    // has 845 pt of usable height; the titled frame was 852 and spilled off).
+    NSSize content = NSMakeSize(1280, 820);
+    NSScreen *screen = window.screen ?: NSScreen.mainScreen;
+    if (screen) {
+        NSRect visible = screen.visibleFrame;
+        NSRect frame = [window frameRectForContentRect:NSMakeRect(0, 0, content.width, content.height)];
+        content.width -= MAX(0, NSWidth(frame) - NSWidth(visible));
+        content.height -= MAX(0, NSHeight(frame) - NSHeight(visible));
+        content.width = MAX(content.width, window.contentMinSize.width);
+        content.height = MAX(content.height, window.contentMinSize.height);
+    }
+    [window setContentSize:content];
     [window center];
     // A saved frame replaces the default. The name is what makes later moves stick.
     [window setFrameAutosaveName:@"IsobarTraining"];

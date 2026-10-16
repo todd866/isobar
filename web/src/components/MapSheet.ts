@@ -8,7 +8,7 @@ export const POINT_SIDE_QUERY = '(min-width: 768px), (min-width: 560px) and (max
 /** Fly uses the same side-panel rule as a point, including short landscape. */
 export const DESKTOP_MQ = POINT_SIDE_QUERY;
 
-/** Shared Fly/point sheet geometry: above the lens bar, below the time slider. */
+/** Shared sheet geometry: below the floating header and above the bottom transport. */
 export function useMapSheet(anchorRef: RefObject<HTMLElement | null>, sideQuery = DESKTOP_MQ) {
   const [desktop, setDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia(sideQuery).matches);
   const [anchor, setAnchor] = useState<{ left: number; width: number; bottom: number; top: number; ceiling: number } | null>(null);
@@ -25,14 +25,18 @@ export function useMapSheet(anchorRef: RefObject<HTMLElement | null>, sideQuery 
     if (!node) return;
     const measure = () => {
       const rect = node.getBoundingClientRect();
-      const slider = document.querySelector('[data-timeline]')?.getBoundingClientRect();
-      const ceiling = slider ? slider.bottom + 6 : 52;
-      setAnchor((old) => old && old.left === rect.left && old.width === rect.width && old.bottom === rect.bottom && old.top === rect.top && old.ceiling === ceiling
-        ? old : { left: rect.left, width: rect.width, bottom: rect.bottom, top: rect.top, ceiling });
+      const header = document.querySelector('.map-header')?.getBoundingClientRect();
+      const bar = document.querySelector('.map-bottom-bar')?.getBoundingClientRect();
+      const ceiling = header ? header.bottom + 8 : rect.top + 60;
+      const bottom = bar ? bar.top - 8 : rect.bottom;
+      const top = Math.max(rect.top, ceiling);
+      setAnchor((old) => old && old.left === rect.left && old.width === rect.width && old.bottom === bottom && old.top === top && old.ceiling === ceiling
+        ? old : { left: rect.left, width: rect.width, bottom, top, ceiling });
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(node);
+    for (const chrome of document.querySelectorAll('.map-header, .map-bottom-bar')) observer.observe(chrome);
     window.addEventListener('resize', measure);
     window.addEventListener('scroll', measure, true);
     return () => { observer.disconnect(); window.removeEventListener('resize', measure); window.removeEventListener('scroll', measure, true); };

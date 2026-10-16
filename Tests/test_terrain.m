@@ -14,7 +14,6 @@ int main(void) {
         ok(fabs(TerrainHalfToFloat(TerrainToHalf(-432.25f))+432.25)<0.5, "negative metres retain sign");
         int badW=99,badH=99; uint16_t badOut[4];
         ok(TerrainElevationsFromWebP([NSData dataWithBytes:"not-webp" length:8],badOut,4,&badW,&badH)==0 && badW==0 && badH==0, "malformed WebP fails closed");
-        ok([IsobarTerrainCredit() isEqualToString:@"Mapterhorn"], "credit names Mapterhorn");
         NSString *fixture=[[[NSFileManager defaultManager] currentDirectoryPath] stringByAppendingPathComponent:@"Tests/fixtures/terrain"];
         setenv("ISOBAR_TERRAIN_TILES", fixture.UTF8String, 1);
         NSString *cachePath=[NSTemporaryDirectory() stringByAppendingPathComponent:[NSUUID UUID].UUIDString];

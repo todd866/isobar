@@ -59,15 +59,20 @@ test('desktop labels fit at 1280 and 1440', async ({ page }) => {
     await expect(page.locator('[data-learn-link]')).not.toHaveAttribute('title', /loading/i);
     await expect(page.locator('[data-chat-button]')).toContainText('Ask');
     await expect(page.locator('[data-pressure-chip]')).toHaveText('hPa');
-    const speed = page.locator('.transport-side #playback-speed');
+    const speed = page.getByRole('combobox', { name: 'Speed' });
     await expect(speed).toHaveValue('8');
     await expect(page.getByRole('combobox', { name: 'Speed' })).toBeVisible();
     const satellite = page.getByRole('button', { name: 'Satellite', exact: true });
     await expect(satellite).toBeVisible();
-    expect(await satellite.innerText()).toBe('');
-    await expect(page.locator('.day-range').first()).toHaveAttribute('aria-label', 'temperature range, low to high');
-    await expect(page.locator('.day-range').first()).toHaveAttribute('title', 'temperature range, low to high');
-    await expect(page.locator('[aria-label="now"]')).toHaveCount(1);
+    expect(await satellite.innerText()).toBe('Sat');
+    await expect(page.locator('.day-range')).toHaveCount(0);
+    const days = page.getByRole('list', { name: 'Forecast days' }).getByRole('listitem');
+    // The 120-hour fixture spans six local calendar days.
+    await expect(days).toHaveCount(6);
+    for (const day of await days.all()) {
+      await expect(day).toHaveAttribute('aria-label', /High \d+°, low \d+°/);
+      expect(await day.getAttribute('title')).toBe(await day.getAttribute('aria-label'));
+    }
     await fits(page, width);
     if (width === 1440) await page.screenshot({ path: path.join(OUT, '1440x900-light-first.png') });
 
@@ -81,7 +86,7 @@ test('desktop labels fit at 1280 and 1440', async ({ page }) => {
 
     await page.getByRole('button', { name: 'Menu', exact: true }).click();
     const run = page.locator('.map-menu-run span');
-    await expect(run).toContainText(/run \d{2}Z · \d+ h old/);
+    await expect(run).toHaveText('Forecast details');
     await expect(run).toHaveAttribute('aria-label', /ECMWF forecast run, issued \d{2}Z, \d+ h ago/);
     await expect(page.locator('.map-menu-setting').filter({ hasText: 'Units' })).toBeVisible();
     await expect(page.locator('[data-units]')).toHaveValue('aus');
@@ -131,7 +136,7 @@ test('phone starts clear, and a long press names an icon without pressing it', a
   await page.screenshot({ path: path.join(OUT, '390x844-dark-returning.png') });
 
   await prepare(page, 'light', 390, 844, true);
-  const satellite = page.locator('.map-tools').getByRole('button', { name: 'Satellite', exact: true });
+  const satellite = page.locator('.map-lens-wrap').getByRole('button', { name: 'Satellite', exact: true });
   await expect(satellite).toHaveAttribute('aria-pressed', 'false');
   const box = (await satellite.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -145,5 +150,5 @@ test('phone starts clear, and a long press names an icon without pressing it', a
   await page.mouse.down();
   await page.mouse.up();
   await expect(satellite).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('.map-tools .press-note')).toHaveText('Satellite on');
+  await expect(page.locator('[data-press-label]')).toHaveText('Satellite on');
 });

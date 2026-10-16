@@ -25,8 +25,8 @@ if [[ ! "$MINIMUM_MACOS" =~ '^[0-9]+\.[0-9]+(\.[0-9]+)?$' ]]; then
 fi
 SHORT=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
 BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist)
-if [[ "$SHORT" != "1.11.6" || "$BUILD" != "42" ]]; then
-    echo "build.sh: ERROR — Info.plist version is ${SHORT} (${BUILD}); expected 1.11.6 (42)." >&2
+if [[ "$SHORT" != "1.11.7" || "$BUILD" != "43" ]]; then
+    echo "build.sh: ERROR — Info.plist version is ${SHORT} (${BUILD}); expected 1.11.7 (43)." >&2
     exit 1
 fi
 

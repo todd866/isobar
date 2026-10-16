@@ -110,8 +110,8 @@ select {
 .dark .teach-layer { --teach-accent: #91c5ed; }
 .map-tools button { pointer-events: auto; }
 .map-tools button:hover, .teach-card button:hover { background: var(--md-surface-container-high); }
-.map-tools .map-sources-explain { display: flex; align-items: center; justify-content: flex-start; width: 100%; height: auto; min-height: 36px; padding: 6px 10px; border: 0; border-bottom: 1px solid var(--md-outline-soft); border-radius: 0; background: transparent; box-shadow: none; color: var(--md-on-surface); font-size: 14px; font-weight: 600; text-align: left; white-space: nowrap; }
-.map-sources-explain:hover, .map-sources-explain:focus-visible { background: var(--md-surface-container-high); }
+.map-tools .map-details-explain { display: flex; align-items: center; justify-content: flex-start; width: 100%; height: auto; min-height: 36px; padding: 6px 10px; border: 0; border-bottom: 1px solid var(--md-outline-soft); border-radius: 0; background: transparent; box-shadow: none; color: var(--md-on-surface); font-size: 14px; font-weight: 600; text-align: left; white-space: nowrap; }
+.map-details-explain:hover, .map-details-explain:focus-visible { background: var(--md-surface-container-high); }
 .press-note { position: absolute; z-index: 40; left: 50%; bottom: calc(100% + 6px); transform: translateX(-50%); padding: 2px 8px; border-radius: 4px; background: var(--md-on-surface); color: var(--md-surface); font-size: 12px; font-weight: 650; line-height: 18px; white-space: nowrap; pointer-events: none; box-shadow: var(--md-shadow-1); }
 .hold-name { position: fixed; z-index: 70; padding: 2px 8px; border-radius: 4px; background: var(--md-on-surface); color: var(--md-surface); font-size: 12px; font-weight: 650; line-height: 18px; white-space: nowrap; pointer-events: none; box-shadow: var(--md-shadow-1); }
 @media (prefers-reduced-motion: reduce) {
@@ -187,36 +187,8 @@ select {
 .uv-figure[data-uv="high"] { color: var(--uv-high); }
 .uv-figure[data-uv="very-high"] { color: var(--uv-very-high); }
 .uv-figure[data-uv="extreme"] { color: var(--uv-extreme); }
-.day-sky { min-height: 20px; }
-@container (max-width: 88px) {
-  .day-sky:has(.uv-figure) .sky-glyph { display: none; }
-}
-.timeline { --track: 26px; }
-.map-chrome { position: relative; touch-action: pan-x; }
-.map-chrome-body[data-anim="1"] { overflow: hidden; }
-.map-chrome > .press-note { left: auto; right: 16px; bottom: auto; top: calc(100% + 6px); transform: none; z-index: 30; }
-.map-chrome-toggle { display: grid; width: 32px; height: 32px; flex: none; place-items: center; border-radius: 6px; color: var(--md-on-surface-variant); }
-.map-chrome-toggle svg { width: 18px; height: 18px; }
-.map-chrome-toggle:hover { background: var(--md-surface-container-high); color: var(--md-on-surface); }
-.map-compact { container-type: inline-size; display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 2px 8px 2px 10px; }
-.map-compact-place { display: inline-flex; align-items: center; gap: 4px; height: 36px; min-width: 0; padding: 0 2px; font-size: 16px; font-weight: 650; }
-.map-compact-loupe { width: 18px; height: 18px; flex: none; color: var(--md-on-surface-variant); }
-.map-compact-temp { flex: none; font-size: 16px; font-weight: 650; }
-.map-compact .map-transport { flex: none; gap: 2px; }
-.map-compact .timeline { height: 28px; --track: 13px; }
 .map-clock { display: inline-flex; align-items: baseline; gap: 4px; flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .map-clock-zulu { font-size: 11px; font-weight: 650; color: var(--md-on-surface-variant); }
-@container (max-width: 640px) {
-  .map-compact .map-clock-weekday { display: none; }
-  .map-compact .map-time-state { display: none; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .map-chrome-body { transition: none !important; }
-}
-@media (max-width: 767px), (max-height: 500px) {
-  .timeline { --track: 22px; height: 36px; }
-  [data-timeline-label] { left: auto !important; right: 0; top: 2px; transform: none !important; }
-}
 /* The map fills whatever the deck leaves. A phone does not grow the page past the viewport. */
 @media (max-width: 767px) {
   [data-map-page] [data-map-panel] { min-height: 0; }
@@ -237,22 +209,14 @@ select {
   [data-map-page] > header select,
   [data-map-page] > header [role="combobox"] { height: 32px; }
   [data-map-page] > header > button { width: 32px; }
-  [data-map-page] .when-long { display: none !important; }
   [data-map-page] [data-lens-bar] { height: 40px; }
   [data-map-page] [data-lens-bar] button { height: 36px; }
-  [data-map-page] .day-range,
-  [data-map-page] .day-lo,
   [data-map-page] [aria-label="Forecast days"] svg { display: none; }
   [data-map-page] [aria-label="Forecast days"] button { flex-direction: row; align-items: center; height: 28px; gap: 4px; padding: 0 2px; }
   [data-map-page] [aria-label="Forecast days"] button > span { flex-direction: row; align-items: baseline; gap: 4px; }
   /* The day strip is secondary in a short working surface. At enlarged text it
      consumes the map's only spare row and makes the essential camera controls
      compete with the lens strip. Timeline and transport remain in flow. */
-  [data-map-page] .forecast-days { display: none; }
-  .map-deck { grid-template-columns: 1fr !important; }
-  .transport-side { display: none !important; }
-  .transport-inline { display: flex !important; }
-  .time-block { display: flex !important; align-items: center; gap: 8px; }
 }
 
 /* Phone tab bar: its height, plus the home indicator where the page draws under it
@@ -307,27 +271,24 @@ select {
   [data-lens-bar] > [role="radiogroup"] { flex: 0 0 auto; }
 }
 
-/* A landscape phone is shorter than the download page. The licence text scrolls
-   inside the page; the document itself stays within the viewport. */
+/* Keep the download actions reachable on short landscape phones. */
 @media (max-height: 500px) {
   [data-download-page] {
     max-height: calc(100dvh - 3.5rem - var(--tabbar-h) - env(safe-area-inset-bottom));
     min-height: 0;
-    overflow: hidden;
+    overflow-y: auto;
     padding-top: 0.75rem;
     padding-bottom: 0.5rem;
     gap: 0.5rem;
   }
-  [data-download-page] > :not([data-attribution]) { flex-shrink: 0; }
-  [data-download-page] [data-attribution] { min-height: 0; overflow-y: auto; }
+  [data-download-page] > * { flex-shrink: 0; }
 }
 
 /* Account: one sheet above the tab bar on a phone (lifted over the keyboard), a popover beside the rail on desktop. */
 .account-sheet { bottom: max(calc(var(--tabbar-h) + env(safe-area-inset-bottom)), var(--kb, 0px)); padding-left: max(1rem, env(safe-area-inset-left)); padding-right: max(1rem, env(safe-area-inset-right)); }
 @media (min-width: 768px) { .account-sheet { left: calc(5.5rem + env(safe-area-inset-left) + 8px); bottom: 16px; padding-left: 1rem; padding-right: 1rem; } }
 .map-tools { position: absolute; z-index: 5; top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); display: flex; flex-direction: column; align-items: flex-end; gap: 6px; transition: right 160ms ease; }
-.map-shell:has([data-point-panel][data-point-layout="side"], [data-coastal-panel][data-point-layout="side"], [data-chat-panel][data-chat-layout="side"]) .map-tools,
-.map-shell:has([data-point-panel][data-point-layout="side"], [data-coastal-panel][data-point-layout="side"], [data-chat-panel][data-chat-layout="side"]) .map-barb-note { right: calc(clamp(328px, 48%, 400px) + 8px); }
+.map-shell:has([data-point-panel][data-point-layout="side"], [data-coastal-panel][data-point-layout="side"], [data-chat-panel][data-chat-layout="side"]) .map-tools, .map-shell:has([data-point-panel][data-point-layout="side"], [data-coastal-panel][data-point-layout="side"], [data-chat-panel][data-chat-layout="side"]) .map-barb-note { right: calc(clamp(328px, 48%, 400px) + 8px); }
 .map-zoom { display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--md-outline-soft); border-radius: 8px; background: color-mix(in srgb, var(--md-surface) 95%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
 .map-tools button { display: grid; width: 36px; height: 36px; min-height: 36px; place-items: center; padding: 0; border: 1px solid var(--md-outline-soft); border-radius: 8px; background: color-mix(in srgb, var(--md-surface) 95%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: var(--md-on-surface); box-shadow: none; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .map-tools button:hover:not(:disabled):not([aria-pressed="true"]) { background: var(--md-surface-container-high); }
@@ -343,8 +304,8 @@ select {
 /* Anchored to the tools top and growing down into the map: the stage clips overflow,
    so a bottom-anchored panel that outgrew the tools column lost its top (and the
    Explain button) above the map edge. */
-.map-sources { pointer-events: auto; position: absolute; right: calc(100% + 6px); top: 0; bottom: auto; width: min(18rem, calc(100vw - 4.5rem)); margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--md-outline-soft); border-radius: 6px; background: var(--md-surface); }
-.map-sources p { margin: 0; padding: 6px 8px; font-size: 11px; line-height: 1.35; color: var(--md-on-surface-variant); }
+.map-details { pointer-events: auto; position: absolute; right: calc(100% + 6px); top: 0; bottom: auto; width: min(18rem, calc(100vw - 4.5rem)); margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--md-outline-soft); border-radius: 6px; background: var(--md-surface); }
+.map-details p { margin: 0; padding: 6px 8px; font-size: 11px; line-height: 1.35; color: var(--md-on-surface-variant); }
 .map-legend { max-width: calc(100% - var(--map-chat-width, 0px) - 28px); flex-wrap: wrap; row-gap: 2px; border: 1px solid var(--md-outline-soft); border-radius: 6px; background: color-mix(in srgb, var(--md-surface) 94%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: var(--md-on-surface); }
 .map-barb-note { backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); transition: right 160ms ease; }
 .map-clock-interactive { position: relative; cursor: pointer; border-radius: 4px; padding-inline: 2px; transition: background-color 120ms ease; }
@@ -365,7 +326,7 @@ select {
   .map-tools { flex-direction: row; align-items: center; }
   .map-zoom { flex-direction: row; }
   .map-zoom button + button { border-top: 0; border-left: 1px solid var(--md-outline-soft); }
-  .map-sources { right: 0; bottom: auto; top: calc(100% + 4px); }
+  .map-details { right: 0; bottom: auto; top: calc(100% + 4px); }
 }
 
 /* 9 Oct: the weather map owns its front page; training keeps its own navigation. */
@@ -395,10 +356,6 @@ select {
 .place-name { display: block; grid-column: 1; grid-row: 1; align-self: center; padding-left: 26px; padding-right: 4px; font-size: 15px; font-weight: 600; line-height: 20px; white-space: nowrap; pointer-events: none; }
 .map-tools button[aria-pressed="true"] { color: var(--md-on-primary); background: var(--md-primary); }
 .chart-fixture-note { position: absolute; right: 8px; bottom: 6px; }
-.map-chat-float { position: absolute; right: 10px; bottom: 16px; z-index: 8; }
-.map-chat-float button { min-width: 80px; height: 48px; border-radius: 24px; border: 1px solid var(--md-outline-soft); color: var(--md-primary); background: var(--md-surface); box-shadow: var(--md-shadow-1); }
-.map-chat-float button svg { width: 24px; height: 24px; }
-.map-chat-float button[aria-pressed="true"] { background: var(--md-primary); color: var(--md-on-primary); }
 .place-field { min-width: 0; }
 .place-hint { margin: 0; padding: 0 0 2px 2px; font-size: 12px; line-height: 16px; color: var(--md-on-surface-variant); white-space: nowrap; }
 .place-note { position: absolute; z-index: 40; left: 0; top: calc(100% + 4px); font-size: 12px; line-height: 16px; white-space: nowrap; color: var(--md-on-surface-variant); }
@@ -442,13 +399,6 @@ select {
   .map-transport > button:last-child { padding: 0 4px; gap: 1px; }
   /* The collapsed phone deck keeps transport readable on its first row and
      gives the scrubber and clock their own row, including enlarged text. */
-  .map-compact { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; row-gap: 0; }
-  .map-compact-place { grid-column: 1; grid-row: 1; }
-  .map-compact-temp { grid-column: 2; grid-row: 1; }
-  .map-compact .map-transport { grid-column: 3; grid-row: 1; }
-  .map-compact > [data-chrome-toggle] { grid-column: 4; grid-row: 1; }
-  .map-compact > div:has(> .timeline) { grid-column: 1 / 3; grid-row: 2; }
-  .map-compact > .map-clock { grid-column: 3 / 5; grid-row: 2; justify-content: flex-end; flex-wrap: wrap; white-space: normal; }
   .map-lens-wrap { position: relative; padding-bottom: env(safe-area-inset-bottom); }
   .map-lens-wrap::after { content: ''; position: absolute; right: 0; top: 0; bottom: env(safe-area-inset-bottom); width: 22px; pointer-events: none; background: linear-gradient(90deg, transparent, var(--md-surface)); }
   [data-lens-bar] { position: relative; scrollbar-width: none; scroll-padding-inline: 12px; }
@@ -459,18 +409,12 @@ select {
   .map-tools { max-height: calc(var(--map-exposed-height, 100%) - 16px); gap: 3px; }
   .map-tool-buttons { max-height: calc(var(--map-exposed-height, 100vh) - 16px); overflow-y: auto; scrollbar-width: none; }
   .map-tool-buttons > button, .map-zoom { flex-shrink: 0; }
-  .map-sources { max-height: calc(var(--map-exposed-height, 100vh) - 16px); overflow-y: auto; }
-  .map-chat-float { bottom: max(16px, calc(100% - var(--map-exposed-height, 100%) + 8px)); }
+  .map-details { max-height: calc(var(--map-exposed-height, 100vh) - 16px); overflow-y: auto; }
 }
 @media (max-width: 767px) {
   .map-header { height: auto; min-height: 48px; }
   .place-name { padding-block: 4px; font-size: 16px; line-height: 20px; }
   .place-field > [data-place-sizing] { min-width: 0; overflow: hidden; }
-  .timeline { --track: 17px; }
-  .timeline-track { right: 0; }
-  .timeline[data-bare="true"] .timeline-track { right: 0; }
-  [data-timeline-label] { top: 9px; font-size: 12px; }
-  .map-chat-float { right: var(--map-chat-right, 10px); }
   body:has([data-map-shell="true"]) .account-sheet { left: max(12px, env(safe-area-inset-left)) !important; right: max(12px, env(safe-area-inset-right)); bottom: max(8px, var(--kb, 0px)) !important; }
 }
 @media (min-width: 768px) {
@@ -515,9 +459,7 @@ select {
 /* The map is an instrument, not a page: a long press never selects text or
    pops the iOS callout. Text stays selectable in panels, chat and inputs. */
 .map-shell { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-.map-shell input, .map-shell textarea, .map-shell [contenteditable],
-.map-shell [data-chat-panel], .map-shell [data-point-panel], .map-shell [data-coastal-panel],
-.map-shell [data-fly-panel], .map-shell .map-menu { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+.map-shell input, .map-shell textarea, .map-shell [contenteditable], .map-shell [data-chat-panel], .map-shell [data-point-panel], .map-shell [data-coastal-panel], .map-shell [data-fly-panel], .map-shell .map-menu { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 
 /* Lens-local optional overlays; the map camera cluster stays small. */
 .map-lens-extras { display: flex; flex: 0 0 auto; align-items: center; gap: 3px; }
@@ -546,54 +488,33 @@ select {
   .traffic-selection { width: calc(100% - 64px); }
   .traffic-cards { flex-direction: row; overflow-x: auto; overflow-y: auto; scroll-snap-type: x proximity; max-height: 106px; }
   .traffic-cards article { width: min(260px, 100%); scroll-snap-align: start; }
-  .timeline { height: 44px; --track: 25px; }
-  [data-timeline-label] { top: 0; display: flex; flex-direction: column; align-items: flex-end; }
   .map-time-state { margin-right: 0; font-size: 9px; line-height: 13px; }
 }
 
 /* Day readings keep their intrinsic width at larger text sizes. This is a
    bounded horizontal list, not clipped or overlapping seven fixed cells. */
-.forecast-days { overflow-x: auto; scrollbar-width: thin; touch-action: pan-x; }
-.day-values { display: flex; flex-direction: row; align-items: baseline; gap: 4px; line-height: 1.2; }
 .day-rain-empty { display: none; }
-.day-rain-unit { display: none; }
-@media (min-width: 1200px) { .day-rain-unit { display: inline; } }
-.time-block { flex-wrap: wrap; }
-.time-block > div:has(> .timeline) { min-width: min-content; }
-.timeline { height: auto; min-height: 36px; padding-bottom: 16px; --track: calc(100% - 8px); }
-[data-timeline-label] { position: relative; top: 0; width: max-content; line-height: 1.25; }
 .map-time-state { line-height: 1.3; }
 
 /* Small surfaces carry the core forecast; Ask and wider views carry detail. */
 .time-state-compact { display: none; }
 @media (max-width: 767px) {
-  .day-lo, .day-rain { display: none; }
+  .day-rain { display: none; }
   .map-legend [data-field-label][data-legend="ready"] { display: none; }
   .map-legend { flex-wrap: nowrap; }
   .time-state-full { display: none; }
   .time-state-compact { display: inline; }
   /* Keep the clock in flow so enlarged text gives the track more room, while
      anchoring its normal-size box to the right without horizontal overflow. */
-  [data-timeline-label] { position: relative; right: auto; left: auto !important; margin-left: auto; transform: none !important; width: max-content; max-width: 100%; }
-  .timeline .map-clock { display: flex; flex-wrap: wrap; justify-content: flex-end; max-width: 100%; white-space: normal; }
-  .timeline .map-clock > span { max-width: 100%; }
   /* Transport and its toggle share one row; the clock gets the full width.
      This bounds enlarged text without squeezing normal phone forecasts. */
-  .time-block { display: grid; grid-template-columns: minmax(0, 1fr) auto; row-gap: 0; }
-  .time-block > .transport-inline { grid-column: 1; grid-row: 1; }
-  .time-block > [data-chrome-toggle] { grid-column: 2; grid-row: 1; }
-  .time-block > div:has(> .timeline) { grid-column: 1 / -1; grid-row: 2; min-width: 0; max-width: 100%; }
 
 }
-.forecast-days[data-simple="true"] .day-lo,
-.forecast-days[data-simple="true"] .day-rain { display: none; }
 /* The map page is an app, not a document: no pull-to-refresh or rubber-band
    when a drag on a sheet or the map reaches the page edge (owner, 9 Oct:
    "swiping the AI message reply … easily triggers the pull to reload"). */
 html:has(.map-shell), body:has(.map-shell) { overscroll-behavior: none; }
 .map-shell [data-chat-panel], .map-shell [data-point-panel], .map-shell [data-fly-panel], .map-shell [data-coastal-panel] { overscroll-behavior: contain; }
-
-.map-compact-place > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .traffic-replay-status { position: absolute; z-index: 4; left: 8px; bottom: 36px; max-width: calc(100% - 70px); padding: 3px 6px; border-radius: 4px; background: var(--md-surface-container-high); color: var(--md-on-surface); font-size: 12px; }
 
@@ -604,20 +525,12 @@ html:has(.map-shell), body:has(.map-shell) { overscroll-behavior: none; }
 .history-exit { display: inline-flex; flex: none; align-items: center; gap: 6px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--md-primary); border-radius: 6px; background: var(--md-primary-container); color: var(--md-on-primary-container); font-size: .875rem; font-weight: 600; white-space: nowrap; }
 .history-exit svg { width: 18px; height: 18px; flex: none; }
 .history-exit:focus-visible { outline: 2px solid var(--md-primary); outline-offset: 2px; }
-[data-history-mode="true"] .map-deck { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
-[data-history-mode="true"] .transport-side { display: flex; padding-top: 0; order: 0; }
-[data-history-mode="true"] .transport-inline { display: none; }
 .history-day { order: 1; min-width: 0; max-width: 100%; min-height: 36px; font-size: .875rem; }
-[data-history-mode="true"] .time-block { order: 2; display: flex; flex: 1 1 240px; padding-top: 0; flex-wrap: nowrap; }
-[data-history-mode="true"] .time-block > div:has(> .timeline) { min-width: 0; }
-[data-history-mode="true"] .timeline .map-clock { flex-wrap: wrap; white-space: normal; }
-[data-history-mode="true"] .map-chrome-body > .history-picker { padding: 4px 12px 0; }
 @media (max-width: 767px) {
   [data-history-mode="true"] .map-header .history-picker { flex-basis: 100%; }
   .history-picker select { flex: 1; max-width: none; }
   .history-exit { min-height: 44px; }
   [data-history-mode="true"] .history-day { flex: 1 1 120px; width: 0; }
-  [data-history-mode="true"] .time-block { flex-basis: 100%; }
 }
 
 /* A labelled slice toggle grows with enlarged text instead of clipping its word. */
@@ -639,7 +552,7 @@ html:has(.map-shell), body:has(.map-shell) { overscroll-behavior: none; }
 
 /* Empty space around a camera control is still draggable map. */
 .map-tools { pointer-events: none; }
-.map-tools .map-sources { pointer-events: auto; }
+.map-tools .map-details { pointer-events: auto; }
 
 /* Large text removes secondary rows and excess control padding, not type. */
 [data-map-density="compact"] .map-header { height:auto; min-height:44px; gap:8px; padding-inline:12px; }
@@ -663,10 +576,6 @@ html:has(.map-shell), body:has(.map-shell) { overscroll-behavior: none; }
 [data-map-density="compact"] .map-transport button[aria-label="Pause"] svg { width:24px; height:24px; }
 [data-map-density="compact"]:has([data-atmosphere-section]) [data-map-tools] { display:none; }
 [data-map-density="compact"] [data-atmosphere-instrument]:has([data-atmosphere-section]) { width:calc(100% - 20px); max-width:360px; }
-@media (max-height:500px) {
-  [data-map-density="compact"] .time-block { flex-wrap:nowrap; }
-  [data-map-density="compact"] .forecast-days { display:flex; }
-}
 
 [data-map-density="compact"] .map-lens-wrap [data-chat-button] { width:44px; height:44px; min-width:44px; padding:0; }
 [data-map-density="compact"] .map-lens-wrap [data-chat-button] svg { width:24px; height:24px; }
@@ -680,7 +589,7 @@ html:has(.map-shell), body:has(.map-shell) { overscroll-behavior: none; }
 [data-map-density="compact"]:has([data-atmosphere-section]) [data-map-tools]:has([data-active="true"]) { display:flex; top:auto; bottom:36px; }
 [data-map-density="compact"]:has([data-atmosphere-section]) [data-map-tools] > .map-tools-toggle,
 [data-map-density="compact"]:has([data-atmosphere-section]) .map-tool-buttons > :not([data-active="true"]) { display:none; }
-[data-map-density="compact"]:has([data-map-tools] [data-active="true"]) [data-atmosphere-instrument]:has([data-atmosphere-section]) { top:10px; bottom:auto; max-height:calc(100% - 140px); }
+[data-map-density="compact"]:has([data-map-tools] [data-active="true"]) [data-atmosphere-instrument]:has([data-atmosphere-section]) { top:var(--map-top-clearance, 64px); bottom:auto; max-height:calc(100% - var(--map-top-clearance, 64px) - var(--map-bottom-clearance, 60px) - 60px); }
 [data-map-density="compact"] [data-cloud-status] { margin-left:auto; padding-right:10px; font-size:.65rem; color:var(--md-on-surface-variant); }
 
 /* Size the rate to its selected value, not the longest item in the menu. */
@@ -692,3 +601,247 @@ html:has(.map-shell), body:has(.map-shell) { overscroll-behavior: none; }
 
 [data-map-density="compact"]:has([data-atmosphere-section]) [data-point-panel] { display:none; }
 [data-map-density="compact"]:has([data-atmosphere-section]) .map-slice-control { position:static; }
+
+/* Map-first, 16 October 2026. All chrome floats over the shared map. */
+[data-map-page] { position:relative; padding:0; isolation:isolate; }
+[data-map-page] [data-map-panel] { position:absolute; inset:0; margin:0; max-height:none; min-height:0; }
+[data-map-page] [data-map-ready] { max-width:none !important; border-radius:0; }
+.map-header { position:absolute; inset:10px 10px auto; z-index:20; height:auto; padding:0; display:flex; justify-content:space-between; align-items:flex-start; pointer-events:none; }
+.map-header-place,.map-header-actions,.map-lens-wrap,.map-bottom-bar,.map-selected-time { border:1px solid var(--md-outline-soft); border-radius:8px; background:color-mix(in srgb,var(--md-surface) 88%,transparent); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); color:var(--md-on-surface); pointer-events:auto; }
+.map-header-place,.map-header-actions { display:flex; align-items:center; gap:6px; padding:3px 6px; min-width:0; }
+.map-header .map-reading { flex:none; font-size:22px; }
+.map-header .header-wind-words { font-size:13px; }
+.map-header .uv-figure { font-size:12px; }
+.map-header [data-place-field] input { border:0; background:transparent; }
+.map-header [data-place-cluster] { flex:0 1 auto; }
+.map-header [data-learn-link] { display:flex; font-size:14px; }
+.map-header .run-chip { font-size:11px; }
+.map-lens-position { position:absolute; left:10px; top:64px; z-index:10; }
+[data-map-page] .map-lens-wrap { display:flex; flex-direction:column; align-items:stretch; padding:3px; max-width:none; }
+.map-lens-wrap::after { display:none; }
+[data-map-page] [data-lens-bar] { display:flex; height:auto; overflow:visible; flex:none; }
+[data-map-page] [data-lens-bar] > [role="radiogroup"] { display:flex; flex-direction:column; align-items:stretch; padding:0; background:transparent; min-width:0; }
+[data-map-page] [data-lens-bar] button { height:34px; flex:none; padding:0 8px; justify-content:flex-start; font-size:13px; }
+[data-map-page] .lens-icon { display:inline-flex; }
+[data-map-page] .map-lens-extras { display:flex; justify-content:center; flex-wrap:wrap; max-width:100px; }
+.map-bottom-bar { position:absolute; z-index:15; inset:auto 10px 10px; display:flex; align-items:center; gap:8px; padding:4px 6px; min-width:0; }
+.map-bottom-bar .map-transport { flex:none; gap:3px; }
+.map-bottom-bar .map-transport button,.map-bottom-bar .map-transport select { height:32px; font-size:13px; }
+.map-bottom-bar .map-transport select { padding-left:7px; padding-right:21px; }
+.map-bottom-bar [data-chat-button] { flex:none; width:32px; min-width:32px; height:32px; padding:4px; }
+.map-bottom-bar [data-chat-button] > span { display:none; }
+[data-map-page] .forecast-days { display:block; min-width:0; flex:1; overflow-x:auto; scrollbar-width:none; touch-action:pan-x; }
+.map-bottom-bar .timeline { height:32px; min-height:32px; padding:0; --track:28px; }
+.forecast-segments { display:flex; height:26px; align-items:stretch; }
+.forecast-day { display:flex; flex:none; align-items:center; gap:3px; padding:0 5px; white-space:nowrap; font-size:13px; font-variant-numeric:tabular-nums; border-right:1px solid var(--md-outline-soft); }
+.forecast-day[data-today="true"] { background:var(--md-primary-container); border-radius:3px; }
+.forecast-day .sky-glyph { display:inline-block; width:17px; height:17px; flex:none; }
+.forecast-day .day-values { font-size:inherit; white-space:nowrap; }
+.forecast-day .day-rain { display:inline; color:var(--md-primary); font-size:inherit; }
+.timeline-track { pointer-events:none; }
+.map-selected-time { position:absolute; z-index:10; top:15px; left:50%; transform:translateX(-50%); padding:3px 7px; font-size:12px; }
+[data-map-page] .map-tools { top:64px; }
+[data-map-page] .map-legend,[data-map-page] .map-scale { bottom:64px; }
+[data-map-page] .traffic-replay-status { bottom:90px; }
+[data-history-mode="true"] .map-header { flex-wrap:nowrap; padding:0; }
+.history-picker select { max-width:14rem; }
+.map-bottom-bar .history-day { max-width:8rem; font-size:12px; }
+@media(max-width:1100px) {
+ .forecast-day { font-size:11px; gap:2px; padding-inline:3px; }
+ .forecast-day .sky-glyph { width:13px; height:13px; }
+ .map-selected-time { top:auto; left:auto; right:10px; bottom:62px; transform:none; }
+}
+@media(max-width:600px) {
+ .map-header { inset:6px 6px auto; gap:4px; }
+ .map-header-place { gap:3px; padding:2px 3px; max-width:calc(100% - 90px); }
+ .map-header .map-reading { gap:2px; font-size:20px; }
+ .map-header .header-wind-words { font-size:12px; }
+ .map-header .run-chip { font-size:9px; }
+ .map-header-actions { gap:0; padding:2px; }
+ .map-header [data-learn-link] { padding:0 4px; font-size:12px; }
+ .map-header [data-learn-link] svg { display:none; }
+ .map-lens-position { top:60px; left:6px; }
+ [data-map-page] [data-lens-bar] button { width:38px; height:38px; padding:0; justify-content:center; }
+ [data-map-page] [data-lens-bar] button > span:not(.lens-icon) { display:none; }
+ [data-map-page] .map-lens-extras { max-width:38px; }
+ .map-bottom-bar { inset-inline:6px; bottom:6px; gap:3px; padding:3px; }
+ .map-bottom-bar .map-transport { gap:0; }
+ .map-bottom-bar .map-transport button { padding-inline:3px; }
+ .map-bottom-bar .map-transport > span button { width:28px; }
+ .map-bottom-bar .timeline { --day-track-min:770px; min-width:770px; touch-action:pan-x; }
+ .forecast-day { font-size:13px; }
+ .map-selected-time { bottom:55px; right:6px; font-size:11px; }
+ [data-map-page] .map-tools { top:60px; flex-direction:column; }
+ .history-picker { max-width:100%; gap:3px; }
+ .history-picker select { width:130px; }
+ .history-exit { padding:3px; }
+ .history-exit span { display:none; }
+ [data-history-mode="true"] .map-header-place > [data-place-cluster] { display:none; }
+ .map-bottom-bar .history-day { max-width:65px; }
+}
+@media(max-height:500px) and (min-width:601px) {
+ .map-lens-position { top:58px; }
+ [data-map-page] [data-lens-bar] button { height:29px; }
+ [data-map-page] .map-tools { top:58px; }
+ .map-header-place,.map-header-actions { padding-block:1px; }
+}
+/* The clock takes one compact slot; only inspection lifts it above the head. */
+.map-bottom-bar .map-selected-time { position:relative; inset:auto; transform:none; flex:none; border:0; background:none; backdrop-filter:none; padding:0 3px; font-size:12px; white-space:nowrap; }
+.map-selected-time[data-active="false"] .map-clock-weekday,
+.map-selected-time[data-active="false"] .map-clock-zulu,
+.map-selected-time[data-active="false"] .map-time-state { display:none; }
+.map-bottom-bar .map-selected-time[data-active="true"] { position:fixed; z-index:30; border:1px solid var(--md-outline-soft); background:var(--md-surface); padding:4px 7px; }
+.map-bottom-bar .timeline { touch-action:pan-x; }
+.forecast-day { position:relative; }
+.day-label-option { position:absolute; visibility:hidden; display:inline-flex; align-items:center; gap:3px; width:max-content; flex:none; }
+.forecast-day[data-detail="0"] [data-day-option="0"],
+.forecast-day[data-detail="1"] [data-day-option="1"],
+.forecast-day[data-detail="2"] [data-day-option="2"],
+.forecast-day[data-detail="3"] [data-day-option="3"] { position:static; visibility:visible; }
+/* Hidden measurement options must not widen the scrollable track. */
+.forecast-day { overflow:clip; }
+[data-map-page] .forecast-day { font-size:13px; }
+[data-map-page] .map-header .place-field { overflow:visible; }
+[data-map-page] .map-bottom-bar .map-transport select { min-width:0; }
+[data-map-page] .map-lens-extras [aria-label="Satellite"] { display:flex; align-items:center; gap:6px; width:100%; padding:0 8px; font-size:13px; font-weight:400; }
+[data-map-page][data-map-density="compact"] [data-lens-bar] { display:none; }
+[data-map-page][data-map-density="compact"] .map-lens-wrap { max-width:160px; }
+[data-map-page] .map-lens-position { max-height:calc(100% - 122px); }
+@media(max-width:600px) {
+ .map-bottom-bar .map-selected-time { font-size:10px; }
+ .map-bottom-bar .map-transport [data-time-reset] { font-size:12px; }
+ .map-bottom-bar .map-transport select { font-size:12px; }
+ [data-map-page] .map-lens-extras [aria-label="Satellite"] { justify-content:center; padding:0; }
+ [data-map-page] .map-lens-extras [aria-label="Satellite"] > span { display:none; }
+ [data-map-page] .map-lens-picker { max-width:110px; }
+ [data-history-mode="true"] .map-header-place { max-width:calc(100% - 92px); }
+ [data-history-mode="true"] .map-header .history-picker { flex-basis:auto; }
+ [data-history-mode="true"] .map-bottom-bar .history-day { flex:none; width:60px; }
+}
+/* Inspection sheets are overlays with their close controls clear of the chips. */
+[data-map-page] [data-point-layout="side"],
+[data-map-page] [data-chat-layout="side"],
+[data-map-page] [data-coastal-panel][data-point-layout="side"],
+[data-map-page] [data-fly-panel] { top:64px; bottom:60px; max-height:calc(100% - 124px); }
+/* Reserve the compact clock slot while its full readout follows the playhead. */
+.map-clock-slot { position:relative; flex:0 0 60px; min-height:20px; font-size:12px; text-align:center; white-space:nowrap; }
+.map-clock-slot .map-selected-time[data-active="false"] { position:relative; inset:auto; padding:0; }
+.map-clock-slot .map-selected-time[data-active="true"] { pointer-events:none; font-size:12px; }
+
+@media(max-width:600px) {
+ .map-header-place:has(.run-chip) { flex-wrap:wrap; }
+ .map-header .run-chip { flex-basis:100%; padding:0; border:0; font-size:11px; }
+}
+
+.map-bottom-bar .timeline { height:36px; min-height:36px; }
+.timeline-scrub-hit { position:absolute; left:0; right:0; bottom:0; height:10px; touch-action:none; }
+.map-clock-floating { position:fixed; z-index:60; left:0; top:0; right:auto; bottom:auto; transform:none; padding:4px 7px; font-size:12px; pointer-events:none; background:var(--md-surface); }
+
+[data-map-page] .map-lens-extras { flex-direction:column; align-items:stretch; }
+.map-lens-extras .map-press-label { left:calc(100% + 8px); right:auto; bottom:0; }
+.map-bottom-bar .map-transport select { width:calc(var(--speed-label-ch) * 1ch + 28px); }
+[data-map-density="compact"] .map-bottom-bar { overflow-x:auto; }
+[data-map-density="compact"] .map-bottom-bar .forecast-days { flex:1 0 80px; }
+[data-map-density="compact"] .map-bottom-bar .map-transport button,
+[data-map-density="compact"] .map-bottom-bar .map-transport select { min-height:36px; min-width:36px; }
+
+/* Chrome clearances follow real text/controls, including enlarged text. */
+[data-map-page] .map-lens-position, [data-map-page] .map-tools { top:var(--map-top-clearance, 64px); }
+[data-map-page] .map-lens-position { max-height:calc(100% - var(--map-top-clearance, 64px) - var(--map-bottom-clearance, 60px)); }
+[data-map-page] .map-legend { bottom:var(--map-bottom-clearance, 60px); }
+[data-map-page] [data-point-layout="side"], [data-map-page] [data-chat-layout="side"], [data-map-page] [data-coastal-panel][data-point-layout="side"] { top:var(--map-top-clearance, 64px); bottom:var(--map-bottom-clearance, 60px); max-height:calc(100% - var(--map-top-clearance, 64px) - var(--map-bottom-clearance, 60px)); }
+[data-map-density="compact"] .map-header-place { flex-wrap:wrap; max-width:calc(100% - 110px); }
+[data-map-density="compact"] .map-header-place [data-place-cluster] { flex-basis:100%; }
+[data-map-page] [data-fly-panel]:not([data-fly-sheet]) { position:absolute; z-index:30; right:0; top:var(--map-top-clearance, 64px); bottom:var(--map-bottom-clearance, 60px); max-height:calc(100% - var(--map-top-clearance, 64px) - var(--map-bottom-clearance, 60px)); background:var(--md-surface); }
+[data-map-page]:has([data-fly-panel]:not([data-fly-sheet])) .map-tools { right:calc(min(400px, 50vw) + 8px); }
+
+@media(max-height:500px) and (min-width:601px) {
+ [data-map-page] .map-legend { left:130px; max-width:calc(100% - 150px); }
+}
+
+/* Round 2: floating chrome retains usable targets and independent clearances. */
+[data-map-page] > .map-header { height:auto; }
+[data-map-page] .map-menu-button,
+[data-map-page] .map-header [role="combobox"],
+[data-map-page] .map-bottom-bar .map-transport button,
+[data-map-page] .map-bottom-bar .map-transport select { min-height:36px; }
+[data-map-page] [data-atmosphere-instrument] {
+ top:var(--map-top-clearance, 64px); bottom:auto;
+ left:calc(var(--map-lens-width, 100px) + 20px);
+ max-width:calc(100% - var(--map-lens-width, 100px) - 90px);
+ max-height:calc(100% - var(--map-top-clearance, 64px) - var(--map-bottom-clearance, 60px));
+}
+[data-map-page][data-map-density="compact"] .map-header [data-learn-link] { display:none; }
+[data-map-page][data-map-density="compact"] .map-header-place { max-width:calc(100% - 52px); }
+[data-map-page][data-map-density="compact"] .map-lens-picker { flex:none; }
+[data-map-page][data-map-density="compact"] .map-lens-picker select { padding:0 20px 0 6px; font-size:.8125rem; }
+[data-map-page][data-map-density="compact"] .map-lens-extras { max-width:none; }
+[data-map-page][data-map-density="compact"] .map-lens-extras [aria-label="Satellite"] { justify-content:center; }
+[data-map-page][data-map-density="compact"] .map-lens-extras [aria-label="Satellite"] > span { display:none; }
+[data-map-page][data-map-density="compact"]:has([data-atmosphere-section]) .map-lens-position { visibility:hidden; }
+[data-map-page][data-map-density="compact"] [data-atmosphere-instrument]:has([data-atmosphere-section]) {
+ left:10px; top:var(--map-top-clearance, 64px); bottom:auto;
+ max-width:calc(100% - 20px);
+ max-height:calc(100% - var(--map-top-clearance, 64px) - var(--map-bottom-clearance, 60px) - 60px);
+}
+
+[data-map-page][data-map-text="enlarged"] [data-lens-bar] button { width:38px; min-height:38px; padding:0; justify-content:center; }
+[data-map-page][data-map-text="enlarged"] [data-lens-bar] button > span:not(.lens-icon),
+[data-map-page][data-map-text="enlarged"] .map-lens-extras [aria-label="Satellite"] > span { display:none; }
+[data-map-page][data-map-text="enlarged"] .map-lens-extras [aria-label="Satellite"] { justify-content:center; padding:0; min-height:38px; }
+
+[data-map-page][data-map-density="compact"] [data-atmosphere-instrument][data-atmosphere-section-open="false"] {
+ left:10px; top:calc(var(--map-top-clearance, 64px) + var(--map-lens-height, 96px) + 8px);
+ max-width:calc(100% - 220px);
+}
+[data-map-page][data-map-density="compact"] [data-atmosphere-section-open="false"] [aria-label="Atmospheric section"] > span { display:none; }
+[data-map-page] [data-place-cluster] > .press-note { top:calc(100% + 6px); bottom:auto; }
+
+[data-map-page][data-map-density="compact"] .map-lens-picker { max-width:160px; }
+[data-map-page][data-map-density="compact"]:has([data-atmosphere-section]) [data-map-tools]:has([data-active="true"]) { bottom:var(--map-bottom-clearance, 60px); }
+
+[data-map-page] [aria-label="Atmospheric section"] { min-width:36px; }
+
+/* Enlarged floating chrome: reserve controls, then truncate the place name.
+   The freshness phrase can use a second line inside the same chip. */
+[data-map-page] .map-header-actions { flex:none; }
+[data-map-page] .map-header-place { flex:0 1 auto; }
+[data-map-page] .map-header .place-field { grid-template-columns:minmax(0, 1fr); }
+[data-map-page] .map-header .place-name,
+[data-map-page] .map-header [data-place-sizing],
+[data-map-page] .map-header .place-field > input { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+[data-map-page][data-map-text="enlarged"] .map-header-place:has(.run-chip) { flex-wrap:wrap; }
+[data-map-page][data-map-text="enlarged"] .map-header .run-chip { flex:0 1 100%; min-width:0; white-space:normal; overflow-wrap:anywhere; font-size:.6875rem; line-height:1.25; border:0; padding:0; }
+
+/* A native select covers the current lens icon; its options retain their names.
+   This bounds the left column even when the camera tools are expanded. */
+[data-map-page][data-map-density="compact"] .map-lens-picker { position:relative; width:44px; height:44px; max-width:44px; border:1px solid var(--md-outline-soft); border-radius:6px; background:var(--md-surface-container); }
+.map-lens-picker-icon { display:flex; align-items:center; justify-content:center; width:100%; pointer-events:none; }
+.map-lens-picker-icon svg { width:24px; height:24px; }
+.map-lens-picker::after { content:''; position:absolute; right:3px; bottom:5px; width:5px; height:5px; border-right:1px solid currentColor; border-bottom:1px solid currentColor; transform:rotate(45deg); pointer-events:none; }
+[data-map-page][data-map-density="compact"] .map-lens-picker select { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
+.map-lens-picker:focus-within { outline:2px solid var(--md-primary); outline-offset:2px; }
+[data-map-page][data-map-density="compact"] .map-lens-wrap { width:52px; }
+[data-map-page][data-map-density="compact"] .map-tools { max-width:calc(100% - 80px); max-height:calc(100% - var(--map-top-clearance, 64px) - var(--map-bottom-clearance, 60px)); }
+[data-map-page][data-map-density="compact"] .map-tool-buttons { flex-wrap:wrap; min-width:0; min-height:0; max-width:100%; max-height:calc(100dvh - var(--map-top-clearance, 64px) - var(--map-bottom-clearance, 60px)); overflow-y:auto; }
+[data-map-page][data-map-density="compact"] .map-tools-toggle { flex-shrink:0; }
+
+/* Let the existing measured rain → icon → temperature drop order work with
+   enlarged glyphs, without the normal phone strip's fixed 770px detail floor. */
+[data-map-page][data-map-text="enlarged"] .forecast-day { font-size:.8125rem; }
+[data-map-page][data-map-text="enlarged"] .map-bottom-bar .timeline { --day-track-min:0px; height:46px; min-height:46px; --track:38px; }
+[data-map-page][data-map-text="enlarged"] .forecast-segments { height:36px; }
+[data-map-page][data-map-density="compact"] .map-bottom-bar .forecast-days { flex:1 1 40px; min-width:40px; }
+
+.about-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 12px; align-items: baseline; min-height: 44px; padding: 10px 0; border-bottom: 1px solid var(--md-outline-soft); font-size: 0.9375rem; overflow-wrap: anywhere; }
+.about-row > :first-child { font-weight: 500; }
+.about-row a { color: var(--md-primary); text-decoration: underline; text-underline-offset: 2px; }
+
+/* About is a reading page: its navigation reflows with enlarged text. */
+.about-bar { display:flex; align-items:center; gap:8px; min-height:56px; padding:8px 16px; border-bottom:1px solid var(--md-outline-soft); }
+.about-bar h1 { flex:1; min-width:0; font-size:.9375rem; font-weight:600; }
+.about-bar > button { flex-shrink:0; }
+
+/* Keep compact tools above the point sheet; do not offset the slice twice. */
+[data-map-page][data-map-density="compact"]:has([data-point-layout="sheet"]):not(:has([data-atmosphere-section])) .map-tools { max-height:calc(var(--map-exposed-height, 100dvh) - var(--map-top-clearance, 64px) - 8px); }
+[data-map-page][data-map-density="compact"]:has([data-point-layout="sheet"]) .map-slice-control { position:static; flex-shrink:0; }

@@ -124,8 +124,6 @@ const units = (page: Page) => page.locator('select[data-units]');
 async function selectUnits(page: Page, value: string) {
   const control = units(page);
   if (!(await control.isVisible().catch(() => false))) {
-    const expand = page.getByRole('button', { name: 'Show daily forecast', exact: true });
-    if (await expand.isVisible()) await expand.click();
     await page.getByRole('button', { name: 'Menu', exact: true }).click();
     await expect(page.locator('[data-map-menu]')).toBeVisible();
   }
@@ -152,8 +150,6 @@ async function theme(page: Page, mode: 'light' | 'dark') {
   const dark = await page.locator('html').evaluate((root) => root.classList.contains('dark'));
   if (dark === (mode === 'dark')) return;
   if (!(await page.getByRole('button', { name: mode === 'dark' ? 'Dark' : 'Light', exact: true }).isVisible().catch(() => false))) {
-    const expand = page.getByRole('button', { name: 'Show daily forecast', exact: true });
-    if (await expand.isVisible()) await expand.click();
     await page.getByRole('button', { name: 'Menu', exact: true }).click();
     await expect(page.locator('[data-map-menu]')).toBeVisible();
   }
@@ -181,8 +177,6 @@ test('units follow the picker on every surface', async ({ page }) => {
   fs.mkdirSync(shots, { recursive: true });
   await open(page, 'light');
   if (!(await units(page).isVisible().catch(() => false))) {
-    const expand = page.getByRole('button', { name: 'Show daily forecast', exact: true });
-    if (await expand.isVisible()) await expand.click();
     await page.getByRole('button', { name: 'Menu', exact: true }).click();
     await expect(page.locator('[data-map-menu]')).toBeVisible();
   }

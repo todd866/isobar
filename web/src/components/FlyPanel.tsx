@@ -328,7 +328,7 @@ export function FlyPanel({
   const runLabel = series ? forecastRunLabel({ source: series.source, model: series.model, run: series.run, cycle: series.runKnown !== false }) : null;
   const section = state ? (
     <div className="relative">
-      {series && runLabel ? <span data-sky-run title={forecastRunTitle({ source: series.source, model: series.model, run: series.run, cycle: series.runKnown !== false })} className="pointer-events-none absolute top-1 left-2 z-[1] rounded bg-[var(--md-surface)]/85 px-1 text-[11px] font-semibold tabular-nums text-[var(--md-on-surface)]">{runLabel}</span> : null}
+      {series && runLabel ? <span data-sky-run title={forecastRunTitle({ source: series.source, model: series.model, run: series.run, cycle: series.runKnown !== false })} className="pointer-events-none absolute top-1 left-2 z-[1] rounded bg-[var(--md-surface)]/85 px-1 text-[11px] font-semibold tabular-nums text-[var(--md-on-surface)]" aria-label={runLabel}>Forecast</span> : null}
       <SkyCanvas state={state} seed={seed} coastKm={coastKm} height={skyHeight} label={describe(state, units)} />
     </div>
   ) : <div style={{ height: skyHeight }} />;

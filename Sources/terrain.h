@@ -19,8 +19,6 @@ FOUNDATION_EXPORT void TerrainDecodeTerrarium(const uint8_t * _Nullable rgba, in
 // Returns count on success, or zero for malformed/non-512px input.
 FOUNDATION_EXPORT int TerrainElevationsFromWebP(NSData *webp, uint16_t *out, int capacity,
                                                   int * _Nullable width, int * _Nullable height);
-FOUNDATION_EXPORT NSString *IsobarTerrainAttribution(void);
-FOUNDATION_EXPORT NSString *IsobarTerrainCredit(void);
 
 typedef NS_ENUM(NSInteger, TerrainTileResult) {
     TerrainTileResultReady,

@@ -42,7 +42,3 @@
 .panel [data-band="inside"], .clean { color: var(--inside); }
 .panel [data-band="above"], .hazard { color: var(--above); }
 .status { margin: 0; padding: 8px 10px; font-size: .8125rem; color: var(--md-on-surface-variant); }
-
-.heading .info { font-size: 1rem; width: 28px; flex-basis: 28px; }
-.sources { position: absolute; z-index: 5; top: 50px; right: 8px; left: 8px; padding: 10px; background: var(--md-surface-container-high); border: 1px solid var(--md-outline-soft); border-radius: 6px; box-shadow: 0 3px 12px #0003; font-size: .8125rem; }
-.sources a { text-decoration: underline; }

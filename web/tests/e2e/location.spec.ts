@@ -1,10 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
-import os from 'node:os';
 import path from 'node:path';
 import { australiaLambert, project, type Camera } from '../../src/lib/lambert';
 import { chartRoutes } from './map-fixture';
 
-const OUT = path.join(os.homedir(), '.local', 'state', 'isobar-week', 'location');
+const OUT = path.resolve(process.cwd(), 'test-results/location');
 const TOWNS = [
   ['Townsville', -19.25, 146.77, 5, 'QLD'],
   ['Perth', -31.95, 115.86, 1, 'AU'],
@@ -67,7 +66,16 @@ test('first visit uses the coarse fix, shows the hint once, and / then Enter sea
   await open(page, 1280, 800);
   const field = page.getByRole('combobox', { name: 'Place' });
   await expect(field).toHaveValue('Townsville');
+  // The first-visit hint belongs to the place popover now.  The closed map
+  // header stays compact; opening the field exposes both search and locate.
+  await expect(page.locator('[data-place-hint]')).toHaveCount(0);
+  await field.click();
+  await expect(page.locator('[data-place-menu]')).toBeVisible();
   await expect(page.locator('[data-place-hint]')).toHaveText('Not here? Search or ⌖');
+  await expect(page.locator('[data-locate]')).toBeVisible();
+  await expect(field).toHaveAttribute('placeholder', 'Search a place or airport');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Tab');
   await page.keyboard.press('/');
   await expect(field).toBeFocused();
   await expect(field).toHaveAttribute('placeholder', 'Search a place or airport');
@@ -80,7 +88,10 @@ test('first visit uses the coarse fix, shows the hint once, and / then Enter sea
   await page.reload();
   await expect(page.locator('[data-map-ready]')).toHaveAttribute('data-map-ready', 'true');
   await expect(field).toHaveValue('Sydney');
+  await field.click();
+  await expect(page.locator('[data-place-menu]')).toBeVisible();
   await expect(page.locator('[data-place-hint]')).toHaveCount(0);
+  await expect(page.locator('[data-locate]')).toBeVisible();
 });
 
 test('locate button uses the browser fix, and denial is one line', async ({ page }) => {
@@ -100,15 +111,22 @@ test('locate button uses the browser fix, and denial is one line', async ({ page
   });
   await open(page, 1280, 800);
   await expect(page.locator('input[data-place]')).toHaveValue('Townsville');
+  await page.getByRole('combobox', { name: 'Place' }).click();
+  await expect(page.locator('[data-locate]')).toBeVisible();
   await page.locator('[data-locate]').click();
+  await expect(page.locator('[data-place-menu]')).toHaveCount(0);
   await expect(page.locator('input[data-place]')).toHaveValue('Perth');
   await expect(page.locator('input[data-place]')).toHaveAttribute('data-place', 'perth');
   await expect(page.getByRole('status', { name: 'Located' })).toBeVisible();
   await expect(page.locator('[data-locate-note]')).toHaveCount(0);
   await page.evaluate(() => sessionStorage.setItem('isobar-e2e-deny-geo', '1'));
+  await page.getByRole('combobox', { name: 'Place' }).click();
   await page.locator('[data-locate]').click();
   await expect(page.locator('[data-locate-note]')).toHaveText('Location off');
   await expect(page.locator('[data-locate-note]')).not.toContainText(/error/i);
+  await expect(page.locator('input[data-place]')).toHaveAttribute('data-place', 'perth');
+  await expect(page.locator('[data-place-menu]')).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(page.locator('input[data-place]')).toHaveValue('Perth');
 });
 
@@ -125,7 +143,6 @@ test('a tapped offshore point can become the place, and the star lists it first'
   await expect(panel.locator('[data-point-coords]')).toHaveText(/\d+\.\d+°S \d+\.\d+°E/);
   await panel.locator('[data-set-place]').click();
   await expect(page.getByRole('status', { name: 'Set as my place' })).toBeVisible();
-  await page.getByRole('button', { name: 'Show daily forecast', exact: true }).click();
   await expect(page.locator('input[data-place]')).toHaveValue(/^Coral Sea, \d+ km E of Townsville$/);
   await expect(page.locator('[data-place-hint]')).toHaveCount(0);
   await panel.locator('[data-set-place]').click();
@@ -136,12 +153,14 @@ test('a tapped offshore point can become the place, and the star lists it first'
   await page.getByRole('combobox', { name: 'Place' }).click();
   await expect(page.locator('[data-place-option]').first()).not.toHaveAttribute('data-place-option', id!);
   await page.keyboard.press('Escape');
+  await page.getByRole('combobox', { name: 'Place' }).click();
   await page.locator('[data-save-place]').click();
   await expect(page.locator('[data-save-place]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('status', { name: 'Saved' })).toBeVisible();
   await page.getByRole('combobox', { name: 'Place' }).click();
   await expect(page.locator('[data-place-option]').first()).toHaveAttribute('data-place-option', id!);
   await page.keyboard.press('Escape');
+  await page.getByRole('combobox', { name: 'Place' }).click();
   await page.locator('[data-save-place]').click();
   await expect(page.locator('[data-save-place]')).toHaveAttribute('aria-pressed', 'false');
   await expect(page.getByRole('status', { name: 'Unsaved' })).toBeVisible();
@@ -212,7 +231,7 @@ test('location review captures', async ({ page }) => {
   test.setTimeout(120_000);
   await open(page, 1440, 900, 'light');
   await expect(page.locator('input[data-place]')).toHaveValue('Townsville');
-  await expect(page.locator('[data-place-hint]')).toBeVisible();
+  await expect(page.locator('[data-place-hint]')).toHaveCount(0);
   const shots: [string, number, number, 'light' | 'dark'][] = [
     ['desktop-light', 1440, 900, 'light'],
     ['desktop-dark', 1440, 900, 'dark'],
@@ -228,8 +247,13 @@ test('location review captures', async ({ page }) => {
     await page.reload();
     await expect(page.locator('[data-map-ready]')).toHaveAttribute('data-map-ready', 'true');
     await expect(page.locator('input[data-place]')).toHaveValue('Townsville', { timeout: 20_000 });
-    await expect(page.locator('[data-place-hint]')).toBeVisible();
+    await expect(page.locator('[data-place-hint]')).toHaveCount(0);
     await page.screenshot({ path: path.join(OUT, `${name}.png`), fullPage: false });
+    await page.getByRole('combobox', { name: 'Place' }).click();
+    await expect(page.locator('[data-place-hint]')).toHaveText('Not here? Search or ⌖');
+    await expect(page.locator('[data-locate]')).toBeVisible();
+    await page.screenshot({ path: path.join(OUT, `${name}-place.png`), fullPage: false });
+    await page.keyboard.press('Escape');
   }
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.evaluate(() => sessionStorage.setItem('isobar-e2e-theme', 'light'));

@@ -25,8 +25,13 @@ int main(void) {
         Check(NSEqualSizes(window.contentMinSize, NSMakeSize(960, 640)),
             [NSString stringWithFormat:@"minimum content size %@", NSStringFromSize(window.contentMinSize)]);
         NSRect content = [window contentRectForFrameRect:window.frame];
-        Check(fabs(content.size.width - 1280) < 1 && fabs(content.size.height - 820) < 1,
-            [NSString stringWithFormat:@"content size %@", NSStringFromSize(content.size)]);
+        // 1280×820, or the largest size that fits a smaller visible frame (13" Air).
+        NSRect fit = (window.screen ?: NSScreen.mainScreen).visibleFrame;
+        NSRect full = [window frameRectForContentRect:NSMakeRect(0, 0, 1280, 820)];
+        double wantW = MAX(960, 1280 - MAX(0, NSWidth(full) - NSWidth(fit)));
+        double wantH = MAX(640, 820 - MAX(0, NSHeight(full) - NSHeight(fit)));
+        Check(fabs(content.size.width - wantW) < 1 && fabs(content.size.height - wantH) < 1,
+            [NSString stringWithFormat:@"content size %@ (want %.0f×%.0f)", NSStringFromSize(content.size), wantW, wantH]);
         Check([window.frameAutosaveName isEqual:@"IsobarTraining"],
             [NSString stringWithFormat:@"frame autosave %@", window.frameAutosaveName ?: @"nil"]);
         Check((window.collectionBehavior & NSWindowCollectionBehaviorFullScreenPrimary) != 0,

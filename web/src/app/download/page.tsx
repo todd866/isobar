@@ -1,4 +1,4 @@
-import { Attribution } from '@/components/Attribution';
+import Link from 'next/link';
 import fs from 'node:fs';
 import path from 'node:path';
 import { PageBar } from '@/components/PageBar';
@@ -42,7 +42,7 @@ export default function DownloadPage() {
           <a className="text-[var(--md-primary)] underline" href="https://github.com/todd866/isobar/blob/main/docs/install.md">Installation guide</a>
           <a className="text-[var(--md-primary)] underline" href="https://github.com/todd866/isobar">Source</a>
         </nav>
-        <Attribution />
+        <Link href="/about" className="text-sm text-[var(--md-primary)] underline">About Isobar</Link>
       </main>
     </>
   );

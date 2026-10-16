@@ -414,21 +414,22 @@ typedef NSString *(^PlaceReading)(double latitude, double longitude);
 static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, double scale, BOOL dark,
     NSArray<NSValue *> *avoid, PlaceReading reading) {
     double w = cam.viewportW, h = cam.viewportH;
-    // One source line, shared by live AppKit overlays and offscreen captures.
-    NSString *credit = [@"ECMWF · CC BY 4.0 · " stringByAppendingString:IsobarTerrainCredit()];
+    // Relief is a physical display scale, not an attribution.
     NSString *relief = TerrainReliefLabel(cam);
-    if (relief) credit = [NSString stringWithFormat:@"%@ · %@", relief, credit];
-    NSDictionary *creditAttrs = @{NSFontAttributeName:[NSFont systemFontOfSize:9 * scale],
-        NSForegroundColorAttributeName:dark ? [NSColor colorWithWhite:.9 alpha:1] : [NSColor colorWithWhite:.2 alpha:1]};
-    NSSize creditSize = [credit sizeWithAttributes:creditAttrs];
-    NSRect creditBox = NSMakeRect(MAX(4 * scale, w - creditSize.width - 8 * scale),
-        h - creditSize.height - 4 * scale, creditSize.width, creditSize.height);
-    NSGraphicsContext *creditPrevious = NSGraphicsContext.currentContext;
-    NSGraphicsContext.currentContext = [NSGraphicsContext graphicsContextWithCGContext:c flipped:YES];
-    [(dark ? [NSColor colorWithWhite:.1 alpha:.8] : [NSColor colorWithWhite:1 alpha:.8]) setFill];
-    NSRectFill(NSInsetRect(creditBox, -3 * scale, -2 * scale));
-    [credit drawAtPoint:creditBox.origin withAttributes:creditAttrs];
-    NSGraphicsContext.currentContext = creditPrevious;
+    NSRect reliefBox = NSZeroRect;
+    if (relief.length) {
+        NSDictionary *attrs = @{NSFontAttributeName:[NSFont systemFontOfSize:9 * scale],
+            NSForegroundColorAttributeName:dark ? NSColor.whiteColor : NSColor.blackColor};
+        NSSize size = [relief sizeWithAttributes:attrs];
+        reliefBox = NSMakeRect(MAX(4 * scale, w - size.width - 8 * scale),
+            h - size.height - 4 * scale, size.width, size.height);
+        NSGraphicsContext *previous = NSGraphicsContext.currentContext;
+        NSGraphicsContext.currentContext = [NSGraphicsContext graphicsContextWithCGContext:c flipped:YES];
+        [(dark ? [NSColor colorWithWhite:.1 alpha:.8] : [NSColor colorWithWhite:1 alpha:.8]) setFill];
+        NSRectFill(NSInsetRect(reliefBox, -3 * scale, -2 * scale));
+        [relief drawAtPoint:reliefBox.origin withAttributes:attrs];
+        NSGraphicsContext.currentContext = previous;
+    }
     double lat0 = 0, lonL = 0, lat1 = 0, lonR = 0;
     if (!IsobarCameraUnproject(cam, 0, h * 0.5, &lat0, &lonL) ||
         !IsobarCameraUnproject(cam, w, h * 0.5, &lat1, &lonR)) return @[];
@@ -437,7 +438,7 @@ static NSArray<NSString *> *DrawPlaceNames(CGContextRef c, IsobarCamera cam, dou
     if (!(span > 0) || span > 45) return @[];
     double rankLimit = log2(360.0 / span) + 1.5;
     NSMutableArray<NSValue *> *taken = [avoid mutableCopy] ?: [NSMutableArray array];
-    [taken addObject:[NSValue valueWithRect:NSInsetRect(creditBox, -4 * scale, -3 * scale)]];
+    if (relief.length) [taken addObject:[NSValue valueWithRect:NSInsetRect(reliefBox, -4 * scale, -3 * scale)]];
     NSMutableArray<NSString *> *drawn = [NSMutableArray array];
     NSMutableSet<NSString *> *shownNames = [NSMutableSet set];
     NSFont *major = [NSFont systemFontOfSize:12 * scale weight:NSFontWeightSemibold];
@@ -696,8 +697,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     // renderTime snapshots still look fine.
     self.layerContentsRedrawPolicy = NSViewLayerContentsRedrawNever;
     self.accessibilityIdentifier = @"gpumap.surface";
-    self.toolTip = IsobarTerrainAttribution();
-    self.accessibilityHelp = IsobarTerrainAttribution();
+    self.toolTip = nil;
     _trafficOverlay=[GPUMapTrafficOverlay new]; _trafficOverlay.owner=self;
     _trafficOverlay.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;
     _trafficOverlay.frame=self.bounds; [self addSubview:_trafficOverlay];
@@ -1194,7 +1194,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _hazardView.frame = bounds;
     _starlinkView.frame = bounds;
     _placesView.frame = bounds;
-    CGFloat y = 8;
+    CGFloat y = 60;
     BOOL globe = YES;
     _flatButton.hidden = !globe;
     _globeSlider.hidden = !globe || _popoverChrome;
@@ -1204,12 +1204,12 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _globeButton.frame = NSMakeRect(NSMaxX(_globeSlider.frame) + 4, y, 32, 24);
     _northButton.frame = NSMakeRect(NSMaxX(_globeButton.frame) + 4, y, 38, 24);
     if (_popoverChrome) {
-        _flatButton.frame = NSMakeRect(8, y, 32, 24);
-        _globeButton.frame = NSMakeRect(44, y, 32, 24);
-        _northButton.frame = NSMakeRect(80, y, 38, 24);
+        _flatButton.frame = NSMakeRect(NSWidth(bounds)-126, y, 32, 24);
+        _globeButton.frame = NSMakeRect(NSWidth(bounds)-90, y, 32, 24);
+        _northButton.frame = NSMakeRect(NSWidth(bounds)-54, y, 38, 24);
     }
     _recenterButton.hidden = _popoverChrome && !_userMoved;
-    _recenterButton.frame = NSMakeRect(NSWidth(bounds) - 8 - 28, y, 28, 28);
+    _recenterButton.frame = NSMakeRect(NSWidth(bounds) - 8 - 28, y+32, 28, 28);
     _recenterBack.frame = _recenterButton.frame;
     _recenterBack.hidden = _recenterButton.hidden;
     [self syncModeControls];
@@ -1219,8 +1219,8 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
 - (void)setPopoverChrome:(BOOL)popoverChrome {
     _popoverChrome = popoverChrome;
     [self syncWindVisibility];
-    _metal.cornerRadius = popoverChrome ? 10 : 0;
-    _metal.masksToBounds = popoverChrome;
+    _metal.cornerRadius = 0;
+    _metal.masksToBounds = YES;
     [self layoutChrome];
 }
 
@@ -2675,7 +2675,7 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
         _hazardView.hidden = YES;
         _hazardView.hazardFrame = nil;
         _lastHazardMilliseconds = 0;
-        self.toolTip = IsobarTerrainAttribution();
+        self.toolTip = nil;
     }
     [self loadHazardsIfNeeded];
     [self updateTrackingAreas];
@@ -2997,7 +2997,6 @@ static const NSUInteger kHazardFrameCache = 24;
     [super mouseMoved:event];
     if (!_hazards) return;
     NSString *tip = [self hazardTooltipAtPoint:[self pointFromEvent:event]];
-    if (!tip.length) tip = IsobarTerrainAttribution();
     if (tip != self.toolTip && ![tip isEqualToString:self.toolTip]) self.toolTip = tip;
 }
 

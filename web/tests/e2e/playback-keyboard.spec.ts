@@ -17,7 +17,7 @@ test('Space toggles playback once and leaves editing and modified keys alone',as
   await page.keyboard.press('Space');await expect(page.getByRole('button',{name:'Play',exact:true})).toBeVisible();
 });
 
-for (const control of ['Menu', 'Zoom in', 'forecast tile', 'panel button']) test(`Space activates ${control} without toggling playback`, async ({page}) => {
+for (const control of ['Menu', 'Zoom in', 'forecast slider', 'panel button']) test(`Space activates ${control} without toggling playback`, async ({page}) => {
   await page.route('https://**/*', r => r.abort());
   await installChart(page).ready;
   await page.goto('/');
@@ -32,15 +32,16 @@ for (const control of ['Menu', 'Zoom in', 'forecast tile', 'panel button']) test
     const before = await stage.evaluate(el => (el as any).chartApi.camera().halfHeight);
     await page.getByRole('button', {name:'Zoom in', exact:true}).focus(); await page.keyboard.press('Space');
     await expect.poll(() => stage.evaluate(el => (el as any).chartApi.camera().halfHeight)).toBeLessThan(before);
-  } else if (control === 'forecast tile') {
-    const tile = page.getByRole('list', {name:'Forecast days'}).getByRole('listitem').nth(1);
-    await tile.focus(); await page.keyboard.press('Space');
-    await expect(tile).toHaveAttribute('aria-pressed', 'true');
+  } else if (control === 'forecast slider') {
+    const slider = page.getByRole('slider', {name:'Forecast time'});
+    const before = await slider.getAttribute('aria-valuenow');
+    await slider.focus(); await page.keyboard.press('ArrowRight');
+    await expect(slider).not.toHaveAttribute('aria-valuenow', before!);
   } else {
-    await page.getByRole('button', {name:'Data sources', exact:true}).click();
+    await page.getByRole('button', {name:'Map details', exact:true}).click();
     const button = page.getByRole('button', {name:'Explain this chart', exact:true});
     await button.focus(); await page.keyboard.press('Space');
-    await expect(page.locator('.map-sources')).toHaveCount(0);
+    await expect(page.locator('.map-details')).toHaveCount(0);
     await page.keyboard.press('Escape');
   }
   await expect(page.getByRole('button', {name:'Play', exact:true})).toBeVisible();

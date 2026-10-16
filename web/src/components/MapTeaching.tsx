@@ -81,7 +81,7 @@ export function MapTeaching({ geo, chart, minute, complete, camera, width, heigh
   const [pending, setPending] = useState(false);
   const [pendingLabel, setPendingLabel] = useState<string | null>(null);
   const [message, setMessage] = useState('');
-  const returnTo = useRef<'sources' | 'learn'>('sources');
+  const returnTo = useRef<'details' | 'learn'>('details');
   const tourBoot = useRef(false);
   const card = useRef<HTMLElement | null>(null);
   const active = snapshot != null;
@@ -100,17 +100,17 @@ export function MapTeaching({ geo, chart, minute, complete, camera, width, heigh
     setSnapshot(null); setSelected(null); setTour(null); setMessage(''); onActive(false);
     const which = returnTo.current;
     requestAnimationFrame(() => {
-      const sources = document.querySelector<HTMLButtonElement>('[aria-label="Data sources"]');
+      const details = document.querySelector<HTMLButtonElement>('[aria-label="Map details"]');
       const learn = document.querySelector<HTMLAnchorElement>('[data-learn-link]');
       const menu = document.querySelector<HTMLButtonElement>('.map-menu-button');
-      const target = which === 'learn' ? learn : sources;
+      const target = which === 'learn' ? learn : details;
       if (target && target.getClientRects().length) target.focus();
       else menu?.focus();
     });
   }
   function choose(item: Lesson) { setSelected(item); onFocus(item.anchor); }
   function start(isTour: boolean) {
-    returnTo.current = isTour ? 'learn' : 'sources';
+    returnTo.current = isTour ? 'learn' : 'details';
     if (!isTour) onStarted?.();
     const at = isTour ? nowMinuteOf(chart.manifest, Date.now()) : minute;
     if (isTour && (Date.now() < Date.parse(chart.manifest.run) + chart.manifest.forecastHours[0] * 3_600_000 || Date.now() > Date.parse(chart.manifest.run) + chart.manifest.forecastHours.at(-1)! * 3_600_000)) {
@@ -174,7 +174,7 @@ export function MapTeaching({ geo, chart, minute, complete, camera, width, heigh
   const visibleLessons = snapshot?.lessons.filter((l) => { const p = screen(l.anchor); return p.x > 20 && p.x < width - 20 && p.y > 65 && p.y < height - 28; }) ?? [];
   return <div className="teach-layer" data-teaching={active ? 'active' : 'closed'}>
     {explainHost && complete && !active && !pending ? createPortal(
-      <button type="button" className="map-sources-explain" onClick={() => start(false)}>Explain this chart</button>,
+      <button type="button" className="map-details-explain" onClick={() => start(false)}>Explain this chart</button>,
       explainHost,
     ) : null}
     {pending && pendingLabel ? <p className="teach-message" role="status">{pendingLabel}</p> : null}

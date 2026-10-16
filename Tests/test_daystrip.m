@@ -1,138 +1,86 @@
-// The day strip's range is a hairline and a temperature gradient. Offscreen.
 #import <Cocoa/Cocoa.h>
 #import "../Sources/daystrip.h"
 
+@interface DayStripView (FormattingChecks)
+- (NSArray<NSDictionary *> *)displayRows;
+@end
+
 static int failures;
-static void Check(BOOL ok, const char *message) {
-    fprintf(stderr, "%s %s\n", ok ? "ok  " : "FAIL", message);
-    if (!ok) failures++;
-}
-static void Pump(NSTimeInterval seconds) {
-    NSDate *end=[NSDate dateWithTimeIntervalSinceNow:seconds];
-    while ([end timeIntervalSinceNow] > 0)
-        [NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode beforeDate:end];
-}
+static void Check(BOOL ok, const char *message) { fprintf(stderr, "%s %s\n", ok ? "ok  " : "FAIL", message); if (!ok) failures++; }
+static void Pump(NSTimeInterval seconds) { NSDate *end=[NSDate dateWithTimeIntervalSinceNow:seconds]; while ([end timeIntervalSinceNow]>0) [NSRunLoop.currentRunLoop runMode:NSDefaultRunLoopMode beforeDate:end]; }
 
-@interface StripBackdrop : NSView
-@end
-@implementation StripBackdrop
-- (void)drawRect:(NSRect)dirty {
-    (void)dirty;
-    [NSColor.windowBackgroundColor setFill];
-    NSRectFill(self.bounds);
-}
-@end
-
-static double Luma(NSColor *c) {
-    return .2126 * c.redComponent + .7152 * c.greenComponent + .0722 * c.blueComponent;
-}
-
-static BOOL Cool(NSColor *c) { return c.blueComponent > .55 && c.blueComponent > c.redComponent + .08; }
-static BOOL Warm(NSColor *c) { return c.redComponent > .7 && c.redComponent > c.blueComponent + .25; }
-
-// Draw a two-day strip offscreen in one appearance and read its range bar,
-// track and icons back from the pixels.
-static void CheckStripAppearance(NSAppearanceName name, const char *label, CGFloat width, CGFloat height) {
-    StripBackdrop *backdrop = [[StripBackdrop alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
-    backdrop.appearance = [NSAppearance appearanceNamed:name];
-    DayStripView *strip = [[DayStripView alloc] initWithFrame:backdrop.bounds];
-    strip.days = @[
-        @{@"weekday": @"Today", @"max": @12, @"min": @8, @"weatherCode": @3},
-        @{@"weekday": @"Fri", @"max": @32, @"min": @28, @"weatherCode": @3, @"rainMm": @3},
-    ];
-    [backdrop addSubview:strip];
-    NSWindow *window = [[NSWindow alloc] initWithContentRect:backdrop.frame
-        styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
-    window.appearance = backdrop.appearance;
-    window.contentView = backdrop;
-    [backdrop layoutSubtreeIfNeeded];
-    [backdrop display];
-    NSBitmapImageRep *rep = [backdrop bitmapImageRepForCachingDisplayInRect:backdrop.bounds];
-    [backdrop cacheDisplayInRect:backdrop.bounds toBitmapImageRep:rep];
-    NSInteger wide = (NSInteger)rep.pixelsWide, high = MIN((NSInteger)rep.pixelsHigh, 512);
-    double scale = (double)wide / NSWidth(backdrop.bounds);
-    NSColor *(^at)(NSInteger, NSInteger) = ^NSColor *(NSInteger x, NSInteger y) {
-        return [[rep colorAtX:x y:y] colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
-    };
-    // The second cell is not highlighted, so its background is the paper.
-    NSInteger cellX0 = wide / 2 + (NSInteger)(8 * scale), cellX1 = wide - (NSInteger)(8 * scale);
-    double paperLuma = Luma(at((cellX0 + cellX1) / 2, 2));
-    NSInteger bar = -1, best = 0;
-    for (NSInteger y = 0; y < high; y++) {
-        NSInteger cool = 0, warm = 0;
-        for (NSInteger x = 0; x < wide; x++) {
-            NSColor *color = at(x, y);
-            if (Cool(color)) cool++;
-            if (Warm(color)) warm++;
-        }
-        if (MIN(cool, warm) > best) { best = MIN(cool, warm); bar = y; }
-    }
-    double coolX = 0, warmX = 0, trackContrast = 0;
-    NSInteger coolN = 0, warmN = 0, trackN = 0, trackRows = 0;
-    for (NSInteger y = MAX(0, bar - (NSInteger)(4 * scale)); bar >= 0 && y <= MIN(high - 1, bar + (NSInteger)(4 * scale)); y++) {
-        NSInteger rowTrack = 0;
-        for (NSInteger x = 0; x < wide; x++) {
-            NSColor *color = at(x, y);
-            BOOL cool = Cool(color), warm = Warm(color);
-            if (y == bar && cool) { coolX += x; coolN++; }
-            if (y == bar && warm) { warmX += x; warmN++; }
-            if (x < cellX0 || x > cellX1) continue;
-            double hi = MAX(color.redComponent, MAX(color.greenComponent, color.blueComponent));
-            double lo = MIN(color.redComponent, MIN(color.greenComponent, color.blueComponent));
-            double contrast = fabs(Luma(color) - paperLuma);
-            if (cool || warm || hi - lo > .12 || contrast < .02) continue;
-            rowTrack++;
-            if (y == bar) { trackN++; trackContrast = MAX(trackContrast, contrast); }
-        }
-        if (rowTrack > 20) trackRows++;
-    }
-    // The icon sits between the weekday and the temperatures, 12–28 pt down.
-    NSInteger iconInk = 0;
-    for (NSInteger y = (NSInteger)(12 * scale); y < (NSInteger)(28 * scale); y++)
-        for (NSInteger x = cellX0; x < cellX1; x++)
-            if (fabs(Luma(at(x, y)) - paperLuma) > .35) iconInk++;
-    fprintf(stderr, "%s day strip cool %ld warm %ld track %ld contrast %.2f rows %ld (scale %.0f) icon %ld\n", label,
-        (long)coolN, (long)warmN, (long)trackN, trackContrast, (long)trackRows, scale, (long)iconInk);
-    char message[160];
-    snprintf(message, sizeof message, "%s: the range runs cool to warm", label);
-    Check(coolN > 4 && warmN > 4 && coolX / coolN < warmX / warmN, message);
-    snprintf(message, sizeof message, "%s: the track is a low-contrast hairline about 3 pt thick", label);
-    Check(trackN > 12 && trackContrast < .2 && trackRows >= 2 * scale && trackRows <= 4 * scale, message);
-    snprintf(message, sizeof message, "%s: weather icons stand out from the strip", label);
-    Check(iconInk > 20 * scale * scale, message);
-    Check([[strip accessibilityLabelForDay:0] containsString:@"Today"], "today stays labelled");
-    BOOL rainUnit = NO;
-    for (NSView *cell in strip.subviews)
-        if ([cell respondsToSelector:NSSelectorFromString(@"rainText")] &&
-            [[cell valueForKey:@"rainText"] isEqual:@"3.0 mm"]) rainUnit = YES;
-    Check(rainUnit, "drawn day rain includes mm");
-    Check([[strip accessibilityLabelForDay:1] containsString:@"millimetres of rain"], "spoken day rain includes its unit");
-    (void)window;
+static DayStripView *Strip(NSSize size) {
+    DayStripView *strip=[[DayStripView alloc] initWithFrame:NSMakeRect(0,0,size.width,size.height)];
+    NSDate *start=[NSDate dateWithTimeIntervalSince1970:100000];
+    NSMutableArray *days=[NSMutableArray array];
+    NSArray *names=@[@"Today",@"Fri",@"Sat",@"Sun",@"Mon",@"Tue",@"Wed"];
+    for (NSUInteger i=0;i<names.count;i++) [days addObject:@{@"date":[start dateByAddingTimeInterval:i*86400], @"weekday":names[i], @"max":@(20+i), @"min":@(10+i), @"weatherCode":@3, @"rainMm":i==1?@1.7:@0}];
+    strip.days=days; strip.timelineStart=start; strip.timelineEnd=[start dateByAddingTimeInterval:7*86400]; strip.playhead=start;
+    return strip;
 }
 
 int main(void) {
     @autoreleasepool {
-        [NSApplication sharedApplication];
-        [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
-        CheckStripAppearance(NSAppearanceNameAqua, "light", 320, 64);
-        CheckStripAppearance(NSAppearanceNameAqua, "compact light", 160, 52);
-        CheckStripAppearance(NSAppearanceNameDarkAqua, "dark", 320, 64);
-        CheckStripAppearance(NSAppearanceNameDarkAqua, "compact dark", 160, 52);
+        [NSApplication sharedApplication]; [NSApp setActivationPolicy:NSApplicationActivationPolicyProhibited];
+        DayStripView *strip=Strip(NSMakeSize(1280,34));
+        Check(strip.days.count==7, "seven days are present");
+        Check(strip.subviews.count==7, "seven accessible day elements have no range or dot subviews");
+        Check([[strip accessibilityLabelForDay:1] containsString:@"millimetres of rain"], "rain unit is spoken only through accessibility");
+        Check(![[strip accessibilityLabelForDay:2] containsString:@"millimetres"], "dry days do not announce zero rain");
+        Check([strip accessibilityLabelForDay:1].length>0, "day accessibility label is present");
 
-        NSDate *t0 = [NSDate dateWithTimeIntervalSince1970:100000];
-        NSDate *mid = [t0 dateByAddingTimeInterval:3600];
-        NSArray *series = @[
-            @{@"time": t0, @"temp": @10, @"windDir": @"SW", @"windKt": @14, @"weatherCode": @2},
-            @{@"time": [t0 dateByAddingTimeInterval:7200], @"temp": @20, @"windDir": @"SW", @"windKt": @14},
-        ];
-        double sample = DayStripTemperatureAtDate(series, mid);
-        Check(fabs(sample - 15) < 1e-6, "temperature is the midpoint between hours");
-        Check(isnan(DayStripTemperatureAtDate(series, [t0 dateByAddingTimeInterval:-60])),
-            "temperature stays missing outside the series");
-        Check(DayStripSampleAtDate(series, mid, 90 * 60) == series[0] ||
-              [DayStripSampleAtDate(series, mid, 90 * 60)[@"temp"] isEqual:@10] ||
-              [DayStripSampleAtDate(series, mid, 90 * 60)[@"temp"] isEqual:@20],
-            "a nearby hour supplies the icon and wind");
+        NSMutableSet *levels=[NSMutableSet set];
+        for (NSNumber *width in @[@1400,@850,@700,@560,@490,@455]) {
+            strip.frame=NSMakeRect(0,0,width.doubleValue,34);
+            NSArray *rows=[strip displayRows]; NSNumber *level=rows[0][@"level"];
+            [levels addObject:level];
+            BOOL consistent=YES, fits=YES, names=YES, detail=YES;
+            for (NSDictionary *row in rows) {
+                consistent &= [row[@"level"] isEqual:level];
+                fits &= [row[@"width"] doubleValue]<=width.doubleValue/7;
+                names &= [row[@"weekday"] length]==3;
+                detail &= (level.intValue<1 || ![row[@"rain"] length]) && (level.intValue<2 || ![row[@"icon"] boolValue]) && (level.intValue<3 || ![row[@"temps"] containsString:@"°"]);
+            }
+            Check(consistent && detail, "all days share ordered rain/icon/degrees degradation");
+            Check(names && fits, "three-letter weekdays and values fit every segment");
+        }
+        Check(levels.count==4, "width matrix exercises all four detail levels");
+        strip.frame=NSMakeRect(0,0,758,34);
+        NSArray *originalDays=strip.days;
+        NSMutableArray *wetWeek=[NSMutableArray array];
+        for (NSDictionary *day in originalDays) {
+            NSMutableDictionary *wet=[day mutableCopy]; wet[@"rainMm"]=@1.7; [wetWeek addObject:wet];
+        }
+        strip.days=wetWeek;
+        BOOL allRain=YES;
+        for (NSDictionary *row in [strip displayRows]) allRain &= [row[@"rain"] isEqual:@"1.7"];
+        Check(allRain, "normal popover width retains rain for every weekday without shrinking text");
+        strip.days=originalDays;
+        strip.frame=NSMakeRect(0,0,1280,34);
+
+        NSDate *t0=[NSDate dateWithTimeIntervalSince1970:100000], *mid=[t0 dateByAddingTimeInterval:3600];
+        NSArray *series=@[@{@"time":t0,@"temp":@10},@{@"time":[t0 dateByAddingTimeInterval:7200],@"temp":@20}];
+        Check(fabs(DayStripTemperatureAtDate(series,mid)-15)<1e-6, "temperature interpolates between hours");
+        Check(isnan(DayStripTemperatureAtDate(series,[t0 dateByAddingTimeInterval:-60])), "temperature stays missing outside the series");
+
+        __block double preview=NAN, selected=NAN; __block NSInteger oldHover=-2, oldSelect=-2;
+        strip.onPreviewFraction=^(double f){ preview=f; }; strip.onSelectFraction=^(double f){ selected=f; };
+        strip.onHover=^(NSInteger i){ oldHover=i; }; strip.onSelect=^(NSInteger i){ oldSelect=i; };
+        NSWindow *window=[[NSWindow alloc] initWithContentRect:strip.frame styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO]; window.contentView=strip;
+        NSPoint p=[strip convertPoint:NSMakePoint(640,30) toView:nil];
+        NSEvent *move=[NSEvent mouseEventWithType:NSEventTypeMouseMoved location:p modifierFlags:0 timestamp:0 windowNumber:window.windowNumber context:nil eventNumber:1 clickCount:0 pressure:0];
+        [strip mouseMoved:move]; Check(isnan(preview)&&oldHover==-2, "hover waits before previewing");
+        Pump(.35); Check(fabs(preview-.5)<.01&&oldHover==-2, "hover previews the linear timeline after 300 ms");
+        NSPoint next=[strip convertPoint:NSMakePoint(650,16) toView:nil];
+        NSEvent *moveWithin=[NSEvent mouseEventWithType:NSEventTypeMouseMoved location:next modifierFlags:0 timestamp:0 windowNumber:window.windowNumber context:nil eventNumber:3 clickCount:0 pressure:0];
+        [strip mouseMoved:moveWithin]; Check(preview>.5, "armed hover follows motion inside the same day");
+        [strip mouseExited:move]; Check(isnan(preview), "leaving cancels preview");
+        NSEvent *down=[NSEvent mouseEventWithType:NSEventTypeLeftMouseDown location:p modifierFlags:0 timestamp:0 windowNumber:window.windowNumber context:nil eventNumber:2 clickCount:1 pressure:1];
+        [strip mouseDown:down]; Check(fabs(preview-.5)<.01&&isnan(selected)&&oldSelect==-2, "click holds fraction immediately without legacy seek");
+        [strip mouseUp:down]; Check(isnan(preview), "release ends hold and lets shared clock resume");
+        strip.playhead=[t0 dateByAddingTimeInterval:3*86400]; Check(strip.highlightedDayIndex==3, "playhead highlights the local day");
+        [strip.subviews[1] accessibilityPerformPress];
+        Check(strip.selectedIndex==1 && fabs(selected-1.5/7)<.001, "accessible day press selects local midday and records selected day");
 
         NSTimeZone *sydney = [NSTimeZone timeZoneWithName:@"Australia/Sydney"];
         NSTimeZone *perth = [NSTimeZone timeZoneWithName:@"Australia/Perth"];
@@ -196,18 +144,18 @@ int main(void) {
         Check(hovered == 1 && logic.hoverIndex == 1, "a stationary day hover reports that day");
         [logic mouseExited:moved];
         Check(hovered == -1 && logic.hoverIndex == -1, "leaving the strip clears the hover");
-        logic.series = @[
-            @{@"time": late, @"temp": @10},
-            @{@"time": [late dateByAddingTimeInterval:6 * 3600], @"temp": @20},
-        ];
-        logic.playhead = late;
-        NSView *dot = nil;
-        for (NSView *sub in logic.subviews)
-            if ([sub.accessibilityIdentifier isEqual:@"hub.playheadDot"]) dot = sub;
-        CGFloat coolXDot = NSMidX(dot.frame);
-        logic.playhead = [late dateByAddingTimeInterval:6 * 3600];
-        Check(fabs(logic.playheadTemperature - 20) < 1e-6 && NSMidX(dot.frame) > coolXDot + 2,
-            "the dot sits on the hourly temperature and slides as it rises");
+        [[NSFileManager defaultManager] createDirectoryAtPath:@"build/qa" withIntermediateDirectories:YES attributes:nil error:NULL];
+        for (NSNumber *width in @[@490,@560,@700,@1000]) for (NSString *look in @[NSAppearanceNameAqua,NSAppearanceNameDarkAqua]) {
+            strip.frame=NSMakeRect(0,0,width.doubleValue,34);
+            strip.appearance=[NSAppearance appearanceNamed:look];
+            [strip layoutSubtreeIfNeeded];
+            Check(NSWidth(strip.subviews.lastObject.frame)>0 && NSMaxX(strip.subviews.lastObject.frame)<=NSWidth(strip.bounds), "day accessibility geometry follows resize");
+            NSBitmapImageRep *rep=[strip bitmapImageRepForCachingDisplayInRect:strip.bounds];
+            [strip cacheDisplayInRect:strip.bounds toBitmapImageRep:rep];
+            NSString *path=[NSString stringWithFormat:@"build/qa/mapfirst-days-%@-%@.png",width,[look isEqual:NSAppearanceNameAqua]?@"light":@"dark"];
+            [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:path atomically:YES];
+        }
+
     }
     return failures ? 1 : 0;
 }

@@ -104,7 +104,12 @@ export function PlaceField({
   const saveNote = usePressNote();
   const showLocated = useRef(locateNote.show);
   showLocated.current = locateNote.show;
-  useEffect(() => { if (located) showLocated.current('Located'); }, [located]);
+  useEffect(() => {
+    if (!located) return;
+    setQuery(''); setOpen(false);
+    inputRef.current?.focus();
+    showLocated.current('Located');
+  }, [located]);
   const results = query.trim().length >= 2
     ? searchPlaces(query, towns, airports, manifest)
     : placeChoices(savedIds, manifest, towns, airports);
@@ -122,6 +127,11 @@ export function PlaceField({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && root.current?.contains(document.activeElement)) {
+        inputRef.current?.focus();
+        setQuery(''); setOpen(false);
+        return;
+      }
       if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       if (target && (target.closest('input, textarea, select, [contenteditable="true"]'))) return;
@@ -189,6 +199,35 @@ export function PlaceField({
                   <span className="ml-2 text-[13px] font-semibold whitespace-nowrap">{wide.datum}</span>
                 </div>
               ) : null}
+              {hint ? <p data-place-hint className="place-hint px-2 pt-2">Not here? Search or ⌖</p> : null}
+              <div className="flex items-center gap-2 p-2">
+                <span className="relative">
+          <button
+            type="button"
+            data-locate
+            aria-label="Use my location"
+            onClick={onLocate}
+            className={buttonClass}
+          >
+            <LocateIcon />
+          </button>
+          {denied ? <span data-locate-note className="place-note">Location off</span> : null}
+        </span>
+        <span className="relative">
+          <button
+            type="button"
+            data-save-place
+            aria-label="Save place"
+            aria-pressed={saved}
+            disabled={!selected}
+            onClick={() => { saveNote.show(saved ? 'Unsaved' : 'Saved'); onToggleSaved(); }}
+            className={`${buttonClass} ${saved ? 'bg-[var(--md-primary)] text-[var(--md-on-primary)]' : ''}`}
+          >
+            <StarIcon filled={saved} />
+          </button>
+          <PressNote text={saveNote.note} />
+                </span>
+              </div>
               <ul id={listId} role="listbox" aria-label="Results">
                 {results.map((place, index) => {
                   const current = place.id === selected?.id;
@@ -218,34 +257,9 @@ export function PlaceField({
             </div>
           ) : null}
         </div>
-        <span className="relative">
-          <button
-            type="button"
-            data-locate
-            aria-label="Use my location"
-            onClick={onLocate}
-            className={buttonClass}
-          >
-            <LocateIcon />
-          </button>
-          {denied ? <span data-locate-note className="place-note">Location off</span> : <PressNote text={locateNote.note} />}
-        </span>
-        <span className="relative">
-          <button
-            type="button"
-            data-save-place
-            aria-label="Save place"
-            aria-pressed={saved}
-            disabled={!selected}
-            onClick={() => { saveNote.show(saved ? 'Unsaved' : 'Saved'); onToggleSaved(); }}
-            className={`${buttonClass} ${saved ? 'bg-[var(--md-primary)] text-[var(--md-on-primary)]' : ''}`}
-          >
-            <StarIcon filled={saved} />
-          </button>
-          <PressNote text={saveNote.note} />
-        </span>
+
       </div>
-      {hint && !open ? <p data-place-hint className="place-hint">Not here? Search or ⌖</p> : null}
+      <PressNote text={locateNote.note} />
     </div>
   );
 }

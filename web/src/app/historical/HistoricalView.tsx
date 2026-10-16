@@ -172,7 +172,6 @@ export function HistoricalView() {
   const [weather, setWeather] = useState<HistoricalWeather | null>(null);
   const [frameIndex, setFrameIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [sourcesOpen, setSourcesOpen] = useState(false);
   const [mapUrl, setMapUrl] = useState<string>();
   const [mapOpen, setMapOpen] = useState(false);
   const mapDialog=useRef<HTMLDialogElement>(null);
@@ -258,7 +257,6 @@ export function HistoricalView() {
       <label className="flex min-w-0 items-center gap-2 text-xs text-[var(--md-on-surface-variant)]"><select aria-label="Historical collection" value={collection?.id ?? ''} onChange={(event) => setCollectionId(event.target.value)} className="min-w-0 flex-1 rounded-md border border-[var(--md-outline-soft)] bg-[var(--md-surface)] px-2 py-2 text-sm text-[var(--md-on-surface)]">{catalog?.collections.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
       <label className="flex min-w-0 items-center gap-2 text-xs text-[var(--md-on-surface-variant)]"><select aria-label="Available historical days" value={selectedDay?.date ?? ''} onChange={(event) => setDate(event.target.value)} disabled={!days.length} className="min-w-0 flex-1 rounded-md border border-[var(--md-outline-soft)] bg-[var(--md-surface)] px-2 py-2 text-sm text-[var(--md-on-surface)]">{days.map((day) => <option key={day.date} value={day.date}>{day.label ?? utcDateLabel(day.date)}</option>)}</select></label>
       {mapUrl ? <button type="button" onClick={() => setMapOpen(true)} className="rounded-md border border-[var(--md-outline-soft)] px-3 py-2 text-sm font-medium text-[var(--md-primary)] hover:bg-[var(--md-surface-container-high)]">Map</button> : null}
-      <button type="button" onClick={() => setSourcesOpen((value) => !value)} aria-expanded={sourcesOpen} className="rounded-md border border-[var(--md-outline-soft)] px-3 py-2 text-sm font-medium text-[var(--md-primary)] hover:bg-[var(--md-surface-container-high)]">Sources</button>
     </div>
     <div className="relative flex min-h-0 flex-1 flex-col gap-2">
       <HistoricalMap weather={displayWeather} frame={frame ?? null} coast={coast} view={view} canNormandy={canNormandy} onViewChange={() => setView((current) => current === 'world' ? 'normandy' : 'world')} />
@@ -270,18 +268,7 @@ export function HistoricalView() {
       </div>
     </div>
     {error ? <div role="alert" className="flex shrink-0 items-center justify-between gap-3 rounded-lg bg-[var(--md-error-container)] px-3 py-2 text-sm text-[var(--md-on-error)]"><span>{error}</span><button type="button" onClick={() => catalog ? setRetry((value) => value + 1) : setCatalogRetry((value) => value + 1)} className="rounded border border-current px-2 py-1 font-medium">Retry</button></div> : null}
-    {sourcesOpen ? <aside className="max-h-[30%] shrink-0 overflow-y-auto rounded-xl border border-[var(--md-outline-soft)] bg-[var(--md-surface-container-low)] p-3 text-xs text-[var(--md-on-surface-variant)]" data-historical-sources>
-      <p className="m-0 font-medium text-[var(--md-on-surface)]">{collection?.title ?? 'Historical collection'} {selectedDay ? `· ${label}` : ''}</p>
-      <p className="m-1.5">{collection?.description ?? 'Historical map and weather sources are assembled for offline browsing.'}</p>
-      <p className="m-0">{weather?.model ?? 'ERA5'} · {weather?.provenance?.provider ?? 'Source metadata pending'} · {weather?.provenance?.sampling_limitations ?? 'Hourly reconstruction; local detail is limited.'}</p>
-      {weather?.provenance?.source ? <a className="mt-1 inline-block text-[var(--md-primary)] underline" href={weather.provenance.source} target="_blank" rel="noreferrer">Dataset source</a> : null}
-      {weather?.provenance?.license ? /^https?:\/\//.test(weather.provenance.license) ? <a className="ml-2 text-[var(--md-primary)] underline" href={weather.provenance.license} target="_blank" rel="noreferrer">Dataset licence</a> : <span className="ml-2">{weather.provenance.license}</span> : null}
-      {manifest?.maps?.map((map) => <span key={map.url} className="ml-2">{map.source ? <a href={map.source} target="_blank" rel="noreferrer" className="underline">{map.attribution ?? map.title ?? 'Map facsimile'}</a> : (map.attribution ?? map.title ?? 'Map facsimile')}</span>)}
-      {collection?.id === 'dday' ? <a className="ml-2 text-[var(--md-primary)] underline" href="https://blogs.loc.gov/folklife/2023/06/vhp-collection-spotlight-joseph-vaghis-d-day-map/" target="_blank" rel="noreferrer">D-Day map source</a> : null}
-      <a className="ml-2 text-[var(--md-primary)] underline" href="https://www.naturalearthdata.com/about/terms-of-use/" target="_blank" rel="noreferrer">Natural Earth geography</a>
-      <span className="ml-2">AI-generated paper texture</span>
-      {resolvedManifestDays.length ? <span className="ml-2">{resolvedManifestDays.length} manifest days</span> : null}
-    </aside> : null}
+
     <dialog ref={mapDialog} onClose={()=>setMapOpen(false)} aria-label="Historical map facsimile" className="history-dialog rounded-xl bg-[var(--md-surface)] p-3 backdrop:bg-black/75">
       <div className="mb-2 flex items-center justify-between gap-3"><span className="text-sm">{mapTitle}</span><button type="button" aria-label="Close map facsimile" onClick={()=>setMapOpen(false)} className="rounded-md border px-3 py-2">Close</button></div>
       {mapUrl ? <img src={mapUrl} alt={mapTitle} className="h-full max-h-[75dvh] w-full object-contain" /> : null}

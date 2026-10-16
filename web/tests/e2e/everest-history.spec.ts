@@ -87,7 +87,6 @@ test('selected mountain pin stays framed through zoom and survives both data mod
   await page.getByRole('link',{name:'Back to present day',exact:true}).click();await page.waitForURL(url=>url.pathname==='/');
   await stage.waitFor();await expect.poll(()=>stage.evaluate((e:any)=>e.chartApi.camera().bearingRadians)).toBeCloseTo(bearing,6);
   await expect(pin).toHaveAttribute('data-lat',lat!);await expect(pin).toHaveAttribute('data-lon',lon!);
-  await page.getByRole('button',{name:'Show daily forecast',exact:true}).click();
   await page.getByRole('button',{name:'Menu',exact:true}).click();
   const history=page.getByRole('link',{name:'Historical',exact:true});await history.focus();await page.keyboard.press('Enter');
   await page.waitForURL(url=>url.pathname==='/history');await stage.waitFor();await expect.poll(()=>stage.evaluate((e:any)=>e.chartApi.camera().bearingRadians)).toBeCloseTo(bearing,6);await expect(pin).toHaveAttribute('data-lat',lat!);await expect(pin).toHaveAttribute('data-lon',lon!);

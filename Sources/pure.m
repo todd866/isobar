@@ -220,13 +220,18 @@ NSString *MapPlayheadClockText(NSDate *valid, NSDate *now, NSTimeZone *tz) {
         if (fabs(delta) < 90.0) state = @"NOW";
         else if (delta < 0) state = @"PAST";
     }
+    return [NSString stringWithFormat:@"%@ · %@", state, local];
+}
+
+NSString *MapPlayheadZuluText(NSDate *valid) {
+    if (!valid) return @"";
     NSCalendar *utc = ThreadCached(@"isobar.map-clock-utc-cal", ^id{
         NSCalendar *made = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
         made.timeZone = [NSTimeZone timeZoneWithName:@"UTC"];
         return made;
     });
     NSDateComponents *zulu = [utc components:NSCalendarUnitHour | NSCalendarUnitMinute fromDate:valid];
-    return [NSString stringWithFormat:@"%@ · %@ · %02ld%02ldZ", state, local,
+    return [NSString stringWithFormat:@"%02ld%02ldZ",
         (long)zulu.hour, (long)zulu.minute];
 }
 
@@ -2574,12 +2579,18 @@ BOOL StoreRunIsStale(NSDate *run, NSDate *now, BOOL statusOK) {
     return [now timeIntervalSinceDate:run] > StoreStaleAge();
 }
 
-NSString *StoreForecastFreshness(NSDate *loadedRun, NSDate *now, BOOL statusOK) {
+NSString *StoreForecastFreshness(NSDate *loadedRun, NSDate *now, BOOL statusOK, NSTimeZone *zone) {
     if (!loadedRun) return @"Chart unavailable";
-    NSString *text = SituationFreshness(loadedRun, now);
-    if (StoreRunIsStale(loadedRun, now, statusOK))
-        text = [text stringByAppendingString:@" · stale"];
-    return text;
+    if (!StoreRunIsStale(loadedRun, now, statusOK)) return @"";
+    if (!now) return @"Forecast age unknown";
+    NSTimeInterval age = MAX(0, [now timeIntervalSinceDate:loadedRun]);
+    if (age <= 36 * 3600)
+        return [NSString stringWithFormat:@"Forecast %ld h old", (long)floor(age / 3600)];
+    NSDateFormatter *day = [NSDateFormatter new];
+    day.locale = [NSLocale localeWithLocaleIdentifier:@"en_AU_POSIX"];
+    day.timeZone = zone ?: [NSTimeZone timeZoneWithName:@"UTC"];
+    day.dateFormat = @"EEE";
+    return [NSString stringWithFormat:@"Forecast from %@ %@", [day stringFromDate:loadedRun], SituationClock(loadedRun, day.timeZone)];
 }
 
 NSString *StoreRunStatusLine(NSDate *run, NSDate *now) {
@@ -2597,11 +2608,7 @@ NSString *StoreRunStatusLine(NSDate *run, NSDate *now) {
 
 NSString *StoreRunCompareTitle(NSDate *run, NSDate *previous) {
     if (!run || !previous) return nil;
-    NSCalendar *cal = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
-    cal.timeZone = [NSTimeZone timeZoneWithName:@"UTC"];
-    NSInteger hour = [cal component:NSCalendarUnitHour fromDate:run];
-    NSInteger earlier = [cal component:NSCalendarUnitHour fromDate:previous];
-    return [NSString stringWithFormat:@"%02ldZ vs previous %02ldZ", (long)hour, (long)earlier];
+    return @"Latest vs previous forecast";
 }
 
 static const NSTimeInterval kFrameSlop = 90 * 60;

@@ -97,9 +97,7 @@ for (const [size, width, height] of [['desktop', 1280, 720], ['phone', 390, 844]
     await expect(page.locator('[data-kite-legend]')).toContainText('15–25');
     expect(await page.locator('[data-coastal-row][data-daylight="false"]').count()).toBe(0);
     await fit(page);
-    await page.getByRole('button', { name: 'Coastal data sources' }).click();
-    await expect(page.locator('[data-coastal-panel] [role=note]')).toContainText('CC BY 4.0');
-    await page.getByRole('button', { name: 'Coastal data sources' }).click();
+    await expect(page.getByRole('button', { name: 'Coastal data sources' })).toHaveCount(0);
     await shot(page, `${size}-${theme}-kite`);
     await page.getByRole('radio', { name: 'Surf', exact: true }).click();
     await expect(page.locator('[data-coastal-panel="surf"]')).toBeVisible();

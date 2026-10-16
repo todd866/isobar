@@ -8,7 +8,6 @@ import { useAccount } from './Account';
 import { ThemeToggle } from './ThemeToggle';
 import { TimesControl } from './TimesControl';
 import { UnitsControl } from './UnitsControl';
-import { ATTRIBUTION } from './Attribution';
 
 /** The level already chosen on this device, or Choose, which opens the picker. */
 function LearnLevelValue() {
@@ -38,8 +37,6 @@ export function MapMenu({ run, wind, onOpen, onOpenChange, phone, graticule, onG
   const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const { user, open: accountOpen, setOpen: openAccount } = useAccount();
-  const [sources, setSources] = useState(false);
-  useEffect(() => { if (!open) setSources(false); }, [open]);
   const previousAccount = useRef(accountOpen);
   useEffect(() => {
     if (previousAccount.current && !accountOpen) button.current?.focus({ preventScroll: true });
@@ -60,7 +57,6 @@ export function MapMenu({ run, wind, onOpen, onOpenChange, phone, graticule, onG
   return <div className="map-menu-root" ref={root}>
     <button ref={button} type="button" className="map-menu-button" aria-label="Menu" aria-expanded={open} aria-controls="map-menu" onClick={() => {
       if (!open) onOpen();
-      else setSources(false);
       setOpen(!open);
     }}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg></button>
     <div id="map-menu" data-map-menu hidden={!open} className="map-menu" onClick={(event) => {
@@ -83,10 +79,7 @@ export function MapMenu({ run, wind, onOpen, onOpenChange, phone, graticule, onG
       </button>
       <Link href="/download" title="Download the Mac app">Mac app</Link>
       <Link href="/privacy" title="Chats and use are stored">Privacy</Link>
-      <details open={sources} onToggle={(event) => setSources((event.currentTarget as HTMLDetailsElement).open)}>
-        <summary>Data sources</summary>
-        {open && sources ? <p>{ATTRIBUTION}</p> : null}
-      </details>
+      <Link href="/about">About Isobar</Link>
     </div>
   </div>;
 }

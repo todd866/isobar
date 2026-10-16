@@ -67,20 +67,30 @@ static double Difference(NSBitmapImageRep *a, NSBitmapImageRep *b) {
     return count ? (double)changed / count : NAN;
 }
 // One lens row owns the map field and specialist panel; barbs remain a toggle.
-static NSSegmentedControl *Field(Controller *c) {
-    return (NSSegmentedControl *)Find(c.popover.contentViewController.view, @"popover.lens");
+static NSButton *Lens(NSView *root, NSString *prefix, NSInteger tag) {
+    NSView *row=Find(root,[prefix stringByAppendingString:@".lensRow"]);
+    for (NSView *view in row.subviews)
+        if ([view isKindOfClass:NSButton.class] &&
+            [view.accessibilityIdentifier hasPrefix:[prefix stringByAppendingString:@".lens."]] &&
+            ((NSButton *)view).tag==tag) return (NSButton *)view;
+    return nil;
+}
+static NSButton *Field(Controller *c, NSInteger tag) {
+    return Lens(c.popover.contentViewController.view,@"popover",tag);
+}
+static NSMenu *TemperatureMenu(Controller *c) {
+    NSView *row=Find(c.popover.contentViewController.view,@"popover.lensRow");
+    for (NSView *view in row.subviews)
+        if ([view isKindOfClass:NSPopUpButton.class] && [view.accessibilityLabel isEqual:@"Temp options"])
+            return ((NSPopUpButton *)view).menu;
+    return nil;
 }
 static NSButton *Barbs(Controller *c) { return (NSButton *)Find(c.popover.contentViewController.view, @"popover.barbs"); }
-static NSInteger Segment(Controller *c, NSInteger tag) {
-    NSSegmentedControl *field = Field(c);
-    for (NSInteger i = 0; i < field.segmentCount; i++) if ([field tagForSegment:i] == tag) return i;
-    return -1;
-}
 static BOOL Enabled(Controller *c, NSInteger tag) {
     if (tag == 3) return Barbs(c).enabled;
     if (tag == 4) return YES;
-    return Field(c).enabled && (tag == -1 ? Segment(c, -1) >= 0 :
-        (tag == 0 || tag == 1 || tag == 2 || tag == 5 || tag == 6));
+    NSInteger lensTag=tag==0?-1:(tag==1||tag==2)?4:tag==5?2:tag==6?5:tag;
+    return Field(c,lensTag).enabled;
 }
 static BOOL On(Controller *c, NSInteger tag) {
     if (tag == 3) return Barbs(c).state == NSControlStateValueOn;
@@ -103,24 +113,20 @@ static void Select(Controller *c, NSInteger tag) {
         [c toggleBureauChart:box];
         return;
     }
-    NSSegmentedControl *field = Field(c);
     if (tag == 1 || tag == 2) {
-        field.selectedSegment = Segment(c, 4);
-        [NSApp sendAction:field.action to:field.target from:field];
-        NSMenu *menu = [field menuForSegment:Segment(c, 4)];
-        NSInteger index = [menu indexOfItemWithTag:tag];
-        Check(index >= 0, @"Temp segment offers surface and 850 hPa");
-        if (index >= 0) [menu performActionForItemAtIndex:index];
-        Check([[c valueForKey:@"forecastMode"] integerValue] == 4 && Field(c).selectedSegment == 3,
+        NSButton *temp=Field(c,4);
+        if (temp.state!=NSControlStateValueOn) [temp performClick:nil];
+        NSMenu *menu=TemperatureMenu(c);
+        NSInteger index=[menu indexOfItemWithTag:tag];
+        Check(index>=0, @"Temp options offer surface and 850 hPa");
+        if (index>=0) [menu performActionForItemAtIndex:index];
+        Check([[c valueForKey:@"forecastMode"] integerValue]==4 && Field(c,4).state==NSControlStateValueOn,
             @"Temp menu retains the Temp lens and panel");
         return;
     }
     NSInteger lensTag = tag == 0 ? -1 : tag == 5 ? 2 : tag == 6 ? 5 : tag;
-    NSInteger segment = Segment(c, lensTag);
-    if (field.selectedSegment != segment || ![[c valueForKey:@"sourceECMWF"] boolValue]) {
-        field.selectedSegment = segment;
-        [NSApp sendAction:field.action to:field.target from:field];
-    }
+    NSButton *button=Field(c,lensTag);
+    if (button.state!=NSControlStateValueOn || ![[c valueForKey:@"sourceECMWF"] boolValue]) [button performClick:nil];
 }
 static BOOL Model(Controller *c) { return [[c valueForKey:@"sourceECMWF"] boolValue]; }
 static PDFCropView *PopoverMap(Controller *c) { return (PDFCropView *)Find(c.popover.contentViewController.view, @"popover.chart"); }
@@ -229,31 +235,25 @@ int main(int argc, const char **argv) {
             Check([c chartsReady] && !Model(c), @"starts with a readable Bureau map");
             NSBitmapImageRep *bureau = Bitmap(PopoverMap(c));
             for (NSInteger tag = 0; tag < 4; tag++) Check(!On(c,tag), @"Bureau has no selected model layer");
-            Check(Field(c).selectedSegment == 0, @"Bureau opens in the map-only Pressure lens");
+            Check(Field(c,-1).state == NSControlStateValueOn, @"Bureau opens in the map-only Pressure lens");
             Save(c.popover.contentViewController.view, output, @"bureau");
 
-            // One segmented lens row and one barb toggle replace the old field row.
-            NSSegmentedControl *field = Field(c);
-            Check(field && field.segmentCount == 8 && field.trackingMode == NSSegmentSwitchTrackingSelectOne,
-                @"map and panel choices are one eight-segment lens control");
-            NSMutableArray *labels = [NSMutableArray array];
-            for (NSInteger i = 0; i < field.segmentCount; i++) {
-                [labels addObject:[field labelForSegment:i] ?: @""];
-                Check([field imageForSegment:i] != nil && [field toolTipForSegment:i].length > 0,
-                    @"each field segment has a symbol and a tooltip");
+            // Native vertical lens buttons own the field and specialist panel.
+            NSArray *titles=@[@"Pressure",@"Rain",@"Wind",@"Temp",@"Kite",@"Surf",@"Fly",@"Sat"];
+            NSArray *tags=@[@-1,@2,@5,@4,@0,@3,@1,@6];
+            CGFloat previousBottom=0;
+            for (NSUInteger i=0;i<titles.count;i++) {
+                NSButton *button=Field(c,[tags[i] integerValue]);
+                Check(button && [button.title isEqual:titles[i]] && button.image && button.toolTip.length,
+                    [NSString stringWithFormat:@"%@ lens has a labelled native button and symbol",titles[i]]);
+                Check(button && NSMinY(button.frame)>=previousBottom &&
+                    NSContainsRect(button.superview.bounds,button.frame), @"lens buttons form one bounded vertical column");
+                previousBottom=NSMaxY(button.frame);
             }
-            BOOL labelled = [Find(c.popover.contentViewController.view, @"popover.lensRow").identifier isEqual:@"labels"];
-            fprintf(stderr, "      popover %.0f wide; field segments %s\n", NSWidth(c.popover.contentViewController.view.frame),
-                labelled ? "labelled" : "symbols only");
-            Check(labelled ? [labels isEqual:@[@"Pressure", @"Rain", @"Wind", @"Temp", @"Kite", @"Surf", @"Fly", @"Sat"]] : [labels isEqual:@[@"", @"", @"", @"", @"", @"", @"", @""]],
-                @"lens row reads Pressure · Rain · Wind · Temp · Kite · Surf · Fly · Sat, or symbols only when narrow");
             Check(Barbs(c) && Barbs(c).accessibilityLabel.length && Barbs(c).image, @"wind barbs are a labelled symbol toggle");
-            NSMenu *temperature = [field menuForSegment:Segment(c, 4)];
-            Check(temperature.numberOfItems == 2 && [temperature itemAtIndex:1].tag == 1,
+            NSMenu *temperature=TemperatureMenu(c);
+            Check(temperature.numberOfItems==3 && [temperature itemWithTag:1] && [temperature itemWithTag:2],
                 @"850 hPa is an option on Temp, not a top-level field");
-            Check(![Find(c.popover.contentViewController.view, @"popover.lensRow") isKindOfClass:NSPopUpButton.class],
-                @"the lens row is not a Layers pull-down");
-            Check(NSWidth(field.frame) + 0.5 >= field.intrinsicContentSize.width, @"field segments are not truncated");
 
             NSMutableArray *pixels = [NSMutableArray array];
             for (NSNumber *layer in @[@2, @1, @0]) {
@@ -345,12 +345,11 @@ int main(int argc, const char **argv) {
             [c setValue:window forKey:@"chartWindow"];
             [c presentChartWindowInFrame:NSMakeRect(0,0,1024,600)];
             [c focusFullscreenPanel:shown];
-            NSSegmentedControl *expandedLens = (NSSegmentedControl *)Find(window.contentView, @"fullscreen.lens");
-            Check(expandedLens && expandedLens.segmentCount == 8 && Find(window.contentView, @"fullscreen.barbs"),
-                @"expanded map keeps the same seven-lens row and barb toggle");
-            expandedLens.selectedSegment = 1;
-            [NSApp sendAction:expandedLens.action to:expandedLens.target from:expandedLens];
-            Check([c mapField] == 1 && [[c valueForKey:@"forecastMode"] integerValue] == 2 && Field(c).selectedSegment == 1,
+            NSButton *expandedLens=Lens(window.contentView,@"fullscreen",2);
+            Check(expandedLens && Lens(window.contentView,@"fullscreen",6) && Find(window.contentView,@"fullscreen.barbs"),
+                @"expanded map keeps the same eight-lens column and barb toggle");
+            [expandedLens performClick:nil];
+            Check([c mapField] == 1 && [[c valueForKey:@"forecastMode"] integerValue] == 2 && Field(c,2).state == NSControlStateValueOn,
                 @"expanded Rain action couples the field, panel and popover selection");
             NSView *rainGraph = Find(window.contentView, @"rain.timeline");
             // UX-044: Rain has one amount row and no separate summary; its header controls sit clear of the graph.
@@ -364,10 +363,9 @@ int main(int argc, const char **argv) {
             }
             Check(rainClear, [NSString stringWithFormat:@"expanded Rain graph stays clear of its header controls (graph %@)",
                 rainGraph ? NSStringFromRect(rainGraph.frame) : @"missing"]);
-            expandedLens = (NSSegmentedControl *)Find(window.contentView, @"fullscreen.lens");
-            expandedLens.selectedSegment = 1;
-            [NSApp sendAction:expandedLens.action to:expandedLens.target from:expandedLens];
-            Check([c mapField] == 0 && [[c valueForKey:@"forecastMode"] integerValue] == -1 && Field(c).selectedSegment == 0,
+            expandedLens = Lens(window.contentView,@"fullscreen",2);
+            [expandedLens performClick:nil];
+            Check([c mapField] == 0 && [[c valueForKey:@"forecastMode"] integerValue] == -1 && Field(c,-1).state == NSControlStateValueOn,
                 @"expanded Rain reselect returns both surfaces to Pressure");
             Check(Barbs(c).enabled && ((NSButton *)Find(window.contentView, @"fullscreen.barbs")).enabled,
                 @"classic model surfaces enable wind barbs");
@@ -464,12 +462,9 @@ int main(int argc, const char **argv) {
             Check(Find(window.contentView, @"fullscreen.days") != nil, @"fullscreen keeps the seven-day strip"); // UX-046 deck
             NSInteger (^fieldNow)(void) = ^NSInteger { return [[c valueForKey:@"mapField"] integerValue]; };
             void (^lens)(NSInteger) = ^(NSInteger tag) {
-                NSSegmentedControl *row = Field(c);
-                NSInteger segment = Segment(c, tag);
-                Check(segment >= 0, [NSString stringWithFormat:@"lens tag %ld exists", (long)tag]);
-                if (segment < 0) return;
-                row.selectedSegment = segment;
-                [NSApp sendAction:row.action to:row.target from:row];
+                NSButton *button=Field(c,tag);
+                Check(button!=nil,[NSString stringWithFormat:@"lens tag %ld exists",(long)tag]);
+                [button performClick:nil];
             };
             Select(c,0);
             Check(fieldNow() == 0, @"Pressure clears the previous field");

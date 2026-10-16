@@ -93,11 +93,13 @@ test('J8 resize while zoomed in keeps the centre', async ({ page }) => {
   expect(Math.abs(after.centerY - before.centerY)).toBeLessThan(before.halfHeight * 0.1);
 });
 
-test('no boilerplate footer: sources sit behind the map ⓘ', async ({ page }) => {
+test('credits live on About, reached through Menu', async ({ page }) => {
   await open(page);
   await expect(page.getByText('CC BY 4.0', { exact: false })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Data sources' }).click();
-  await expect(page.getByRole('note')).toContainText('ECMWF Open Data (CC BY 4.0)');
+  await expect(page.getByRole('button', { name: 'Data sources' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  await page.getByRole('link', { name: 'About Isobar', exact: true }).click();
+  await expect(page.locator('[data-about-page]')).toContainText('ECMWF Open Data');
   await page.goto('/e6b');
   await expect(page.getByText('CC BY 4.0', { exact: false })).toHaveCount(0);
 });

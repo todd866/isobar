@@ -40,68 +40,83 @@ static NSView *Find(NSView *view, NSString *identifier) {
     return nil;
 }
 static BOOL ClickLens(Controller *controller, NSInteger segment) {
-    NSSegmentedControl *row = (NSSegmentedControl *)Find(controller.popover.contentViewController.view, @"popover.lens");
-    if (![row isKindOfClass:NSSegmentedControl.class] || row.segmentCount != 8) return NO;
-    row.selectedSegment = segment;
-    return [NSApp sendAction:row.action to:row.target from:row];
+    NSButton *button = (NSButton *)Find(controller.popover.contentViewController.view,
+        [NSString stringWithFormat:@"popover.lens.%ld", (long)segment]);
+    if (![button isKindOfClass:NSButton.class]) return NO;
+    [button performClick:nil];
+    return YES;
 }
 static BOOL SelectLens(Controller *controller, NSInteger segment) {
-    NSSegmentedControl *row = (NSSegmentedControl *)Find(controller.popover.contentViewController.view, @"popover.lens");
-    if (![row isKindOfClass:NSSegmentedControl.class]) return NO;
-    return row.selectedSegment == segment || ClickLens(controller, segment);
+    NSButton *button = (NSButton *)Find(controller.popover.contentViewController.view,
+        [NSString stringWithFormat:@"popover.lens.%ld", (long)segment]);
+    if (![button isKindOfClass:NSButton.class]) return NO;
+    return button.state == NSControlStateValueOn || ClickLens(controller, segment);
+}
+
+static NSButton *LensButton(NSView *view, NSString *prefix, NSInteger segment) {
+    return (NSButton *)Find(view, [NSString stringWithFormat:@"%@.lens.%ld", prefix, (long)segment]);
+}
+
+static NSButton *LensButtonForTag(NSView *view, NSString *prefix, NSInteger tag) {
+    for (NSInteger i = 0; i < 8; i++) {
+        NSButton *button = LensButton(view, prefix, i);
+        if (button.tag == tag) return button;
+    }
+    return nil;
+}
+static BOOL LensButtonFits(NSButton *button) {
+    if (!button) return NO;
+    NSString *title = button.title ?: @"";
+    CGFloat titleWidth = title.length ? [title sizeWithAttributes:@{NSFontAttributeName: (button.font ?: [NSFont systemFontOfSize:12])}].width : 0;
+    CGFloat imageWidth = button.image ? button.image.size.width + 4 : 0;
+    return NSWidth(button.frame) + .5 >= titleWidth + imageWidth + 8;
 }
 static NSView *Visible(NSView *view, NSString *identifier) {
     NSView *found = Find(view, identifier);
     return found && !found.isHiddenOrHasHiddenAncestor ? found : nil;
 }
+static NSView *FindLabel(NSView *view, NSString *label) {
+    if ([view.accessibilityLabel isEqual:label]) return view;
+    for (NSView *child in view.subviews) {
+        NSView *found = FindLabel(child, label);
+        if (found) return found;
+    }
+    return nil;
+}
 static BOOL MapsLeadDetails(NSView *view) {
-    NSView *map = Find(view, @"popover.chart");
-    NSView *right = Find(view, @"popover.chart.right");
+    NSView *map = Visible(view, @"popover.gpu");
+    if (!map) map = Find(view, @"popover.chart");
     NSView *modes = Find(view, @"popover.lensRow");
     NSView *legend = Find(view, @"chart.legend");
-    NSView *timeline = Find(view, @"popover.timeline");
     NSView *days = Find(view, @"hub.days");
-    if (!map || map.hidden || !days || !modes || !timeline || timeline.hidden || Find(view, @"forecast.back")) return NO;
-    CGFloat mapBottom = right ? MAX(NSMaxY(map.frame), NSMaxY(right.frame)) : NSMaxY(map.frame);
+    NSView *place = Find(view, @"mapfirst.place");
+    NSView *actions = Find(view, @"mapfirst.actions");
+    NSView *bottom = Find(view, @"mapfirst.bottom");
+    if (!map || map.hidden || !days || !modes || !place || !actions || !bottom || Find(view, @"forecast.back")) return NO;
     if (legend) {
-        if (NSIntersectsRect(legend.frame, modes.frame)) {
-            fprintf(stderr, "legend intersects lens row legend %s row %s\n",
-                NSStringFromRect(legend.frame).UTF8String, NSStringFromRect(modes.frame).UTF8String);
-            return NO;
-        }
         for (NSView *label in legend.subviews)
-            if (!NSContainsRect(legend.bounds, label.frame)) {
-                fprintf(stderr, "legend label %s outside %s\n",
-                    NSStringFromRect(label.frame).UTF8String, NSStringFromRect(legend.bounds).UTF8String);
-                return NO;
-            }
+            if (!NSContainsRect(legend.bounds, label.frame)) return NO;
     }
-    BOOL fits = NSMaxY(days.frame) <= NSMinY(timeline.frame) + 1 &&
-        NSMaxY(timeline.frame) <= NSMinY(map.frame) + 1 &&
-        mapBottom <= NSMinY(modes.frame) + 1;
-    if (!fits) fprintf(stderr, "stack days %s time %s map %s lenses %s\n",
-        NSStringFromRect(days.frame).UTF8String, NSStringFromRect(timeline.frame).UTF8String,
-        NSStringFromRect(map.frame).UTF8String, NSStringFromRect(modes.frame).UTF8String);
-    return fits;
+    // The map is the surface; the day strip, timeline and lens dock float over it.
+    NSRect mapRect = [map convertRect:map.bounds toView:view];
+    NSRect inset = NSInsetRect(view.bounds, -1, -1);
+    for (NSView *chip in @[place, actions, bottom, modes])
+        if (!chip.superview || !NSContainsRect(inset, [chip convertRect:chip.bounds toView:view])) return NO;
+    return NSContainsRect(NSInsetRect(mapRect, -1, -1), view.bounds);
 }
 
 static BOOL DetailFollowsMaps(NSView *view, NSString *identifier) {
-    NSView *map = Find(view, @"popover.chart");
+    NSView *map = Visible(view, @"popover.gpu");
+    if (!map) map = Find(view, @"popover.chart");
     NSView *detail = Find(view, identifier);
     NSView *inspector = Find(view, @"forecast.inspector");
     NSView *modes = Find(view, @"popover.lensRow");
-    NSView *timeline = Find(view, @"popover.timeline");
-    if (!detail || !map || map.hidden || !inspector || !modes || !timeline || timeline.hidden || Find(view, @"forecast.back")) return NO;
+    if (!detail || !map || map.hidden || !inspector || !modes || Find(view, @"forecast.back")) return NO;
     NSRect mapRect = [map convertRect:map.bounds toView:view];
     NSRect inspectorRect = [inspector convertRect:inspector.bounds toView:view];
     NSRect detailRect = [detail convertRect:detail.bounds toView:view];
-    NSRect timelineRect = [timeline convertRect:timeline.bounds toView:view];
-    NSRect modesRect = [modes convertRect:modes.bounds toView:view];
     if (!NSContainsRect(NSInsetRect(view.bounds, -1, -1), inspectorRect) ||
         !NSContainsRect(NSInsetRect(inspectorRect, -1, -1), detailRect)) return NO;
-    if (NSMaxY(timelineRect) > NSMinY(mapRect) + 1 || NSMaxY(modesRect) + 20 < NSHeight(view.bounds)) return NO;
-    BOOL beside = NSMinX(inspectorRect) + 1 >= NSMaxX(mapRect) && !NSIntersectsRect(inspectorRect, mapRect);
-    if (beside) return NSMinX(inspectorRect) >= NSMaxX(mapRect) + 9;
     NSRect overlap = NSIntersectionRect(inspectorRect, mapRect);
     return !NSIsEmptyRect(overlap) && NSWidth(overlap)*NSHeight(overlap) <= NSWidth(mapRect)*NSHeight(mapRect) * 0.55 + 1;
 }
@@ -136,10 +151,10 @@ static uint64_t ImageDigest(NSImage *image) {
     return digest;
 }
 
-static NSEvent *TimelineMouseEvent(NSEventType type, TimelineStrip *timeline, CGFloat fraction, NSUInteger number) {
-    NSRect track = [timeline trackRect];
-    CGFloat x = timeline.bandDates.count ? [timeline cursorXForFraction:fraction]
-        : NSMinX(track) + NSWidth(track) * fraction;
+static NSEvent *TimelineMouseEvent(NSEventType type, DayStripView *timeline, CGFloat fraction, NSUInteger number) {
+    NSDate *date=[timeline.timelineStart dateByAddingTimeInterval:fraction *
+        [timeline.timelineEnd timeIntervalSinceDate:timeline.timelineStart]];
+    CGFloat x=[timeline positionForDate:date] * NSWidth(timeline.bounds);
     NSPoint point = [timeline convertPoint:NSMakePoint(x, 8) toView:nil];
     // mouseExited: does not inspect the event type; AppKit cannot synthesize
     // an NSEventTypeMouseExited through its public constructors.
@@ -410,16 +425,14 @@ static void PostOcclusion(NSWindow *window) {
 static BOOL BannedChromeWord(NSView *view, NSString **hit) {
     if ([view isKindOfClass:NSTextField.class]) {
         NSString *text = ((NSTextField *)view).stringValue ?: @"";
-        if ([text rangeOfString:@"stale" options:NSCaseInsensitiveSearch].location != NSNotFound ||
-            [text rangeOfString:@"Forecast"].location != NSNotFound) {
+        if ([text rangeOfString:@"stale" options:NSCaseInsensitiveSearch].location != NSNotFound) {
             if (hit) *hit = text;
             return YES;
         }
     }
     if ([view isKindOfClass:NSButton.class]) {
         NSString *text = ((NSButton *)view).attributedTitle.string ?: ((NSButton *)view).title ?: @"";
-        if ([text rangeOfString:@"stale" options:NSCaseInsensitiveSearch].location != NSNotFound ||
-            [text rangeOfString:@"Forecast"].location != NSNotFound) {
+        if ([text rangeOfString:@"stale" options:NSCaseInsensitiveSearch].location != NSNotFound) {
             if (hit) *hit = text;
             return YES;
         }
@@ -430,68 +443,25 @@ static BOOL BannedChromeWord(NSView *view, NSString **hit) {
 
 static int SliderAligned(NSView *content) {
     NSView *days = Find(content, @"hub.days");
-    TimelineStrip *timeline = (TimelineStrip *)Find(content, @"popover.timeline");
     NSView *play = Find(content, @"popover.play");
-    NSView *clock = Find(content, @"popover.clock");
     NSView *now = Find(content, @"popover.now");
-    if (![timeline isKindOfClass:TimelineStrip.class] || !days || !play || !now || !clock || clock.superview != timeline ||
+    NSView *bottom = Find(content, @"mapfirst.bottom");
+    if (!days || !play || !now || !bottom || Find(content, @"popover.timeline") ||
         Find(content, @"popover.prev") || Find(content, @"popover.next")) {
         fprintf(stderr, "FAIL popover slider row\n");
         return 1;
     }
-    NSString *clockText = [(NSTextField *)clock stringValue];
-    if (![clockText containsString:@"Z"] || !([clockText hasPrefix:@"NOW ·"] ||
-        [clockText hasPrefix:@"FORECAST ·"] || [clockText hasPrefix:@"PAST ·"])) {
-        fprintf(stderr, "FAIL playhead clock lacks state or Zulu: %s\n",clockText.UTF8String);
-        return 1;
-    }
     NSRect dayFrame = [days convertRect:days.bounds toView:content];
-    NSRect timeFrame = [timeline convertRect:timeline.bounds toView:content];
-    NSRect playFrame = [play convertRect:play.bounds toView:content];
-    NSRect nowFrame = [now convertRect:now.bounds toView:content];
-    CGFloat gap = NSMinY(timeFrame) - NSMaxY(dayFrame);
+    NSRect bottomFrame = [bottom convertRect:bottom.bounds toView:content];
     int bad = 0;
-    if (gap < -1 || gap > 12) {
-        fprintf(stderr, "FAIL popover slider gap %.1f\n", gap);
+    if (!NSContainsRect(NSInsetRect(content.bounds, -1, -1), bottomFrame) ||
+        !NSContainsRect(NSInsetRect(bottom.bounds, -1, -1), [days convertRect:days.bounds toView:bottom]) ||
+        !NSContainsRect(NSInsetRect(bottom.bounds, -1, -1), [play convertRect:play.bounds toView:bottom]) ||
+        !NSContainsRect(NSInsetRect(bottom.bounds, -1, -1), [now convertRect:now.bounds toView:bottom])) {
+        fprintf(stderr, "FAIL popover floating bottom controls\n");
         bad++;
     }
-    if (fabs(NSMinX(dayFrame) - NSMinX(timeFrame)) > 2 || fabs(NSWidth(dayFrame) - NSWidth(timeFrame)) > 2 ||
-        NSMaxX(playFrame) > NSMinX(dayFrame) + 2 || NSMaxX(nowFrame) > NSMinX(dayFrame) + 2) {
-        fprintf(stderr, "FAIL popover columns days %.1f track %.1f play %.1f\n",
-            NSMinX(dayFrame), NSMinX(timeFrame), NSMaxX(playFrame));
-        bad++;
-    }
-    if (!NSContainsRect(NSInsetRect(timeline.bounds, -1, -1), clock.frame)) {
-        fprintf(stderr, "FAIL popover clock outside the track %s\n", NSStringFromRect(clock.frame).UTF8String);
-        bad++;
-    } else {
-        CGFloat cursor = [timeline cursorXForFraction:timeline.progress];
-        BOOL rides = fabs(NSMidX(clock.frame) - cursor) <= 1.5 ||
-            (NSMinX(clock.frame) <= 1 && cursor <= NSMidX(clock.frame)) ||
-            (NSMaxX(clock.frame) >= NSWidth(timeline.bounds) - 1 && cursor >= NSMidX(clock.frame));
-        if (!rides) {
-            fprintf(stderr, "FAIL popover clock %.1f is not on the playhead %.1f\n", NSMidX(clock.frame), cursor);
-            bad++;
-        }
-    }
-    NSUInteger tiles = 0;
-    while (Find(content, [NSString stringWithFormat:@"hub.day.%lu", (unsigned long)tiles])) tiles++;
-    if (!tiles || timeline.daySpanCount != tiles) {
-        fprintf(stderr, "FAIL popover day span count %lu tiles %lu\n",
-            (unsigned long)timeline.daySpanCount, (unsigned long)tiles);
-        return bad + 1;
-    }
-    for (NSUInteger i = 0; i < tiles; i++) {
-        NSView *tile = Find(content, [NSString stringWithFormat:@"hub.day.%lu", (unsigned long)i]);
-        NSRect tileRect = [tile convertRect:tile.bounds toView:content];
-        NSRect span = [timeline convertRect:[timeline daySpanFrameAtIndex:i] toView:content];
-        if (fabs(NSMinX(tileRect) - NSMinX(span)) > 2 || fabs(NSMaxX(tileRect) - NSMaxX(span)) > 2) {
-            fprintf(stderr, "FAIL popover day %lu tile %.1f–%.1f span %.1f–%.1f\n", (unsigned long)i,
-                NSMinX(tileRect), NSMaxX(tileRect), NSMinX(span), NSMaxX(span));
-            bad++;
-            break;
-        }
-    }
+    if (NSMinY(dayFrame) < NSMinY(bottomFrame) - 1 || NSMaxY(dayFrame) > NSMaxY(bottomFrame) + 1) bad++;
     return bad;
 }
 
@@ -674,11 +644,19 @@ static int CheckPopoverMap(AcceptanceController *c, NSString *store) {
                     if (!SelectLens(c, [lenses indexOfObject:lens])) { POPFAIL("lens segment"); continue; }
                     content = c.popover.contentViewController.view;
                     window.contentView = content;
-                    NSSegmentedControl *lensRow = (NSSegmentedControl *)Find(content, @"popover.lens");
                     NSInteger expectedFields[] = {0, 1, 2, 3, 2, 0, 0};
-                    if ([c mapField] != expectedFields[[lenses indexOfObject:lens]] ||
-                        lensRow.selectedSegment != (NSInteger)[lenses indexOfObject:lens]) POPFAIL("lens field coupling");
-                    if (NSWidth(lensRow.frame) + .5 < lensRow.intrinsicContentSize.width) POPFAIL("lens labels fit");
+                    NSInteger lensIndex = [lenses indexOfObject:lens];
+                    NSButton *lensButton = LensButton(content, @"popover", lensIndex);
+                    if ([c mapField] != expectedFields[lensIndex] ||
+                        !lensButton || lensButton.state != NSControlStateValueOn) POPFAIL("lens field coupling");
+                    if (lensButton && !LensButtonFits(lensButton))
+                        POPFAIL("lens labels fit");
+                    for (NSString *label in @[@"Temp options", @"Fly options"]) {
+                        NSView *options = FindLabel(content, label);
+                        if (![options isKindOfClass:NSPopUpButton.class] ||
+                            ((NSPopUpButton *)options).numberOfItems < ([label hasPrefix:@"Temp"] ? 3 : 2))
+                            POPFAIL("lens options popup");
+                    }
                     NSButton *hazards = (NSButton *)Find(content, @"popover.hazards");
                     NSView *lensBox = Find(content, @"popover.lensRow");
                     if (!hazards || !NSContainsRect(content.bounds, lensBox.frame) ||
@@ -702,7 +680,7 @@ static int CheckPopoverMap(AcceptanceController *c, NSString *store) {
                         }
                     } else if (gpu && !gpu.hidden) POPFAIL("classic map removes the GPU surface");
                     if (!chart || chart.hidden) POPFAIL("classic chart stays in the popover");
-                    NSArray *transport = @[@"popover.play", @"popover.speed", @"popover.now", @"popover.timeline"];
+                    NSArray *transport = @[@"popover.play", @"popover.speed", @"popover.now"];
                     for (NSString *ident in transport) {
                         NSView *control = Visible(content, ident);
                         if (!control) { fprintf(stderr, "missing %s\n", ident.UTF8String); POPFAIL("transport control"); continue; }
@@ -714,7 +692,7 @@ static int CheckPopoverMap(AcceptanceController *c, NSString *store) {
                     NSString *banned = nil;
                     if (BannedChromeWord(content, &banned)) {
                         fprintf(stderr, "banned word '%s'\n", banned.UTF8String);
-                        POPFAIL("stale or Forecast on screen");
+                        POPFAIL("raw stale wording on screen");
                     }
                     NSButton *header = (NSButton *)Find(content, @"popover.obs");
                     NSView *issued = Find(content, @"popover.issued");
@@ -1438,7 +1416,7 @@ int main(int argc, const char **argv) {
         NSButton *footer = (NSButton *)Find(defaultView, @"popover.obs");
         if (!footer || ![footer.attributedTitle.string containsString:@"17°"] ||
             ![footer.attributedTitle.string containsString:@"6 kt"] ||
-            HasAttachment(footer.attributedTitle) ||
+            !HasAttachment(footer.attributedTitle) ||
             [footer.attributedTitle.string.lowercaseString containsString:@"now"] ||
             ![footer.accessibilityLabel containsString:@"WSW 6 kt"] ||
             footer.target != c ||
@@ -1652,7 +1630,7 @@ int main(int argc, const char **argv) {
         NSInteger originalTemperature=[[intent valueForKey:@"tempLayer"] integerValue];
         for (NSNumber *temperature in @[@0,@1]) {
             [intent setValue:temperature forKey:@"tempLayer"]; [intent rebuildContent];
-            TimelineStrip *strip=[intent valueForKey:@"popoverTimeline"];
+            DayStripView *strip=(DayStripView *)Find(intent.popover.contentViewController.view,@"hub.days");
             // Arm the intentional hover before measuring continuous scrubbing.
             // The 300 ms entry dwell is a control contract, not a dropped frame.
             [strip mouseMoved:TimelineMouseEvent(NSEventTypeMouseMoved,strip,.18,499)];
@@ -1712,16 +1690,20 @@ int main(int argc, const char **argv) {
                 if (NSWidth(view.frame)>c.budget.width || NSHeight(view.frame)>c.budget.height ||
                     Find(view,@"popover.next") || Find(view,@"popover.prev") || !Find(view,@"popover.play") || !Find(view,@"popover.settings") ||
                     TrainButtonLayout(view) ||
-                    Find(view,@"forecast.back") || !Visible(view,@"popover.timeline") || !MapsLeadDetails(view) ||
+                    Find(view,@"forecast.back") || !MapsLeadDetails(view) ||
                     Find(view,@"popover.headline") || Find(view,@"popover.note")) FAIL();
                 NSString *panelID = mode == 0 ? @"popover.windForecast" : (mode == 1 ? @"popover.aviation" : (mode == 3 ? @"popover.surf" : (mode == 4 ? @"popover.temperature" : @"popover.rain")));
                 if (mode >= 0 && !Find(view,panelID)) FAIL();
                 if (mode >= 0 && (!Find(view,@"forecast.close") || !DetailFollowsMaps(view,panelID))) FAIL();
                 if (mode < 0 && (Find(view,@"popover.rain") || Find(view,@"popover.aviation") || Find(view,@"popover.windForecast") || Find(view,@"popover.surf"))) FAIL();
-                NSSegmentedControl *lensRow = (NSSegmentedControl *)Find(view, @"popover.lens");
-                if (!lensRow || lensRow.segmentCount != 8 || NSWidth(lensRow.frame) + .5 < lensRow.intrinsicContentSize.width) FAIL();
-                NSInteger selectedMode = [lensRow tagForSegment:lensRow.selectedSegment];
-                if (mode >= 0 && selectedMode != mode) FAIL();
+                BOOL allLensButtons = YES;
+                for (NSInteger segment = 0; segment < 8; segment++) {
+                    NSButton *button = LensButton(view, @"popover", segment);
+                    if (!LensButtonFits(button)) allLensButtons = NO;
+                }
+                if (!allLensButtons) FAIL();
+                NSButton *selectedLens = LensButtonForTag(view, @"popover", [c valueForKey:@"selectedLens"] ? [[c valueForKey:@"selectedLens"] integerValue] : -99);
+                if (mode >= 0 && (!selectedLens || selectedLens.state != NSControlStateValueOn)) FAIL();
                 if (mode == 0) [(HourlyForecastView *)Find(view,@"popover.windForecast") updateTrackingAreas];
                 else if (mode == 1) {
                     AviationForecastView *timeline=(AviationForecastView *)Find(view,@"aviation.timeline");
@@ -1862,12 +1844,12 @@ int main(int argc, const char **argv) {
             if (!Find(fullscreen,@"window.chart") || Find(fullscreen,@"fullscreen.maps") ||
                 Find(fullscreen,@"fullscreen.panel.1") || [c fullscreenPanelIndex]<0 ||
                 fabs([[c selectedForecastDate] timeIntervalSinceDate:selectedBefore])>7200) FAIL();
-            for (NSString *identifier in @[@"fullscreen.timeline",@"fullscreen.now",@"fullscreen.play",
-                @"fullscreen.days",@"fullscreen.issued",@"fullscreen.compare",@"fullscreen.close",@"fullscreen.lensRow",@"fullscreen.lens",@"fullscreen.barbs",@"fullscreen.hazards"])
+            for (NSString *identifier in @[@"fullscreen.now",@"fullscreen.play",
+                @"fullscreen.days",@"fullscreen.issued",@"fullscreen.compare",@"fullscreen.close",@"fullscreen.lensRow",@"fullscreen.lens.0",@"fullscreen.barbs",@"fullscreen.hazards"])
                 if (!Find(fullscreen,identifier)) FAIL();
             PDFCropView *singleMap=(PDFCropView *)Find(fullscreen,@"window.chart");
-            TimelineStrip *windowTimeline=(TimelineStrip *)Find(fullscreen,@"fullscreen.timeline");
-            if (NSHeight(windowTimeline.frame)!=28 || !windowTimeline.bandDates.count || windowTimeline.labels.count<2 ||
+            TimelineStrip *windowTimeline=(TimelineStrip *)[c valueForKey:@"chartTimeline"];
+            if (!windowTimeline || !windowTimeline.bandDates.count || windowTimeline.labels.count<2 ||
                 windowTimeline.labels.count!=windowTimeline.times.count) FAIL();
             [c zoomChart:1];
             if ([[c valueForKey:@"panelZoom"] doubleValue]<=1 || Find(fullscreen,@"window.chart")!=singleMap) FAIL();
@@ -1886,19 +1868,14 @@ int main(int argc, const char **argv) {
                 NSSize budget=size.sizeValue;
                 [c.chartWindow setFrame:NSMakeRect(0,0,budget.width,budget.height) display:NO]; [c layoutChartWindow];
                 NSView *surface=c.chartWindow.contentView;
-                NSView *bar=Find(surface,@"fullscreen.toolbar"), *transport=Find(surface,@"fullscreen.transport");
-                NSView *mapArea=Find(surface,@"fullscreen.chartScroll"), *footer=Find(surface,@"fullscreen.statusBar");
-                if (!bar || !transport || !mapArea || !footer || Find(surface,@"window.chart")!=singleMap ||
-                    Find(surface,@"fullscreen.timeline")!=windowTimeline || NSMinY(mapArea.frame)<NSMaxY(bar.frame) ||
-                    NSMinY(mapArea.frame)<NSMaxY(transport.frame) || NSMaxY(mapArea.frame)>NSMinY(footer.frame)) FAIL();
-                for (NSView *group in @[bar,transport,footer]) {
-                    if (!NSContainsRect(surface.bounds,group.frame)) FAIL();
-                    for (NSView *control in group.subviews) if (!NSContainsRect(group.bounds,control.frame)) {
-                        fprintf(stderr,"clipped %s in %s: %s\n",control.accessibilityIdentifier.UTF8String,
-                            group.accessibilityIdentifier.UTF8String,NSStringFromRect(control.frame).UTF8String);
-                        FAIL();
-                    }
-                }
+                NSView *mapArea=Find(surface,@"fullscreen.chartScroll"), *map=Visible(surface,@"fullscreen.gpu");
+                if (!map) map=Visible(surface,@"window.chart");
+                NSView *days=Find(surface,@"fullscreen.days"), *lenses=Find(surface,@"fullscreen.lensRow");
+                if (!mapArea || !map || !days || !lenses || Find(surface,@"window.chart")!=singleMap ||
+                    NSWidth([map convertRect:map.bounds toView:surface]) < NSWidth(surface.bounds)*.95 ||
+                    NSHeight([map convertRect:map.bounds toView:surface]) < NSHeight(surface.bounds)*.95 ||
+                    !NSContainsRect(NSInsetRect(surface.bounds,-1,-1), [days convertRect:days.bounds toView:surface]) ||
+                    !NSContainsRect(NSInsetRect(surface.bounds,-1,-1), [lenses convertRect:lenses.bounds toView:surface])) FAIL();
                 Save(surface,[output stringByAppendingPathComponent:[NSString stringWithFormat:@"single-map-%.0fx%.0f.png",budget.width,budget.height]]);
             }
             [c escapeFullscreen];

@@ -11,8 +11,8 @@ test('photo terrain is optional, renders on the shared map, and survives cached 
  const plate=()=>stage.evaluate(async(e:any)=>{const p=await e.chartApi.readPlate();const out:number[]=[];if(p)for(let i=0;i<p.data.length;i+=64)out.push(p.data[i]);return out;});
  const photo=await plate();expect(photo.length).toBeGreaterThan(100);
  await page.screenshot({path:info.outputPath('photo-laptop.png')});
- await page.getByRole('button',{name:'Data sources',exact:true}).click();
- await expect(page.locator('.map-sources')).toContainText('2026-10-03');
+ await page.getByRole('button',{name:'Map details',exact:true}).click();
+ await expect(page.locator('.map-details')).toContainText('2026-10-03');
  await page.getByRole('checkbox',{name:'Photo terrain',exact:true}).uncheck();
  await expect(stage).toHaveAttribute('data-terrain-imagery','off');
  const plain=await plate();expect(plain.filter((v,i)=>Math.abs(v-photo[i])>10).length).toBeGreaterThan(100);
@@ -36,6 +36,6 @@ test('photo failure leaves the ordinary terrain usable and no banner',async({pag
  const stage=page.locator('[data-map-ready=true]');await stage.waitFor();
  await expect(stage).toHaveAttribute('data-terrain-imagery','unavailable',{timeout:30_000});
  await page.getByRole('button',{name:'Zoom in',exact:true}).click();
- await page.getByRole('button',{name:'Data sources',exact:true}).click();
- await expect(page.locator('.map-sources')).toContainText('Imagery unavailable');
+ await page.getByRole('button',{name:'Map details',exact:true}).click();
+ await expect(page.locator('.map-details')).toContainText('Imagery unavailable');
 });

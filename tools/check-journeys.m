@@ -47,26 +47,17 @@ static NSString *journey = @"";
 
 static GPUMapView *Map(Controller *c) { return [c valueForKey:@"gpuMap"]; }
 
-static NSSegmentedControl *LensControl(NSView *root) {
-    return (NSSegmentedControl *)Find(root, ^BOOL(NSView *v) {
-        return [v isKindOfClass:NSSegmentedControl.class] && [v.accessibilityIdentifier hasSuffix:@".lens"] && !v.hiddenOrHasHiddenAncestor;
-    });
-}
-
-// What a click on a lens does: select the segment and send its action.
+// Exercise the visible native lens button, including its toggle-back action.
 static BOOL ClickLens(NSView *root, NSString *title) {
-    NSSegmentedControl *lens = LensControl(root);
-    for (NSInteger i = 0; i < lens.segmentCount; i++) {
-        NSString *tip = [lens toolTipForSegment:i] ?: @"";
-        NSString *label = [lens labelForSegment:i] ?: @"";
-        if ([label isEqual:title] || [tip hasPrefix:title]) {
-            lens.selectedSegment = i;
-            [lens sendAction:lens.action to:lens.target];
-            Pump(.15);
-            return YES;
-        }
-    }
-    return NO;
+    NSButton *button=(NSButton *)Find(root,^BOOL(NSView *view) {
+        return [view isKindOfClass:NSButton.class] &&
+            [view.accessibilityIdentifier containsString:@".lens."] &&
+            [((NSButton *)view).title isEqual:title] && !view.hiddenOrHasHiddenAncestor;
+    });
+    if (!button || !button.enabled) return NO;
+    [button performClick:nil];
+    Pump(.15);
+    return YES;
 }
 
 static BOOL SameView(IsobarCamera a, IsobarCamera b) {
@@ -483,15 +474,15 @@ static void AttributionJourney(JourneyController *c) {
     NSString *credit = @"ECMWF open data, CC BY 4.0";
     for (NSView *root in @[c.popover.contentViewController.view,c.chartWindow.contentView]) {
         NSView *issued = Find(root, ^BOOL(NSView *v) { return [v.accessibilityIdentifier hasSuffix:@".issued"]; });
-        EXPECT([issued.toolTip containsString:credit], "run-age tooltip lacks ECMWF attribution");
+        EXPECT(![issued.toolTip containsString:credit], "map tooltip contains licence boilerplate");
     }
     [c openSettings:nil]; // Window ordering and activation are blocked in main.
     NSWindow *settings = [c valueForKey:@"settingsWindow"];
-    NSTextField *footer = (NSTextField *)Find(settings.contentView, ^BOOL(NSView *v) {
-        return [v.accessibilityIdentifier isEqual:@"settings.attribution"];
+    NSButton *footer = (NSButton *)Find(settings.contentView, ^BOOL(NSView *v) {
+        return [v.accessibilityIdentifier isEqual:@"settings.about"];
     });
-    EXPECT([footer.stringValue isEqual:credit] && NSContainsRect(settings.contentView.bounds,footer.frame),
-        "Settings attribution is missing or outside its viewport");
+    EXPECT([footer.title isEqual:@"About Isobar"] && NSContainsRect(settings.contentView.bounds,footer.frame),
+        "About Isobar entry is missing or outside its viewport");
     NSString *dir = NSProcessInfo.processInfo.environment[@"ISOBAR_JOURNEY_SHOTS"] ?: @"build/qa/journeys";
     for (NSString *theme in @[@"light",@"dark"]) {
         settings.contentView.appearance = [NSAppearance appearanceNamed:[theme isEqual:@"dark"]?NSAppearanceNameDarkAqua:NSAppearanceNameAqua];

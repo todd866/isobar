@@ -53,7 +53,8 @@ ChartKeyAction ChartKeyActionFor(unsigned short keyCode, NSString *characters, N
         // fields elsewhere in the fullscreen window.
         if ([self.firstResponder respondsToSelector:@selector(handle3DKeyEvent:)] &&
             [(id)self.firstResponder handle3DKeyEvent:event]) return;
-        if ([self.firstResponder isKindOfClass:NSClassFromString(@"TimelineStrip")] && (key == 123 || key == 124)) {
+        if (([self.firstResponder isKindOfClass:NSClassFromString(@"TimelineStrip")] ||
+            [self.firstResponder isKindOfClass:NSClassFromString(@"DayStripView")]) && (key == 123 || key == 124)) {
             [super sendEvent:event];
             return;
         }

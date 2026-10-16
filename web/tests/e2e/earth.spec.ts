@@ -42,10 +42,7 @@ test('explicit reference scene renders different views while preserving time and
   expect(await time(page)).toBe(before);
   expect(requests.filter(url => url.endsWith('/iss.glb'))).toHaveLength(1);
   expect(requests.filter(url => url.endsWith('/earth-october.jpg'))).toHaveLength(1);
-  await page.getByRole('button', { name: 'Sources', exact: true }).click();
-  await expect(page.getByLabel('Scene sources')).toContainText('October 2004');
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('button', { name: 'Sources', exact: true })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Sources', exact: true })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 

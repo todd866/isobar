@@ -31,7 +31,7 @@ for (const [width, height] of [[1440, 900], [2000, 1290]] as const) {
       await expect(header.locator('input[data-place]')).toHaveValue('Perth');
       await expect(header.locator('[data-reading]')).toContainText(/\d+°/);
       await expect(header.locator('[data-wind-words]')).toContainText(/\d+ kt/);
-      await expect(header.locator('.when-long')).toBeVisible();
+      await expect(page.locator('.map-selected-time')).toBeVisible();
       await expect(header.locator('[data-learn-link]')).toHaveAttribute('href', '/train');
       // The menu lives in the header, so Units is a descendant. It is not a header control.
       await expect(header.locator('[data-map-menu] [data-units]')).toHaveCount(1);
@@ -54,11 +54,11 @@ for (const [width, height] of [[1440, 900], [2000, 1290]] as const) {
         await page.screenshot({ path: path.join(OUT, '1440x900-light-menu.png') });
         await page.keyboard.press('Escape');
         await expect(menu).toBeHidden();
-        await page.getByRole('button', { name: 'Data sources', exact: true }).click();
+        await page.getByRole('button', { name: 'Map details', exact: true }).click();
         const explain = page.getByRole('button', { name: 'Explain this chart', exact: true });
         await expect(explain).toBeVisible();
         const explainBox = await explain.boundingBox();
-        const noteBox = await page.locator('.map-sources [role="note"]').boundingBox();
+        const noteBox = await page.locator('.map-details [role="note"]').boundingBox();
         expect(explainBox && noteBox).toBeTruthy();
         expect(explainBox!.width).toBeGreaterThan(120);
         expect(explainBox!.y + explainBox!.height).toBeLessThanOrEqual(noteBox!.y + 1);
@@ -74,7 +74,7 @@ for (const [width, height] of [[1440, 900], [2000, 1290]] as const) {
         await page.getByRole('button', { name: 'Menu', exact: true }).click();
         await page.screenshot({ path: path.join(OUT, '2000x1290-dark-menu.png') });
         await page.keyboard.press('Escape');
-        await page.getByRole('button', { name: 'Data sources', exact: true }).click();
+        await page.getByRole('button', { name: 'Map details', exact: true }).click();
         await expect(page.getByRole('button', { name: 'Explain this chart', exact: true })).toBeVisible();
         await page.screenshot({ path: path.join(OUT, '2000x1290-dark-sources.png') });
       }

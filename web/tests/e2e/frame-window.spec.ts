@@ -147,31 +147,24 @@ test('enlarged phone readings stay separate and the selected mode remains reacha
     const sizes = elements.map((element) => [element, parseFloat(getComputedStyle(element).fontSize)] as const);
     for (const [element, size] of sizes) element.style.fontSize = `${size * 2}px`;
   });
-  await expect(page.locator('[data-map-density="compact"]')).toBeVisible();
+  await expect(page.locator('[data-map-page]')).toBeVisible();
   const lens = page.getByRole('combobox', { name: 'Weather lens', exact: true });
   await expect(lens).toBeVisible();
   await expect(lens).toHaveValue('temp');
-  await page.getByRole('button', { name: 'Show daily forecast', exact: true }).click();
   await expect.poll(() => page.evaluate(() => {
     const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
     const legend = box('.map-legend'), ask = box('[aria-label="Ask Isobar"]');
-    const label = box('[data-timeline-label]'), track = box('[data-timeline-track] > div');
-    const clockFits = [...document.querySelectorAll('.timeline .map-clock > span')].every((node) => {
+    const label = box('[data-timeline-label]');
+    const clockFits = [...document.querySelectorAll('.map-clock-slot .map-clock > span')].every((node) => {
       const r = node.getBoundingClientRect();
       return r.left >= label.left - 1 && r.right <= label.right + 1;
     });
     const selected = box('[aria-label="Weather lens"]');
-    const day = box('[aria-label="Forecast days"] button');
-    const readings = [...document.querySelectorAll('[aria-label="Forecast days"] button:first-child .day-values > span')]
-      .map((element) => element.getBoundingClientRect()).filter((rect) => rect.width > 0);
-    return { clockFits, legendFits: legend.bottom <= ask.top || legend.right <= ask.left, labelAboveTrack: label.bottom <= track.top,
+    return { clockFits, legendFits: legend.bottom <= ask.top || legend.right <= ask.left,
       labelFits: label.left >= 0 && label.right <= innerWidth,
       selectedFits: selected.left >= 0 && selected.right <= innerWidth,
-      simpleReadings: readings.length === 1,
-      readingsFit: readings.every((reading) => reading.left >= day.left && reading.right <= day.right),
-      readingsSeparate: readings.every((reading, index) => index === 0 || reading.top >= readings[index - 1].bottom - 1) };
-  })).toEqual({ clockFits: true, legendFits: true, labelAboveTrack: true, labelFits: true,
-    selectedFits: true, simpleReadings: true, readingsFit: true, readingsSeparate: true });
+    };
+  })).toEqual({ clockFits: true, legendFits: true, labelFits: true, selectedFits: true });
   await page.screenshot({ path: test.info().outputPath('phone-200-percent.png') });
   await page.getByRole('button', { name: 'Menu', exact: true }).click();
   const menu = page.locator('[data-map-menu]');
@@ -180,12 +173,10 @@ test('enlarged phone readings stay separate and the selected mode remains reacha
   await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
   await expect(page.getByRole('button', { name: 'Menu', exact: true })).toBeFocused();
-  await page.getByRole('button', { name: 'Hide daily forecast' }).click();
-  await expect(page.getByRole('list', { name: 'Forecast days', exact: true })).toBeHidden();
   await expect(lens).toBeVisible();
   await lens.selectOption('wind');
   await expect(lens).toHaveValue('wind');
   await expect(page.getByRole('combobox', { name: 'Speed' })).toBeVisible();
   await expect(page.getByRole('slider', { name: 'Forecast time' })).toBeVisible();
-  await page.screenshot({ path: test.info().outputPath('phone-200-percent-collapsed.png') });
+  await page.screenshot({ path: test.info().outputPath('phone-200-percent-map-first.png') });
 });

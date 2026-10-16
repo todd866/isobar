@@ -13,7 +13,7 @@ async function open(page: Page, href = '/') {
 }
 
 async function explainChart(page: Page) {
-  await page.getByRole('button', { name: 'Data sources', exact: true }).click();
+  await page.getByRole('button', { name: 'Map details', exact: true }).click();
   await page.getByRole('button', { name: 'Explain this chart', exact: true }).click();
 }
 async function fit(page: Page, label: string) {

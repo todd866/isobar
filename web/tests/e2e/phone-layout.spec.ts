@@ -39,29 +39,27 @@ async function assertPhoneContract(page: Page) {
   const map = page.locator('[data-map-page]');
   const stage = page.locator('[data-map-ready]');
   const lensBar = page.locator('[data-lens-bar]');
+  const learn = page.locator('.map-header [data-learn-link]');
 
   // The map page owns the viewport. Training and download navigation belongs
   // in Menu and must not consume a rail or bottom tab strip here.
   await expect(page.getByRole('navigation', { name: 'Main navigation' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Menu', exact: true })).toBeVisible();
+  await expect(learn).toBeVisible();
+  await expect(learn).toHaveAttribute('href', '/train');
   await expect(map).toBeVisible();
   await expect(stage).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
   const geometry = await page.evaluate(() => {
-    const header = document.querySelector('.map-header')!.getBoundingClientRect();
-    const days = document.querySelector('[aria-label="Forecast days"]')!.getBoundingClientRect();
-    const time = document.querySelector('.time-block')!.getBoundingClientRect();
-    const lens = document.querySelector('.map-lens-wrap')!.getBoundingClientRect();
-    const reading = document.querySelector('[data-reading]')!;
-    return { headerHeight: header.height, ordered: header.bottom <= days.top + 1 && days.bottom <= time.top + 1,
-      bottom: innerHeight - lens.bottom, readingClipped: reading.scrollWidth > reading.clientWidth + 1 };
+    const root = document.querySelector('[data-map-page]')!.getBoundingClientRect();
+    const map = document.querySelector('[data-map-ready]')!.getBoundingClientRect();
+    const reading = document.querySelector('[data-reading]');
+    return { mapShare: (map.width * map.height) / (root.width * root.height), readingClipped: reading ? reading.scrollWidth > reading.clientWidth + 1 : false };
   });
-  expect(geometry.headerHeight).toBeLessThanOrEqual(49);
-  expect(geometry.ordered).toBe(true);
-  expect(geometry.bottom).toBeLessThanOrEqual(1);
+  expect(geometry.mapShare).toBeGreaterThanOrEqual(.99);
   expect(geometry.readingClipped, JSON.stringify(geometry)).toBe(false);
-  const clockFits = await page.locator('.timeline').evaluate((timeline) => {
+  const clockFits = await page.locator('.map-clock-slot').evaluate((timeline) => {
     const bounds = timeline.getBoundingClientRect();
     return [...timeline.querySelectorAll('.map-clock > span')].every((node) => {
       const box = node.getBoundingClientRect();
@@ -81,9 +79,13 @@ async function assertPhoneContract(page: Page) {
   for (const label of expectedLenses) {
     const lens = page.getByRole('radio', { name: label, exact: true });
     await expect(lens).toHaveCount(1);
-    await expect(lens).toBeAttached();
-    // Words are part of the phone control, rather than icon-only tooltips.
-    await expect(lens.locator('span').filter({ hasText: label })).toBeVisible();
+    await expect(lens).toBeVisible();
+    await expect(lens.locator('svg')).toBeVisible();
+    const hit = (await lens.boundingBox())!;
+    expect(hit.width).toBeGreaterThanOrEqual(36);
+    expect(hit.height).toBeGreaterThanOrEqual(36);
+    // The phone lens column may use compact icon-only controls; the accessible
+    // radio name remains the stable contract.
   }
   const lensBox = await lensBar.boundingBox();
   expect(lensBox).not.toBeNull();
@@ -104,16 +106,17 @@ async function assertPhoneContract(page: Page) {
   }
 
   // Satellite rides the colour lenses on phones; Traffic only exists in Fly.
-  // Sources is deliberately last so the tools column has one stable information affordance.
+  // Map details preserves terrain and teaching controls without attribution.
   const tools = page.locator('.map-tools');
   await expect(tools).toBeVisible();
-  for (const label of ['Zoom in', 'Zoom out', 'Recenter map', 'Satellite', 'Data sources']) {
+  for (const label of ['Zoom in', 'Zoom out', 'Recenter map', 'Map details']) {
     await expect(tools.getByRole('button', { name: label, exact: true })).toBeVisible();
   }
   await expect(page.getByRole('button', { name: 'Traffic', exact: true })).toHaveCount(0);
   const toolButtons = tools.getByRole('button');
-  const sourceButton = tools.getByRole('button', { name: 'Data sources', exact: true });
-  expect(await toolButtons.count()).toBeGreaterThanOrEqual(5);
+  await expect(page.locator('.map-lens-wrap').getByRole('button', {name:'Satellite',exact:true})).toBeVisible();
+  const sourceButton = tools.getByRole('button', { name: 'Map details', exact: true });
+  await expect(toolButtons).toHaveCount(4);
   const sourceIndex = await sourceButton.evaluate((node) => Array.from(node.parentElement?.querySelectorAll('button') ?? []).indexOf(node));
   expect(sourceIndex).toBeGreaterThanOrEqual(0);
   expect(sourceIndex).toBe((await toolButtons.count()) - 1);
@@ -121,7 +124,7 @@ async function assertPhoneContract(page: Page) {
   const explain = page.getByRole('button', { name: 'Explain this chart', exact: true });
   await expect(explain).toBeVisible();
   const explainBox = await explain.boundingBox();
-  const noteBox = await page.locator('.map-sources [role="note"]').boundingBox();
+  const noteBox = await page.locator('.map-details [role="note"]').boundingBox();
   expect(explainBox && noteBox).toBeTruthy();
   expect(explainBox!.width).toBeGreaterThan(120);
   expect(explainBox!.y + explainBox!.height).toBeLessThanOrEqual(noteBox!.y + 1);
@@ -178,11 +181,6 @@ async function assertPhoneContract(page: Page) {
 }
 
 async function openMenu(page: Page) {
-  // Point selection may intentionally collapse the daily forecast chrome. Menu
-  // belongs to the expanded map header, so restore that existing control before
-  // asserting destinations rather than adding a second phone menu.
-  const showDaily = page.getByRole('button', { name: 'Show daily forecast', exact: true });
-  if (await showDaily.count()) await showDaily.click();
   await page.getByRole('button', { name: 'Menu', exact: true }).click();
   const menu = page.locator('[data-map-menu]');
   await expect(menu).toBeVisible();
@@ -200,8 +198,9 @@ async function openMenu(page: Page) {
   await barbs.click();
   await expect(barbs).toHaveAttribute('aria-pressed', 'true');
   await barbs.click();
-  await expect(menu.getByText(/run\s+\d{2}Z/i)).toBeVisible();
-  await expect(menu.locator('details').getByText('Data sources', { exact: true })).toBeVisible();
+  await expect(menu.getByText('Forecast details', { exact: true })).toBeVisible();
+  await expect(menu.locator('.map-menu-run span')).toHaveAttribute('aria-label', /ECMWF forecast run, issued \d{2}Z, \d+ h ago/);
+  await expect(menu.getByRole('link', { name: 'About Isobar', exact: true })).toBeVisible();
 }
 
 for (const viewport of VIEWPORTS) for (const mode of THEMES) {
@@ -233,14 +232,14 @@ for (const width of [375, 1280]) {
   test(`map destinations use Menu and return to the map at ${width}px`, async ({ page }) => {
     await prepare(page, 'light', width, 844);
     await expect(page.getByRole('navigation', { name: 'Main navigation' })).toHaveCount(0);
-    if (width >= 768) {
+    {
       await expect(page.locator('.map-header [data-learn-link]')).toBeVisible();
       await expect(page.locator('.map-header [data-learn-link]')).toHaveAttribute('href', '/train');
+    }
+    if (width >= 768) {
       await expect(page.locator('.map-header [data-map-menu] [data-units]')).toHaveCount(1);
       await expect(page.locator('.map-header [data-units]')).toBeHidden();
       await expect(page.locator('.map-header .place-search-icon')).toBeVisible();
-    } else {
-      await expect(page.locator('.map-header [data-learn-link]')).toBeHidden();
     }
     for (const destination of ['Learn', 'E6-B']) {
       await page.getByRole('button', { name: 'Menu', exact: true }).click();

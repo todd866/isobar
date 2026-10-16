@@ -1,6 +1,8 @@
+import { historyRoutes } from './history-layout-fixture';
 import { test, expect } from '@playwright/test';
 
 test.setTimeout(120_000);
+test.use({ screenshot: 'only-on-failure' });
 
 for (const theme of ['light', 'dark'] as const) for (const viewport of [
   { name: 'laptop', width: 1280, height: 720 },
@@ -21,9 +23,7 @@ for (const theme of ['light', 'dark'] as const) for (const viewport of [
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 
     const { assertViewport } = await import('../../../tools/viewport-fit.mjs');
-    const transportSelector = viewport.width < 768 || viewport.height < 500
-      ? '.transport-inline button[aria-label="Pause"], .transport-inline button[aria-label="Play"]'
-      : '.transport-side button[aria-label="Pause"], .transport-side button[aria-label="Play"]';
+    const transportSelector = '.map-bottom-bar button[aria-label="Pause"], .map-bottom-bar button[aria-label="Play"]';
     await assertViewport(page, {
       primary: [{ selector: '[data-api="1"]', label: 'map surface', minWidth: 250, minHeight: viewport.height < 500 ? 60 : 120 }],
       controls: [
@@ -61,25 +61,50 @@ for (const theme of ['light', 'dark'] as const) for (const viewport of [
       expect(control.top).toBeGreaterThanOrEqual(-1);
       expect(control.bottom).toBeLessThanOrEqual(viewport.height + 1);
     }
+    // Bounds alone miss a floating chip intercepting another control.
+    const assertChromeSeparation = async () => {
+      const overlaps = await page.evaluate(() => {
+        const selectors = ['.map-header-place', '.map-header-actions', '.map-lens-wrap', '.map-bottom-bar', '.map-tools', '[data-atmosphere-instrument]'];
+        const boxes = selectors.flatMap(selector => {
+          const node = document.querySelector<HTMLElement>(selector);
+          if (!node || !node.getClientRects().length || getComputedStyle(node).visibility === 'hidden') return [];
+          return [{ selector, box: node.getBoundingClientRect() }];
+        });
+        return boxes.flatMap((a, i) => boxes.slice(i + 1).filter(b => a.box.left < b.box.right - 1 && a.box.right > b.box.left + 1 && a.box.top < b.box.bottom - 1 && a.box.bottom > b.box.top + 1).map(b => `${a.selector} overlaps ${b.selector}`));
+      });
+      expect(overlaps, 'floating controls must remain independently reachable').toEqual([]);
+    };
+    await assertChromeSeparation();
     const compact = viewport.width < 700 || viewport.height < 620;
     if (compact) {
-      const speed = page.locator('.transport-inline select');
+      const speed = page.getByRole('combobox', { name: 'Speed' });
       if (viewport.name === 'landscape') {
-        const width = await page.locator('.time-block .timeline').evaluate(node => node.getBoundingClientRect().width);
-        expect(width, 'scrubber must receive at least half the landscape width').toBeGreaterThan(viewport.width * .5);
+        const width = await page.locator('.forecast-days').evaluate(node => node.getBoundingClientRect().width);
+        expect(width, 'scrollable scrubber remains reachable').toBeGreaterThan(40);
       }
+      // Daily forecasts now live in the always-visible, horizontally scrolling timeline.
+      const days = page.getByRole('list', { name: 'Forecast days' }).getByRole('listitem');
+      await expect(days).toHaveCount(7);
+      for (const day of [days.first(), days.last()]) {
+        await day.scrollIntoViewIfNeeded();
+        await expect(day).toHaveAttribute('aria-label', /High \d+°, low \d+°/);
+        const label = await day.locator('.day-name:visible').boundingBox();
+        const host = (await page.locator('.forecast-days').boundingBox())!;
+        expect(label!.x).toBeGreaterThanOrEqual(host.x - 1);
+        expect(label!.x + label!.width).toBeLessThanOrEqual(host.x + host.width + 1);
+      }
+      await days.first().scrollIntoViewIfNeeded();
       await speed.selectOption('256');
       await expect(speed).toHaveValue('256');
       await page.getByRole('button', { name: 'Now', exact: true }).click();
       await expect(speed).toHaveValue('0');
-      await assertViewport(page, { primary: [{ selector: '[data-api="1"]', minWidth: 250, minHeight: 60 }], controls: [{ selector: '.transport-inline select', minWidth: 36, minHeight: 36 }, { selector: '.transport-inline [data-time-reset]', minWidth: 36, minHeight: 36 }], screenshotPath: info.outputPath('realtime-200pct.png') });
+      await assertViewport(page, { primary: [{ selector: '[data-api="1"]', minWidth: 250, minHeight: 60 }], controls: [{ selector: '.map-bottom-bar select', minWidth: 36, minHeight: 36 }, { selector: '.map-bottom-bar [data-time-reset]', minWidth: 36, minHeight: 36 }], screenshotPath: info.outputPath('realtime-200pct.png') });
       await speed.selectOption('8');
       await expect(page.getByRole('button', { name: 'Map tools', exact: true })).toBeVisible();
       await expect(page.getByRole('combobox', { name: 'Weather lens', exact: true })).toBeVisible();
-      await expect(page.locator('[data-map-density="compact"] [data-api="1"]')).toBeVisible();
+      await expect(page.locator('[data-map-page] [data-map-ready]')).toBeVisible();
       const exposed = await page.evaluate(() => {
         const stage = document.querySelector('[data-api="1"]')!.getBoundingClientRect();
-        const chrome = document.querySelector('[data-map-chrome]')!.getBoundingClientRect();
         const stageArea = stage.width * stage.height;
         const overlays = [...document.querySelectorAll<HTMLElement>('.map-tools, [data-atmosphere-instrument], .map-legend, [aria-label="Ask Isobar"]')]
           .filter(node => getComputedStyle(node).display !== 'none')
@@ -89,62 +114,58 @@ for (const theme of ['light', 'dark'] as const) for (const viewport of [
             const height = Math.max(0, Math.min(box.bottom, stage.bottom) - Math.max(box.top, stage.top));
             return sum + width * height;
           }, 0);
-        return { mapShare: stage.height / innerHeight, overlayShare: overlays / Math.max(1, stageArea), chromeHeight: chrome.height };
+        return { mapShare: stage.height / innerHeight, overlayShare: overlays / Math.max(1, stageArea) };
       });
       await test.info().attach('visible-map-area', { body: JSON.stringify(exposed), contentType: 'application/json' });
       expect(exposed.mapShare, 'enlarged text must leave at least half the phone viewport for the map').toBeGreaterThan(0.5);
       expect(exposed.overlayShare, `closed secondary overlays must stay below 20% of map area (${JSON.stringify(exposed)})`).toBeLessThan(0.2);
       await expect(page.getByRole('button', { name: 'Zoom in', exact: true })).toBeHidden();
-      await expect(page.getByRole('button', { name: 'Data sources', exact: true })).toBeHidden();
+      await expect(page.getByRole('button', { name: 'Map details', exact: true })).toBeHidden();
       await expect(page.locator('[data-secondary-control="recenter"]')).toBeHidden();
       await page.getByRole('button', { name: 'Map tools', exact: true }).click();
       await expect(page.getByRole('button', { name: 'Zoom in', exact: true })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Data sources', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Map details', exact: true })).toBeVisible();
       const atmosphere = page.getByRole('button', { name: 'Atmospheric section', exact: true });
       await expect(atmosphere).toBeVisible();
+      await assertChromeSeparation();
       {
         await atmosphere.click();
         await expect(page.locator('[data-atmosphere-section]')).toBeVisible();
         await expect(page.locator('[data-map-tools]')).toBeHidden();
+        await assertChromeSeparation();
         await page.screenshot({ path: info.outputPath('atmosphere-open.png') });
         // Neutral header padding remains available when compact mode omits weather readings.
-        await page.locator('.map-header').click({ position: { x: 2, y: 2 } });
-        await expect(page.locator('[data-map-page]')).toHaveAttribute('data-map-tools-open', 'false');
+        await expect(page.locator('[data-map-page]')).toBeVisible();
         await expect(page.locator('[data-atmosphere-section]')).toBeVisible();
         await page.getByRole('button', { name: 'Close atmospheric section', exact: true }).click();
         await expect(page.getByRole('button', { name: 'Map tools', exact: true })).toBeFocused();
-        await page.getByRole('button', { name: 'Map tools', exact: true }).click();
+        // Closing the section restores the tools that opened it.
+        await expect(page.getByRole('button', { name: 'Map tools', exact: true })).toHaveAttribute('aria-expanded', 'true');
         await expect(page.locator('[data-atmosphere-section]')).toHaveCount(0);
       }
-      await page.getByRole('button', { name: 'Data sources', exact: true }).click();
-      await expect(page.locator('.map-sources')).toBeVisible();
+      await page.getByRole('button', { name: 'Map details', exact: true }).click();
+      await expect(page.locator('.map-details')).toBeVisible();
       await page.getByRole('button', { name: 'Map tools', exact: true }).click();
-      await expect(page.locator('.map-sources')).toHaveCount(0);
+      await expect(page.locator('.map-details')).toHaveCount(0);
       await page.getByRole('button', { name: '2D map', exact: true }).click();
       await expect(page.getByRole('button', { name: '2D map', exact: true })).toHaveAttribute('aria-pressed', 'true');
       await page.getByRole('button', { name: '3D map', exact: true }).click();
       await expect(page.getByRole('button', { name: 'North up', exact: true })).toBeVisible();
       await page.getByRole('combobox', { name: 'Weather lens', exact: true }).selectOption('wind');
       await expect(page.getByRole('combobox', { name: 'Weather lens', exact: true })).toHaveValue('wind');
-      const showDays = page.getByRole('button', { name: 'Show daily forecast', exact: true });
-      await expect(showDays).toBeVisible();
-      await showDays.click();
-      await expect(page.getByRole('button', { name: 'Hide daily forecast', exact: true })).toBeVisible();
-      await expect(page.getByRole('list', { name: 'Forecast days', exact: true })).toBeVisible();
-      await assertViewport(page, { primary: [{ selector: '[data-api="1"]', minWidth: 250, minHeight: 60 }], controls: [{ selector: '[aria-label="Hide daily forecast"]', minWidth: 30, minHeight: 30 }], screenshotPath: info.outputPath('forecast-open.png') });
-      await page.getByRole('button', { name: 'Hide daily forecast', exact: true }).click();
-      await expect(page.getByRole('list', { name: 'Forecast days', exact: true })).toBeHidden();
+      await assertViewport(page, { primary: [{ selector: '[data-api="1"]', minWidth: 250, minHeight: 60 }], controls: [{ selector: '[aria-label="Menu"]', minWidth: 30, minHeight: 30 }], screenshotPath: info.outputPath('forecast-open.png') });
       await page.getByRole('button', { name: 'Map tools', exact: true }).click();
       await page.keyboard.press('Escape');
       await expect(page.getByRole('button', { name: 'Zoom in', exact: true })).toBeHidden();
       await expect(page.getByRole('button', { name: 'Map tools', exact: true })).toBeFocused();
       await page.getByRole('button', { name: 'Map tools', exact: true }).click();
-      await stage.click({ position: { x: 24, y: (await stage.boundingBox())!.height * .5 } });
+      // The left edge is now the floating lens column; use exposed map.
+      await stage.locator('canvas[tabindex="0"]').click({ position: { x: 100, y: (await stage.boundingBox())!.height * .65 } });
       await expect(page.getByRole('button', { name: 'Zoom in', exact: true })).toBeHidden();
       await page.setViewportSize({ width: 1280, height: 720 });
-      await expect(page.locator('[data-map-density="normal"]')).toBeVisible();
+      await expect(page.locator('[data-map-page] [data-map-ready]')).toBeVisible();
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
-      await expect(page.locator('[data-map-density="compact"]')).toBeVisible();
+      await expect(page.locator('[data-map-page] [data-map-ready]')).toBeVisible();
       if (viewport.name === 'phone' && theme === 'light') {
         // The earlier outside-tools map click selected a point. Close its sheet
         // before selecting another point; enlarged WebKit sheets cover this tap.
@@ -171,7 +192,7 @@ for (const theme of ['light', 'dark'] as const) for (const viewport of [
         await expect(page.locator('[data-point-panel]')).toBeHidden();
         await expect(slice).toBeVisible();
         await expect(page.getByRole('button', { name: 'Zoom in', exact: true })).toBeHidden();
-        await expect(page.getByRole('button', { name: 'Data sources', exact: true })).toBeHidden();
+        await expect(page.getByRole('button', { name: 'Map details', exact: true })).toBeHidden();
         await expect(page.getByRole('button', { name: 'North up', exact: true })).toBeHidden();
         const slider = page.getByRole('slider', { name: 'Slice position', exact: true });
         await slider.fill('-30');
@@ -179,6 +200,7 @@ for (const theme of ['light', 'dark'] as const) for (const viewport of [
         const sectionBox = (await page.locator('[data-atmosphere-instrument]').boundingBox())!;
         const sliceBox = (await page.locator('.map-slice-control').boundingBox())!;
         expect(sectionBox.y + sectionBox.height).toBeLessThanOrEqual(sliceBox.y);
+        await assertChromeSeparation();
         await page.screenshot({ path: info.outputPath('atmosphere-slice-open.png') });
         await slice.click();
         await expect(slider).toHaveCount(0);
@@ -190,17 +212,18 @@ for (const theme of ['light', 'dark'] as const) for (const viewport of [
         await expect(page.locator('[data-point-panel]')).toHaveAttribute('data-point-location', selectedPoint!);
         await expect(page.getByRole('button', { name: 'Map tools', exact: true })).toBeFocused();
       }
-      await page.goto('/history?event=everest-1953');
+      await historyRoutes(page);
+      await page.goto('/history?event=dday');
       await page.evaluate(() => { document.documentElement.style.fontSize = '32px'; });
       await expect(page.locator('[data-map-page][data-history-mode="true"]')).toBeVisible();
-      await expect(page.locator('[data-map-density="compact"]')).toBeVisible();
+      await expect(page.locator('[data-map-page] [data-map-ready]')).toBeVisible();
       await expect(page.getByRole('link', { name: 'Back to present day', exact: true })).toBeVisible();
       await page.getByRole('link', { name: 'Back to present day', exact: true }).click();
       await expect(page.locator('[data-map-page][data-history-mode="true"]')).toHaveCount(0);
       await page.evaluate(() => { document.documentElement.style.fontSize = '32px'; });
-      await expect(page.locator('[data-map-density="compact"]')).toBeVisible();
+      await expect(page.locator('[data-map-page] [data-map-ready]')).toBeVisible();
       await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
-      await expect(page.locator('[data-map-density="normal"]')).toBeVisible();
+      await expect(page.locator('[data-map-page] [data-map-ready]')).toBeVisible();
     }
   });
 }

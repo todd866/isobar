@@ -14,10 +14,7 @@ export function HistoricalSceneControls({scene,layers,onToggle}:{scene:Historica
       {scene.features.map(feature=><details key={feature.id}>
         <summary>{feature.title}</summary>
         <p>{feature.geometry_method} · Approx. {feature.precision_m<1000?`${Math.round(feature.precision_m)} m`:`${Math.round(feature.precision_m/1000)} km`} positional scale. {feature.note}</p>
-        {feature.source_refs.map(id=>{
-          const source=scene.provenance.sources.find(s=>s.id===id);
-          return source?<p key={id}><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a></p>:null;
-        })}
+
       </details>)}
     </details>
   </>;

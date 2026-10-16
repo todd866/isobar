@@ -120,7 +120,7 @@ async function open(page: Page, width: number, height: number, theme = 'light', 
 async function settledMap(page: Page) {
   // ResizeObserver and the forecast header animation must finish before saving
   // a view or converting a fractional canvas position to a screen tap.
-  await expect(page.locator('.map-chrome-body')).not.toHaveAttribute('data-anim', '1');
+  await expect(page.locator('.map-chrome-body')).toHaveCount(0);
   await page.evaluate(() => new Promise<void>((resolve) => {
     let previous = '', stable = 0;
     const check = () => {
@@ -269,7 +269,7 @@ test('a lens change keeps the map where the user panned it, with a pin open', as
   // Owner, 9 Oct: "when I change the map-type it moves the map location … jumped back to the last spot I'd dropped a pin".
   await open(page, 1280, 720); await fixedTime(page);
   await tapMap(page, .45, .60); await expectPointVisible(page);
-  await expect(page.locator('.map-chrome-body')).not.toHaveAttribute('data-anim', '1');
+  await expect(page.locator('.map-chrome-body')).toHaveCount(0);
   const box = (await canvas(page).boundingBox())!;
   await page.mouse.move(box.x + box.width * .5, box.y + box.height * .5);
   await page.mouse.down(); await page.mouse.move(box.x + box.width * .3, box.y + box.height * .4, { steps: 8 }); await page.mouse.up();

@@ -159,7 +159,6 @@ test('Fly traffic supports three tracked paths, forecast ghosting, and reset', a
   // No tooltip: a press names what it did (owner rule, AGENTS.md).
   await expect(traffic).not.toHaveAttribute('title', /./);
   // Fly keeps the forecast clock; press Now so live glyphs are on screen.
-  if (await page.getByRole('button', { name: 'Show daily forecast', exact: true }).isVisible()) await page.getByRole('button', { name: 'Show daily forecast', exact: true }).click();
   await page.getByRole('button', { name: 'Now', exact: true }).click();
   await framePerth(page);
   await expect.poll(async () => page.locator('canvas[data-traffic-layer]').evaluate((canvas) => {
@@ -174,7 +173,6 @@ test('Fly traffic supports three tracked paths, forecast ghosting, and reset', a
   expect(upstream).toEqual([]);
   // Entering Fly never moves the forecast clock (owner rule, J2); the user
   // presses Now to see live glyphs when playback has drifted ahead.
-  if (await page.getByRole('button', { name: 'Show daily forecast', exact: true }).isVisible()) await page.getByRole('button', { name: 'Show daily forecast', exact: true }).click();
   await page.getByRole('button', { name: 'Now', exact: true }).click();
   await expect.poll(async () => (await glyphAt(page, 'QFA642'))?.alpha ?? 0).toBeGreaterThan(20);
   const glyph = await glyphAt(page, 'QFA642');
@@ -232,7 +230,6 @@ test('Fly traffic supports three tracked paths, forecast ghosting, and reset', a
   expect(pastCards).toHaveLength(3);
   expect(pastCards.every((text) => text.includes('PAST'))).toBe(true);
   await expect(page.locator('[data-traffic-replay]')).toContainText('No recorded traffic');
-  if (await page.getByRole('button', { name: 'Show daily forecast', exact: true }).isVisible()) await page.getByRole('button', { name: 'Show daily forecast', exact: true }).click();
   await page.getByRole('button', { name: 'Now', exact: true }).click();
   await expect(page.locator('[data-map-time-state="now"]')).toContainText('NOW');
 
@@ -241,10 +238,10 @@ test('Fly traffic supports three tracked paths, forecast ghosting, and reset', a
   await page.screenshot({ path: path.join(OUT, 'desktop-light.png') });
   await checkViewport(page, path.join(OUT, 'viewport-desktop-light.png'));
   await page.locator('[data-map-ready]').screenshot({ path: path.join(OUT, 'map-light.png') });
-  await page.getByRole('button', { name: 'Data sources' }).click();
-  await expect(page.getByRole('note')).toContainText('ADSB.lol (ODbL)');
+  await page.getByRole('button', { name: 'Map details' }).click();
+  await expect(page.locator('.map-details')).not.toContainText('ODbL');
   await page.screenshot({ path: path.join(OUT, 'sources-light.png') });
-  await page.getByRole('button', { name: 'Data sources' }).click();
+  await page.getByRole('button', { name: 'Map details' }).click();
 
   await chooseTheme(page, 'dark');
   await page.waitForTimeout(250);
@@ -339,7 +336,6 @@ test('phone traffic stays inside the 60 fps budget at CPU ÷4', async ({ page })
   // Phone keeps Traffic in the map tools column, not the lens row.
   await expect(page.getByRole('button', { name: 'Traffic', exact: true }).first()).toHaveAttribute('aria-pressed', 'true');
   // Fly keeps the forecast clock; press Now so live glyphs are on screen.
-  if (await page.getByRole('button', { name: 'Show daily forecast', exact: true }).isVisible()) await page.getByRole('button', { name: 'Show daily forecast', exact: true }).click();
   await page.getByRole('button', { name: 'Now', exact: true }).click();
   await expect.poll(() => chart.hits.length).toBeGreaterThan(0);
   await expect.poll(async () => Number(await page.locator('canvas[data-traffic-layer]').getAttribute('data-traffic-count'))).toBeGreaterThan(0);
@@ -389,7 +385,6 @@ test('Now follows real time and an observed hour can replay at an accelerated ra
   await install(page, 1, 90);
   await openMap(page, 1280, 720, 'light');
   await page.getByRole('radio', { name: 'Fly' }).click();
-  if (await page.getByRole('button', { name: 'Show daily forecast', exact: true }).isVisible()) await page.getByRole('button', { name: 'Show daily forecast', exact: true }).click();
   await page.getByRole('button', { name: 'Now', exact: true }).click();
   await framePerth(page);
   const speed = page.locator('#playback-speed:visible');
@@ -432,7 +427,6 @@ test('holding live traffic freezes the displayed observation until Now or rewind
   const fixture = await install(page, 1, 90);
   await openMap(page, 1280, 720, 'light');
   await page.getByRole('radio', { name: 'Fly' }).click();
-  if (await page.getByRole('button', { name: 'Show daily forecast', exact: true }).isVisible()) await page.getByRole('button', { name: 'Show daily forecast', exact: true }).click();
   await page.getByRole('button', { name: 'Now', exact: true }).click();
   await framePerth(page);
   const layer = page.locator('canvas[data-traffic-layer]');

@@ -161,7 +161,7 @@ static NSColor *AFTrafficColour(NSInteger index) {
 - (BOOL)acceptsFirstResponder { return YES; }
 - (BOOL)isAccessibilityElement { return YES; }
 - (NSString *)accessibilityRole { return NSAccessibilityImageRole; }
-- (NSString *)accessibilityLabel { return @"Atmosphere: model weather and standard reference"; }
+- (NSString *)accessibilityLabel { return @"Atmosphere: ECMWF model weather and standard reference"; }
 - (NSString *)accessibilityHelp { return @"Hover the time strip to change time. Click a height to inspect it. Aircraft mark typical flying levels. Arrow keys change time and height. Escape returns to now."; }
 - (NSString *)accessibilityValue { return [self selectionSummary]; }
 - (NSArray<NSString *> *)selectedTrafficHexes { return self.trafficTracks.selectedHexes; }
@@ -406,7 +406,6 @@ static const double AFSectionTopFt=45000, AFSectionH0=5000;
     if (!section) {
         AFText(@"ft AMSL",NSMakeRect(6,36,60,16),10,NSColor.secondaryLabelColor,NO);
         AFText(@"Cloud · RH · W–E",NSMakeRect(NSMinX(p)+8,35,160,16),11,NSColor.secondaryLabelColor,NO);
-        AFText(@"ECMWF",NSMakeRect(self.cloudRight-48,35,48,16),10,NSColor.secondaryLabelColor,NO);
     }
     AFText(@"Wind → · kt",NSMakeRect(self.skyRight-127,35,82,16),10,NSColor.secondaryLabelColor,NO);
     AFText(@"Vertical · m/s",NSMakeRect(self.skyRight-58,35,65,16),10,NSColor.secondaryLabelColor,NO);

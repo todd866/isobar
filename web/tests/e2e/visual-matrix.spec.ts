@@ -239,8 +239,6 @@ test('visual matrix', async ({ page }) => {
       const themeName = state.theme === 'dark' ? 'Dark' : 'Light';
       const themeButton = page.getByRole('button', { name: themeName, exact: true });
       if (!(await themeButton.isVisible().catch(() => false))) {
-        const expand = page.getByRole('button', { name: 'Show daily forecast', exact: true });
-        if (await expand.isVisible()) await expand.click();
         await page.getByRole('button', { name: 'Menu', exact: true }).click();
         await expect(page.locator('[data-map-menu]')).toBeVisible();
       }

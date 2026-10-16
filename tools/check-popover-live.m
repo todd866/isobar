@@ -682,6 +682,58 @@ static void RejectEllipsis(NSView *view, NSString *name) {
     for (NSView *child in view.subviews) RejectEllipsis(child, name);
 }
 
+static void CheckMapFirstPopover(NSView *root, NSString *name) {
+    NSView *map = Find(root, @"popover.gpu") ?: Find(root, @"popover.chart");
+    NSRect content = root.bounds;
+    NSRect mapRect = map ? [map convertRect:map.bounds toView:root] : NSZeroRect;
+    NSRect hit = NSIntersectionRect(content, mapRect);
+    CGFloat fill = NSWidth(hit) * NSHeight(hit) / MAX(1, NSWidth(content) * NSHeight(content));
+    Log("%s map-first fill=%.3f map=%s content=%s\n", name.UTF8String, fill,
+        NSStringFromRect(mapRect).UTF8String, NSStringFromRect(content).UTF8String);
+    if (!map || fill < .99) Fail("%s map does not cover at least 99%% of popover", name.UTF8String);
+    NSArray *ids = @[@"mapfirst.place", @"popover.lensRow", @"mapfirst.bottom", @"mapfirst.actions"];
+    NSMutableArray *chips = [NSMutableArray array];
+    for (NSString *identifier in ids) {
+        NSView *chip = Find(root, identifier);
+        if (!chip) { Fail("%s missing chip %s", name.UTF8String, identifier.UTF8String); continue; }
+        [chips addObject:chip];
+        RejectEllipsis(chip, name);
+    }
+    for (NSUInteger i = 0; i < chips.count; i++) for (NSUInteger j = i + 1; j < chips.count; j++) {
+        NSView *first = chips[i], *second = chips[j];
+        NSRect a = [first convertRect:first.bounds toView:root];
+        NSRect b = [second convertRect:second.bounds toView:root];
+        if (NSIntersectsRect(a, b)) Fail("%s chips overlap: %s / %s", name.UTF8String,
+            first.accessibilityIdentifier.UTF8String, second.accessibilityIdentifier.UTF8String);
+    }
+    NSArray *mapControls = @[@"gpumap.flat", @"gpumap.sphere", @"gpumap.recenter", @"gpumap.north"];
+    for (NSView *chip in chips) for (NSString *identifier in mapControls) {
+        NSView *control = Find(root, identifier);
+        if (!control || control.hiddenOrHasHiddenAncestor) continue;
+        NSRect a = [chip convertRect:chip.bounds toView:root];
+        NSRect b = [control convertRect:control.bounds toView:root];
+        if (NSIntersectsRect(a, b)) Fail("%s chip %s overlaps map control %s", name.UTF8String,
+            chip.accessibilityIdentifier.UTF8String, identifier.UTF8String);
+    }
+    NSUInteger days = 0;
+    for (NSUInteger i = 0; i < 7; i++) {
+        NSView *day = Find(root, [NSString stringWithFormat:@"hub.day.%lu", (unsigned long)i]);
+        if (!day || day.hiddenOrHasHiddenAncestor || NSWidth(day.bounds) < 1) Fail("%s missing visible day %lu", name.UTF8String, (unsigned long)i);
+        else days++;
+    }
+    if (days != 7) Fail("%s day strip does not expose all seven days", name.UTF8String);
+    NSView *lensColumn = Find(root, @"popover.lensRow");
+    if (!lensColumn) Fail("%s missing floating lens column", name.UTF8String);
+    for (NSUInteger i = 0; i < 8; i++) {
+        NSString *identifier = [NSString stringWithFormat:@"popover.lens.%lu", (unsigned long)i];
+        NSView *button = Find(root, identifier);
+        if (!button || button.hiddenOrHasHiddenAncestor || NSWidth(button.bounds) < 1)
+            Fail("%s missing visible lens button %s", name.UTF8String, identifier.UTF8String);
+    }
+    if (Find(root, @"hub.playheadDot") || Find(root, @"popover.range") || Find(root, @"hub.range"))
+        Fail("%s obsolete range/dot element remains", name.UTF8String);
+}
+
 static void AcceptPopover(LivePopoverController *controller, NSString *dir, NSString *name, BOOL deep, BOOL newMap, BOOL dark) {
     NSView *root = controller.popover.contentViewController.view;
     if (!controller.popover.shown || !root.window) {
@@ -698,6 +750,7 @@ static void AcceptPopover(LivePopoverController *controller, NSString *dir, NSSt
         Fail("%s window capture failed", name.UTF8String);
         return;
     }
+    CheckMapFirstPopover(root, name);
     NSView *inspector = Find(root, @"forecast.inspector");
     CGFloat split = 1;
     if (inspector)
@@ -720,7 +773,7 @@ static void AcceptPopover(LivePopoverController *controller, NSString *dir, NSSt
     NSArray *controls = @[@"hub.place", @"popover.obs", @"hub.days", @"popover.timeline", @"popover.play",
         @"popover.speed", @"popover.now", @"popover.lensRow", @"popover.lens"];
     for (NSString *identifier in controls)
-        ExpectComposited(name, identifier, root, live, [identifier isEqual:@"popover.lens"]);
+        if (Find(root, identifier)) ExpectComposited(name, identifier, root, live, [identifier isEqual:@"popover.lens"]);
     NSString *mapId = newMap ? @"popover.gpu" : @"popover.chart";
     NSView *map = Find(root, mapId);
     if (!map || map.isHiddenOrHasHiddenAncestor) {
@@ -767,33 +820,28 @@ static void SetNewMap(LivePopoverController *controller, BOOL on) {
 }
 
 static void ClickLens(LivePopoverController *controller, NSInteger segment) {
-    NSSegmentedControl *row = (NSSegmentedControl *)Find(controller.popover.contentViewController.view, @"popover.lens");
-    if (![row isKindOfClass:NSSegmentedControl.class] || row.segmentCount != 8) {
-        Fail("missing eight-segment lens control"); return;
-    }
-    row.selectedSegment = segment;
-    [NSApp sendAction:row.action to:row.target from:row];
+    NSString *identifier = [NSString stringWithFormat:@"popover.lens.%ld", (long)segment];
+    NSButton *button = (NSButton *)Find(controller.popover.contentViewController.view, identifier);
+    if (![button isKindOfClass:NSButton.class]) { Fail("missing lens button %s", identifier.UTF8String); return; }
+    [button performClick:nil];
     ParkAll(); Pump(.4);
 }
 
 // Choose the coupled lens through the same AppKit action as a real click.
 static void ChooseLens(LivePopoverController *controller, NSInteger segment) {
-    NSSegmentedControl *row = (NSSegmentedControl *)Find(controller.popover.contentViewController.view, @"popover.lens");
-    if (![row isKindOfClass:NSSegmentedControl.class] || row.segmentCount != 8) {
-        Fail("missing eight-segment lens control"); return;
-    }
-    if (row.selectedSegment != segment) {
-        row.selectedSegment = segment;
-        [NSApp sendAction:row.action to:row.target from:row];
-    }
+    NSString *identifier = [NSString stringWithFormat:@"popover.lens.%ld", (long)segment];
+    NSButton *button = (NSButton *)Find(controller.popover.contentViewController.view, identifier);
+    if (![button isKindOfClass:NSButton.class]) { Fail("missing lens button %s", identifier.UTF8String); return; }
+    if (button.state != NSControlStateValueOn) [button performClick:nil];
     ParkAll(); Pump(0.45);
     NSInteger fields[] = {0, 1, 2, 3, 2, 0, 0};
     NSInteger panels[] = {-1, 2, -1, 4, 0, 3, 1};
     if ([controller mapField] != fields[segment] || [[controller valueForKey:@"forecastMode"] integerValue] != panels[segment])
         Fail("lens %ld field/panel mismatch", (long)segment);
-    row = (NSSegmentedControl *)Find(controller.popover.contentViewController.view, @"popover.lens");
-    if (row.selectedSegment != segment) Fail("lens selection mismatch");
-    if (NSWidth(row.frame) + .5 < row.intrinsicContentSize.width) Fail("lens labels clipped");
+    button = (NSButton *)Find(controller.popover.contentViewController.view, identifier);
+    if (button.state != NSControlStateValueOn) Fail("lens selection mismatch");
+    if (button.title.length && NSWidth(button.frame) + .5 < [button.title sizeWithAttributes:@{NSFontAttributeName:button.font}].width)
+        Fail("lens label clipped");
     if (Find(controller.popover.contentViewController.view, @"popover.field") ||
         Find(controller.popover.contentViewController.view, @"popover.forecastMode")) Fail("duplicate field/lens row");
 }
@@ -804,8 +852,8 @@ static void CaptureLenses(LivePopoverController *controller, NSString *dir, NSSt
         ChooseLens(controller, segment);
         AcceptPopover(controller, dir, [prefix stringByAppendingString:names[segment]], segment == 6, newMap, dark);
         ClickLens(controller, segment);
-        NSSegmentedControl *row = (NSSegmentedControl *)Find(controller.popover.contentViewController.view, @"popover.lens");
-        if ([controller mapField] != 0 || [[controller valueForKey:@"forecastMode"] integerValue] != -1 || row.selectedSegment != 0)
+        NSButton *row = (NSButton *)Find(controller.popover.contentViewController.view, @"popover.lens.0");
+        if ([controller mapField] != 0 || [[controller valueForKey:@"forecastMode"] integerValue] != -1 || row.state != NSControlStateValueOn)
             Fail("reselecting lens %ld did not return to Pressure", (long)segment);
     }
 }

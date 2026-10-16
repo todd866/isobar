@@ -1,21 +1,24 @@
 'use client';
 
+import { forecastFreshness } from '@/lib/forecast-freshness';
+
 /**
- * The map page's instrument chrome, after the macOS popover: one header row,
- * the top deck (transport left, day tiles with the timeline under them right)
- * and the lens row. The Fly panel is FlyPanel.tsx.
+ * Floating place/actions, lens column and a single day scrubber/transport bar.
+ * The Fly panel is FlyPanel.tsx.
  */
 
 import Link from 'next/link';
+import { createPortal } from 'react-dom';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { FieldId } from '@/lib/field-color';
 import { TRAFFIC_GLYPH_PATH } from '@/lib/traffic';
 import { readingTitle, type ForecastIdentity } from '@/lib/point/provenance';
-import { compass, rainLabel, type DaySummary, type NowReading, type SkyIcon } from '@/lib/points';
-import { uvFigure, type UvCategory } from '@/lib/point/uv';
+import { compass, type DaySummary, type NowReading, type SkyIcon } from '@/lib/points';
+import { type UvCategory } from '@/lib/point/uv';
 import { SPEEDS, isSpeed, speedLabel, type Speed } from '@/lib/playback';
 import { clockParts, clockZone, zuluLabel } from '@/lib/time-label';
-import { formatRainAmount, formatRainMm, formatTempC } from '@/lib/units';
+import { formatTempC } from '@/lib/units';
+import { dayRainLabel } from '@/lib/day-label';
 import { MapMenu } from './MapMenu';
 import { useTimes } from './TimesControl';
 import { useUnits } from './UnitsControl';
@@ -91,6 +94,8 @@ export function ClockFace({
   weekday = true,
   timeState,
   interactive = false,
+  compact = false,
+  placeLocal = false,
 }: {
   ms: number;
   zone: string;
@@ -98,12 +103,14 @@ export function ClockFace({
   weekday?: boolean;
   timeState?: { live: boolean; label: string } | null;
   interactive?: boolean;
+  compact?: boolean;
+  placeLocal?: boolean;
 }) {
   const { mode, setMode } = useTimes();
   const note = usePressNote();
-  const shown = clockZone(mode, zone);
+  const shown = placeLocal ? zone : clockZone(mode, zone);
   const parts = clockParts(ms, shown);
-  const zuluText = zulu && mode !== 'utc' ? zuluLabel(ms) : null;
+  const zuluText = zulu && (placeLocal || mode !== 'utc') ? zuluLabel(ms) : null;
   const cycle = () => {
     const next = mode === 'place' ? 'utc' : mode === 'utc' ? 'device' : 'place';
     setMode(next);
@@ -116,31 +123,16 @@ export function ClockFace({
       data-clock-zone={shown}
       onClick={interactive ? cycle : undefined}
     >
+      {compact ? <span className="map-clock-compact">{parts.time}</span> : <>
       {timeState ? <span data-map-time-state={timeState.live ? 'now' : 'forecast'} className="map-time-state">{timeState.label}</span> : null}
       <span data-clock-local>
         {weekday ? <span className="map-clock-weekday">{parts.weekday} </span> : null}
         {parts.time} {parts.abbrev}
       </span>
       {zuluText ? <span data-clock-zulu className="map-clock-zulu">{zuluText}</span> : null}
+      </>}
       {interactive ? <PressNote text={note.note} /> : null}
     </span>
-  );
-}
-
-export function ChromeToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
-  return (
-    <button
-      type="button"
-      data-chrome-toggle
-      aria-expanded={!collapsed}
-      aria-label={collapsed ? 'Show daily forecast' : 'Hide daily forecast'}
-      onClick={onToggle}
-      className="map-chrome-toggle"
-    >
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" d={collapsed ? 'M6 9.5 12 15.5l6-6' : 'M6 14.5 12 8.5l6 6'} />
-      </svg>
-    </button>
   );
 }
 
@@ -180,15 +172,14 @@ export function MapHeader({
   placeName,
   reading,
   forecast,
-  validMs,
-  zone,
   runMs,
   nowMs,
+  zone,
   phoneWind,
+  uv,
   phone,
   onMenuOpen,
   onMenuChange,
-  uv,
   graticule,
   onGraticule,
 }: {
@@ -200,11 +191,9 @@ export function MapHeader({
   reading: NowReading | null;
   /** Open-Meteo identity when the reading is not the collector point. */
   forecast?: (ForecastIdentity & { valid: string | null }) | null;
-  /** Playhead instant. The face is this place's zone, plus Zulu. */
-  validMs: number | null;
-  zone: string;
   runMs: number;
   nowMs: number;
+  zone: string;
   phoneWind?: ReactNode;
   phone: boolean;
   onMenuOpen: () => void;
@@ -217,7 +206,8 @@ export function MapHeader({
   const { units } = useUnits();
   const ageH = Math.max(0, Math.floor((nowMs - runMs) / 3_600_000));
   const runHour = new Date(runMs).getUTCHours();
-  const stale = ageH > 18;
+  const freshness = historical ? null : forecastFreshness(runMs, nowMs, zone);
+  const stale = freshness !== null;
   const runText = `${String(runHour).padStart(2, '0')}Z`;
   const runDetail = `ECMWF forecast run, issued ${runText}, ${ageH} h ago`;
   const wind = reading?.windKt != null && reading.windFrom != null
@@ -226,6 +216,7 @@ export function MapHeader({
   const forecastTitle = forecast ? readingTitle(forecast, forecast.valid) : 'Model 2 m temperature';
   return (
     <header className="map-header relative z-20 flex h-12 shrink-0 items-center gap-2 px-3 md:gap-3 md:px-4">
+      <div className="map-header-place">
       {leading}
       {place}
       {!historical ? <span
@@ -239,28 +230,27 @@ export function MapHeader({
         {uv ? <UvFigure index={uv.index} category={uv.category} protection={uv.protection} /> : null}
         <WindArrow from={reading?.windFrom ?? null} className="header-wind h-4 w-4" />
         <span data-wind-words className="header-wind-words font-medium">{phone && reading?.windKt != null ? `${Math.round(reading.windKt)} kt` : wind}</span>
-        <span className="when-long max-md:hidden">
-          {wind ? <span aria-hidden="true"> · </span> : null}
-          {validMs != null ? <ClockFace ms={validMs} zone={zone} zulu interactive /> : '—'}
-        </span>
       </span> : null}
-      {runMs > 0 ? <span
+      {runMs > 0 && stale ? <span
         data-run-chip
         data-run-stale={stale ? 'true' : 'false'}
         title={runDetail}
         aria-label={runDetail}
         className={`run-chip inline-flex shrink-0 items-center gap-1 whitespace-nowrap font-medium tabular-nums ${stale ? 'text-[var(--md-warning)]' : 'text-[var(--md-on-surface-variant)]'}`}
-      >{stale ? <span aria-hidden="true">▲</span> : null}{runText} {ageH} h</span> : null}
+      ><span className="run-chip-value">{freshness}</span></span> : null}
+      </div>
+      <div className="map-header-actions">
       <Link href="/train" data-learn-link className="map-header-learn ml-auto hidden h-9 shrink-0 items-center gap-1.5 rounded-md px-2 text-[15px] font-semibold text-[var(--md-on-surface)] hover:bg-[var(--md-surface-container-high)] md:flex">
         <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 9.5 12 5l9.5 4.5L12 14z" /><path d="M6.5 11.5v4.2c1.4 1.4 3.3 2.1 5.5 2.1s4.1-.7 5.5-2.1v-4.2M21.5 9.5v5" /></svg>
         Learn
       </Link>
-      <MapMenu graticule={graticule} onGraticule={onGraticule} wind={phoneWind} phone={phone} onOpen={onMenuOpen} onOpenChange={onMenuChange} run={runMs > 0 ? <span title={runDetail} aria-label={runDetail} className={`inline-flex items-center gap-1 ${stale ? 'text-[var(--md-warning)]' : ''}`}>{stale ? <span className="stale-run" aria-hidden="true" /> : null}run {runText} · {ageH} h old</span> : 'Run unavailable'} />
+      <MapMenu graticule={graticule} onGraticule={onGraticule} wind={phoneWind} phone={phone} onOpen={onMenuOpen} onOpenChange={onMenuChange} run={<span title={runMs > 0 ? runDetail : undefined} aria-label={runMs > 0 ? runDetail : undefined}>Forecast details</span>} />
+      </div>
     </header>
   );
 }
 
-/* ---------- top deck ---------- */
+/* ---------- bottom transport ---------- */
 
 export function Transport({
   held = false,
@@ -270,7 +260,6 @@ export function Transport({
   onSpeed,
   onNow,
   nowLabel = 'Now',
-  compact = false,
 }: {
   held?: boolean;
   playing: boolean;
@@ -279,8 +268,6 @@ export function Transport({
   onSpeed: (speed: Speed) => void;
   onNow: () => void;
   nowLabel?: string;
-  /** Collapsed row: play and speed. Now stays on the expanded deck. */
-  compact?: boolean;
 }) {
   const playback = usePressNote();
   const speedNote = usePressNote();
@@ -323,7 +310,7 @@ export function Transport({
         <UpDown className="pointer-events-none absolute right-1.5 h-4 w-4" />
         <PressNote text={speedNote.note} />
       </label>
-      {compact ? null : <button type="button" onClick={onNow} data-time-reset className="flex h-9 items-center gap-1 rounded-md px-2 text-[15px] font-semibold text-[var(--md-primary)] hover:bg-[var(--md-surface-container-high)]">
+      {<button type="button" onClick={onNow} data-time-reset className="flex h-9 items-center gap-1 rounded-md px-2 text-[15px] font-semibold text-[var(--md-primary)] hover:bg-[var(--md-surface-container-high)]">
         <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true"><path fill="currentColor" d="M5 5h2.2v14H5zM12 12l7.5-6v12zM7.5 12 12 8.4v7.2z" /></svg>
         {nowLabel}
       </button>}
@@ -331,135 +318,33 @@ export function Transport({
   );
 }
 
-function tempColour(c: number): string {
-  // Cool slate-blue under 12°, warm terracotta over 26°, the popover's bar.
-  const t = Math.min(1, Math.max(0, (c - 12) / 14));
-  const a = [122, 163, 196];
-  const b = [214, 134, 96];
-  const mix = a.map((value, index) => Math.round(value + (b[index] - value) * t));
-  return `rgb(${mix.join(',')})`;
-}
-
-export function DayTiles({
-  days,
-  todayKey,
-  selectedKey,
-  nowTemp,
-  onDay,
-}: {
-  days: DaySummary[];
-  todayKey: string;
-  selectedKey: string | null;
-  nowTemp: number | null;
-  onDay: (day: DaySummary) => void;
-}) {
-  const { units } = useUnits();
-  const dayList = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const node = dayList.current;
-    const reading = node?.querySelector('.day-values > span');
-    if (!node || !reading) return;
-    const measure = () => { node.dataset.simple = String(parseFloat(getComputedStyle(reading).fontSize) > 20); };
-    const observer = new ResizeObserver(measure);
-    observer.observe(reading);
-    measure();
-    return () => observer.disconnect();
-  }, [days.length]);
-  const his = days.map((day) => day.hi).filter((value): value is number => value != null);
-  const los = days.map((day) => day.lo).filter((value): value is number => value != null);
-  const min = los.length ? Math.min(...los) : 0;
-  const max = his.length ? Math.max(...his) : 1;
-  const span = Math.max(1, max - min);
-  return (
-    <div ref={dayList} className="forecast-days grid min-w-0 gap-1" style={{ gridTemplateColumns: `repeat(${Math.max(1, days.length)}, minmax(max-content, 1fr))` }} role="list" aria-label="Forecast days">
-      {days.map((day) => {
-        const rain = rainLabel(day.rain) == null ? null : units.rain === 'in' ? formatRainMm(day.rain, units) : rainLabel(day.rain);
-        const rainUnit = units.rain === 'in' ? ' in' : ' mm';
-        const rainTitle = day.rain == null ? '' : units.rain === 'in' ? ` · ${formatRainAmount(day.rain, units)} in` : ` · ${day.rain.toFixed(1)} mm`;
-        const today = day.key === todayKey;
-        const selected = day.key === selectedKey;
-        const uv = uvFigure(day.uv ?? null);
-        const windTitle = day.windKt != null ? ` · ${day.windFrom != null ? `${compass(day.windFrom)} ` : ''}${Math.round(day.windKt)} kt` : '';
-        const uvTitle = uv ? ` · UV ${uv.index}` : '';
-        return (
-          <button
-            key={day.key}
-            type="button"
-            role="listitem"
-            aria-pressed={selected}
-            title={`${day.key}${day.event?` · ${day.event.detail}`:''}${rainTitle}${windTitle}${uvTitle}${day.protection ? ` · ${day.protection}` : ''}`}
-            onClick={() => onDay(day)}
-            className={`flex min-w-0 flex-col items-center rounded-lg px-0.5 pt-1 pb-1.5 transition-colors md:px-1 ${selected ? 'bg-[var(--md-primary-container)]/65 ring-1 ring-inset ring-[var(--md-primary)]/25' : 'hover:bg-[var(--md-surface-container-high)]'}`}
-          >
-            <span className={`text-[13px] ${selected ? 'font-semibold text-[var(--md-on-surface)]' : 'font-medium text-[var(--md-on-surface-variant)]'}`}>{today ? 'Today' : day.weekday}</span>
-            {day.historical ? <span className="day-values max-w-full px-1 py-2 text-[13px] font-medium"><span className="block truncate">{day.event?.title ?? '—'}</span></span> : <>
-            <span className="day-sky flex max-w-full items-center justify-center gap-0.5">
-              <SkyGlyph icon={day.icon} className="sky-glyph h-5 w-5 shrink-0 text-[var(--md-on-surface)]" />
-              {uv ? <UvFigure index={uv.index} category={uv.category} protection={day.protection ?? null} /> : null}
-            </span>
-            {/* Intrinsic widths let enlarged text scroll the day strip without overlapping readings. */}
-            <span className="day-values text-[15px] font-medium tabular-nums">
-              <span className="whitespace-nowrap">{day.hi == null ? '—' : formatTempC(day.hi, units)}</span>
-              <span className="day-lo whitespace-nowrap">{day.lo == null ? '' : formatTempC(day.lo, units)}</span>
-              <span className={`day-rain whitespace-nowrap font-semibold text-[var(--md-primary)] ${rain ? '' : 'day-rain-empty'}`}>{rain ? <>{rain}<span className="day-rain-unit">{rainUnit}</span></> : null}</span>
-            </span>
-            {day.windKt != null ? (
-              <span className="max-w-full truncate text-[12px] leading-4 font-semibold tabular-nums">{day.windFrom != null ? `${compass(day.windFrom)} ` : ''}{Math.round(day.windKt)} kt</span>
-            ) : null}
-            <span className="day-range relative mt-1 h-1.5 w-full rounded-full bg-[var(--md-surface-container-highest)]" title="temperature range, low to high" aria-label="temperature range, low to high">
-              {day.hi != null && day.lo != null ? (
-                <span
-                  className="absolute top-0 h-1.5 rounded-full"
-                  style={{
-                    left: `${((day.lo - min) / span) * 100}%`,
-                    width: `${Math.max(4, ((day.hi - day.lo) / span) * 100)}%`,
-                    background: `linear-gradient(90deg, ${tempColour(day.lo)}, ${tempColour(day.hi)})`,
-                  }}
-                />
-              ) : null}
-              {today && nowTemp != null ? (
-                <span
-                  className="absolute -top-0.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full border border-[var(--md-surface)] bg-[var(--md-on-surface)]"
-                  title="now"
-                  aria-label="now"
-                  style={{ left: `${Math.min(100, Math.max(0, ((nowTemp - min) / span) * 100))}%` }}
-                />
-              ) : null}
-            </span>
-            </>}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 export function Timeline({
   startMs,
   endMs,
-  dayMarks,
+  days,
+  todayKey,
   forecastStartMs,
   forecastEndMs,
   validMs,
   zone,
-  bare = false,
   valueText,
   timeState,
+  aviation = false,
   span,
   minute,
   onPointer,
 }: {
   startMs: number;
   endMs: number;
-  dayMarks: number[];
+  days: DaySummary[];
+  todayKey: string;
   forecastStartMs: number;
   forecastEndMs: number;
   validMs: number;
   zone: string;
-  /** Track only. The collapsed row puts the clock beside the slider. */
-  bare?: boolean;
   valueText: string;
   timeState?: { live: boolean; label: string };
+  aviation?: boolean;
   span: number;
   minute: number;
   onPointer: {
@@ -471,12 +356,53 @@ export function Timeline({
     onPointerLeave: React.PointerEventHandler<HTMLDivElement>;
   };
 }) {
+  const { units } = useUnits();
   const at = (ms: number) => Math.min(1, Math.max(0, (ms - startMs) / Math.max(1, endMs - startMs)));
   const head = at(validMs);
-  const edge = head < 0.18 ? '0' : head > 0.82 ? '-100%' : '-50%';
+  const track = useRef<HTMLDivElement>(null);
+  const clock = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState(false);
+  const [clockPosition, setClockPosition] = useState<{left: number; top: number}>();
+  useLayoutEffect(() => {
+    const node = track.current;
+    if (!node) return;
+    const measure = () => {
+      const segments = [...node.querySelectorAll<HTMLElement>('.forecast-day')];
+      // Keep even a partial day's three-letter name inside its proportional
+      // segment. Exceptionally short endpoints can scroll with the same track.
+      const minimum = Math.max(0, ...segments.map(day => {
+        const name = day.querySelector<HTMLElement>('[data-day-option="3"]')!;
+        const style = getComputedStyle(day);
+        const inset = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 2;
+        return (name.getBoundingClientRect().width + inset) / (parseFloat(day.style.width) / 100);
+      }));
+      node.style.minWidth = `max(var(--day-track-min, 0px), ${Math.ceil(minimum)}px)`;
+      for (const day of segments) {
+        const style = getComputedStyle(day);
+        const available = day.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+        const options = [...day.querySelectorAll<HTMLElement>('[data-day-option]')];
+        const selected = options.findIndex(option => option.getBoundingClientRect().width <= available);
+        day.dataset.detail = String(selected < 0 ? 3 : selected);
+      }
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    for (const label of node.querySelectorAll('[data-day-option]')) observer.observe(label);
+    measure();
+    return () => observer.disconnect();
+  }, [days, units, startMs, endMs]);
+  useLayoutEffect(() => {
+    if (!active || !track.current || !clock.current) return;
+    const rect = track.current.getBoundingClientRect();
+    const width = clock.current.getBoundingClientRect().width;
+    setClockPosition({left: Math.max(8, Math.min(window.innerWidth - width - 8, rect.left + rect.width * head - width / 2)), top: rect.top - clock.current.offsetHeight - 10});
+  }, [active, head, valueText]);
   return (
+    <>
+    <div className="forecast-days">
     <div
-      className="timeline relative h-9 touch-none select-none"
+      ref={track}
+      className="timeline relative h-9 select-none"
       tabIndex={0}
       role="slider"
       aria-label="Forecast time"
@@ -485,74 +411,57 @@ export function Timeline({
       aria-valuenow={Math.round(minute)}
       aria-valuetext={valueText}
       data-timeline
-      data-bare={bare ? 'true' : 'false'}
       data-valid-ms={String(Math.round(validMs))}
       {...onPointer}
+      onPointerEnter={event => { if (event.pointerType === 'mouse') setActive(true); }}
+      onPointerDown={event => { setActive(true); onPointer.onPointerDown(event); }}
+      onPointerUp={event => { if(event.pointerType !== 'mouse') setActive(false); onPointer.onPointerUp(event); }}
+      onPointerCancel={event => { setActive(false); onPointer.onPointerCancel(event); }}
+      onPointerLeave={event => { setActive(false); onPointer.onPointerLeave(event); }}
     >
-      {bare ? null : (
-        <div
-          data-timeline-label
-          className="absolute top-0 whitespace-nowrap text-[13px] font-semibold tabular-nums"
-          style={{ left: `${head * 100}%`, transform: `translateX(${edge})` }}
-        >
-          <ClockFace ms={validMs} zone={zone} zulu timeState={timeState} />
-        </div>
-      )}
+      <div className="forecast-segments" role="list" aria-label="Forecast days">
+        {days.filter(day => day.dayEnd > startMs && day.dayStart < endMs).map(day => {
+          const rain = dayRainLabel(day.rain);
+          const weekday = day.historical ? new Date(`${day.key}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' }) : day.weekday;
+          const detail = [day.key, day.event?.detail,
+            !day.historical ? `High ${formatTempC(day.hi, units) ?? 'unavailable'}, low ${formatTempC(day.lo, units) ?? 'unavailable'}` : null,
+            !day.historical ? (rain === null ? 'Rain unavailable' : rain ? `${rain} mm rain` : null) : null,
+            day.windKt != null ? `${day.windFrom != null ? compass(day.windFrom) + ' ' : ''}${Math.round(day.windKt)} kt` : null,
+            day.uv != null ? `UV ${day.uv}` : null, day.protection].filter(Boolean).join(' · ');
+          return <span key={day.key} role="listitem" className="forecast-day" data-detail="3" data-today={day.key === todayKey} title={detail} aria-label={detail} style={{ width: `${100 * (at(day.dayEnd) - at(day.dayStart))}%` }}>
+            {[0, 1, 2, 3].map(level => <span key={level} className="day-label-option" data-day-option={level} aria-hidden="true">
+              <span className="day-name">{weekday}</span>
+              {!day.historical && level < 3 ? <>
+                {level < 2 ? <SkyGlyph icon={day.icon} className="sky-glyph" /> : null}
+                <span className="day-values">{day.hi == null ? '—' : formatTempC(day.hi, units)}/{day.lo == null ? '—' : formatTempC(day.lo, units)}</span>
+                {level === 0 && rain ? <span className="day-rain">{rain}</span> : null}
+              </> : null}
+            </span>)}
+          </span>;
+        })}
+      </div>
+      <div className="timeline-scrub-hit" aria-hidden="true" />
       <div data-timeline-track className="timeline-track absolute inset-0">
         <div className="absolute inset-x-0 top-[var(--track)] h-[3px] rounded-full bg-[var(--md-surface-container-highest)]" />
         <div className="absolute top-[var(--track)] h-[3px] bg-[var(--md-outline)]/60" style={{ left: `${at(forecastStartMs) * 100}%`, width: `${(at(forecastEndMs) - at(forecastStartMs)) * 100}%` }} />
         <div className="absolute top-[var(--track)] h-[3px] rounded-full bg-[var(--md-primary)]" style={{ left: `${at(forecastStartMs) * 100}%`, width: `${Math.max(0, head - at(forecastStartMs)) * 100}%` }} />
-        {dayMarks.map((ms) => (
-          <div key={ms} className="absolute top-[calc(var(--track)-7px)] h-[10px] w-px bg-[var(--md-on-surface)]" style={{ left: `${at(ms) * 100}%` }} />
-        ))}
         <div className="absolute top-[calc(var(--track)-5px)] h-[13px] w-[13px] -translate-x-1/2 rounded-full bg-[var(--md-primary)] shadow" style={{ left: `${head * 100}%` }} />
       </div>
     </div>
-  );
-}
-
-const loupeStroke = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
-
-/** One desktop row; on phones the slider and clock reflow below transport. */
-export function CompactForecast({
-  placeName,
-  onPlace,
-  reading,
-  transport,
-  timeline,
-  validMs,
-  zone,
-  timeState,
-  toggle,
-}: {
-  placeName: string;
-  onPlace: () => void;
-  reading: NowReading | null;
-  transport: ReactNode;
-  timeline: ReactNode;
-  validMs: number | null;
-  zone: string;
-  timeState?: { live: boolean; label: string } | null;
-  toggle: ReactNode;
-}) {
-  const { units } = useUnits();
-  const temp = reading?.tempC == null ? '—' : formatTempC(reading.tempC, units);
-  return (
-    <div className="map-compact" data-compact-bar>
-      <button type="button" data-expand-place className="map-compact-place" onClick={onPlace}>
-        <svg className="map-compact-loupe" viewBox="0 0 24 24" aria-hidden="true"><circle {...loupeStroke} cx="10" cy="10" r="6" /><path {...loupeStroke} d="m15 15 5 5" /></svg>
-        <span>{placeName || 'Place'}</span>
-      </button>
-      <span className="map-compact-temp tabular-nums" data-compact-temp>{temp}</span>
-      {transport}
-      <div className="min-w-0 flex-1">{timeline}</div>
-      {validMs != null ? <ClockFace ms={validMs} zone={zone} zulu timeState={timeState} interactive /> : null}
-      {toggle}
     </div>
+    <div className="map-clock-slot" style={{visibility: active ? 'hidden' : undefined}}>
+      <div className="map-selected-time" data-timeline-label data-active="false" title={valueText} aria-label={valueText}>
+        <ClockFace ms={validMs} zone={zone} placeLocal zulu={aviation} compact />
+      </div>
+    </div>
+    {active ? createPortal(<div ref={clock} className="map-selected-time map-clock-floating" data-timeline-label data-active="true" style={clockPosition} aria-label={valueText}>
+      <ClockFace ms={validMs} zone={zone} placeLocal zulu={aviation} timeState={timeState} />
+    </div>, document.body) : null}
+    </>
   );
 }
 
-/* ---------- lens row ---------- */
+/* ---------- lens column ---------- */
 
 export type Lens = 'pressure' | 'rain' | 'wind' | 'temp' | 'kite' | 'surf' | 'fly';
 
@@ -576,8 +485,7 @@ export function TrafficIcon({ className }: IconProps) {
 }
 
 /**
- * The Mac app's single lens row: one lens at a time. A segmented control with
- * labelled segments at every width; phones scroll the selected lens into view.
+ * One lens at a time. A floating labelled column, with named icons on phones.
  */
 export function LensBar({
   lens,
@@ -614,7 +522,7 @@ export function LensBar({
   section?: boolean;
   onSection?: () => void;
   sectionAvailable?: boolean;
-  /** Enlarged text mode uses a labelled picker to keep every lens reachable without a crowded strip. */
+  /** Enlarged text uses an icon-backed native picker to keep every lens reachable. */
   compact?: boolean;
   /** Phones carry Satellite/Traffic in the compact map-tools cluster instead; render one control per viewport. */
   phone?: boolean;
@@ -659,7 +567,8 @@ export function LensBar({
     <>
     {compact ? <label className="map-lens-picker">
       <span className="sr-only">Weather lens</span>
-      <select aria-label="Weather lens" value={lens} onChange={(event) => onLens(event.target.value as Lens)}>
+      <span className="map-lens-picker-icon" aria-hidden="true">{items.find(item => item.id === lens)?.icon}</span>
+      <select aria-label="Weather lens" title={items.find(item => item.id === lens)?.label} value={lens} onChange={(event) => { onLens(event.target.value as Lens); flash(items.find(item => item.id === event.target.value)?.label ?? 'Lens'); }}>
         {items.filter(item => !availableLenses || availableLenses.includes(item.id)).map(item => <option key={item.id} value={item.id} disabled={!item.enabled}>{item.label}</option>)}
       </select>
     </label> : null}
@@ -687,9 +596,9 @@ export function LensBar({
         })}
       </div>
     </nav>
-    {phone ? null : <div className="map-lens-extras" style={{ position: 'relative' }}>
+    {<div className="map-lens-extras" style={{ position: 'relative' }}>
       {pressed ? <span key={pressed.key} role="status" data-press-label className="map-press-label">{pressed.text}</span> : null}
-      {windAvailable && ['wind', 'kite', 'surf', 'fly'].includes(lens) ? (
+      {!phone && windAvailable && ['wind', 'kite', 'surf', 'fly'].includes(lens) ? (
         <button
           type="button"
           aria-pressed={windBarbs}
@@ -707,9 +616,9 @@ export function LensBar({
         onClick={() => { flash(satellite ? 'Satellite off' : 'Satellite on'); onSatellite(!satellite); }}
         className={`grid h-9 w-9 shrink-0 place-items-center rounded-md ${satellite ? 'bg-[var(--md-primary)] text-[var(--md-on-primary)]' : 'text-[var(--md-on-surface)] hover:bg-[var(--md-surface-container-high)]'}`}
       >
-        <SatelliteIcon className="h-5 w-5" />
+        <SatelliteIcon className="h-5 w-5" /><span>Sat</span>
       </button> : null}
-      {lens === 'fly' ? <button
+      {!phone && lens === 'fly' ? <button
         type="button"
         aria-pressed={traffic}
         aria-label="Traffic"
@@ -718,7 +627,7 @@ export function LensBar({
       >
         <TrafficIcon className="h-5 w-5" />
       </button> : null}
-      {lens === 'fly' && sectionAvailable ? <button type="button" aria-label="Section" aria-pressed={section} onClick={() => { flash(section ? 'Section off' : 'Section on · side view along the line'); onSection?.(); }} className={`grid h-9 w-9 shrink-0 place-items-center rounded-md text-[16px] ${section ? 'bg-[var(--md-primary)] text-[var(--md-on-primary)]' : 'text-[var(--md-on-surface)] hover:bg-[var(--md-surface-container-high)]'}`}>↟</button> : null}
+      {!phone && lens === 'fly' && sectionAvailable ? <button type="button" aria-label="Section" aria-pressed={section} onClick={() => { flash(section ? 'Section off' : 'Section on · side view along the line'); onSection?.(); }} className={`grid h-9 w-9 shrink-0 place-items-center rounded-md text-[16px] ${section ? 'bg-[var(--md-primary)] text-[var(--md-on-primary)]' : 'text-[var(--md-on-surface)] hover:bg-[var(--md-surface-container-high)]'}`}>↟</button> : null}
     </div>}
     </>
   );

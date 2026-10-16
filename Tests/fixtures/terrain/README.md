@@ -19,7 +19,7 @@ https://download.mapterhorn.com/attribution.json; each source's licence is
 retained (there is no blanket licence for the merged terrain).
 Terrarium decoding is `R*256 + G + B/256 - 32768` metres. The fixture is test
 data only; production requests use the URL template in `Sources/terrain.m` and
-retain the Mapterhorn attribution returned by `IsobarTerrainAttribution()`.
+retain the Mapterhorn attribution in the native About Isobar window.
 
 Additional closer tiles, acquired from the same endpoint on 2026-10-14:
 

@@ -13,10 +13,9 @@ export function EarthExperience() {
   const [utc, setUtc] = useState(0), [view, setView] = useState<EarthView>('follow');
   const [playing, setPlaying] = useState(true), [rate, setRate] = useState(1);
   const [ready, setReady] = useState(false), [error, setError] = useState('');
-  const [info, setInfo] = useState(false), [attempt, setAttempt] = useState(0);
+  const [attempt, setAttempt] = useState(0);
   const [reference, setReference] = useState(false);
   const [position, setPosition] = useState('');
-  const sourceButton = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -89,14 +88,6 @@ export function EarthExperience() {
     return () => { active = false; controller.abort(); cancelAnimationFrame(raf); document.removeEventListener('visibilitychange', visibility); surface?.removeEventListener('webglcontextlost', contextLost); renderer?.dispose(); scene.current = null; };
   }, [attempt, reference]);
 
-  useEffect(() => {
-    if (!info) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { setInfo(false); sourceButton.current?.focus(); }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [info]);
   const changeView = (next: EarthView) => { scene.current?.setView(next); setView(next); };
   const togglePlay = () => { clock.current.playing = !clock.current.playing; setPlaying(clock.current.playing); setUtc(clock.current.utc); };
   const resetTime = () => {
@@ -118,7 +109,6 @@ export function EarthExperience() {
           <option value="1">1×</option><option value="60">60×</option><option value="240">240×</option>
         </select>
         <button onClick={resetTime} disabled={!ready}>{source?.kind === 'reference' ? 'Epoch' : 'Now'}</button>
-        <button ref={sourceButton} aria-expanded={info} onClick={() => setInfo(!info)}>Sources</button>
       </header>
       <div className="earth-stage">
         <canvas key={attempt + ':' + reference} ref={canvas} tabIndex={0} aria-label="ISS and Earth reconstruction" aria-describedby="earth-keyboard"
@@ -136,16 +126,7 @@ export function EarthExperience() {
         <div className="earth-caption">Surface only · Prototype</div>
         <span id="earth-keyboard" className="sr-only">Arrow keys explore; plus and minus zoom; Home returns to Follow. Hold Space or the pointer to freeze time; release to resume.</span>
         {!ready || error ? <div className="earth-message" role="status"><span>{error || 'Preparing Earth…'}</span>{error && <><button onClick={() => setAttempt(n => n + 1)}>Retry</button>{!reference && <button onClick={() => setReference(true)}>Preview 2019 reference</button>}</>}</div> : null}
-        {info && <aside className="earth-sources" aria-label="Scene sources">
-          <button aria-label="Close sources" onClick={() => { setInfo(false); sourceButton.current?.focus(); }}>×</button>
-          <p>Reconstructed view. No live clouds or aurora.</p>
-          <p><a href="https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-map/">NASA Blue Marble</a> · October 2004 surface.</p>
-          <p><a href="https://science.nasa.gov/resource/international-space-station-3d-model/">NASA VTAD</a> · ISS model. Orientation and configuration are illustrative.</p>
-          <p>Orbit: {source?.kind === 'reference' ? 'Satellite.js published 2019 reference' : 'CelesTrak ISS elements'}. Epoch {source?.epoch}. Positions are propagated estimates, supported within 48 hours of the epoch.</p>
-          {source?.retrievedAt && <p>Retrieved {source.retrievedAt}.</p>}
-          <p>The prototype clock holds while this page is hidden. {reference ? 'Epoch returns to the reference time.' : 'Now returns to current UTC.'}</p>
-          <p>Atmosphere is illustrative. Earth rotation uses UTC as an approximation to UT1. No onboard camera feed.</p>
-        </aside>}
+
       </div>
       <footer className="earth-time">
         <time>{utc ? new Date(utc).toISOString().replace('T', ' ').slice(0, 19) + ' UTC' : '— UTC'}</time>
