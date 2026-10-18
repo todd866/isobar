@@ -55,7 +55,8 @@ def frames(path, width, height):
 
 def text_blobs(gray):
     """Dark, compact, text-sized components: digits of a label or an H/L value.
-    Isobars are long and thin, so they fail the size and fill tests."""
+    Isobars are long and thin, so they fail the size and fill tests. A
+    contour clipped by the frame can look compact; require complete ink."""
     dark = gray < 90
     joined = ndimage.binary_dilation(dark, iterations=2)
     labels, n = ndimage.label(joined)
@@ -67,9 +68,19 @@ def text_blobs(gray):
         w = box[1].stop - box[1].start
         if not (6 <= h <= 24 and 10 <= w <= 64):
             continue
-        ink = dark[box][labels[box] == index].mean() if (labels[box] == index).any() else 0
-        fill = (labels[box] == index).mean()
+        component = labels[box] == index
+        ink = dark[box][component].mean() if component.any() else 0
+        fill = component.mean()
         if fill < 0.35 or ink < 0.25:
+            continue
+        # Reject truncated ink, not the dilation halo: a complete label one
+        # pixel from the edge is still eligible. Labels entering/leaving the
+        # viewport still generate events once their full ink is visible.
+        source_ink = dark[box] & component
+        if ((box[0].start == 0 and source_ink[0].any()) or
+                (box[0].stop == gray.shape[0] and source_ink[-1].any()) or
+                (box[1].start == 0 and source_ink[:, 0].any()) or
+                (box[1].stop == gray.shape[1] and source_ink[:, -1].any())):
             continue
         cy = (box[0].start + box[0].stop) / 2
         cx = (box[1].start + box[1].stop) / 2

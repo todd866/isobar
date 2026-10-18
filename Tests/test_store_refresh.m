@@ -3546,6 +3546,48 @@ static void CheckMapFirstDayAccessibility(NSString *root) {
         @"DayStrip accessibility press seeks the shared clock without creating an hourly row");
 }
 
+static void CheckPointInspectionChrome(NSString *root) {
+    TestController *c = [TestController new];
+    [c useManualLiveClock]; [c setValue:@YES forKey:@"newMap"];
+    [c replaceLocations:DefaultLocations()];
+    [c setChartNow:[[NSISO8601DateFormatter new] dateFromString:@"2026-09-26T00:30:00Z"]];
+    [c reloadStoreAtPath:root];
+    for (NSNumber *expanded in @[@NO,@YES]) for (NSNumber *mode in @[@-1,@1]) {
+        c.availableSize = NSMakeSize(980,620);
+        SeedForecastMode(c,mode.integerValue); [c rebuildContent];
+        if (expanded.boolValue) [c presentChartWindowInFrame:NSMakeRect(0,0,1024,600)];
+        [c stopPopoverPlayback];
+        NSView *surface = expanded.boolValue ? c.chartWindow.contentView : PopoverRoot(c);
+        GPUMapView *map = [c valueForKey:@"gpuMap"];
+        Check(map && map.superview == surface, @"point inspection uses the displayed native map");
+        [map waitForUploads];
+        [map selectPointLatitude:-33.9 longitude:151.2];
+        MapPointCard *card = (MapPointCard *)FindView(map,@"map.point.card");
+        Check(card != nil, @"point card exists with native map chrome");
+        for (NSString *identifier in @[@"mapfirst.bottom",@"mapfirst.place",@"mapfirst.actions",
+            expanded.boolValue ? @"fullscreen.lensRow" : @"popover.lensRow",@"forecast.inspector"]) {
+            NSView *chrome = FindView(surface,identifier);
+            if (!chrome || chrome.hidden) continue;
+            NSRect rect = [map convertRect:chrome.bounds fromView:chrome];
+            Check([map.pointCardReservedRects containsObject:[NSValue valueWithRect:rect]],
+                [identifier stringByAppendingString:@" is reserved for point placement"]);
+            Check(!NSIntersectsRect(card.frame,rect), [identifier stringByAppendingString:@" remains exposed beside the point card"]);
+        }
+        for (NSArray *look in @[@[NSAppearanceNameAqua,@"light"],@[NSAppearanceNameDarkAqua,@"dark"]]) {
+            surface.appearance = [NSAppearance appearanceNamed:look[0]];
+            NSString *dir = @"build/qa/point-placement";
+            [NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
+            NSString *path = [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@-%@-%@.png",
+                expanded.boolValue ? @"expanded" : @"popover",mode,look[1]]];
+            NSData *png = FeedbackViewPNG(surface,map);
+            Check(png.length > 1000 && [png writeToFile:path atomically:YES], @"save composited point inspection capture");
+        }
+        [map closePointDetail];
+        if (expanded.boolValue) [c closeChartWindow];
+    }
+    [c stopPopoverPlayback];
+}
+
 static void CheckForecastFreshness(NSString *root) {
     TestController *c = [TestController new];
     c.availableSize = NSMakeSize(1024, 600);
@@ -3641,6 +3683,11 @@ int main(void) {
         NSFileManager *fm = NSFileManager.defaultManager;
         if (![fm copyItemAtPath:[fixtures stringByAppendingPathComponent:@"store"] toPath:root error:nil]) return 1;
         @try {
+            if (getenv("ISOBAR_TEST_POINT_INSPECTION_ONLY")) {
+                CheckPointInspectionChrome(root);
+                fprintf(stderr, "point inspection failures: %d\n", failures);
+                return failures ? 1 : 0;
+            }
             if (getenv("ISOBAR_TEST_FRESHNESS_ONLY")) {
                 CheckForecastFreshness(root);
                 fprintf(stderr, "freshness failures: %d\n", failures);
@@ -3668,11 +3715,13 @@ int main(void) {
                 CheckTimeLens(root);
                 CheckHazardControls(root);
                 CheckMapFirstDayAccessibility(root);
+                CheckPointInspectionChrome(root);
                 fprintf(stderr, "map-first failures: %d\n", failures);
                 return failures ? 1 : 0;
             }
             CheckTimelineEndsAtLastFrame();
             CheckPopoverSpeedAndWarnings(root);
+            CheckPointInspectionChrome(root);
             CheckFlyBulletinFollowsAerodrome(root);
             NSISO8601DateFormatter *iso = [NSISO8601DateFormatter new];
             TestController *c = [TestController new];

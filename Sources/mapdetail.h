@@ -8,6 +8,10 @@ NSDictionary * _Nullable MapDetailSample(NSArray<NSDictionary *> * _Nullable row
 // Each record has a kind, place and value, plus an optional downwind bearing.
 void DrawMapDetails(NSArray<NSDictionary *> *records, NSRect bounds);
 NSRect MapDetailsRect(NSUInteger count, NSRect bounds);
+// Flipped map coordinates. Preserve a clear previous position; otherwise place
+// the card beside visible chrome and the point, without changing the camera.
+// If space is insufficient, minimise chrome overlap before point overlap.
+NSRect MapPointCardRect(NSRect bounds, NSRect previous, NSRect point, NSArray<NSValue *> *reserved);
 
 // Compact clicked-point card. Numeric missing values remain em dashes.
 @interface MapPointCard : NSView

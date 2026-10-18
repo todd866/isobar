@@ -1466,8 +1466,9 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
     _pointLat = latitude; _pointLon = longitude;
     if (!_pointCard) {
         _pointMarker = [[GPUMapDot alloc] initWithFrame:NSMakeRect(0,0,14,14)];
+        _pointMarker.accessibilityIdentifier = @"map.point.marker";
         [self addSubview:_pointMarker];
-        _pointCard = [[MapPointCard alloc] initWithFrame:NSMakeRect(8,8,250,82)];
+        _pointCard = [[MapPointCard alloc] initWithFrame:NSMakeRect(8,MAX(8,NSHeight(self.bounds)-90),304,82)];
         __weak GPUMapView *weak = self;
         _pointCard.onClose = ^{ [weak closePointDetail]; };
         [self addSubview:_pointCard];
@@ -1494,18 +1495,28 @@ static BOOL GridContoursOnMain(IsobarGeoGrid grid) {
         index = (NSInteger)llround(row)*g.nLon + ((NSInteger)llround(col)%g.nLon);
     NSMutableDictionary *sample = [@{@"latitude":@(_pointLat), @"longitude":@(_pointLon), @"step":@(_fractionalStep),
         @"title":[NSString stringWithFormat:@"%.2f°%@  %.2f°%@",fabs(_pointLat),_pointLat<0?@"S":@"N",fabs(_pointLon),_pointLon<0?@"W":@"E"]} mutableCopy];
-    NSArray *keys = @[@"temperature", @"direction", @"wind", @"pressure"];
-    OwnRunField fields[] = {OwnRunFieldT2M, OwnRunFieldWindDirection, OwnRunFieldWindSpeed, OwnRunFieldMSLP};
+    NSArray *keys = @[@"temperature", @"direction", @"wind", @"pressure", @"rain24h"];
+    OwnRunField fields[] = {OwnRunFieldT2M, OwnRunFieldWindDirection, OwnRunFieldWindSpeed, OwnRunFieldMSLP, OwnRunFieldRain};
     for (NSUInteger i=0;i<keys.count;i++) {
         double v = [_run valueAtPointIndex:index field:fields[i] fractionalHour:_fractionalStep];
         sample[keys[i]] = isfinite(v) ? @(v) : (id)NSNull.null;
     }
     _pointCard.sample = sample;
     _pointCard.dark = [self mapIsDark];
-    _pointCard.frame = NSMakeRect(8,MAX(8,NSHeight(self.bounds)-90),MAX(1,MIN(250,NSWidth(self.bounds)-16)),82);
     double x,y;
     _pointMarker.hidden = !IsobarCameraProject(_camera,_pointLat,_pointLon,&x,&y);
     if (!_pointMarker.hidden) _pointMarker.frame = NSMakeRect(x/[self pixelScale]-7,y/[self pixelScale]-7,14,14);
+    NSMutableArray<NSValue *> *reserved = [self.pointCardReservedRects mutableCopy] ?: [NSMutableArray array];
+    for (NSView *control in @[_recenterButton,_flatButton,_globeSlider,_globeButton,_northButton])
+        if (!control.hidden) [reserved addObject:[NSValue valueWithRect:control.frame]];
+    _pointCard.frame = MapPointCardRect(self.bounds,_pointCard.frame,
+        _pointMarker.hidden ? NSZeroRect : _pointMarker.frame,reserved);
+}
+
+- (void)setPointCardReservedRects:(NSArray<NSValue *> *)rects {
+    if ([_pointCardReservedRects isEqualToArray:rects]) return;
+    _pointCardReservedRects = [rects copy];
+    [self updatePointDetail];
 }
 
 - (void)setFractionalStep:(double)fractionalStep {

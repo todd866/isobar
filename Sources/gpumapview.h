@@ -47,6 +47,8 @@ NSString *GPUMapMenuTitle(NSString *title, BOOL classicOnly, BOOL note);
 - (void)selectPointLatitude:(double)latitude longitude:(double)longitude;
 - (BOOL)closePointDetail;
 @property(nonatomic, readonly, copy) NSDictionary *pointSample;
+// Floating controller chrome in this view's coordinates; refreshed on layout.
+@property(nonatomic, copy) NSArray<NSValue *> *pointCardReservedRects;
 // Pointer ownership for the shared clock. YES is emitted on mouse-down and
 // NO on mouse-up, cancellation, or window teardown; dragging remains camera-only.
 @property (nonatomic, copy) void (^onHoldChanged)(BOOL held);

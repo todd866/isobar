@@ -33,6 +33,57 @@ NSRect MapDetailsRect(NSUInteger count, NSRect bounds) {
     return NSMakeRect(8,8,MIN(206,NSWidth(bounds)-20),height);
 }
 
+static CGFloat OverlapArea(NSRect a, NSRect b) {
+    NSRect overlap = NSIntersectionRect(a, b);
+    return NSWidth(overlap) * NSHeight(overlap);
+}
+
+NSRect MapPointCardRect(NSRect bounds, NSRect previous, NSRect point, NSArray<NSValue *> *reserved) {
+    CGFloat margin = MIN(8, MIN(NSWidth(bounds), NSHeight(bounds))/2);
+    NSRect room = NSInsetRect(bounds, margin, margin);
+    CGFloat width = MIN(304, NSWidth(room)), height = MIN(82, NSHeight(room));
+    if (width <= 0 || height <= 0) return NSZeroRect;
+    NSRect preferred = NSMakeRect(NSMinX(room), NSMaxY(room)-height, width, height);
+    BOOL sameSize = NSEqualSizes(previous.size, preferred.size) && NSContainsRect(room, previous);
+    NSMutableArray<NSValue *> *obstacles = [NSMutableArray array];
+    for (NSValue *value in reserved) {
+        NSRect rect = NSIntersectionRect(bounds, value.rectValue);
+        if (!NSIsEmptyRect(rect)) [obstacles addObject:[NSValue valueWithRect:NSInsetRect(rect,-8,-8)]];
+    }
+    NSRect keepPoint = NSIsEmptyRect(point) ? NSZeroRect : NSInsetRect(point,-8,-8);
+    CGFloat (^chromeOverlap)(NSRect) = ^CGFloat(NSRect card) {
+        CGFloat area = 0;
+        for (NSValue *value in obstacles) area += OverlapArea(card, value.rectValue);
+        return area;
+    };
+    // Avoid chasing the point or snapping back on every forecast tick.
+    if (sameSize && chromeOverlap(previous) == 0 && !NSIntersectsRect(previous,keepPoint)) return previous;
+    NSMutableArray<NSNumber *> *xs = [NSMutableArray arrayWithObjects:@(NSMinX(room)),@(NSMaxX(room)-width),nil];
+    NSMutableArray<NSNumber *> *ys = [NSMutableArray arrayWithObjects:@(NSMaxY(room)-height),@(NSMinY(room)),nil];
+    if (sameSize) { [xs addObject:@(NSMinX(previous))]; [ys addObject:@(NSMinY(previous))]; }
+    NSMutableArray<NSValue *> *edges = [obstacles mutableCopy];
+    if (!NSIsEmptyRect(keepPoint)) [edges addObject:[NSValue valueWithRect:keepPoint]];
+    for (NSValue *value in edges) {
+        NSRect rect = value.rectValue;
+        [xs addObjectsFromArray:@[@(NSMinX(rect)-width),@(NSMaxX(rect))]];
+        [ys addObjectsFromArray:@[@(NSMinY(rect)-height),@(NSMaxY(rect))]];
+    }
+    NSRect anchor = sameSize ? previous : preferred, best = preferred;
+    CGFloat bestChrome = CGFLOAT_MAX, bestPoint = CGFLOAT_MAX, bestDistance = CGFLOAT_MAX;
+    for (NSNumber *x in xs) for (NSNumber *y in ys) {
+        NSRect candidate = NSMakeRect(MAX(NSMinX(room),MIN(NSMaxX(room)-width,x.doubleValue)),
+            MAX(NSMinY(room),MIN(NSMaxY(room)-height,y.doubleValue)),width,height);
+        CGFloat chrome = chromeOverlap(candidate), coveredPoint = OverlapArea(candidate,keepPoint);
+        CGFloat dx = NSMinX(candidate)-NSMinX(anchor), dy = NSMinY(candidate)-NSMinY(anchor);
+        CGFloat distance = dx*dx+dy*dy;
+        if (chrome < bestChrome || (chrome == bestChrome && (coveredPoint < bestPoint ||
+            (coveredPoint == bestPoint && distance < bestDistance)))) {
+            best = candidate; bestChrome = chrome; bestPoint = coveredPoint; bestDistance = distance;
+        }
+    }
+    return best;
+}
+
 void DrawMapDetails(NSArray<NSDictionary *> *records, NSRect bounds) {
     NSRect box=MapDetailsRect(records.count,bounds);
     if (NSIsEmptyRect(box)) return;
@@ -101,10 +152,15 @@ void DrawMapDetails(NSArray<NSDictionary *> *records, NSRect bounds) {
     return [NSString stringWithFormat:@"MSLP %@ hPa", Number(self.sample[@"pressure"]) ?
         [NSString stringWithFormat:@"%.0f", [self.sample[@"pressure"] doubleValue]] : @"—"];
 }
+- (NSString *)rain {
+    id value = self.sample[@"rain24h"];
+    return [NSString stringWithFormat:@"Rain 24h %@ mm", Number(value) && [value doubleValue] >= 0 ?
+        [NSString stringWithFormat:@"%.1f", [value doubleValue]] : @"—"];
+}
 - (BOOL)isAccessibilityElement { return YES; }
 - (NSString *)accessibilityRole { return NSAccessibilityGroupRole; }
 - (NSString *)accessibilityLabel {
-    return [NSString stringWithFormat:@"%@, %@, %@", self.sample[@"title"] ?: @"", self.readings, self.pressure];
+    return [NSString stringWithFormat:@"%@, %@, %@, %@ (24 hours ending at map time)", self.sample[@"title"] ?: @"", self.readings, self.pressure, self.rain];
 }
 - (void)drawRect:(NSRect)dirty {
     (void)dirty;
@@ -120,6 +176,7 @@ void DrawMapDetails(NSArray<NSDictionary *> *records, NSRect bounds) {
     [@"×" drawAtPoint:NSMakePoint(NSWidth(self.bounds)-21,6) withAttributes:value];
     [self.readings drawAtPoint:NSMakePoint(10,31) withAttributes:value];
     [self.pressure drawAtPoint:NSMakePoint(10,54) withAttributes:value];
+    [self.rain drawAtPoint:NSMakePoint(NSWidth(self.bounds)-10-[self.rain sizeWithAttributes:value].width,54) withAttributes:value];
 }
 @end
 

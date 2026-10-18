@@ -2657,6 +2657,15 @@ static void TestFadeUnits(id<MTLDevice> device) {
         IsobarFieldRenderTestingSetNow(t0 + frame * hz);
         CGImageRelease(Render(r, 1, IsobarFieldPressure, YES, cam));
         double a = r.motion.minimumActiveAlpha;
+        if (frame == 4) {
+            // The map opens before all future frames finish uploading. A
+            // distant frame must not turn a half-faded current label solid.
+            check(a > 0 && a < 1, @"background upload regression starts during a real label fade");
+            check(Upload(r, 20, IsobarFieldPressure, flat), @"future pressure frame uploads during current playback");
+            CGImageRelease(Render(r, 1, IsobarFieldPressure, YES, cam));
+            check(fabs(r.motion.minimumActiveAlpha-a) < 1e-6,
+                @"uploading an unrelated future frame preserves the current label fade at held time");
+        }
         if (frame == 1) stepAlpha = a;
         if (a >= 1.0 - 1e-9) { fullAt = frame; break; }
     }

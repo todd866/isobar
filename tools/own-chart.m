@@ -1737,11 +1737,8 @@ static void StrokeRun(CGContextRef ctx, const OwnVec *pts, int a, int b, int clo
     CGContextStrokePath(ctx);
 }
 
-static void StrokeLine(CGContextRef ctx, const OwnVec *pts, int count, int closed,
-    const OwnVec *avoid, const double *avoidAlpha, int nAvoid, double avoidRadius,
-    double width, double red, double green, double blue, double alpha) {
-    if (count < 2) return;
-    CGContextSaveGState(ctx);
+static void ClipStrokeCentres(CGContextRef ctx, const OwnVec *avoid,
+    const double *avoidAlpha, int nAvoid, double avoidRadius) {
     if (nAvoid > 0 && avoidRadius > 0) {
         // Clip the stroke at the actual circle, rather than dropping vertices
         // as they enter it. Vertex-based gaps snap and can open a closed ring
@@ -1757,6 +1754,12 @@ static void StrokeLine(CGContextRef ctx, const OwnVec *pts, int count, int close
         }
         CGContextEOClip(ctx);
     }
+}
+
+static void StrokeLine(CGContextRef ctx, const OwnVec *pts, int count, int closed,
+    double width, double red, double green, double blue, double alpha) {
+    if (count < 2) return;
+    CGContextSaveGState(ctx);
     CGContextSetLineWidth(ctx, width);
     CGContextSetRGBStrokeColor(ctx, red, green, blue, alpha);
     StrokeRun(ctx, pts, 0, count, closed);
@@ -3225,6 +3228,10 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
         }
 
         NSColor *inkColor = [NSColor colorWithSRGBRed:ink.red green:ink.green blue:ink.blue alpha:1];
+        // Every isobar uses the same centre holes. Build their antialiased
+        // clip once, rather than rebuilding it for every line and label gap.
+        CGContextSaveGState(ctx);
+        ClipStrokeCentres(ctx, centers, centerAlpha, nCenters, 11);
         for (int i = 0; i < lines.count; i++) {
             double width = OwnIsobarWidth(lines.lines[i].level);
             double visibility = ContourVisibility(&lines.lines[i]);
@@ -3239,7 +3246,7 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
             }
             if (mineCount == 0) {
                 StrokeLine(ctx, lines.lines[i].pts, lines.lines[i].count, lines.lines[i].closed,
-                    centers, centerAlpha, nCenters, 11, width, ink.red, ink.green, ink.blue, visibility);
+                    width, ink.red, ink.green, ink.blue, visibility);
                 continue;
             }
             // The gap is the label box: the stroke is cut, the plate stays.
@@ -3247,7 +3254,7 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
                 lines.lines[i].closed, mine, mineCount);
             for (int p = 0; p < parts.count; p++) {
                 StrokeLine(ctx, parts.lines[p].pts, parts.lines[p].count, 0,
-                    centers, centerAlpha, nCenters, 11, width, ink.red, ink.green, ink.blue, visibility);
+                    width, ink.red, ink.green, ink.blue, visibility);
             }
             OwnLineSetFree(parts);
             // A fading label's gap closes with it.
@@ -3257,10 +3264,11 @@ static void RenderPanel(CGContextRef ctx, double originX, double originY, const 
                 CGContextSaveGState(ctx);
                 CGContextClipToRect(ctx, CGRectMake(mine[L].x - hw, mine[L].y - hh, hw * 2, hh * 2));
                 StrokeLine(ctx, lines.lines[i].pts, lines.lines[i].count, lines.lines[i].closed,
-                    centers, centerAlpha, nCenters, 11, width, ink.red, ink.green, ink.blue, visibility * (1 - mineAlpha[L]));
+                    width, ink.red, ink.green, ink.blue, visibility * (1 - mineAlpha[L]));
                 CGContextRestoreGState(ctx);
             }
         }
+        CGContextRestoreGState(ctx);
         for (int L = 0; L < nDrawn; L++) {
             double glyphAlpha = L < 80 ? drawnAlpha[L] : 1;
             if (drawn[L].line >= 0 && drawn[L].line < lines.count)

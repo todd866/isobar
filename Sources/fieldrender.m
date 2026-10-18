@@ -1400,6 +1400,9 @@ static const float kClassPx[3] = {11.f, 18.f, 11.f};
     IsobarCamera _pickFrameCam;
     BOOL _pickFrameValid;
     uint64_t _contentGen;
+    // Adding another forecast frame invalidates contour work, but must not
+    // restart labels on the already displayed frames. Replacements still do.
+    uint64_t _motionGen;
     GlyphSprite _sprites[kGlyphCount];
     float _ascent[kGlyphClasses];
     float _descent[kGlyphClasses];
@@ -1798,6 +1801,7 @@ static id<MTLRenderPipelineState> MakeTextPipe(id<MTLDevice> device, id<MTLFunct
     _pressureSmoothDegrees = 0.3125;
     _contentScale = 1;
     _contentGen = 1;
+    _motionGen = 1;
     _residentByteBudget = 64u * 1024u * 1024u;
     _synchronousContours = NO;
     _contourQueue = dispatch_queue_create("isobar.field.contours", DISPATCH_QUEUE_SERIAL);
@@ -1915,6 +1919,7 @@ static OwnCoast CoastForGrid(IsobarGeoGrid grid, OwnCoast australia, OwnCoast wo
     _landLon = 0;
     _landLat = 0;
     _contentGen++;
+    _motionGen++;
     _nLabels = 0;
     _nMarks = 0;
     _cValid = NO;
@@ -1977,6 +1982,7 @@ static OwnCoast CoastForGrid(IsobarGeoGrid grid, OwnCoast australia, OwnCoast wo
     for (NSUInteger i = 0; i < count; i++) gpu[i] = isfinite(cpu[i]) ? cpu[i] : kMissingSentinel;
     NSUInteger need = count * sizeof(float) * ((pressure || rain) ? 2 : 1);
     IsobarFieldSlot *slot = [self slotForStep:step kind:kind];
+    BOOL replacesPressure = pressure && slot != nil;
     while (!slot && _slots.count > 0 && [self residentBytes] + need > _residentByteBudget)
         [self evictLRU];
     if (!slot) {
@@ -2007,6 +2013,7 @@ static OwnCoast CoastForGrid(IsobarGeoGrid grid, OwnCoast australia, OwnCoast wo
     if (pressure) {
         [self buildSynopticSlot:slot];
         _contentGen++;
+        if (replacesPressure) _motionGen++;
         if (_current) _current->key.valid = NO;
         _cValid = NO;
         _ann.valid = NO;
@@ -5132,11 +5139,11 @@ static ContourSet *BuildContourSet(const float *va, const float *vb, float mix,
     for (int i = 0; i < nS; i++)
         sig ^= (uint64_t)llround(slines[i].level * 4.0) * 0x9E3779B97F4A7C15ull;
     IsobarFieldMotion *motionNow = self.motion;
-    BOOL motionReset = motionNow && motionNow->gen != _contentGen;
+    BOOL motionReset = motionNow && motionNow->gen != _motionGen;
     // The next model step is a new chart: label it on this frame. The first
     // blend after a keyframe keeps the same step and must not rebuild sites.
     BOOL stepChanged = !_labelReady || _labelStep0 != s0;
-    BOOL sigChanged = !_labelReady || sig != _labelSig || _labelGen != _contentGen;
+    BOOL sigChanged = !_labelReady || sig != _labelSig || _labelGen != _motionGen;
     if (sigChanged) _labelHold++;
     else _labelHold = 0;
     // Rebuilding label sites is several milliseconds. Existing labels keep
@@ -5227,9 +5234,9 @@ static ContourSet *BuildContourSet(const float *va, const float *vb, float mix,
             _labels[_nLabels++] = lab;
         }
     } else {
-        if (motion->gen != _contentGen) {
+        if (motion->gen != _motionGen) {
             memset(motion->slots, 0, sizeof motion->slots);
-            motion->gen = _contentGen;
+            motion->gen = _motionGen;
             motion->frame = 0;
             motion->stepMax = 0;
             motion->alphaMax = 0;
@@ -5482,7 +5489,7 @@ static ContourSet *BuildContourSet(const float *va, const float *vb, float mix,
     _labelSig = sig;
     _labelStep0 = s0;
     _labelCam = cam;
-    _labelGen = _contentGen;
+    _labelGen = _motionGen;
     _labelReady = YES;
     if (!motion) {
         _ann.valid = YES;

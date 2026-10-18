@@ -3556,6 +3556,7 @@ static OSStatus FeedbackHotKeyHandler(EventHandlerCallRef next, EventRef event, 
         clock.frame=NSMakeRect(8,5,width-16,16);
         [bubble addSubview:clock]; [activeRoot addSubview:bubble];
     }
+    [self updatePointCardReservationsIn:activeRoot];
     // A lens cursor tracks the playhead. During play it moves a fraction of a
     // point per frame, so a few updates a second stay smooth without redrawing
     // the graph on every tick.
@@ -6129,12 +6130,27 @@ static NSImage *WindBarbGlyph(void) {
     for (NSView *child in root.subviews.copy)
         if ([child.accessibilityIdentifier isEqual:@"forecast.inspector"] ||
             [child.accessibilityIdentifier isEqual:@"fullscreen.lensDock"]) [child removeFromSuperview];
-    if (_forecastMode < 0) return;
-    CGFloat width = MIN(expanded ? 360 : 400, NSWidth(root.bounds)-132);
-    CGFloat height = MAX(80, NSHeight(root.bounds)-192);
-    NSView *inspector = [self forecastInspectorWithWidth:width height:height sharedTimeline:YES];
-    inspector.frame = NSMakeRect(NSWidth(root.bounds)-width-10, 132, width, MIN(height,NSHeight(inspector.frame)));
-    [root addSubview:inspector];
+    if (_forecastMode >= 0) {
+        CGFloat width = MIN(expanded ? 360 : 400, NSWidth(root.bounds)-132);
+        CGFloat height = MAX(80, NSHeight(root.bounds)-192);
+        NSView *inspector = [self forecastInspectorWithWidth:width height:height sharedTimeline:YES];
+        inspector.frame = NSMakeRect(NSWidth(root.bounds)-width-10, 132, width, MIN(height,NSHeight(inspector.frame)));
+        [root addSubview:inspector];
+    }
+    [self updatePointCardReservationsIn:root];
+}
+
+- (void)updatePointCardReservationsIn:(NSView *)root {
+    if (_gpuMap.superview == root) {
+        NSMutableArray<NSValue *> *reserved = [NSMutableArray array];
+        for (NSView *view in root.subviews) {
+            NSString *identifier = view.accessibilityIdentifier;
+            if (!view.hidden && ([identifier hasPrefix:@"mapfirst."] || [identifier hasSuffix:@".lensRow"] ||
+                [identifier isEqual:@"chart.legend"] || [identifier isEqual:@"forecast.inspector"]))
+                [reserved addObject:[NSValue valueWithRect:[_gpuMap convertRect:view.bounds fromView:view]]];
+        }
+        _gpuMap.pointCardReservedRects = reserved;
+    }
 }
 
 // The map owns the viewport. All working controls are peers above it.

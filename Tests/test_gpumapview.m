@@ -1570,6 +1570,23 @@ static void CheckPointCardHitTesting(void) {
         map.trafficEnabled = YES;
         {
             [map frameAustralia];
+            map.pointCardReservedRects = @[[NSValue valueWithRect:NSMakeRect(10,NSHeight(map.bounds)-50,NSWidth(map.bounds)-20,40)]];
+            IsobarCamera selectionCamera = map.camera;
+            double selectionStep = map.fractionalStep;
+            [map selectPointLatitude:-33.9 longitude:151.2];
+            Check([JourneyCameraDescription(map.camera) isEqual:JourneyCameraDescription(selectionCamera)] &&
+                map.fractionalStep == selectionStep, @"point card placement does not change camera or time");
+            OwnRunGeo geo = run.geo;
+            NSInteger point = (NSInteger)llround((geo.north+33.9)/geo.step)*geo.nLon + (NSInteger)llround((151.2-geo.west)/geo.step);
+            for (NSNumber *step in @[@0, @8, @8.5, @16]) {
+                map.fractionalStep = step.doubleValue;
+                double expected = [run valueAtPointIndex:point field:OwnRunFieldRain fractionalHour:step.doubleValue];
+                id actual = map.pointSample[@"rain24h"];
+                Check(isfinite(expected) ? [actual isKindOfClass:NSNumber.class] && fabs([actual doubleValue]-expected)<1e-6 : actual == NSNull.null,
+                    @"point rain follows the run at integer and fractional playheads on both surfaces");
+            }
+            [map selectPointLatitude:89 longitude:0];
+            Check(map.pointSample[@"rain24h"] == NSNull.null, @"point outside rain coverage remains missing");
             [map selectPointLatitude:-33.9 longitude:151.2];
             if ([operation isEqual:@"resize"]) {
                 [map setFrameSize:NSMakeSize(NSWidth(map.frame)-80,NSHeight(map.frame)-40)];
@@ -1581,6 +1598,12 @@ static void CheckPointCardHitTesting(void) {
                 if ([operation isEqual:@"reselect"]) [map selectPointLatitude:-32 longitude:150];
             }
             MapPointCard *card = (MapPointCard *)FindID(map, @"map.point.card");
+            map.pointCardReservedRects = @[[NSValue valueWithRect:NSMakeRect(10,NSHeight(map.bounds)-50,NSWidth(map.bounds)-20,40)]];
+            NSView *marker = FindID(map,@"map.point.marker");
+            Check(card && NSContainsRect(map.bounds,card.frame) &&
+                !NSIntersectsRect(card.frame,map.pointCardReservedRects.firstObject.rectValue) &&
+                (marker.hidden || !NSIntersectsRect(card.frame,marker.frame)),
+                @"point card remains exposed after resize, pan and reselect on both GPU surfaces");
             NSButton *close = card.closeButton;
             NSPoint target = [close convertPoint:NSMakePoint(NSMidX(close.bounds),NSMidY(close.bounds)) toView:host];
             NSView *hit = [host hitTest:target];
